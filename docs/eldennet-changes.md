@@ -1,10 +1,10 @@
 # Changes EldenNet's design needs for GraceUI
 
 A short list for EldenNet's design (branch `design/v1-proposal`), from [GraceUI's design](DESIGN.md). EldenNet's codes
-(DESIGN, ARCH, NPC, MEM, ER02) refer to its documents; "GraceUI §n", G1–G10 and D1–D68 to GraceUI's. Nothing here is
+(DESIGN, ARCH, NPC, MEM, ER02) refer to its documents; "GraceUI §n", G1–G12 and D1–D68 to GraceUI's. Nothing here is
 changed in EldenNet yet, apart from the roster, which EldenNet's design now records (its O43 as updated, O45 and O46; §9
-item 1). Items marked **(G*n*)** come from that row of GraceUI §12, every one of which the owner has decided (G3 and G10
-on 2026-11-07, as recommended). All of it stays minimal: one overlay, read-only towards the game, no new thread.
+item 1). Items marked **(G*n*)** come from that entry of GraceUI's [DECISIONS.md](DECISIONS.md) (indexed in GraceUI §12),
+every one of which the owner has decided (G3 and G10 on 2026-11-07, as recommended). All of it stays minimal: one overlay, read-only towards the game, no new thread.
 
 ## 1. The main UI on F5 through GraceUI
 
@@ -177,8 +177,9 @@ player switches `dashboard.lan` on (G9).
 3. DESIGN §7.6's page line ("named slots first, then kinds and their types") gains each kind's own row ahead of its
    slots or types, the `named` kind's included (`[allow."named"]`, also `merchant` and `summon`), so every inherited
    source an allowance names has a row of its own to open (GraceUI §4.6.4). G8's answer does not change this.
-4. Record in DESIGN §19, when EldenNet takes these changes up: G1, G2, G4–G6, G8, G9 and G10 as decided by the owner
-   (2026-11-07), in the owner's words as GraceUI §12 gives them (G10: "approved", (b)). G3 (the browser app's framework:
+4. Record in EldenNet's `docs/DECISIONS.md` (indexed in its DESIGN §19), when EldenNet takes these changes up: G1, G2,
+   G4–G6, G8, G9 and G10 as decided by the owner (2026-11-07), in the owner's words as GraceUI's DECISIONS.md gives
+   them (G10: "approved", (b)). G3 (the browser app's framework:
    Preact, "yes") and G7 (the WIP tag) are GraceUI's alone and change nothing in EldenNet.
 
 ## 8. GraceUI as its own mod (G2)

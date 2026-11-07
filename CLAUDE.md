@@ -114,9 +114,11 @@ depends on GraceUI; GraceUI never depends on EldenNet.
 - Work on a topic branch (`design/`, `feat/`, `fix/`, `docs/`, `test/`, `chore/`), never directly on `main` unless
   the owner asks. Commit and push checked work to the topic branch after the privacy sweep passes; open a pull
   request only when asked.
-- Ask the owner, with a recommendation, about anything the design leaves open. Add each question to DESIGN §12
-  ("Decisions for the owner") as a new row marked Open, and record the answer there with its date. Record what you
-  settle yourself in DESIGN §13.
+- Ask the owner, with a recommendation, about anything the design leaves open. Add each question to
+  [docs/DECISIONS.md](docs/DECISIONS.md) as a new entry marked Open, with the next free G-number, its options and the
+  recommendation, and to the index in DESIGN §12 ("Decisions for the owner"). Record the answer in the entry with its
+  date and the owner's words; a later decision amends an earlier entry by a dated note, never by rewriting it, and ids
+  are never renumbered. Record what you settle yourself in DESIGN §13.
 - When a GraceUI decision changes what EldenNet must do, add it to `docs/eldennet-changes.md`.
 - Keep example content original: fixtures, placeholder text, icons and ornaments are ours.
 - Text that players read uses British spelling, as EldenNet's documents do.

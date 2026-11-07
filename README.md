@@ -5,7 +5,8 @@ on a hotkey (F5 by default) and in the player's own web browser at an address on
 the game runs, unless anti-cheat or an unknown build keeps EldenNet inactive.
 
 **Status: design.** Nothing is built yet. The design is in [docs/DESIGN.md](docs/DESIGN.md), with the owner's
-decisions (§12) and the decisions it settles (§13).
+decisions (indexed in §12, in full in [docs/DECISIONS.md](docs/DECISIONS.md)) and the decisions it settles (§13).
+The roadmap for both GraceUI and EldenNet is EldenNet's `docs/ROADMAP.md`.
 
 ## What it will be
 

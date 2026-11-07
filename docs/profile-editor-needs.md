@@ -13,7 +13,7 @@ bio, in the roster from the start (GraceUI D67), and every NPC with a profile, t
 remembers (O45). The player's own character profiles are therefore mostly for named NPCs without a shipped bio (overhaul
 additions, and the DLC's before EldenNet v1.1), and their fields follow the bio O46 settles.
 
-## 1. Decisions GraceUI must revisit (record in G §12 or §13, with EldenNet O43 as the reason)
+## 1. Decisions GraceUI must revisit (record in DECISIONS.md and its §12 index, or in §13, with EldenNet O43 as the reason)
 
 | GraceUI rule | Today | Needed |
 |---|---|---|
