@@ -5,7 +5,7 @@ on a hotkey (F5 by default) and in the player's own web browser at an address on
 the game runs, unless anti-cheat or an unknown build keeps EldenNet inactive.
 
 **Status: design.** Nothing is built yet. The design is in [docs/DESIGN.md](docs/DESIGN.md), with the owner's
-decisions and the two questions still open (§12), and the decisions it settles (§13).
+decisions (§12) and the decisions it settles (§13).
 
 ## What it will be
 
@@ -18,8 +18,8 @@ decisions and the two questions still open (§12), and the decisions it settles 
   bug-report builder that leaves secrets out), with Settings, Docs and Content packs at the foot.
 - **Elden Ring in spirit, our own in substance**: a dark "Grace" theme with one gold light, Elden Ring words inside
   the pages, and no game assets of any kind.
-- **Spoiler-safe**: no page shows a stage, flag, name or item the player has not reached; the roster of characters
-  and NPC types is listed from the start, with only what a first meeting would show.
+- **Spoiler-safe**: no page shows a stage, flag, name or item the player has not reached; the roster of every named
+  NPC, every named boss and every NPC type is listed from the start, with only what a first meeting would show.
 - **Safe in game**: it opens only at safe moments (the game never pauses), and danger closes it at once, keeping every
   change.
 - **Private**: the browser dashboard listens on 127.0.0.1 only, so only this PC can open it, unless the player

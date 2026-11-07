@@ -959,6 +959,7 @@ def named_page():
               + entry("The masked duellist", "A fighter behind a mask", unmet=True)
               + entry("The old cartographer", "Draws maps for coin", unmet=True)
               + entry("The quiet smith", "Works a forge in silence", unmet=True)
+              + entry("Tollwarden of the Old Bridge", "An armoured keeper who takes a toll at a bridge", '<span class="tag" title="A great foe met in battle">Boss</span>', unmet=True)
               + '</ul><p class="group">Seen</p><ul>'
               + entry("Old Tamsin", "Seen once", '<span class="tag glint" title="No voice source for this NPC in v1">No lines</span>')
               + "</ul></div>")
@@ -998,7 +999,7 @@ def named_page():
                        ("Memories", "What Idrel remembers of you.", "history-memories.html"),
                        ("Conversations", "Every conversation with Idrel, as it was shown.", "#"),
                        ("NPC types", "Where every allowance lives.", "characters-types.html")]))
-    helpd = help_dialog("Named NPCs", "Every named character is listed from the start with what a first meeting would tell you, under the name the game uses before it tells you theirs. How they are on this journey is on Playthrough.",
+    helpd = help_dialog("Named NPCs", "Every named character and every named boss is listed from the start, in name order, with what a first meeting would tell you, under the name the game uses before it tells you theirs. How they are on this journey is on Playthrough.",
                         ["Pick a name at the left.",
                          "Profile shows who they appear to be and their way with news; for someone you have met, a line links to Playthrough.",
                          "Allowances and Reactions are shortcuts to this NPC’s rows in NPC types; cooldowns live in Behaviour › Reactions."],

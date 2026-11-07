@@ -44,8 +44,10 @@ depends on GraceUI; GraceUI never depends on EldenNet.
   texts, taglines or theme names. We may describe its look in our own words and build our own theme in its spirit.
 - **Fonts**: OFL faces only, each from its original publisher, shipped with its `OFL.txt` and credited in `NOTICE`.
   Never a font file taken out of SeverActions, Magelight or a game.
-- **SkyrimNet**: ideas only. Never its code, prompts, text or styling; never inspect its compiled files; never use its
-  name to promote GraceUI or EldenNet.
+- **SkyrimNet** (owner's decision, 2026-11-07, as in EldenNet's `CLAUDE.md`): its author, Min, gives us the engine
+  blueprint to work with and approves building on SkyrimNet, so its code, dashboard and styling may be used, copied and
+  adapted, credited as Min wishes and with every licence and notice file that comes with it. Never present GraceUI as
+  SkyrimNet itself or claim more endorsement than Min has given.
 - **FromSoftware**: never commit game files, text, params, fonts, icons, button glyphs, frames, textures, screenshots,
   the logo or the ring mark. Names of characters and places appear only at run time, from the player's own install,
   through EldenNet. Fixtures and examples use invented names and our own words.
@@ -56,9 +58,9 @@ depends on GraceUI; GraceUI never depends on EldenNet.
 
 - **One overlay** (EldenNet O25): hudhook pinned at exactly 0.9.3, built with `dx12` only; `imgui` only through
   `hudhook::imgui`, MinHook only through `hudhook::mh`; never its eject path; no second Present hook, no second
-  MinHook. No `imgui-tables-api` feature and no hudhook patch without the owner's approval (DESIGN D28). While G10 is
-  Open the design follows its recommendation: `graceui.dll` links no hudhook, `imgui` or MinHook, installs no hook
-  and starts no thread; only GraceUI's host kit inside EldenNet (`grace-host`) touches `hudhook::imgui`.
+  MinHook. No `imgui-tables-api` feature and no hudhook patch without the owner's approval (DESIGN D28). Under G10
+  (decided by the owner, 2026-11-07: (b)), `graceui.dll` links no hudhook, `imgui` or MinHook, installs no hook and
+  starts no thread; only GraceUI's host kit inside EldenNet (`grace-host`) touches `hudhook::imgui`.
 - **No me3 and no fromsoftware-rs**, in any form.
 - **Read-only towards the game.** GraceUI never reads or writes game memory and calls no game code; it sees only what
   EldenNet's core projects.
@@ -74,9 +76,9 @@ depends on GraceUI; GraceUI never depends on EldenNet.
    the spoiler goldens).
 2. **Absence is silent.** Nothing not reached is shown, counted, greyed or hinted at; the veiled look is only for a
    perceived character whose name the game has not shown (SP5; the goldens). The one exception is the roster, by the
-   owner's decision (G5, G8): every NPC type and every named NPC's general profile are listed from the start, holding
-   only what a first meeting shows and reviewed for spoilers like shipped content; everything about this playthrough
-   follows the rule in full (the roster and Playthrough goldens).
+   owner's decision (G5, G8): every NPC type, and every named NPC's and named boss's general profile, are listed from
+   the start (D67), holding only what a first meeting shows and reviewed for spoilers like shipped content; everything
+   about this playthrough follows the rule in full (the roster and Playthrough goldens).
 3. **One command path.** Every change goes through EldenNet's one validating entry point; a view is untrusted input
    (security; the command tests).
 4. **Loopback by default.** The server binds 127.0.0.1 or `::1` (and the PC's private network addresses only while
@@ -104,8 +106,8 @@ depends on GraceUI; GraceUI never depends on EldenNet.
     mixed or mismatched copy, an error code or a vertex list that fails its check turns the menu off with a notice,
     and EldenNet keeps playing (G2; the ABI and handshake tests).
 16. **`graceui.dll` hooks nothing.** No hudhook, ImGui, MinHook, thread, socket, file or game access in it (one
-    overlay; G10's recommendation; a CI check of its imports and symbols against DESIGN §2.2's deny list and
-    allowlist).
+    overlay; G10 (b), decided by the owner; a CI check of its imports and symbols against DESIGN §2.2's deny list
+    and allowlist).
 
 ## Working rules
 

@@ -1,18 +1,17 @@
 # Changes EldenNet's design needs for GraceUI
 
 A short list for EldenNet's design (branch `design/v1-proposal`), from [GraceUI's design](DESIGN.md). EldenNet's codes
-(DESIGN, ARCH, NPC, MEM, ER02) refer to its documents; "GraceUI §n", G1–G10 and D1–D66 to GraceUI's. Nothing here is
-changed in EldenNet yet. Items marked **(G*n*)** come from that row of GraceUI §12; G3 and G10 are still Open, and
-items marked with them depend on the answer. All of it stays minimal: one overlay, read-only towards the game, no new
-thread.
+(DESIGN, ARCH, NPC, MEM, ER02) refer to its documents; "GraceUI §n", G1–G10 and D1–D68 to GraceUI's. Nothing here is
+changed in EldenNet yet, apart from the roster, which EldenNet's design now records (its O43 as updated, O45 and O46; §9
+item 1). Items marked **(G*n*)** come from that row of GraceUI §12, every one of which the owner has decided (G3 and G10
+on 2026-11-07, as recommended). All of it stays minimal: one overlay, read-only towards the game, no new thread.
 
 ## 1. The main UI on F5 through GraceUI
 
 1. **DESIGN §12 and NPC §10.1**: replace "settings (F10, safe moments only)" with "the main menu (F5, GraceUI; safe
    moments and the title screen)". The menu is drawn in EldenNet's one hudhook overlay with Dear ImGui and the Grace
    theme **(G1)**, after the world surfaces and below the toasts and the banner: GraceUI's `graceui.dll` lays it out
-   and tessellates it, and EldenNet's overlay copies the vertex lists into ImGui's draw list **(G10, recommended
-   (b))**.
+   and tessellates it, and EldenNet's overlay copies the vertex lists into ImGui's draw list **(G10 (b))**.
 2. **NPC §10.6** (the F10 panel) is superseded by GraceUI §4 (information architecture): a framework's categories,
    Home, AI, Voice, Characters, History, Behaviour, System and Tools, with Settings, Docs and Content packs at the foot
    (GraceUI D38), which replace the first proposal's flavour-named sections. Point NPC §10.6 and DESIGN §12's
@@ -173,14 +172,14 @@ player switches `dashboard.lan` on (G9).
 1. ARCH §11.5's example sets `greet_npc = false` under `[allow."card:vulgar_militia"]`, but `greet_npc` is a reaction
    id; the allowance keys are `npc_to_npc` and `reactions = { greet_npc = false }` (IA §12.1).
 2. DESIGN §7.6's page lists every type and every persona slot, met or not; the owner kept that (G5, G8), each
-   shown by its general profile only (§9 below).
+   shown by its general profile only, and widened it to every named NPC and named boss with a bio (EldenNet O43 as
+   updated; D67; §9 below).
 3. DESIGN §7.6's page line ("named slots first, then kinds and their types") gains each kind's own row ahead of its
    slots or types, the `named` kind's included (`[allow."named"]`, also `merchant` and `summon`), so every inherited
    source an allowance names has a row of its own to open (GraceUI §4.6.4). G8's answer does not change this.
-4. Record in DESIGN §19, when EldenNet takes these changes up: G1, G2, G4–G6, G8 and G9 as decided by the owner
-   (2026-11-07), in the owner's words as GraceUI §12 gives them, and G10 as an Open row with GraceUI's
-   recommendation. G3 (the browser app's framework) and G7 (the WIP tag) are GraceUI's alone and change nothing in
-   EldenNet.
+4. Record in DESIGN §19, when EldenNet takes these changes up: G1, G2, G4–G6, G8, G9 and G10 as decided by the owner
+   (2026-11-07), in the owner's words as GraceUI §12 gives them (G10: "approved", (b)). G3 (the browser app's framework:
+   Preact, "yes") and G7 (the WIP tag) are GraceUI's alone and change nothing in EldenNet.
 
 ## 8. GraceUI as its own mod (G2)
 
@@ -209,27 +208,37 @@ player switches `dashboard.lan` on (G9).
 
 ## 9. The roster and the Playthrough page (G5, G8)
 
-1. **The content plan, for the owner to confirm in EldenNet.** The owner's words ("we will feature a full roster with
-   character biographies, so they will be part of EldenNet's database already"; "we will have them all ready") may
-   widen EldenNet's content plan beyond v1.0's six personas and seven kind profiles (DESIGN §7.7, O43). Nothing here
-   changes O43: raise it in DESIGN §19 for the owner's confirmation.
+1. **The content plan (decided by the owner, 2026-11-07; EldenNet O43 as updated, O45; O46 Open).** EldenNet v1.0 ships
+   our own character profile, holding a general, stage-independent bio, for every named NPC and every named boss of the
+   base game, beside the six personas and the seven kind profiles; every NPC with a profile holds a free conversation
+   and keeps memories, matched to the speaker by ID (O45). The bio's structure and the DLC's timing are EldenNet O46
+   (Open; recommended: one bio for every named NPC, the DLC's roster in v1.1). Stages stay a separate feature:
+   Characters › Playthrough and the personas' stage tracks. The bios are generated after a game scan and research, once
+   Min's engine blueprint has arrived and O46 is decided, and land in batches from EldenNet v0.5 to v1.0 (EldenNet
+   DESIGN §7.8).
 2. **A first-meeting field, reviewed for spoilers.** Personas have `public.summary` (NPC §3.1: ≤ 60 words, public, the
    Stranger Test). GraceUI now shows it before any meeting, so the release review confirms it holds at a first meeting
-   (the earliest fixture state, before any stage). Character profiles, cards and types gain the same public field
-   (≤ 60 words for a character, ≤ 30 for a card or type), checked by PL7's lint at the opening fixture state and
-   reviewed like shipped content: never a stage, fate, later form, reveal, quest step or relation the story discloses
-   later.
-3. **The roster in `named`**: every named NPC with a shipped general profile, by `display_name_fallback` until the game
-   shows another name, at the title screen too; bosses and invaders only once the game names them (SP4).
+   (the earliest fixture state, before any stage). Character profiles, cards and types gain the same public field (≤ 60
+   words for a character, ≤ 30 for a card or type; EldenNet O46 recommends `public.summary` ≤ 60 words in every bio,
+   named as the persona's), checked by PL11 at the opening fixture state and by PL7 at every state (EldenNet NPC §4.8),
+   and reviewed like shipped content: never a stage, fate, later form, reveal, quest step or relation the story
+   discloses later.
+3. **The roster in `named`**: every named NPC and every named boss with a shipped general profile, in name order, by the
+   name the player's install gives, or `display_name_fallback` until the game shows another name, at the title screen
+   too, a boss the game never shows calm before its fight marked, per entry in the index, for the "Boss" tag (D67);
+   bosses and invaders without a bio only once the game names them (SP4).
 4. **A `playthrough` projection** (GraceUI §6.5): for each journey of the loaded playthrough, the named NPCs met; status
    from perception only (here now; alive when last met; away, when the Tarnished came within speaking range of where
-   they were last met and did not perceive them, a small new record per persona; fell, from a stored death event with
-   the `seen` bit, §2 item 7); where and when last met (MEM §2.2's facts); the disposition word; the public line of the
-   stage in `stage_seen` (MEM §2.2), never of a later stage; related people only if met and named by that stage's
-   `public.links`; up to three notes since the last conversation, from records, with the since-line's comparison
-   (MEM §12.6); the world-now line (the highest-ranked world stage that holds, SP6).
+   they were last met and did not perceive them, a small new record per profiled NPC (EldenNet O45); fell, from a stored
+   death event with the `seen` bit, §2 item 7); where and when last met (MEM §2.2's facts); the disposition word; the
+   public line of the stage in `stage_seen` (MEM §2.2), never of a later stage; related people only if met and named by
+   that stage's `public.links`; up to three notes since the last conversation, from records, with the since-line's
+   comparison (MEM §12.6); the world-now line (the highest-ranked world stage that holds, SP6).
 5. **Per-stage public lines**: each persona stage may carry `public.line` (≤ 25 words: what the Tarnished has seen of
    the story by that stage, in our words) and `public.links` (the related personas that line may name), linted
    against the Tarnished's lock set at that stage and reviewed like content; a stage without a line shows nothing.
 6. **The prompt**: "the framework will inject correct NPC profile into the request payload prompt" (the owner, G8) is
-   DESIGN §7.7's precedence as it stands; GraceUI shows only the public fields.
+   EldenNet DESIGN §7.8's match by profile id (O45); GraceUI shows only the public fields.
+7. **Memories and conversations for every profiled NPC (O45)**: the `memories`, `journal/<id>` and `conversation/<id>`
+   projections cover every NPC with a profile, keyed by its profile id; a keepsake about another NPC is projected only
+   when every event it cites had the Tarnished in its audience (SP7, D68).

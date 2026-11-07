@@ -13,7 +13,7 @@ privacy rules (§7) and settings-row badges (§8) still stand, as DESIGN §4.5 a
 
 ## 0. Sources, method and limits
 
-- **SkyrimNet, for ideas only.** Its dashboard's page list as EldenNet research records it (SN01 §9, SN00 row 38).
+- **SkyrimNet, for ideas only (when this note was written; its author has since approved building on SkyrimNet).** Its dashboard's page list as EldenNet research records it (SN01 §9, SN00 row 38).
   Nothing of its code, text or compiled files was opened, and its name is not used to promote anything.
 - **EldenNet's design**, on `design/v1-proposal`, read through `wp` and grep with line numbers. EldenNet's
   speaking-up design was being written at the same time; DESIGN §7.6, §8.9 and §9.4, NPC §1.4, §9.1 and §9.8–§9.11,
@@ -789,9 +789,10 @@ SP and PV refer to §6 and §7.
   `display_name_fallback` when text is down (NPC §2.7). A veiled persona stays veiled. Region names are the
   runtime place names of regions entered. GraceUI never stores a name.
 - **SP4. Seen before listed.** Other named slots appear once seen (DESIGN §7.6). Recommended: cards and creature
-  families too (Open 3). *(The owner chose otherwise on 2026-11-07, GraceUI DESIGN G5 and G8: every NPC type, and
-  every named NPC with a shipped general profile, is listed from the start in first-meeting words; other named slots
-  still appear once seen.)* Regions appear once entered, and bosses never by name outside a live bar.
+  families too (Open 3). *(The owner chose otherwise on 2026-11-07, GraceUI DESIGN G5 and G8: every NPC type, and every
+  named NPC with a shipped general profile, is listed from the start in first-meeting words; other named slots still
+  appear once seen. Every named boss with a shipped bio joins the roster the same way, GraceUI DESIGN D67.)* Regions
+  appear once entered, and bosses never by name outside a live bar.
 - **SP5. Absence is silent.** No counts, progress, placeholders, greyed rows or "not yet" for world stages, tracks,
   stages, bosses, regions or reactions not reached. This mirrors "no path means silence, never not yet" (DESIGN
   §10.6). The look study's veiled treatment is used only for a perceived character whose name the game has not

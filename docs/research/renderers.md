@@ -262,9 +262,10 @@ From the Free License Agreement V2 in the Magelight release (FACT, our reading; 
     save and restore inside hudhook's frame (ML lesson 4), so the larger hudhook change of §2.3, plus vkd3d-proton
     risk. For a mostly still menu it buys GPU time the menu does not need.
 - **Performance.** Magelight's GPU-mode figures on D3D11 are good (0.04 ms CPU for an idle page; ML §3.20). CPU-mode
-  cost was never measured in that copy (ML §8). First open is one long frame of 86–192 ms on the page thread (ML
-  §3.20), so prepaint while hidden. A full 1440p upload is 14.7 MB, 4.1 MB at 800p. The interpreter-only JavaScript
-  favours a small UI framework (GraceUI DESIGN G3). Raster threads compete with the game for the Deck's four cores (EST, spike).
+  cost was never measured in that copy (ML §8). First open is one long frame of 86–192 ms on the page thread (ML §3.20),
+  so prepaint while hidden. A full 1440p upload is 14.7 MB, 4.1 MB at 800p. The interpreter-only JavaScript favours a
+  small UI framework (GraceUI DESIGN G3, decided: Preact). Raster threads compete with the game for the Deck's four
+  cores (EST, spike).
 - **Input and IME.** The host translates Win32 messages into Ultralight key, char and mouse events. "Advanced IME
   composition APIs are not supported" (Supported Web Features) [read]; Magelight builds its own composition handling
   (ML §3.9). Pad navigation is ours (Magelight's ledger, ML §3.10). No native pickers (date, colour, file).

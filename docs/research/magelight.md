@@ -644,11 +644,13 @@ Ultralight only.
   jars per mod, version gates and two-copies handling (§3.15, §3.16). That favours **linking GraceUI into
   EldenNet's DLL in v1**, with the bridge as the seam that could later become a host API. *The owner decided G2 on
   2026-11-07: a standalone mod, bundled with each EldenNet release and updated by file (GraceUI DESIGN §2.7, §2.9;
-  G10 for the overlay).*
+  G10 for the overlay). The owner decided G10 the same day: EldenNet keeps the overlay and `graceui.dll` hooks
+  nothing (G10 (b)).*
 - **G3, the UI framework.** WebKit 615 needs es2022 bundles, `base './'`, no `crossorigin`, and no module-preload
   polyfill under a strict CSP (INV 8; CL:703-717; Magelight's Vite plugin). React runs well in Ultralight (a large
   SeverActions frontend; `S:examples/Magelight.ReactConfig/`). If GraceUI renders HTML in game, parse cost on
-  first load matters more than bundle size, which favours a small framework.
+  first load matters more than bundle size, which favours a small framework. *The owner decided G3 on 2026-11-07:
+  Preact with TypeScript and signals, built with Vite (GraceUI DESIGN G3).*
 - **G4, the browser dashboard.** Magelight moved from network-on to **network off by default, opt-in and logged**
   before 1.0, because tightening later would break users (CL:1137-1160). That supports an **opt-in** browser
   dashboard. *The owner decided G4 on 2026-11-07: always on, as SkyrimNet's dashboard is (GraceUI DESIGN §7.2).*
