@@ -630,7 +630,7 @@ EldenNet detects HDR from the swapchain. In HDR it linearises the colours and sc
 
 ---
 
-## 4. Points raised for the design, with recommendations (settled in GraceUI DESIGN: 1 → D22, 2 → D24, 3 → D23, 4 → D25, 5 → Open G6, 6 → D26)
+## 4. Points raised for the design, with recommendations (settled in GraceUI DESIGN: 1 → D22, 2 → D24, 3 → D23, 4 → D25, 5 → G6, decided by the owner on 2026-11-07, 6 → D26)
 
 1. **Display face.** Recommend **Cinzel** for titles at 20 px or more. Alternatives: Forum, or EB Garamond small
    caps only, which means one family fewer.

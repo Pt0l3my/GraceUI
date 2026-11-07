@@ -8,7 +8,7 @@ const fs = require('fs');
 
 const MOCK = path.resolve(process.argv[2]);
 const OUT = path.resolve(process.argv[3]);
-const PAGES = ['index', 'ai-providers', 'ai-models', 'characters-types', 'characters-named', 'history-memories',
+const PAGES = ['index', 'ai-providers', 'ai-models', 'characters-types', 'characters-playthrough', 'characters-named', 'history-memories',
   'behaviour-speaking', 'behaviour-pacing', 'voice-tts'];
 const SIZES = [[1280, 720], [2560, 1440]];
 const EXTRAS = [

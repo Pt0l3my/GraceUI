@@ -13,7 +13,7 @@ privacy rules (§7) and settings-row badges (§8) still stand, as DESIGN §4.5 a
 
 ## 0. Sources, method and limits
 
-- **SkyrimNet, for ideas only.** Its dashboard's page list as EldenNet research records it (SN01 §9, SN00 row 38).
+- **SkyrimNet, for ideas only (when this note was written; its author has since approved building on SkyrimNet).** Its dashboard's page list as EldenNet research records it (SN01 §9, SN00 row 38).
   Nothing of its code, text or compiled files was opened, and its name is not used to promote anything.
 - **EldenNet's design**, on `design/v1-proposal`, read through `wp` and grep with line numbers. EldenNet's
   speaking-up design was being written at the same time; DESIGN §7.6, §8.9 and §9.4, NPC §1.4, §9.1 and §9.8–§9.11,
@@ -789,7 +789,10 @@ SP and PV refer to §6 and §7.
   `display_name_fallback` when text is down (NPC §2.7). A veiled persona stays veiled. Region names are the
   runtime place names of regions entered. GraceUI never stores a name.
 - **SP4. Seen before listed.** Other named slots appear once seen (DESIGN §7.6). Recommended: cards and creature
-  families too (Open 3). Regions appear once entered, and bosses never by name outside a live bar.
+  families too (Open 3). *(The owner chose otherwise on 2026-11-07, GraceUI DESIGN G5 and G8: every NPC type, and every
+  named NPC with a shipped general profile, is listed from the start in first-meeting words; other named slots still
+  appear once seen. Every named boss with a shipped bio joins the roster the same way, GraceUI DESIGN D67.)* Regions
+  appear once entered, and bosses never by name outside a live bar.
 - **SP5. Absence is silent.** No counts, progress, placeholders, greyed rows or "not yet" for world stages, tracks,
   stages, bosses, regions or reactions not reached. This mirrors "no path means silence, never not yet" (DESIGN
   §10.6). The look study's veiled treatment is used only for a perceived character whose name the game has not
@@ -808,7 +811,9 @@ SP and PV refer to §6 and §7.
 ## 7. Privacy rules
 
 - **PV1. Loopback only.** The browser host binds 127.0.0.1 with a per-session token, and Host and Origin checks
-  (GraceUI DESIGN §7). There is no remote access.
+  (GraceUI DESIGN §7). There is no remote access. *(GraceUI DESIGN PV1 now uses a session cookie instead of the token,
+  after G4, and admits devices on the home network once the player switches that on and pairs each with a code shown
+  in game, after G9.)*
 - **PV2. Write-only secrets.** Keys go in and never come out: the UI sees set, missing or rejected. The
   character's name shows only in the header and on pages about the player's own story.
 - **PV3. GraceUI keeps nothing.** No page content in GraceUI logs, local storage or caches. The release build has
@@ -860,7 +865,7 @@ SP and PV refer to §6 and §7.
 | A settings description export (JSON from the Rust types, plus labels and help) | One source for labels, bounds and availability; rows generated in both hosts | Small; versioned with the bridge |
 | A player-safe projection layer (SP1, SP2, SP7) in the core | The UI never sees raw content | Moderate; the lock sets exist already |
 | A bounded decision ring (about 256 entries): every admission result with its refusing rule | Augury › Decisions, and the stats on Reactions | Small; the scheduler already computes it (spec P2) |
-| `types_seen` per playthrough (type ids the Tarnished has seen) | SP4 for cards and creature families (Open 3) | Tiny; one fact table |
+| `types_seen` per playthrough (type ids the Tarnished has seen) | SP4 for cards and creature families (Open 3; not needed since G5, 2026-11-07) | Tiny; one fact table |
 | A session-only "pause AI" command that does not write `enabled` | Pause without changing the next launch | Small |
 | `hotkeys.menu` (default F5), with `hotkeys.settings` retired (schema 3, or an amendment to schema 2 before v0.6) | The F5 menu (GraceUI DESIGN D6); `deny_unknown_fields` refuses unknown keys | Small |
 | `ui.menu.*` (names, reduce motion, key hints, pad glyphs, backdrop, show Tidings), and the browser dashboard switch (`dashboard.enabled`, GraceUI DESIGN G4) | Menu preferences shared by both hosts in one file (Open 15) | Small |
@@ -892,8 +897,8 @@ SP and PV refer to §6 and §7.
 | # | Question | Options | Recommendation | Resolved in GraceUI DESIGN |
 |---|---|---|---|---|
 | 1 | Page names | (a) flavour with a plain subtitle, both searchable, plus a "plain names" option; (b) plain only; (c) flavour only | **(a)** | D4 |
-| 2 | Unmet named NPCs | (a) listed by fallback name, allowances only (DESIGN §7.6 as written); (b) hidden until seen | **(a)**: the cast is published, and the fallback is the pre-reveal name | D12 |
-| 3 | Types not yet met (cards, creature families) | (a) all listed (DESIGN §7.6 as written); (b) listed once seen, with a `types_seen` record and a "show all (may spoil)" switch | **(b)**: a full list of creature families reveals late-game creatures | Open G5 |
+| 2 | Unmet named NPCs | (a) listed by fallback name, allowances only (DESIGN §7.6 as written); (b) hidden until seen | **(a)**: the cast is published, and the fallback is the pre-reveal name | D12, superseded by G8 (the owner, 2026-11-07) |
+| 3 | Types not yet met (cards, creature families) | (a) all listed (DESIGN §7.6 as written); (b) listed once seen, with a `types_seen` record and a "show all (may spoil)" switch | **(b)**: a full list of creature families reveals late-game creatures | G5: the owner chose (a), 2026-11-07 |
 | 4 | What Tidings shows | (a) world stages that hold, verified; (b) also tracks and persona stages in safe words; (c) no world page in v1 | **(a)** | D11 |
 | 5 | Editing memories | (a) read-only plus Forget; (b) edit keepsakes through the validator; (c) full editor | **(a)** in v1; (b) later | D13 |
 | 6 | Where labels and help live | (a) EldenNet exports a settings description; (b) GraceUI owns labels | **(a)**: one source for the README and both hosts | D8 |
@@ -921,7 +926,8 @@ SP and PV refer to §6 and §7.
    should point to GraceUI's design.
 3. **The look study's veiled state** gives "A quest not yet begun" as an example. That conflicts with SP5 (and
    with the study's own "unreached pages are absent"). Keep veiling for unnamed perceived characters only.
-4. **DESIGN §7.6 lists every type** whether or not the Tarnished has seen it. See Open 3.
+4. **DESIGN §7.6 lists every type** whether or not the Tarnished has seen it. See Open 3. *(No conflict since G5,
+   2026-11-07: GraceUI lists every type from the start too.)*
 5. **`hotkeys.settings = "F10"`** is in schema 2. The F5 menu key needs a schema change before v0.6, because of
    `deny_unknown_fields` (Open 12).
 6. **The speaking-up design is still being written.** Re-check §4.1 against ARCH §11.5 and NPC §9.1 when that work
