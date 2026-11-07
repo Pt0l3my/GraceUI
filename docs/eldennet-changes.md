@@ -127,5 +127,6 @@ binding 127.0.0.1 raises no firewall prompt on Windows.
 3. DESIGN §7.6's page line ("named slots first, then kinds and their types") gains each kind's own row ahead of its
    slots or types, the `named` kind's included (`[allow."named"]`, also `merchant` and `summon`), so every inherited
    source an allowance names has a row of its own to open (GraceUI §4.6.4). Under either answer to G8.
-4. Record G1–G6 and G8 in DESIGN §19 as Open rows when EldenNet takes these changes up, with GraceUI's recommendations.
+4. Record G1 as decided (the owner, 2026-11-07: Dear ImGui in game, the full web UI in the browser) and G2–G6 and G8
+   in DESIGN §19 as Open rows when EldenNet takes these changes up, with GraceUI's recommendations.
    G7 (later-version entries in the sidebar) is GraceUI's alone and changes nothing in EldenNet.
