@@ -1,0 +1,103 @@
+# GraceUI: notes for Claude
+
+GraceUI is EldenNet's main menu and dashboard: one set of pages shown in game on F5 and, opt-in, in the player's
+browser through a loopback server inside EldenNet. EldenNet (a separate repository) depends on GraceUI; GraceUI never
+depends on EldenNet.
+
+- The design is [docs/DESIGN.md](docs/DESIGN.md); the evidence is in [docs/research/](docs/research/README.md); what
+  EldenNet must change is in [docs/eldennet-changes.md](docs/eldennet-changes.md).
+- EldenNet's own rules bind GraceUI too. Where this file and EldenNet's `CLAUDE.md` overlap, follow the stricter.
+
+## Reading cheaply
+
+- Grep with line numbers first, then read only that range. Never open a whole design or research document to find
+  one thing, and never re-read a file you have just edited.
+- EldenNet's documents are read in the EldenNet checkout with its `wp` tool (`wp show DESIGN§12`, `wp grep`).
+- For a wide search, use one subagent and keep only its conclusion. Run long jobs in the background and print only the
+  last or matching lines.
+
+## Privacy and safety: the sweep comes first
+
+- Nothing is pushed or uploaded before the privacy and safety sweep passes. The sweep is the owner's `privsweep`
+  (kept identical in Skyrizz and EldenNet under `tools/privsweep/`), installed as git's global pre-push gate. If
+  `~/.config/privsweep` is missing, run `python3 -I tools/privsweep/privsweep.py install` in the EldenNet checkout
+  first. Sweep by hand anything the gate doesn't cover, such as a message to another session or a file sent to the
+  owner.
+- Never bypass it: no `--no-verify`, no change to `core.hooksPath`, no HOME or GIT_CONFIG override. Remove what it
+  finds; a personal hit is never allowed.
+- Never commit or upload anything personal about the owner: real name, account names, machine names, contact details,
+  API keys, local endpoint addresses or IPs. The owner's own local commands go in chat only.
+- Commit identities are noreply addresses only; use the environment's default git identity.
+- No model identifiers of the assistant in files, apart from the commit trailer.
+
+## Licences and third-party material
+
+- **GraceUI is MIT.** Write our own code. Check a dependency's licence before adopting it, and list it in `NOTICE`.
+- **Magelight UI** (Severause): the host, API headers, docs, tools and npm packages are MIT; `gpu/` at 1.7.1 is zlib
+  (Ultralight's reference driver, altered). Either may be reused only with its copyright and permission notice in
+  `NOTICE` (zlib: changes marked). Nothing of it is used in v1 (DESIGN D35). **Never** reuse `gpu/` from v0.30.1 or
+  `extern/appcore-ref/` (LGPL-derived), and never put Ultralight's runtime, SDK files or compiled shaders in this
+  repository; Ultralight is proprietary and is used only if the owner adopts it (DESIGN G1).
+- **SeverActions** has no licence: all rights reserved. Never copy its CSS, HTML, JS, images, sigils, layouts' code,
+  texts, taglines or theme names. We may describe its look in our own words and build our own theme in its spirit.
+- **Fonts**: OFL faces only, each from its original publisher, shipped with its `OFL.txt` and credited in `NOTICE`.
+  Never a font file taken out of SeverActions, Magelight or a game.
+- **SkyrimNet**: ideas only. Never its code, prompts, text or styling; never inspect its compiled files; never use its
+  name to promote GraceUI or EldenNet.
+- **FromSoftware**: never commit game files, text, params, fonts, icons, button glyphs, frames, textures, screenshots,
+  the logo or the ring mark. Names of characters and places appear only at run time, from the player's own install,
+  through EldenNet. Fixtures and examples use invented names and our own words.
+- **Untrusted copies** (uploads, clones, downloaded packages) go in their own folder outside the repository, are read
+  with `grep` or `python3 -I` from scripts kept elsewhere, and are never built or run.
+
+## EldenNet's rules that bind GraceUI
+
+- **One overlay** (EldenNet O25): hudhook pinned at exactly 0.9.3, built with `dx12` only; `imgui` only through
+  `hudhook::imgui`, MinHook only through `hudhook::mh`; never its eject path; no second Present hook, no second
+  MinHook. No `imgui-tables-api` feature and no hudhook patch without the owner's approval (DESIGN D28).
+- **No me3 and no fromsoftware-rs**, in any form.
+- **Read-only towards the game.** GraceUI never reads or writes game memory and calls no game code; it sees only what
+  EldenNet's core projects.
+- **v1 is dialogue only.** Acts and gestures appear only as "later version" seams.
+- **Spoiler layers apply to the UI** as they do to prompts: the spoiler rules SP1–SP9 (DESIGN §4.8) bind every page,
+  count, search result, title and URL, in both views.
+- **Privacy rules PV1–PV8** (DESIGN §4.9) bind every page, log and report: nothing personal, no keys, no chat or model
+  text outside the pages that show it, no paths, user names, SteamIDs or local addresses.
+
+## Invariants (each has a reason and a test; extend the list as the code grows)
+
+1. **Projections only.** No view ever receives raw content, flags, stages, prompts or unshown model text (spoilers;
+   the spoiler goldens).
+2. **Absence is silent.** Nothing not reached is shown, counted, greyed or hinted at; the veiled look is only for a
+   perceived character whose name the game has not shown (SP5; the goldens).
+3. **One command path.** Every change goes through EldenNet's one validating entry point; a view is untrusted input
+   (security; the command tests).
+4. **Loopback only.** The server binds 127.0.0.1 or `::1`, checks Host, Origin, Fetch Metadata, the token and the
+   ticket, sends no CORS headers and a strict CSP (DNS rebinding and CSRF; the server suite).
+5. **Secrets are write-only** and never logged, echoed, stored in the browser or put in a report (privacy; the log
+   and report scans).
+6. **No page requests anything outside its own origin**: no CDN, no remote font, no analytics (privacy; the CSP and a
+   bundle scan).
+7. **One close routine for every exit path**, which releases capture and keeps changes (input leaks; the close matrix).
+8. **The closing press never reaches the game**, and the opening press does nothing in the menu until released
+   (Esc opens the game's menu, B dodges; the pad-ledger tests).
+9. **Danger closes the menu at once** and cancels any open confirmation (the game never pauses; in-game checks).
+10. **The present thread never waits and allocates nothing per frame after warm-up** (EldenNet's T3 rule; the
+    allocation test).
+11. **No texture upload after load** in game (hudhook 0.9.3 leaks one buffer per upload; the upload counter).
+12. **The page descriptions are the one source of the information architecture**, and every setting has exactly one
+    home (drift between views; the page lint and parity goldens).
+13. **One token file** for both views; every readable text 4.5:1 or better (legibility; the contrast check).
+14. **No looping animation** (cost and calm; a lint on the token durations and the stylesheet).
+
+## Working rules
+
+- Work on a topic branch (`design/`, `feat/`, `fix/`, `docs/`, `test/`, `chore/`), never directly on `main` unless
+  the owner asks. Commit and push checked work to the topic branch after the privacy sweep passes; open a pull
+  request only when asked.
+- Ask the owner, with a recommendation, about anything the design leaves open. Add each question to DESIGN §12
+  ("Decisions for the owner") as a new row marked Open, and record the answer there with its date. Record what you
+  settle yourself in DESIGN §13.
+- When a GraceUI decision changes what EldenNet must do, add it to `docs/eldennet-changes.md`.
+- Keep example content original: fixtures, placeholder text, icons and ornaments are ours.
+- Text that players read uses British spelling, as EldenNet's documents do.
