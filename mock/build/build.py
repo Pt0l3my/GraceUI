@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write GraceUI's static mock pages (version 2: the framework categories) from one shared frame.
 
-Run from the repository root with `python3 -I mock/build/build.py mock`. The nine HTML pages are its output: edit this
+Run from the repository root with `python3 -I mock/build/build.py mock`. The ten HTML pages are its output: edit this
 file, not the HTML. grace.css and mock.js are written by hand. Every text and drawing here is ours: invented names,
 our own words, our own icons. Nothing is taken from SkyrimNet, SeverActions, Magelight UI or the game. MIT, see
 ../../LICENSE.
@@ -271,7 +271,7 @@ def monogram(letter, cls="monogram"):
 
 # ---------------------------------------------------------------- the frame (IA v2 §1)
 
-# Each category: (key, label, icon, pages); a page: (key, label, file or None, version tag or None)
+# Each category: (key, label, icon, pages); a page: (key, label, file or None, when it arrives ("v1.5" or "later", shown as a WIP tag) or None)
 TREE = [
     ("home", "Home", "home", "index.html"),
     ("ai", "AI", "ai", [("ai.providers", "Providers", "ai-providers.html", None),
@@ -282,7 +282,8 @@ TREE = [
     ("voice", "Voice", "voice", [("voice.text", "Text and subtitles", None, None),
                                  ("voice.tts", "Text-to-speech", "voice-tts.html", "v1.5"),
                                  ("voice.stt", "Speech-to-text", None, "v1.5")]),
-    ("characters", "Characters", "characters", [("characters.named", "Named NPCs", "characters-named.html", None),
+    ("characters", "Characters", "characters", [("characters.playthrough", "Playthrough", "characters-playthrough.html", None),
+                                                ("characters.named", "Named NPCs", "characters-named.html", None),
                                                 ("characters.types", "NPC types", "characters-types.html", None)]),
     ("history", "History", "history", [("history.events", "Events", None, None),
                                        ("history.conversations", "Conversations", None, None),
@@ -337,7 +338,8 @@ def sidebar(active):
         for pk, pl, pf, pv in pages:
             cur = ' aria-current="page"' if pk == active else ""
             later = " later" if pv else ""
-            tag = f'<span class="ver" title="{"Arrives in v1.5" if pv == "v1.5" else "A later version"}">{pv}</span>' if pv else ""
+            when = "arrives in v1.5" if pv == "v1.5" else "a later version"
+            tag = f'<span class="ver" title="Work in progress: {when}">WIP<span class="vh">: work in progress, {when}</span></span>' if pv else ""
             target = pf or "#"
             absent = "" if pf else ' data-mock="absent" title="Not in this mock"'
             out.append(f'<li><a class="{later.strip()}" href="{target}"{cur}{absent}><span class="lbl">{pl}</span>{tag}</a></li>')
@@ -418,7 +420,8 @@ def help_dialog(title, purpose, steps, rel):
 
 
 def header(title, desc, actions="", ver=None):
-    vt = f'<span class="ver-title" title="Arrives in v1.5">{ver}</span>' if ver else ""
+    when = "arrives in v1.5" if ver == "v1.5" else "a later version"
+    vt = f'<span class="ver-title" title="Work in progress: {when}">WIP<span class="vh">: work in progress, {when}</span></span>' if ver else ""
     act = f'<div class="ph-actions">{actions}</div>' if actions else ""
     return (f'<div class="ph"><div class="ph-text"><h1 class="t-display-lg">{title}{vt}'
             f'<button class="help-mark" aria-label="About this page" title="About this page" data-hash="help">{ic("help")}</button></h1>'
@@ -496,6 +499,7 @@ def home():
 <dt>EldenNet</dt><dd class="mono">0.6.0</dd>
 <dt>Game build</dt><dd class="c-moss">{ic("check", "ic sm")}supported</dd>
 <dt>Session</dt><dd class="mono">1 h 12 min</dd>
+<dt>Dashboard</dt><dd class="mono">127.0.0.1:8642</dd>
 </dl>"""
     open_status = f'<a class="open iconbtn" href="#" data-mock="absent" title="Open System › Status">{ic("out", "ic sm")}</a>'
     status = card("Status", status_body, collapsible=False, cls="gc gc-status", tools=open_status)
@@ -514,7 +518,7 @@ def home():
     rows.append('<li><div><span class="veiled" title="Someone you can see whose name the game has not shown">Someone you have not met</span></div><div class="st"></div></li>')
     nearby = card("Nearby", f'<ul class="people">{"".join(rows)}</ul>', desc="Only those you can perceive · twice a second",
                   collapsible=False, cls="gc gc-nearby", label_extra=' <span class="mono ink-faint">5</span>',
-                  tools=f'<a class="open iconbtn" href="characters-named.html" title="Open Characters › Named NPCs">{ic("out", "ic sm")}</a>')
+                  tools=f'<a class="open iconbtn" href="characters-playthrough.html" title="Open Characters › Playthrough">{ic("out", "ic sm")}</a>')
 
     happening = card("Happening now", f"""<ul class="ttl">
 <li><div class="t1"><span>A fight nearby: a road bandit and wolves</span><span class="left">22 s</span></div>{meter(22, 30)}</li>
@@ -714,7 +718,7 @@ def models():
              "Up to <b>32</b> tokens · temperature <b>0</b> · first word within <b>10 s</b> · whole answer within <b>20 s</b> · <b>no</b> retries"),
     ]
     decisions = (f'<section class="card dimmed" aria-labelledby="dec-h"><div class="card-head"><div class="titles">'
-                 f'<h2 class="t-title ink-mute" id="dec-h">Decisions <span class="slotid">meta</span> <span class="ver">later</span></h2>'
+                 f'<h2 class="t-title ink-mute" id="dec-h">Decisions <span class="slotid">meta</span> <span class="ver" title="Work in progress: a later version">WIP<span class="vh">: work in progress, a later version</span></span></h2>'
                  '<p class="card-desc">Short typed decisions, such as who speaks next, come with a later version. Nothing to set now.</p></div></div></section>')
     body = (header("Models", "Which model does each job, and the preset that sets them all.", actions)
             + f'<div class="stack">{advice}{differs}<div class="slots">{"".join(slots)}{decisions}</div></div>'
@@ -763,6 +767,7 @@ TYPE_ROWS = [
         R("Creature, every type", "They never speak in the game", [], 1, "off", "off", "on", "creature", kindrow=True),
         R("Wolves", "Battle awareness only", ["Creature", "Beast", "Pack"], 1, "off", "off", "on", "creature"),
         R("Carrion birds", "Battle awareness only", ["Creature", "~Bird"], 0, "off", "off", "on", "creature"),
+        R("Lantern moths", "Battle awareness only", ["Creature", "Insect"], 0, "off", "off", "on", "creature"),
     ]),
     ("Boss", "boss", [R("Great foe, while its bar shows", "", ["Boss", "Live"], 0, "on", "off", "on", "boss", inert=True)]),
     ("Invader", "invader", [R("Invader", "", ["Invader", "Live"], 0, "on", "off", "on", "invader", inert=True)]),
@@ -817,10 +822,8 @@ def types_page():
     chips = [("All", "all", True), ("Named", "named", False), ("Merchant", "merchant", False), ("Humanoid", "humanoid", False),
              ("Creature", "creature", False), ("Boss", "boss", False), ("Invader", "invader", False), ("Summon", "summon", False), ("Mount", "mount", False)]
     chip_html = "".join(f'<button class="chip" aria-pressed="{"true" if on else "false"}" data-kind-filter="{k}">{n}</button>' for n, k, on in chips)
-    lid = uid("l")
     toolbar = (f'<div class="filters"><label class="field">{ic("search", "ic sm")}<span class="vh">Search types and tags</span>'
                '<input type="search" placeholder="Search types and tags" autocomplete="off" spellcheck="false"></label>'
-               f'<span class="lbl" id="{lid}">Show types I haven’t met <span class="c-ember">(may spoil)</span></span>{switch(lid, False)}'
                f'<button class="btn secondary sm">{ic("reset", "ic sm")}Reset page</button>'
                f'<div class="chips" data-target="#types" role="group" aria-label="Kind">{chip_html}</div></div>')
     master = f"""<div class="card flush"><table class="tbl" id="types" aria-label="NPC types">
@@ -830,7 +833,8 @@ def types_page():
 
     detail = f"""<aside class="card detail" aria-label="Allowances of the chosen type">
 <div class="detail-head">{monogram("K")}<div class="grow"><h2 class="t-title ink-hi">Keep soldier</h2><p class="sub">Humanoid · a type · none near now</p>
-<div class="tags"><span class="tag">Humanoid</span><span class="tag">Human</span><span class="tag hollow" title="Not yet confirmed on your build">Keep garrison</span></div></div></div>
+<div class="tags"><span class="tag">Humanoid</span><span class="tag">Human</span><span class="tag hollow" title="Not yet confirmed on your build">Keep garrison</span></div>
+<p class="prose notes">Soldiers of a keep’s garrison, in its colours, who hold its walls and gate.</p></div></div>
 <div class="dgroup"><span class="t-eyebrow">Speech</span>
 {arow("Dialogue", f"On, from {src('humanoid', '')}. Off turns off every reason to speak.")}
 {arow("Voice", f"On, from {src('humanoid', '')}", badge=avail("v15", "Takes effect in v1.5"))}
@@ -868,9 +872,72 @@ def types_page():
                         ["Pick a row to see its allowances at the right.",
                          "Each allowance is Inherit, On or Off; the inherited value and where it comes from are shown under it.",
                          "A gold lozenge marks a change; its reset button returns it to inherited.",
-                         "Types you haven’t met stay hidden unless you choose to show them."],
+                         "Every type is listed from the start, described as you would see one on a first meeting."],
                         [("Named NPCs", "characters-named.html"), ("Reactions", "#"), ("Combat", "#")])
     page("characters-types.html", "NPC types", "characters.types", body, helpd)
+
+
+# ---------------------------------------------------------------- Characters › Playthrough (G5, G8; DESIGN §4.6.4)
+
+def playthrough_page():
+    stat = tiles([("2", "People met"), ("2", "Stories seen"), ("1", "Spoken with this session")])
+    world = card("World now", '<p class="prose">The ferry road is open again after the spring floods.</p>'
+                 f'<p class="note notes">{ic("info", "ic sm")}<span>The latest change that holds in your world. Every change is on History › World.</span></p>',
+                 icon="world", collapsible=False,
+                 tools=f'<a class="open iconbtn" href="#" data-mock="absent" title="Open History › World">{ic("out", "ic sm")}</a>')
+    l1, l2, l3 = uid("l"), uid("l"), uid("l")
+    filters = (f'<div class="filters"><label class="field">{ic("search", "ic sm")}<span class="vh">Search names</span>'
+               '<input type="search" placeholder="Search names" autocomplete="off" spellcheck="false"></label>'
+               f'<span class="lbl" id="{l1}">Status</span>{select(["Everyone met", "Here now", "Alive when last met", "Away", "Fell"], "Everyone met", lid=l1)}'
+               f'<span class="lbl" id="{l2}">Region</span>{select(["All regions", "Mistfold Downs"], "All regions", lid=l2)}'
+               f'<span class="lbl" id="{l3}">Sort</span>{select(["Last met", "First met", "Name"], "Last met", lid=l3)}</div>')
+    people = [
+        ("Idrel", '<span class="c-moss">Here now</span>', "The ferry crossing · now",
+         "You helped keep the ferry running after the spring floods.", "Nothing new", True),
+        ("Wenna", "Alive when last met", "The mill on the downs · 1 h 20 min ago",
+         "She asked you to listen for word of her brother on the north road.", "The ferry road opened again", False),
+    ]
+    tr = []
+    for name, status, last, story, note, sel in people:
+        attrs = ' aria-selected="true"' if sel else ""
+        # Last met sits under the status word, and "since you last spoke" shows only on wide screens (the chosen
+        # person's notes are in the detail pane), so the table fits beside the detail pane at 1280 × 720.
+        tr.append(f'<tr{attrs} data-select><td class="name npc nowrap">{name}</td><td><span class="nowrap">{status}</span><div class="sub">{last}</div></td>'
+                  f'<td class="content">{story}</td><td class="sub hide-narrow">{note}</td></tr>')
+    master = ('<div class="card flush"><div class="scroll-x"><table class="tbl" aria-label="People met on this journey"><thead><tr>'
+              '<th scope="col">Name</th><th scope="col">Status · last met</th>'
+              '<th scope="col">Their story, as you last saw it</th><th scope="col" class="hide-narrow">Since you last spoke</th></tr></thead>'
+              f'<tbody>{"".join(tr)}</tbody></table></div></div>'
+              f'<p class="note notes">{ic("info", "ic sm")}<span>Only people you have met on this journey, and only what you have seen. What lies ahead is never shown.</span></p>')
+    detail = f"""<aside class="card detail" aria-label="Idrel on this journey">
+<div class="detail-head">{monogram("I")}<div class="grow"><h2 class="t-title c-name">Idrel</h2><p class="sub">Ferry-warden · met 3 times · first met at the ferry crossing</p></div></div>
+<div class="dgroup"><span class="t-eyebrow">Status</span>
+<p class="statewords"><span class="c-moss">Here now</span><span class="sep">·</span><span>calm</span><span class="sep">·</span><span>thinks well of you</span></p>
+<dl class="kv notes"><dt>Last met</dt><dd>the ferry crossing · now</dd><dt>Last spoke</dt><dd class="mono">4:12</dd></dl></div>
+<div class="dgroup"><span class="t-eyebrow">Their story</span>
+<p class="prose">You helped Idrel keep the ferry running after the spring floods. Wenna had sent you to him.</p>
+<p class="sub">As you saw it at 4:12</p></div>
+<div class="dgroup"><span class="t-eyebrow">Related</span>
+<ul class="heard"><li><span class="wl">Wenna asked you to listen for word of her brother on the north road.</span><a class="pill gold" href="#" data-mock="absent" title="Wenna’s row">Wenna</a></li></ul></div>
+<div class="dgroup"><span class="t-eyebrow">Has heard of</span>
+<ul class="heard"><li><span class="wl">The ferry road is open again after the spring floods.</span><span class="pill moss">certain</span></li>
+<li><span class="wl">Wolves have come down from the high moor.</span><span class="pill gold">likely</span></li></ul></div>
+<div class="dgroup"><span class="t-eyebrow">Since you last spoke</span>
+<p class="note">{ic("info", "ic sm")}<span>Nothing new since you last spoke.</span></p></div>
+<div class="notes toolbar"><a class="btn secondary sm" href="characters-named.html">General profile{ic("out", "ic sm")}</a>
+<a class="btn secondary sm" href="history-memories.html">Memories{ic("out", "ic sm")}</a></div>
+</aside>"""
+    body = (header("Playthrough", "The people you have met on this journey, how they are now, and where their stories stand as you have seen them.")
+            + f'<div class="stack">{stat}{world}{filters}<div class="md"><div>{master}</div>{detail}</div></div>'
+            + related([("Named NPCs", "Who each character appears to be, and what each may do.", "characters-named.html"),
+                       ("Memories", "What each named NPC remembers of you.", "history-memories.html"),
+                       ("World", "Every change that holds in your world.", "#")]))
+    helpd = help_dialog("Playthrough", "The people you have met on this journey and how they are now. Only what you have seen is shown: a story line is the stage you last saw them at, never what comes next.",
+                        ["Pick a person to see their status, their story as you last saw it, related stories and what has changed since you last spoke.",
+                         "Status comes from what you saw: here now, alive when last met, away when you last passed, or fell.",
+                         "Choose an earlier journey in the top bar to look back at it, read-only."],
+                        [("Named NPCs", "characters-named.html"), ("Memories", "history-memories.html"), ("World", "#")])
+    page("characters-playthrough.html", "Playthrough", "characters.playthrough", body, helpd, journey=True)
 
 
 # ---------------------------------------------------------------- Characters › Named NPCs (IA v2 §5.1)
@@ -888,28 +955,24 @@ def named_page():
               + entry("Idrel", "Ferry-warden · here now", '<span class="tag moss">Here</span>', cur=True)
               + entry("Wenna", "Met once")
               + '</ul><p class="group">Not met</p><ul>'
-              + entry("The hooded pilgrim", "Allowances only", unmet=True)
-              + entry("The masked duellist", "Allowances only", unmet=True)
-              + entry("The old cartographer", "Allowances only", unmet=True)
-              + entry("The quiet smith", "Allowances only", unmet=True)
+              + entry("The hooded pilgrim", "A traveller in a deep hood", unmet=True)
+              + entry("The masked duellist", "A fighter behind a mask", unmet=True)
+              + entry("The old cartographer", "Draws maps for coin", unmet=True)
+              + entry("The quiet smith", "Works a forge in silence", unmet=True)
               + '</ul><p class="group">Seen</p><ul>'
               + entry("Old Tamsin", "Seen once", '<span class="tag glint" title="No voice source for this NPC in v1">No lines</span>')
               + "</ul></div>")
 
-    who = card("Who they are", '<p class="prose">Keeps the rope ferry across the slow river below the downs, and has kept it longer than most of the bridges have stood. '
-               'Wary of strangers who come after dark; generous with anyone who lends a hand with the rope.</p>', collapsible=False)
-    now = card("Now", '<p class="statewords"><span class="c-moss">Here</span><span class="sep">·</span><span>calm</span><span class="sep">·</span>'
-               '<span>thinks well of you</span><span class="tag gold">Speaking</span></p>'
-               '<dl class="kv notes"><dt>Met</dt><dd>3 times</dd><dt>First met</dt><dd>at the ferry crossing</dd><dt>Last spoke</dt><dd class="mono">4:12</dd></dl>',
-               collapsible=False)
+    who = card("General profile", '<p class="prose">Keeps the rope ferry across the slow river below the downs, and has kept it longer than most of the bridges have stood. '
+               'Wary of strangers who come after dark; generous with anyone who lends a hand with the rope.</p>',
+               desc="What a first meeting shows. The same in every playthrough.", collapsible=False)
     news = card("Their way with news", '<p class="prose">Passes on what they hear to people they trust, and asks after the road in return.</p>'
                 '<p class="tags"><span class="pill gold">Shares with friends</span></p>', collapsible=False)
-    heard = card("Has heard of", f"""<ul class="heard">
-<li><span class="wl">The ferry road is open again after the spring floods.</span><span class="pill moss">certain</span></li>
-<li><span class="wl">Wolves have come down from the high moor.</span><span class="pill gold">likely</span></li>
-</ul><p class="note notes">{ic("info", "ic sm")}Only changes that hold in your world, and only what they have heard. What lies ahead in their story is never shown.</p>""",
-                 collapsible=False)
-    profile = f'<div class="two-col">{who}{now}{news}{heard}</div>'
+    onj = card("On this journey", '<p class="statewords"><span class="c-moss">Here now</span><span class="sep">·</span>'
+               '<span>thinks well of you</span><span class="sep">·</span><span>met 3 times</span></p>'
+               f'<div class="toolbar notes"><a class="btn secondary sm" href="characters-playthrough.html">Open in Playthrough{ic("out", "ic sm")}</a></div>',
+               collapsible=False)
+    profile = f'<div class="two-col">{who}{news}{onj}</div>'
 
     allow = f"""<div class="card"><div class="dgroup"><span class="t-eyebrow">Speech</span>
 {arow("Dialogue", f"On, from {src('named')}")}{arow("Voice", f"On, from {src('named')}", badge=avail("v15", "Takes effect in v1.5"))}</div>
@@ -922,22 +985,24 @@ def named_page():
 {arow("Idle remarks", f"On, from {src('named')}")}{arow("Saw a kill", f"On, from {src('named')}")}</div>
 <p class="note notes">{ic("info", "ic sm")}<span>These rows are shortcuts: {lives("Characters › NPC types", "characters-types.html")}. Cooldowns are the same for everyone and live in Behaviour › Reactions.</span></p></div>"""
     head = (f'<div class="npc-head">{monogram("I", "monogram lg")}<div class="grow"><h2 class="t-display-lg">Idrel</h2>'
-            '<p class="sub t-ui">Ferry-warden · met 3 times · first met at the ferry crossing</p></div>'
+            '<p class="sub t-ui">Ferry-warden</p></div>'
+            f'<a class="btn secondary sm" href="characters-playthrough.html">Playthrough{ic("out", "ic sm")}</a>'
             f'<a class="btn secondary sm" href="history-memories.html">Memories{ic("out", "ic sm")}</a>'
             f'<a class="btn secondary sm" href="#" data-mock="absent">Conversations{ic("out", "ic sm")}</a></div>')
     detail = (f'<div class="stack">{head}'
               + tabs("Idrel", [("profile", "Profile", None), ("allowances", "Allowances", None), ("reactions", "Reactions", 2)],
                      {"profile": profile, "allowances": allow, "reactions": reac}) + "</div>")
-    body = (header("Named NPCs", "The named characters EldenNet voices: who they are, how they are now, and what each may do.")
+    body = (header("Named NPCs", "Every named character EldenNet voices: who they appear to be, and what each may do. How they are on this journey is on Playthrough.")
             + f'<div class="md roster-left">{roster}<div>{detail}</div></div>'
-            + related([("Memories", "What Idrel remembers of you.", "history-memories.html"),
+            + related([("Playthrough", "How Idrel is on this journey.", "characters-playthrough.html"),
+                       ("Memories", "What Idrel remembers of you.", "history-memories.html"),
                        ("Conversations", "Every conversation with Idrel, as it was shown.", "#"),
                        ("NPC types", "Where every allowance lives.", "characters-types.html")]))
-    helpd = help_dialog("Named NPCs", "The named characters EldenNet voices. Before you meet one, only their allowances are shown, under the name the game uses before it tells you theirs.",
+    helpd = help_dialog("Named NPCs", "Every named character is listed from the start with what a first meeting would tell you, under the name the game uses before it tells you theirs. How they are on this journey is on Playthrough.",
                         ["Pick a name at the left.",
-                         "Profile shows who they are, how they are now and what they have heard.",
+                         "Profile shows who they appear to be and their way with news; for someone you have met, a line links to Playthrough.",
                          "Allowances and Reactions are shortcuts to this NPC’s rows in NPC types; cooldowns live in Behaviour › Reactions."],
-                        [("History › Memories", "history-memories.html"), ("NPC types", "characters-types.html")])
+                        [("Playthrough", "characters-playthrough.html"), ("History › Memories", "history-memories.html"), ("NPC types", "characters-types.html")])
     page("characters-named.html", "Named NPCs", "characters.named", body, helpd, journey=True)
 
 
@@ -1147,6 +1212,7 @@ home()
 providers()
 models()
 types_page()
+playthrough_page()
 named_page()
 memories()
 speaking()

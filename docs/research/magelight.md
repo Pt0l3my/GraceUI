@@ -599,7 +599,8 @@ Ultralight only.
       core does all model and network work.
     - Do not reuse a localhost web app in game with network permissions. SkyrimNet's dashboard needed loopback
       plus any host to run on Magelight (CL:1340-1358). That is the trade a native bridge avoids.
-    - The browser host binds 127.0.0.1 only, with a token and Host/Origin checks (GraceUI DESIGN §7).
+    - The browser host binds 127.0.0.1 only, with Host/Origin checks and, since the owner's G4 answer, a session
+      cookie in place of the token (GraceUI DESIGN §7).
     - Settings live in EldenNet's `settings.toml` (ARCH §11.5), never in page storage. Without an explicit cache
       path, WebKit writes page storage under the game folder (CL:734-736).
 25. **[any] Privacy in logs.** Page console lines go to the log at warning and error level only, scrubbed, cut at a
@@ -609,7 +610,8 @@ Ultralight only.
 27. **[any] Versioning.** The hello names the bridge protocol version and a capability list. EldenNet checks the UI
     bundle's version. A mismatch shows a "needs updating" page, never a crash (CL:729; `S:views/gate/`). If GraceUI
     is linked into EldenNet's DLL (GraceUI DESIGN G2), there is no separate file pair for a mod manager to mix (`S:docs/
-    DISTRIBUTION.md:48-63`).
+    DISTRIBUTION.md:48-63`). The owner chose otherwise (G2, 2026-11-07: GraceUI is a mod of its own), so GraceUI
+    DESIGN §2.7 and §2.9 carry the version file and the mismatch handling this lesson describes.
 28. **[any] Testing.**
     - The harness against a fake EldenNet (GraceUI DESIGN §9).
     - If HTML runs in game, a desktop harness that runs the in-game renderer in a window, compared with a browser
@@ -640,14 +642,16 @@ Ultralight only.
 - **G2, library or host.** Being a host for other mods cost Magelight a C ABI with append-only discipline and a CI
   checker, a per-mod registry, UI-mode ownership (busy, denied, queue, cancel, reclaim), a sandbox and storage
   jars per mod, version gates and two-copies handling (§3.15, §3.16). That favours **linking GraceUI into
-  EldenNet's DLL in v1**, with the bridge as the seam that could later become a host API.
+  EldenNet's DLL in v1**, with the bridge as the seam that could later become a host API. *The owner decided G2 on
+  2026-11-07: a standalone mod, bundled with each EldenNet release and updated by file (GraceUI DESIGN §2.7, §2.9;
+  G10 for the overlay).*
 - **G3, the UI framework.** WebKit 615 needs es2022 bundles, `base './'`, no `crossorigin`, and no module-preload
   polyfill under a strict CSP (INV 8; CL:703-717; Magelight's Vite plugin). React runs well in Ultralight (a large
   SeverActions frontend; `S:examples/Magelight.ReactConfig/`). If GraceUI renders HTML in game, parse cost on
   first load matters more than bundle size, which favours a small framework.
 - **G4, the browser dashboard.** Magelight moved from network-on to **network off by default, opt-in and logged**
   before 1.0, because tightening later would break users (CL:1137-1160). That supports an **opt-in** browser
-  dashboard.
+  dashboard. *The owner decided G4 on 2026-11-07: always on, as SkyrimNet's dashboard is (GraceUI DESIGN §7.2).*
 
 ## 8. Gaps and unverified points
 

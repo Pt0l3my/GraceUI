@@ -281,7 +281,7 @@ into sections; the right column shows the chosen section's rows [P060809] [R]. T
 | Diaries & Memories | Dynamic bios; diary generation; memory; memory filter | Profile updates (which blocks, how much context); diary length and timing; background memory work, retrieval counts, the embedding model, segmentation, scoring weights, re-indexing threads | [P061205] [P061219] [R] |
 | Records | Items; spells; furniture names | Renaming nearby game records | [R] |
 | Plugins | One section per installed add-on | Each add-on's own settings, in the same row kinds | [P061239] |
-| Dashboard | Customisation; web server | The dashboard's language, opening on the character under the crosshair, theme presets and custom themes; the web server (on, host, port, a legacy port) | [P06123d9] [R] |
+| Dashboard | Customisation; web server | The dashboard's language, opening on the character under the crosshair, theme presets and custom themes; the web server (on; host, 127.0.0.1 by default; port, 8080 by default; a legacy browser UI port, 8081) | [P06123d9] [R] |
 | Developer | Analytics; systems; tool server; assistant | Log levels and counts, trace retention, template tracing; queues and time-outs; the tool server for outside assistants (on, host, port); the agents' limits | [R] |
 
 Settings links out to some sidebar pages with outward arrows (providers, models, speech, listening, songs), and some
@@ -404,7 +404,7 @@ entry. **Never** = against a rule. GraceUI DESIGN §4.11 is binding; the codes a
 | Dialogue, memory and speech text filters | **Not planned** (EldenNet's sanitiser and lint are fixed; the safety level) | NPC §8 |
 | Records | **Never** | Names come from the player's install at run time |
 | Plugins (add-on sections) | **Not planned** in v1; Content packs lists content layers only | No add-on API (DESIGN §13) |
-| Dashboard: web server | **Adapt**: Settings › Browser view (loopback, token, off by default) | G4, D31 |
+| Dashboard: web server | **Adapt**: Settings › Browser view (always on as SkyrimNet's; loopback with a session cookie; other devices only once switched on and paired) | G4, G9, D58–D60 |
 | Developer: log level, traces | **Take**: Settings › Developer | — |
 | Developer: tool server, agents, analytics | **Not planned** | SN01 §14.3 |
 

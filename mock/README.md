@@ -14,18 +14,19 @@ Open `index.html` in any browser. No server is needed and nothing is fetched fro
 
 | File | Page | What it shows |
 |---|---|---|
-| `index.html` | **Home** | Header actions Pause AI, Run self-test and Customise. **Setup** (collapsible, full width): Model (provider and key status, preset, Test with its verdict), Voice and Microphone (both "arrives in v1.5", with a link). A grid of cards: **Status** (state word, "you can talk now", one dot per model slot, version, game build, session time), **Nearby** (perceived characters, state words, wounds in words, a met NPC's disposition, one veiled character), **Happening now** (short-lived events with a time-left bar), **Problems** (one warning with its fix and a link), **Lines** (displayed lines and conversation notices), **Recent events** (perceived events in our words, with a family pill), **Model calls** (slot, purpose, speaker, model, timings, outcome, in AI › Requests' words; this hour's own-initiative calls against the bound). Cards are placed in this order with no packing, so the visual order and the focus order agree |
+| `index.html` | **Home** | Header actions Pause AI, Run self-test and Customise. **Setup** (collapsible, full width): Model (provider and key status, preset, Test with its verdict), Voice and Microphone (both "arrives in v1.5", with a link). A grid of cards: **Status** (state word, "you can talk now", one dot per model slot, version, game build, session time, the dashboard's address), **Nearby** (perceived characters, state words, wounds in words, a met NPC's disposition, one veiled character), **Happening now** (short-lived events with a time-left bar), **Problems** (one warning with its fix and a link), **Lines** (displayed lines and conversation notices), **Recent events** (perceived events in our words, with a family pill), **Model calls** (slot, purpose, speaker, model, timings, outcome, in AI › Requests' words; this hour's own-initiative calls against the bound). Cards are placed in this order with no packing, so the visual order and the focus order agree |
 | `ai-providers.html` | **AI › Providers** | Tabs Providers and Health. The advised preset with "Use this"; one card per provider (cloud or local and its flavour, address, a write-only key with its status in a masked text field, requests at once with its default, JSON answers as Off · Object · Schema, Advanced); the local servers found; Health per provider with its error class in words |
-| `ai-models.html` | **AI › Models** | Preset select with Apply and Reset to preset; advice for this machine with the free-model warning; a notice for a slot that differs from the preset; one card per job slot (Conversation, Quick lines, Prepared lines, Memory, Self-test) with provider, model, fallback, health and the fixed budgets; prepared-line batches and "Prepare lines now"; Decisions as a dimmed "later" card |
-| `characters-types.html` | **Characters › NPC types** | Search, the "Show types I haven't met (may spoil)" switch (off, G5's recommended default), Reset page and kind chips; the master table in EldenNet DESIGN §7.6's order (each kind's own row, such as "Named, every NPC", followed by its slots or types; boss, invader and mount, whose only type is the kind, one row each; then the locked Unknown row); the chosen type's allowances as tri-states with the inherited value and its source, linked to the source's own row, availability badges, changed lozenges with reset, and Acts locked "later version" |
-| `characters-named.html` | **Characters › Named NPCs** | A roster (Met, Not met by pre-reveal name, Seen with "no lines"), then one NPC with tabs **Profile** (who they are, now, their way with news, has heard of), **Allowances** and **Reactions** (the slot's tri-states, shortcuts into NPC types marked "lives in …", each inherited source linked to the Named kind's row; no cooldowns: those are the same for everyone and live on Behaviour › Reactions). The journey selector shows in the top bar |
+| `ai-models.html` | **AI › Models** | Preset select with Apply and Reset to preset; advice for this machine with the free-model warning; a notice for a slot that differs from the preset; one card per job slot (Conversation, Quick lines, Prepared lines, Memory, Self-test) with provider, model, fallback, health and the fixed budgets; prepared-line batches and "Prepare lines now"; Decisions as a dimmed card tagged "WIP" (G7) |
+| `characters-types.html` | **Characters › NPC types** | Search (no "may spoil" switch: every type is listed from the start, G5), Reset page and kind chips; the master table in EldenNet DESIGN §7.6's order (each kind's own row, such as "Named, every NPC", followed by its slots or types; boss, invader and mount, whose only type is the kind, one row each; then the locked Unknown row); the chosen type's allowances as tri-states with the inherited value and its source, linked to the source's own row, availability badges, changed lozenges with reset, and Acts locked "later version" |
+| `characters-named.html` | **Characters › Named NPCs** | A roster (Met; Not met, by first-meeting name with a short first-meeting description; Seen with "no lines"), then one NPC with tabs **Profile** (the general profile, their way with news, a line linking to Playthrough), **Allowances** and **Reactions** (the slot's tri-states, shortcuts into NPC types marked "lives in …", each inherited source linked to the Named kind's row; no cooldowns: those are the same for everyone and live on Behaviour › Reactions). The journey selector shows in the top bar |
+| `characters-playthrough.html` | **Characters › Playthrough** | Tiles (people met, stories seen, spoken with this session); World now; filters (names, status, region, sort); the people met with status and last met, their story as last seen and, on screens 1600 px wide and more, the first "since you last spoke" note; the chosen NPC's status, story, related story, what they have heard and notes, with links to the general profile and Memories (G5, G8) |
 | `history-memories.html` | **History › Memories** | The page switch "Named NPCs remember"; tiles (NPCs met, keepsakes, memory work waiting); filters (NPC, basis, sort, direction; no free-text search, D21); the chosen NPC's journal card with the facts EldenNet counts, in words; Forget Idrel and Forget this journey at the right in red; the keepsake table (when, NPC, keepsake, weight in number and word, basis, about, and the one protected keepsake); memory work and backups (no paths); "Diaries and scene memories: later version" |
 | `behaviour-speaking.html` | **Behaviour › Speaking up** | Who speaks unasked; greetings; quest business with a readiness word per met named NPC; news; between NPCs; autonomy with its period and bound; calm remarks. Reaction rows are shortcuts marked "lives in Behaviour › Reactions", drawn as there (a switch and a cooldown slider at EldenNet's defaults); talk per window and the overheard-lines range are shortcuts to Pacing |
 | `behaviour-pacing.html` | **Behaviour › Pacing** | Presets Quiet, Default and Lively; "What this means" in words; Gaps, Window and Reach as full-width sliders with the value in gold and the default in the help line |
-| `voice-tts.html` | **Voice › Text-to-speech** (v1.5) | A statement page with no controls (G7's recommended option): what v1.5 adds, what never comes, and a read-only summary of each kind's voice allowance linking to NPC types |
+| `voice-tts.html` | **Voice › Text-to-speech** (WIP: v1.5) | A statement page with no controls (G7): what v1.5 adds, what never comes, and a read-only summary of each kind's voice allowance linking to NPC types |
 
 Every other sidebar entry is a placeholder ("Not in this mock" on hover). Later-version entries (Director, Speech-to-
-text, Acts) are dimmed with a "v1.5" or "later" tag.
+text, Acts) are dimmed with a "WIP" tag whose tooltip says when (G7).
 
 Review states can be opened by hash: `index.html#quick` (the quick switches), `#theme`, `#live`, `#help` (the help
 dialog of any page), `#collapsed` (the icon-only sidebar), `ai-providers.html#health`,
@@ -41,9 +42,10 @@ or button art are used. The state is early game: one region, two named NPCs met,
 
 The mock follows the spoiler and privacy rules (DESIGN §4.8, §4.9): only what the player has reached is shown or
 counted; absence is silent; the veiled look appears only for a perceived character whose name the game has not shown;
-cards and creature families are listed once seen; no quest stage, track or story step appears anywhere, and quest
-business shows a readiness word only. A provider's address appears on AI › Providers only; keys are write-only. Chat
-and model text appear only on Home's Lines and on Memories (Model calls shows no text in this mock).
+every type and every named NPC's general profile is listed from the start in first-meeting words (G5, G8); story
+lines appear only on Playthrough, for the stage the player last saw; quest business shows a readiness word only. A
+provider's address appears on AI › Providers only; keys are write-only. Chat and model text appear only on Home's
+Lines and on Memories (Model calls shows no text in this mock).
 
 ## Fonts
 
@@ -88,7 +90,7 @@ capitals to stand in for Cinzel's look.
 
 The in-game ImGui drawing (G1), pad glyphs and pad mode, Grace Clear, the plain-text option, search results,
 confirmations, the stale state, the title-screen and inactive states, First light, the Customise drawer, the
-browser-only Workshop, and every page other than these nine.
+browser-only Workshop, and every page other than these ten.
 
 ## Licence
 

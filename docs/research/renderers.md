@@ -445,10 +445,12 @@ a 2026 note describes the same class against a local model backend
 [search].
 
 1. **Off by default; opt-in.** GraceUI DESIGN G4 recommends this: the player turns the dashboard on in the in-game menu.
-   Magelight moved network access to opt-in before 1.0 because tightening later breaks users (ML §7).
+   Magelight moved network access to opt-in before 1.0 because tightening later breaks users (ML §7). *The owner
+   decided otherwise on 2026-11-07: always on (GraceUI DESIGN G4).*
 2. **Bind 127.0.0.1 only** (and `::1` if offered), never `0.0.0.0`, no remote option in v1. A configurable port with
    a fixed default; if the port is taken, fail closed with one toast and a log line, never fall back to another
-   interface. Stop the server when the game exits.
+   interface. Stop the server when the game exits. *The owner's G9 (2026-11-07) adds a home-network switch, off by
+   default, with pairing (GraceUI DESIGN §7.2 item 16); never `0.0.0.0` still holds.*
 3. **A per-session token.** 256 bits from the OS random source, new at every game start, never written to disk or
    logs, compared in constant time.
    - Hand it over in the URL **fragment** (`http://127.0.0.1:PORT/#t=...`), which browsers do not send to the
@@ -458,6 +460,8 @@ a 2026 note describes the same class against a local model backend
      so authenticate the socket with a short-lived one-time ticket fetched over an authenticated POST, or a first
      message within 2 s; never in the WebSocket URL's query string, which ends up in history and logs.
    - Other local processes can reach 127.0.0.1; the token is what keeps them out.
+     - *GraceUI DESIGN later replaced the token with a session cookie (D60, after G4); its §7.1 says what does and
+       does not stop other local programs.*
 4. **Host check (DNS rebinding).** Accept a request only if `Host` is exactly `127.0.0.1:PORT`, `localhost:PORT` or
    `[::1]:PORT`; answer anything else with 403 or 421 before any routing
    ([NCC: preventing DNS rebinding](https://github.com/nccgroup/singularity/wiki/Preventing-DNS-Rebinding-Attacks),
@@ -472,7 +476,8 @@ a 2026 note describes the same class against a local model backend
    `same-origin` ([Fetch Metadata](https://web.dev/articles/fetch-metadata);
    [OWASP CSRF cheat sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)).
 7. **No ambient credentials.** No cookies, so a cross-site form has nothing to ride on. If a cookie is ever needed:
-   host-only, `HttpOnly`, `SameSite=Strict`, plus the header token.
+   host-only, `HttpOnly`, `SameSite=Strict`, plus the header token. *GraceUI DESIGN D60 uses such a cookie, with the
+   Origin and Fetch Metadata checks in place of a header token.*
 8. **Request shape.** Static files by GET only. API calls by POST with `Content-Type: application/json` (a plain HTML
    form cannot send it), a size cap, a schema check and a protocol version. No CORS headers at all, so cross-origin
    reads fail; never answer a Private Network Access or Local Network Access preflight positively.

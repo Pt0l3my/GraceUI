@@ -14,8 +14,8 @@ repository.
 
 ## Citation conventions
 
-- **GraceUI's own design** is cited as "GraceUI DESIGN §n" in these notes, and its Open rows and decisions as G1–G8 and
-  D1–D50.
+- **GraceUI's own design** is cited as "GraceUI DESIGN §n" in these notes, and its Open rows and decisions as G1–G10 and
+  D1–D66.
 - **EldenNet's documents** are cited by EldenNet's own codes: DESIGN (its master design), ARCH (architecture), NPC
   (NPCs and dialogue), MEM (memory and knowledge), and research codes such as ER02 and SN01. They live in the EldenNet
   repository, under `docs/design/` and `docs/research/`, and are read there with its `wp` tool. Its spikes (S0–S10),

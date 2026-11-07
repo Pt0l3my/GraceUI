@@ -4,6 +4,10 @@ Input for the next GraceUI design pass; not yet applied to docs/DESIGN.md. Sourc
 (commit 588f083 on EldenNet's design/v1-proposal). The owner decided EldenNet O43 on 2026-11-07, which puts
 the editor in v1, at EldenNet v0.6 with the other settings pages, in both views. G = docs/DESIGN.md.
 
+Its `G:` line numbers refer to DESIGN.md at commit a69b818; recording G2 and G4–G9 moved them. Under G8, Named NPCs'
+Profile tab now shows the general profile for every character, met or not, so anything added to it (such as
+`subjects`) must hold at a first meeting.
+
 ## 1. Decisions GraceUI must revisit (record in G §12 or §13, with EldenNet O43 as the reason)
 
 | GraceUI rule | Today | Needed |
@@ -27,7 +31,7 @@ the editor in v1, at EldenNet v0.6 with the other settings pages, in both views.
   holders once their bar showed, invaders once they engaged), by runtime name; search by runtime name only (SP9). When a
   `named:<param>` slot with allowances becomes a profile, GraceUI shows that its allowances moved to the new slot
   (EldenNet copies them).
-- **AI › Director (later)** (G:921–924): reword the statement: "A later version may break a long silence by handing an NPC
+- **AI › Director (WIP)** (G:921–924): reword the statement: "A later version may break a long silence by handing an NPC
   near you one of the subjects it likes to talk about." Our words; no other framework's name.
 
 ## 3. Fields per form (caps from EldenNet's `profiles` description topic, never hard-coded)
