@@ -8,8 +8,8 @@ depends on GraceUI; GraceUI never depends on EldenNet.
 
 **Scope, widened by the owner (G14, 2026-11-08).** GraceUI is to be a UI framework that other modders can use, as
 Magelight UI and PrismaUI are for Skyrim; EldenNet requires it as a dependency and always ships with it, and EldenNet's
-menu and dashboard become its first user. What this changes is being worked out in a proposal and put to the owner as
-G15 onwards; until then the decided design below stands.
+menu and dashboard become its first user. What this changes is in [proposal 0001](docs/proposals/0001-ui-framework.md),
+put to the owner as G15–G20 (Open); until they are answered, the decided design below stands.
 
 - The design is [docs/DESIGN.md](docs/DESIGN.md); the evidence is in [docs/research/](docs/research/README.md); what
   EldenNet must change is in [docs/eldennet-changes.md](docs/eldennet-changes.md).

@@ -31,7 +31,8 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 - **2026-11-08.** G13 (an interactive showcase of the menu: wait for Min's blueprint; later the same day, it is
   EldenNet's). G14 (GraceUI's scope: a UI framework other modders can use; its consequences to be put as G15
   onwards).
-- **Open.** None, until the framework proposal puts its questions.
+- **2026-11-08.** G15–G20 put to the owner with proposal 0001 (GraceUI as a UI framework for any mod).
+- **Open.** G15–G20.
 
 ## G1
 
@@ -204,3 +205,75 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 **Follows from.** G3, G4, G9, G10, G13.
 
 **Amends.** G11 (GraceUI as EldenNet's menu and dashboard): GraceUI becomes a framework for any mod, and EldenNet's menu and dashboard become its first user.
+
+## G15
+
+**Who owns the one overlay** · *Open since 2026-11-08*
+
+**Question.** Now that GraceUI is a framework other mods can use (G14), which module owns the one hudhook overlay, its MinHook, the Present hook and the input hooks? **(a) GraceUI** (recommended): they move from EldenNet into `graceui.dll`, with every rule of EldenNet's O25; EldenNet draws its subtitles, chat box, call-outs, labels, toasts, banner and F11 view through GraceUI like any mod, and links no hook library. **(b) EldenNet, as G10 decided**: GraceUI keeps drawing through EldenNet's overlay, and other mods can use GraceUI only while EldenNet is loaded and active, through a host API EldenNet grows later. **In plain words:** Only one copy of the overlay library GraceUI and EldenNet use can run safely in the game. Should that copy be GraceUI's, so any mod can use it on its own, or stay EldenNet's, so GraceUI only works for other mods while EldenNet runs?
+
+**Recommendation.** (a). One process holds one hudhook and one MinHook safely, and every shared host that works in this game is one module that others call (FW F1, F2); a framework other modders use cannot depend on an AI mod that starts offline through its own launcher; your words "EldenNet will require it" then hold literally; nothing is built, so moving now costs a design pass, while moving later would rewrite EldenNet's surfaces twice. *What (a) gives up:* G10's isolation (a fault in GraceUI's host stops EldenNet's subtitles and chat as well as the menu); EldenNet cannot show anything, not even its banner, without GraceUI, so its launcher checks GraceUI first; the hook code ships in the releases players replace by hand; GraceUI's first increment must be ready for EldenNet v0.1.
+
+**What each answer changes.** (a) amends G10 and EldenNet O25 (the pin and its rules move to GraceUI; both CLAUDE.md files change), rewrites invariant 16 as "one host, one hook set", replaces invariant 15's "EldenNet keeps playing" and amends G2's "keeps playing whatever it finds" (D88); DESIGN §2, §3.16, §5 and §8 are rewritten around the host; D69 to D72, D77, D86 and D88 apply; §5 of this proposal's items 1 to 7 and 12 go to eldennet-changes; GraceUI gains a 0.1 Host increment with EldenNet v0.1. (b) keeps G10, O25 and invariants 15 and 16 as they are; the framework is limited to EldenNet's presence; G17's recommendation becomes (b).
+
+**Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
+
+## G16
+
+**What other mods write, and what draws it in game** · *Open since 2026-11-08*
+
+**Question.** What does a mod that uses GraceUI provide? **(a) Page data and panels** (recommended): its pages and settings described as data in GraceUI's components (drawn in game with the Grace theme and, if it opts in, in the browser), topics and commands in the bridge protocol, and, for anything else, in-game panels it draws itself as checked vertex lists, with GraceUI's drawing kit or its own headless Dear ImGui with the default vertex layout and 16-bit indices (checked in 1.89.2 and 1.92.6; other builds convert before submitting, and the checker refuses anything else); no HTML in game. **(b) Page data only**: no panels for other mods (EldenNet's own surfaces still use them). **(c) HTML pages in game**, as Magelight UI and PrismaUI offer: this reopens G1 and needs a hudhook patch (an O25 change), Ultralight's licence and about 57 MB, or another engine. **In plain words:** Magelight and PrismaUI let modders write web pages. GraceUI would instead let them describe their pages as data, which GraceUI draws in the game's style and in the browser, plus panels they draw themselves. Is that the right offer, or should mods get web pages in game?
+
+**Recommendation.** (a). G1's reasons apply to every mod: the pinned hudhook cannot update an image without leaking memory and stalling the frame (REN §2.1). Page data shows in both views from one source and keeps other mods' code out of the browser; panels let a mod draw anything without sharing ImGui's internals, which differ between versions (FW §4); EldenNet needs panels anyway. *What (a) gives up:* modders cannot bring HTML, CSS or React; pages are limited to GraceUI's components; panels show only in game; pictures are static, so no video or live images.
+
+**What each answer changes.** (a): D75 and D76 apply; G1 extends to every mod unchanged. (b): D76 serves EldenNet only and the guide drops panels; mods with needs beyond the vocabulary cannot use GraceUI. (c): G1 is reopened with its three approvals (licence, hudhook patch, size), invariant 11 and REN §2's findings are revisited, and S4 gains an HTML spike.
+
+**Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
+
+## G17
+
+**The browser view: a GraceUI feature for every mod?** · *Open since 2026-11-08*
+
+**Question.** The browser dashboard (G4, G9) shows the same pages as the menu. Who serves it? **(a) GraceUI, for every mod that opts in** (recommended if G15 is (a)): the local server and the web app move into `graceui.dll` with every rule of §7.2 and pairing; EldenNet's dashboard is its space there, always on as G4 decided. **(b) EldenNet, for its own pages only** (recommended if G15 is (b)): GraceUI keeps the web app and the server as a kit that EldenNet runs, as designed now; other mods have no browser view. **(c) EldenNet's own web app**: GraceUI is in game only, and the browser dashboard, G3, G4 and G9 move to EldenNet. **In plain words:** Should the "open it in your browser" dashboard be something GraceUI offers any mod, or stay EldenNet's alone?
+
+**Recommendation.** (a), given G15 (a). One hub: each mod publishes once and both views show it, from one page source; no other Elden Ring host offers a browser view (FW F7). Your words ("a UI that is capable to present EldenNet in-game", "like Magelight or prismaUI") put the game first, and (a) keeps that: the browser shows a mod's pages only when the mod asks. (c) would write every component twice, in two repositories (G14's recommendation). The study behind this proposal leaned the other way, towards (b), for your in-game words and no framework-wide port; this recommendation weighs the one hub higher. *What (a) gives up:* `graceui.dll` opens a network port on the PC and runs threads, and a mod's command bug becomes reachable from the browser as it is from the game. (b) keeps, even with G15 (a), a `graceui.dll` that opens no socket, and G4's port as EldenNet's alone behind its gate; other mods' authors still get a browser test bench under either answer (`grace-dev`, D85).
+
+**What each answer changes.** (a): G4, G9, D58 to D60 and D66 move with the server to GraceUI, and D61 stays EldenNet's, with its pages (D82); invariant 4 is GraceUI's server; D81 applies, with §7.2 item 1's gate clause kept as §4.9 of this proposal's four rules; §5 of this proposal's item 7 goes to eldennet-changes. (b): the server stays in EldenNet as designed (eldennet-changes §3 unchanged), and other mods' pages are in game only. (c): the web app, G3, G4 and G9 move to EldenNet, invariants 4 to 6 and 12 become EldenNet's, and the components are written in both repositories.
+
+**Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
+
+## G18
+
+**When the framework opens to other modders** · *Open since 2026-11-08*
+
+**Question.** **(a) After EldenNet v1.0, as GraceUI 1.1** (recommended): the ABI is designed now, EldenNet uses it from GraceUI 0.1, an example mod of ours exercises it in CI, and the guide, the examples and a frozen ABI 1 are published with 1.1. **(b) With GraceUI 1.0**, at EldenNet v1.0. **(c) Early**, as a preview marked unstable from GraceUI 0.2. **In plain words:** Should other modders get GraceUI only once EldenNet 1.0 is out, at the same time, or as early as possible with a warning that it may change?
+
+**Recommendation.** (a). EldenNet v1 is to be "deliberately minimal and stable"; a public ABI is a promise kept for years, and it is better frozen after a real user has driven it through a full release; Magelight broke its API twice before its first public release, in 0.29.0 and 0.30.0 (Magelight `CHANGELOG.md:1135-1210`, `:1290`, via the Skyrizz session, 2026-11-08). *What (a) gives up:* other modders wait about one release, and early feedback from them is lost.
+
+**What each answer changes.** (a): §6's 1.1 Open row; the guide and examples after v1.0. (b): those move into 1.0's exit checks. (c): a preview label, a changelog of breaking changes and support questions from 0.2; the ABI's freeze waits for 1.0 either way.
+
+**Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
+
+## G19
+
+**SkyrimNet-derived material and other mods** · *Open since 2026-11-08*
+
+**Question.** G12 lets GraceUI use SkyrimNet's code, dashboard and styling, as Min approved for building on SkyrimNet. If GraceUI is a framework, anything SkyrimNet-derived in it reaches every mod and player that uses it. **(a) Not until confirmed** (recommended): GraceUI keeps to its own code and the Grace theme; whatever is adopted from Min's blueprint for EldenNet's pages lives in EldenNet; once the blueprint arrives, you ask Min, if you wish, whether what GraceUI would adopt may be passed on through a public framework. **(b) Yes**: G12 covers GraceUI as a framework, credited as Min wishes. **In plain words:** Min agreed that EldenNet and GraceUI may build on SkyrimNet. Does that agreement also cover other people's mods getting SkyrimNet-derived parts through GraceUI?
+
+**Recommendation.** (a). G12 and EldenNet O53 record Min's approval for EldenNet's foundation; neither says whether it reaches third parties, and claiming more endorsement than Min has given is ruled out; GraceUI's look is our own anyway (D3). *What (a) gives up:* the question G13 will ask after the blueprint can place adopted parts only in EldenNet's pages, not in the shared components, so the web app may take longer.
+
+**What each answer changes.** (a): §3.17's last line is aligned with G12 by saying SkyrimNet-derived material stays out of GraceUI until confirmed; NOTICE stays free of SkyrimNet entries. (b): §3.17's line is replaced by G12's rule for GraceUI as a framework, and NOTICE carries SkyrimNet's credits and licences as Min wishes.
+
+**Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
+
+## G20
+
+**Where EldenNet's pages live** · *Open since 2026-11-08*
+
+**Question.** G14 leaves open which pages are EldenNet's own once GraceUI is a framework. EldenNet's menu and dashboard content (its categories, pages, settings description, help texts and Home cards), its fixtures, the spoiler, roster and Playthrough goldens, the spoiler rules SP1–SP9, EldenNet's halves of the privacy rules PV1–PV8 and DESIGN §4: **(a) In EldenNet's repository** (recommended), as content EldenNet ships and registers with GraceUI at start; GraceUI keeps the frame, the components, the theme, PV3, PV6 and PV7 as framework rules, and a demo space with invented content (D82). **(b) In GraceUI's repository**, as its first user's bundled pages, as designed now. **In plain words:** EldenNet's own pages, and the rules that keep them free of spoilers, could move to EldenNet, so that GraceUI holds only the parts every mod shares, or stay in GraceUI as now. Which should it be?
+
+**Recommendation.** (a). Your words "the interactive UI should be part of EldenNet and not GraceUI" (G13's later change); the spoiler rules are EldenNet's domain; a framework other modders use should not carry one user's content and its spoiler review. *What (a) gives up:* one repository for the whole information architecture; GraceUI's page lint and parity tests then run on EldenNet's pages in EldenNet's CI against a pinned GraceUI, and a change to a component and to EldenNet's pages can land in two repositories.
+
+**What each answer changes.** (a): D82 applies; DESIGN §4, SP1–SP9, EldenNet's halves of PV1–PV8, D61, its fixtures and goldens move to EldenNet in S7.8.c; invariants 1 and 2 take their framework form in GraceUI and their EldenNet form in EldenNet; §5 of this proposal's item 9 goes to eldennet-changes. (b): DESIGN §4, SP1–SP9, the goldens and invariants 1 and 2 stay in GraceUI as they are, beside the framework rules; GraceUI's release carries EldenNet's page data as a bundled space that EldenNet's `connect` activates, and the framework carries one user's content.
+
+**Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
