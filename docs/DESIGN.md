@@ -1,7 +1,7 @@
 # GraceUI: design
 
 **Status: proposal, 2026-11-07.** Nothing is built yet. The owner decided G1–G10 and G12
-([DECISIONS.md](DECISIONS.md), indexed in §12), and no question is Open; the decisions this design settles are in the
+([DECISIONS.md](DECISIONS.md), indexed in §12), and G13 is Open; the decisions this design settles are in the
 log (§13, D1–D68).
 
 GraceUI is EldenNet's main menu and dashboard: the place where a player sees whether EldenNet is working, who is
@@ -13,7 +13,7 @@ theme), and every page holds EldenNet's own features and settings, in Elden Ring
 
 **How to read the references.** "§n" is a section of this document. EldenNet's documents keep their own codes:
 "EldenNet DESIGN §n" (its master design), ARCH, NPC and MEM (its architecture, NPC and memory documents), its spikes
-S0–S10, success criteria C1–C14 and owner decisions O1–O54 (its `docs/DECISIONS.md`); GraceUI's own are G1–G12
+S0–S10, success criteria C1–C14 and owner decisions O1–O54 (its `docs/DECISIONS.md`); GraceUI's own are G1–G13
 ([DECISIONS.md](DECISIONS.md)). GraceUI's research notes are ML (Magelight UI), LOOK
 (the look and the Grace theme), IA (information architecture), REN (renderers) and SND (SkyrimNet's dashboard), in
 [research/](research/README.md).
@@ -2244,7 +2244,7 @@ a change to a page description or a component shows up in both views or fails CI
 
 ## 12. Decisions for the owner
 
-**Status: the owner decided G1–G10 and G12 on 2026-11-07, and made the request G11 records; no question is Open.**
+**Status: the owner decided G1–G10 and G12 on 2026-11-07, and made the request G11 records; G13 is Open.**
 Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record: the question as it was put, the
 options, the recommendation as written, what was decided, the owner's words and what each amends. This section is its
 index; each G-number the documents cite is a row here and an entry there. G11 and G12 were not questions of §12:
@@ -2268,6 +2268,7 @@ note, never by rewriting it.
 | [G10](DECISIONS.md#g10) | Which module owns the one overlay? | (b) EldenNet keeps it; `graceui.dll` hooks nothing | Decided 2026-11-07 |
 | [G11](DECISIONS.md#g11) | The owner's request that started GraceUI | A separate repository; SkyrimNet's layout; a look in SeverActions' spirit; an AI framework's categories | The owner's request, 2026-11-07 (§14) |
 | [G12](DECISIONS.md#g12) | SkyrimNet | Its code, dashboard and styling may be used and adapted, credited as Min wishes | Decided 2026-11-07 (CLAUDE.md) |
+| [G13](DECISIONS.md#g13) | How is an interactive showcase of the menu built? | Recommended: (a) from the page descriptions, in plain script, before any code base | **Open** |
 
 ---
 

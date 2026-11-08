@@ -8,7 +8,7 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 - **Ids.** An id is never renumbered or reused. G1–G10 are the questions DESIGN §12 put to the owner, in its order.
   G11 and G12 are owner decisions recorded outside §12's table (in DESIGN §14 and in CLAUDE.md); they take the next
-  ids.
+  ids. G13 onwards are later questions.
 - **An entry** gives the date and status, the question as it was put (with its options), what was decided, the
   owner's own words, and what it amends. The recommendation as it was written and its reasons stay inside the
   decision, under their own italic labels. A bare section sign (§2.9, §7.2) means a section of GraceUI's DESIGN.md;
@@ -28,7 +28,8 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
   pairing for other devices). G3 and G10 (Preact; the overlay stays in EldenNet), with the roster's widening by
   EldenNet's O43 as updated and O45. G12 (building on SkyrimNet). G1–G6 were put with the first proposal, G7 with
   the framework categories (D38), G8 after their review, and G9 and G10 with the owner's answers to G4 and G2.
-- **Open.** None.
+- **2026-11-08.** G13 put to the owner (an interactive showcase of the menu).
+- **Open.** G13.
 
 ## G1
 
@@ -169,3 +170,13 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 **Recorded in.** CLAUDE.md, Licences ("SkyrimNet (owner's decision, 2026-11-07, as in EldenNet's CLAUDE.md)"); EldenNet's `docs/DECISIONS.md`, O53, holds the full entry.
 
 **Supersedes.** For GraceUI, the sandbox-only study of SkyrimNet's dashboard (EldenNet O52): structure only, the bundle's source never read.
+
+## G13
+
+**An interactive showcase of the menu** · *Open since 2026-11-08*
+
+**Question.** The owner asked on 2026-11-08 for an interactive showcase of the menu, a page to click through in the browser like Skyrizz's, beside EldenNet's static showcase. How is it built? **Options:** (a) **From the page descriptions**: write GraceUI's page descriptions (§2.5) now as data, with a settings description in the shape EldenNet will export (D8) and invented sample data, and draw them with a small renderer of the shared components (§2.5) in plain script, into one self-contained page with GraceUI's fonts bundled (§3.4); tested in a headless browser (no request outside the page, every page at two widths, no script error, no name of the game's characters or places, the spoiler and privacy rules, contrast); published privately on claude.ai and opened from file, with no server. The page descriptions and the sample data carry over into GraceUI 0.1 whatever its code becomes; the renderer is replaced by the web app. (b) **The real web app now**: start GraceUI 0.1's browser app (Preact, TypeScript and signals with Vite, G3) against `grace-dev`'s fixtures, and publish its build as the showcase. Nothing to keep in step, but the code starts before Min's blueprint shows how much of SkyrimNet's dashboard GraceUI adopts (G12). (c) **The static mock made clickable by hand**, as Skyrizz's showcase is drawn. The quickest, but it drifts from the design wherever no test pins it.
+
+**Recommendation.** (a). It follows the Skyrizz session's advice of 2026-11-08 (one source for the pages, fonts bundled from the start, tests as plain pass and fail lines, one file per page), keeps §2.5's rule that the page descriptions are the one source of the pages, and commits no code base before the blueprint arrives. It would live in this repository (`showcase/`), linked from EldenNet's showcase; the static mock stays until the showcase covers its pages.
+
+**Follows from.** G3, G12; §2.5; DESIGN §10's GraceUI 0.1 (page descriptions, fixtures and the mock).

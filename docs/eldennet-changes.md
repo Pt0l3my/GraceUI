@@ -1,7 +1,7 @@
 # Changes EldenNet's design needs for GraceUI
 
 A short list for EldenNet's design (branch `design/v1-proposal`), from [GraceUI's design](DESIGN.md). EldenNet's codes
-(DESIGN, ARCH, NPC, MEM, ER02) refer to its documents; "GraceUI §n", G1–G12 and D1–D68 to GraceUI's. Nothing here is
+(DESIGN, ARCH, NPC, MEM, ER02) refer to its documents; "GraceUI §n", G1–G13 and D1–D68 to GraceUI's. Nothing here is
 changed in EldenNet yet, apart from the roster, which EldenNet's design now records (its O43 as updated, O45 and O46; §9
 item 1). Items marked **(G*n*)** come from that entry of GraceUI's [DECISIONS.md](DECISIONS.md) (indexed in GraceUI §12),
 every one of which the owner has decided (G3 and G10 on 2026-11-07, as recommended). All of it stays minimal: one overlay, read-only towards the game, no new thread.
