@@ -14,7 +14,7 @@ theme), and every page holds EldenNet's own features and settings, in Elden Ring
 
 **How to read the references.** "§n" is a section of this document. EldenNet's documents keep their own codes:
 "EldenNet DESIGN §n" (its master design), ARCH, NPC and MEM (its architecture, NPC and memory documents), its spikes
-S0–S10, success criteria C1–C14 and owner decisions O1–O54 (its `docs/DECISIONS.md`); GraceUI's own are G1–G14
+S0–S10, success criteria C1–C14 and owner decisions O1–O55 (its `docs/DECISIONS.md`); GraceUI's own are G1–G14
 ([DECISIONS.md](DECISIONS.md)). GraceUI's research notes are ML (Magelight UI), LOOK
 (the look and the Grace theme), IA (information architecture), REN (renderers) and SND (SkyrimNet's dashboard), in
 [research/](research/README.md).
