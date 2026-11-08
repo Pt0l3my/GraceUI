@@ -28,8 +28,10 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
   pairing for other devices). G3 and G10 (Preact; the overlay stays in EldenNet), with the roster's widening by
   EldenNet's O43 as updated and O45. G12 (building on SkyrimNet). G1–G6 were put with the first proposal, G7 with
   the framework categories (D38), G8 after their review, and G9 and G10 with the owner's answers to G4 and G2.
-- **2026-11-08.** G13 (an interactive showcase of the menu: wait for Min's blueprint).
-- **Open.** None.
+- **2026-11-08.** G13 (an interactive showcase of the menu: wait for Min's blueprint; later the same day, it is
+  EldenNet's). G14 (GraceUI's scope: a UI framework other modders can use; its consequences to be put as G15
+  onwards).
+- **Open.** None, until the framework proposal puts its questions.
 
 ## G1
 
@@ -184,3 +186,21 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 **Decision.** (d). The owner's answer: "Wait for blueprint". EldenNet's static showcase stays as it is; how the interactive showcase is built is asked again, as a new question, once Min's blueprint has arrived and what GraceUI adopts of SkyrimNet's dashboard is known (G12).
 
 **Follows from.** G3, G12; §2.5; DESIGN §10's GraceUI 0.1 (page descriptions, fixtures and the mock).
+
+**Later changes.** 2026-11-08, the same day: the owner decided that the interactive showcase is part of EldenNet, not GraceUI. The owner's words: "also, I intent to make GraceUI as a standalone just a UI that is capable to present EldenNet in-game, so the interactive UI should be part of EldenNet and not GraceUI." The recommendation's "in this repository (`showcase/`)" no longer applies; when the question is asked again after the blueprint, it is asked in EldenNet. What the same words mean for GraceUI's browser view is G14.
+
+## G14
+
+**GraceUI's scope: in game, and the browser view?** · *2026-11-08 · Decided by the owner (the scope); its consequences are open*
+
+**Question.** The owner said on 2026-11-08 that GraceUI is to be "a standalone just a UI that is capable to present EldenNet in-game" (G13's later change). GraceUI's design today has two views of one set of pages: the menu in game on F5, and the same pages in the player's browser at the dashboard's address while the game runs, served by EldenNet (G3, G4, G9; §2.1). Does the browser view stay part of GraceUI? **Options:** (a) **Both views stay in GraceUI**: GraceUI is the one UI that presents EldenNet, in game and in the browser while the game runs; showcases and demos with sample data are EldenNet's. (b) **In game only**: GraceUI draws only the in-game menu; the browser dashboard becomes EldenNet's own, with its own web app, and G3, G4 and G9 move to EldenNet. (c) **In game only, and no browser dashboard in v1.**
+
+**Recommendation.** (a). One set of page descriptions drives both views (§2.5, invariant 12), so splitting the views across two repositories would write every component twice in different places and let them drift; the server is already EldenNet's (`graceui.dll` opens no socket, G10), and GraceUI already depends on nothing of EldenNet.
+
+**As put to the owner.** "Does the browser view stay part of GraceUI?", with (a) "Both stay in GraceUI (Recommended)", (b) "In game only" and (c) "No browser view in v1".
+
+**Decision.** None of the options as put: the owner widened the question. GraceUI is to be a UI framework that other modders can use, as Magelight UI and PrismaUI are for Skyrim; EldenNet requires it as a dependency and always ships with it. The owner's words: "I want GraceUI to be something other modders can use, like Magelight or prismaUI for SKyrim. EldenNet will require it as dependency, but it will always ship with GraceUI anyway." What this changes (whose overlay draws in game, G10; what draws another mod's pages, G1; the browser view; the interface other mods use; which pages are EldenNet's own) is worked out in a proposal and put to the owner as new questions, G15 onwards. Until they are answered, the decided design stands.
+
+**Follows from.** G3, G4, G9, G10, G13.
+
+**Amends.** G11 (GraceUI as EldenNet's menu and dashboard): GraceUI becomes a framework for any mod, and EldenNet's menu and dashboard become its first user.
