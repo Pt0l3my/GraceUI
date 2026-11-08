@@ -230,6 +230,8 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 **Amends.** G10 (superseded), EldenNet O25 (the pin and its rules move with the overlay), G2 ("keeps playing whatever it finds", D88) and invariants 15 and 16, all rewritten when the design is folded (S7.8.c).
 
+**Later changes.** 2026-11-08: by EldenNet's O60 (the owner's direction), EldenNet and GraceUI's in-game parts are expected to be written in C++, settled when Min's blueprint is adopted; hudhook (Rust) would then give way to a C++ overlay that GraceUI owns, with every rule of O25 restated for it and the owner's approval.
+
 ## G16
 
 **What other mods write, and what draws it in game** · *2026-11-08 · Decided by the owner, as recommended*
