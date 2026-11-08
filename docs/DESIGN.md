@@ -1,8 +1,8 @@
 # GraceUI: design
 
 **Status: proposal, 2026-11-07.** Nothing is built yet. The owner decided G1–G10 and G12
-([DECISIONS.md](DECISIONS.md), indexed in §12), and G13 is Open; the decisions this design settles are in the
-log (§13, D1–D68).
+([DECISIONS.md](DECISIONS.md), indexed in §12), and G13 on 2026-11-08; no question is Open; the decisions this design
+settles are in the log (§13, D1–D68).
 
 GraceUI is EldenNet's main menu and dashboard: the place where a player sees whether EldenNet is working, who is
 around and what was said, and where every EldenNet setting lives. EldenNet is an AI framework, so GraceUI is laid out
@@ -2244,15 +2244,15 @@ a change to a page description or a component shows up in both views or fails CI
 
 ## 12. Decisions for the owner
 
-**Status: the owner decided G1–G10 and G12 on 2026-11-07, and made the request G11 records; G13 is Open.**
-Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record: the question as it was put, the
-options, the recommendation as written, what was decided, the owner's words and what each amends. This section is its
-index; each G-number the documents cite is a row here and an entry there. G11 and G12 were not questions of §12:
-they were first recorded in §14 and CLAUDE.md, and are indexed here like the rest. G1, G2, G4, G5, G6, G8, G9 and
-G10 also touch EldenNet's design; [eldennet-changes.md](eldennet-changes.md) lists what each answer changes there. A
-question that comes up later is added to DECISIONS.md as a new entry marked **Open**, with a recommendation, and as a
-row here; the owner's answer is recorded in the entry with its date, and a later decision amends an earlier one by a
-note, never by rewriting it.
+**Status: the owner decided G1–G10 and G12 on 2026-11-07 and G13 on 2026-11-08, and made the request G11 records; no
+question is Open.** Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record: the question
+as it was put, the options, the recommendation as written, what was decided, the owner's words and what each amends.
+This section is its index; each G-number the documents cite is a row here and an entry there. G11 and G12 were not
+questions of §12: they were first recorded in §14 and CLAUDE.md, and are indexed here like the rest. G1, G2, G4, G5,
+G6, G8, G9 and G10 also touch EldenNet's design; [eldennet-changes.md](eldennet-changes.md) lists what each answer
+changes there. A question that comes up later is added to DECISIONS.md as a new entry marked **Open**, with a
+recommendation, and as a row here; the owner's answer is recorded in the entry with its date, and a later decision
+amends an earlier one by a note, never by rewriting it.
 
 | # | Question | Decision, in brief | Status |
 |---|---|---|---|
@@ -2268,7 +2268,7 @@ note, never by rewriting it.
 | [G10](DECISIONS.md#g10) | Which module owns the one overlay? | (b) EldenNet keeps it; `graceui.dll` hooks nothing | Decided 2026-11-07 |
 | [G11](DECISIONS.md#g11) | The owner's request that started GraceUI | A separate repository; SkyrimNet's layout; a look in SeverActions' spirit; an AI framework's categories | The owner's request, 2026-11-07 (§14) |
 | [G12](DECISIONS.md#g12) | SkyrimNet | Its code, dashboard and styling may be used and adapted, credited as Min wishes | Decided 2026-11-07 (CLAUDE.md) |
-| [G13](DECISIONS.md#g13) | How is an interactive showcase of the menu built? | Recommended: (a) from the page descriptions, in plain script, before any code base | **Open** |
+| [G13](DECISIONS.md#g13) | How is an interactive showcase of the menu built? | (d) Wait for Min's blueprint; the static showcase stays | Decided 2026-11-08 |
 
 ---
 

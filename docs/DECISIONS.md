@@ -28,8 +28,8 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
   pairing for other devices). G3 and G10 (Preact; the overlay stays in EldenNet), with the roster's widening by
   EldenNet's O43 as updated and O45. G12 (building on SkyrimNet). G1–G6 were put with the first proposal, G7 with
   the framework categories (D38), G8 after their review, and G9 and G10 with the owner's answers to G4 and G2.
-- **2026-11-08.** G13 put to the owner (an interactive showcase of the menu).
-- **Open.** G13.
+- **2026-11-08.** G13 (an interactive showcase of the menu: wait for Min's blueprint).
+- **Open.** None.
 
 ## G1
 
@@ -173,10 +173,14 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 ## G13
 
-**An interactive showcase of the menu** · *Open since 2026-11-08*
+**An interactive showcase of the menu** · *2026-11-08 · Decided by the owner*
 
 **Question.** The owner asked on 2026-11-08 for an interactive showcase of the menu, a page to click through in the browser like Skyrizz's, beside EldenNet's static showcase. How is it built? **Options:** (a) **From the page descriptions**: write GraceUI's page descriptions (§2.5) now as data, with a settings description in the shape EldenNet will export (D8) and invented sample data, and draw them with a small renderer of the shared components (§2.5) in plain script, into one self-contained page with GraceUI's fonts bundled (§3.4); tested in a headless browser (no request outside the page, every page at two widths, no script error, no name of the game's characters or places, the spoiler and privacy rules, contrast); published privately on claude.ai and opened from file, with no server. The page descriptions and the sample data carry over into GraceUI 0.1 whatever its code becomes; the renderer is replaced by the web app. (b) **The real web app now**: start GraceUI 0.1's browser app (Preact, TypeScript and signals with Vite, G3) against `grace-dev`'s fixtures, and publish its build as the showcase. Nothing to keep in step, but the code starts before Min's blueprint shows how much of SkyrimNet's dashboard GraceUI adopts (G12). (c) **The static mock made clickable by hand**, as Skyrizz's showcase is drawn. The quickest, but it drifts from the design wherever no test pins it.
 
 **Recommendation.** (a). It follows the Skyrizz session's advice of 2026-11-08 (one source for the pages, fonts bundled from the start, tests as plain pass and fail lines, one file per page), keeps §2.5's rule that the page descriptions are the one source of the pages, and commits no code base before the blueprint arrives. It would live in this repository (`showcase/`), linked from EldenNet's showcase; the static mock stays until the showcase covers its pages.
+
+**As put to the owner.** The three options above, as "From page data", "Real web app now" and "Clickable mock", and a fourth: (d) **Wait for the blueprint**: "Keep the static showcase for now and decide after Min's engine blueprint arrives."
+
+**Decision.** (d). The owner's answer: "Wait for blueprint". EldenNet's static showcase stays as it is; how the interactive showcase is built is asked again, as a new question, once Min's blueprint has arrived and what GraceUI adopts of SkyrimNet's dashboard is known (G12).
 
 **Follows from.** G3, G12; §2.5; DESIGN §10's GraceUI 0.1 (page descriptions, fixtures and the mock).
