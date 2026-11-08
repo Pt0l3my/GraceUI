@@ -31,8 +31,10 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 - **2026-11-08.** G13 (an interactive showcase of the menu: wait for Min's blueprint; later the same day, it is
   EldenNet's). G14 (GraceUI's scope: a UI framework other modders can use; its consequences to be put as G15
   onwards).
-- **2026-11-08.** G15–G20 put to the owner with proposal 0001 (GraceUI as a UI framework for any mod).
-- **Open.** G15–G20.
+- **2026-11-08.** G15–G20 put to the owner with proposal 0001 (GraceUI as a UI framework for any mod); G15–G17
+  decided the same day, as recommended (GraceUI owns the overlay; page data and panels; the browser view for every mod
+  that opts in), which supersede G10.
+- **Open.** G18–G20.
 
 ## G1
 
@@ -152,6 +154,8 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 **See also.** G2, whose answer raised it; EldenNet O25, every rule of which stays in EldenNet.
 
+**Later changes.** 2026-11-08: superseded by G15 (a), decided by the owner: GraceUI owns the one overlay, so that any mod can use it without EldenNet; hudhook, its MinHook, the Present hook and the input hooks move into `graceui.dll` with every rule of EldenNet's O25, and EldenNet draws its surfaces through GraceUI. The design is folded in S7.8.c of EldenNet's roadmap (proposal 0001).
+
 ## G11
 
 **The owner's request that started GraceUI** · *2026-11-07 · The owner's request; outside §12's table*
@@ -208,7 +212,7 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 ## G15
 
-**Who owns the one overlay** · *Open since 2026-11-08*
+**Who owns the one overlay** · *2026-11-08 · Decided by the owner, as recommended*
 
 **Question.** Now that GraceUI is a framework other mods can use (G14), which module owns the one hudhook overlay, its MinHook, the Present hook and the input hooks? **(a) GraceUI** (recommended): they move from EldenNet into `graceui.dll`, with every rule of EldenNet's O25; EldenNet draws its subtitles, chat box, call-outs, labels, toasts, banner and F11 view through GraceUI like any mod, and links no hook library. **(b) EldenNet, as G10 decided**: GraceUI keeps drawing through EldenNet's overlay, and other mods can use GraceUI only while EldenNet is loaded and active, through a host API EldenNet grows later. **In plain words:** Only one copy of the overlay library GraceUI and EldenNet use can run safely in the game. Should that copy be GraceUI's, so any mod can use it on its own, or stay EldenNet's, so GraceUI only works for other mods while EldenNet runs?
 
@@ -218,9 +222,17 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 **Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
 
+**As put to the owner.** In plain words, with the recommended option first.
+
+**Decision.** (a), as recommended: GraceUI owns the one hudhook overlay, its MinHook, the Present hook and the input hooks, with every rule of EldenNet's O25; EldenNet draws its subtitles, chat box, call-outs, labels, toasts, banner and F11 view through GraceUI like any mod, and links no hook library.
+
+**Owner's words.** "GraceUI (Recommended)".
+
+**Amends.** G10 (superseded), EldenNet O25 (the pin and its rules move with the overlay), G2 ("keeps playing whatever it finds", D88) and invariants 15 and 16, all rewritten when the design is folded (S7.8.c).
+
 ## G16
 
-**What other mods write, and what draws it in game** · *Open since 2026-11-08*
+**What other mods write, and what draws it in game** · *2026-11-08 · Decided by the owner, as recommended*
 
 **Question.** What does a mod that uses GraceUI provide? **(a) Page data and panels** (recommended): its pages and settings described as data in GraceUI's components (drawn in game with the Grace theme and, if it opts in, in the browser), topics and commands in the bridge protocol, and, for anything else, in-game panels it draws itself as checked vertex lists, with GraceUI's drawing kit or its own headless Dear ImGui with the default vertex layout and 16-bit indices (checked in 1.89.2 and 1.92.6; other builds convert before submitting, and the checker refuses anything else); no HTML in game. **(b) Page data only**: no panels for other mods (EldenNet's own surfaces still use them). **(c) HTML pages in game**, as Magelight UI and PrismaUI offer: this reopens G1 and needs a hudhook patch (an O25 change), Ultralight's licence and about 57 MB, or another engine. **In plain words:** Magelight and PrismaUI let modders write web pages. GraceUI would instead let them describe their pages as data, which GraceUI draws in the game's style and in the browser, plus panels they draw themselves. Is that the right offer, or should mods get web pages in game?
 
@@ -230,9 +242,17 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 **Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
 
+**As put to the owner.** In plain words, with the recommended option first.
+
+**Decision.** (a), as recommended: a mod provides its pages and settings as data in GraceUI's components (drawn in game in the Grace theme and, if it opts in, in the browser), topics and commands in the bridge protocol, and in-game panels it draws itself as checked vertex lists (GraceUI's drawing kit, or its own headless Dear ImGui in the default vertex layout); no HTML in game.
+
+**Owner's words.** "Page data + panels (Recommended)".
+
+**Amends.** G1 extends to every mod unchanged; D75 and D76 apply.
+
 ## G17
 
-**The browser view: a GraceUI feature for every mod?** · *Open since 2026-11-08*
+**The browser view: a GraceUI feature for every mod?** · *2026-11-08 · Decided by the owner, as recommended*
 
 **Question.** The browser dashboard (G4, G9) shows the same pages as the menu. Who serves it? **(a) GraceUI, for every mod that opts in** (recommended if G15 is (a)): the local server and the web app move into `graceui.dll` with every rule of §7.2 and pairing; EldenNet's dashboard is its space there, always on as G4 decided. **(b) EldenNet, for its own pages only** (recommended if G15 is (b)): GraceUI keeps the web app and the server as a kit that EldenNet runs, as designed now; other mods have no browser view. **(c) EldenNet's own web app**: GraceUI is in game only, and the browser dashboard, G3, G4 and G9 move to EldenNet. **In plain words:** Should the "open it in your browser" dashboard be something GraceUI offers any mod, or stay EldenNet's alone?
 
@@ -241,6 +261,14 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 **What each answer changes.** (a): G4, G9, D58 to D60 and D66 move with the server to GraceUI, and D61 stays EldenNet's, with its pages (D82); invariant 4 is GraceUI's server; D81 applies, with §7.2 item 1's gate clause kept as §4.9 of this proposal's four rules; §5 of this proposal's item 7 goes to eldennet-changes. (b): the server stays in EldenNet as designed (eldennet-changes §3 unchanged), and other mods' pages are in game only. (c): the web app, G3, G4 and G9 move to EldenNet, invariants 4 to 6 and 12 become EldenNet's, and the components are written in both repositories.
 
 **Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
+
+**As put to the owner.** In plain words, with the recommended option first.
+
+**Decision.** (a), as recommended: GraceUI serves the browser view for every mod that opts in, with every rule of the local server (§7.2) and pairing (G9); EldenNet's dashboard is its space there, always on as G4 decided.
+
+**Owner's words.** "Yes, opt-in (Recommended)".
+
+**Amends.** G4, G9, D58–D60 and D66 move with the server into GraceUI; D61 stays EldenNet's; invariant 4 becomes GraceUI's server's; D81 applies, with §7.2 item 1's gate clause kept as proposal 0001 §4.9's four rules.
 
 ## G18
 

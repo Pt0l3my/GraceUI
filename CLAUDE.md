@@ -9,7 +9,12 @@ depends on GraceUI; GraceUI never depends on EldenNet.
 **Scope, widened by the owner (G14, 2026-11-08).** GraceUI is to be a UI framework that other modders can use, as
 Magelight UI and PrismaUI are for Skyrim; EldenNet requires it as a dependency and always ships with it, and EldenNet's
 menu and dashboard become its first user. What this changes is in [proposal 0001](docs/proposals/0001-ui-framework.md),
-put to the owner as G15–G20 (Open); until they are answered, the decided design below stands.
+put to the owner as G15–G20. **Decided the same day, as recommended:** G15, GraceUI owns the one overlay (hudhook, its
+MinHook, the Present hook and the input hooks move into `graceui.dll` with every rule of EldenNet's O25, and EldenNet
+draws through GraceUI), superseding G10; G16, other mods write page data and checked panels, no HTML in game; G17,
+GraceUI serves the browser view for every mod that opts in. G18–G20 are Open. Until the design is folded (EldenNet's
+roadmap S7.8.c), the "One overlay" rule and invariants 15 and 16 below still describe the G10 design and are to be
+rewritten; nothing is built meanwhile.
 
 - The design is [docs/DESIGN.md](docs/DESIGN.md); the evidence is in [docs/research/](docs/research/README.md); what
   EldenNet must change is in [docs/eldennet-changes.md](docs/eldennet-changes.md).
@@ -61,11 +66,12 @@ put to the owner as G15–G20 (Open); until they are answered, the decided desig
 
 ## EldenNet's rules that bind GraceUI
 
-- **One overlay** (EldenNet O25): hudhook pinned at exactly 0.9.3, built with `dx12` only; `imgui` only through
-  `hudhook::imgui`, MinHook only through `hudhook::mh`; never its eject path; no second Present hook, no second
-  MinHook. No `imgui-tables-api` feature and no hudhook patch without the owner's approval (DESIGN D28). Under G10
-  (decided by the owner, 2026-11-07: (b)), `graceui.dll` links no hudhook, `imgui` or MinHook, installs no hook and
-  starts no thread; only GraceUI's host kit inside EldenNet (`grace-host`) touches `hudhook::imgui`.
+- **One overlay** (EldenNet O25; its owner becomes GraceUI by G15, see the scope note above): hudhook pinned at
+  exactly 0.9.3, built with `dx12` only; `imgui` only through `hudhook::imgui`, MinHook only through `hudhook::mh`;
+  never its eject path; no second Present hook, no second MinHook. No `imgui-tables-api` feature and no hudhook patch
+  without the owner's approval (DESIGN D28). Under G10 (decided by the owner, 2026-11-07: (b)), `graceui.dll` links no
+  hudhook, `imgui` or MinHook, installs no hook and starts no thread; only GraceUI's host kit inside EldenNet
+  (`grace-host`) touches `hudhook::imgui`.
 - **No me3 and no fromsoftware-rs**, in any form.
 - **Read-only towards the game.** GraceUI never reads or writes game memory and calls no game code; it sees only what
   EldenNet's core projects.
