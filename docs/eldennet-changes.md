@@ -254,6 +254,10 @@ before the design fold (EldenNet roadmap S7.8.c) and the map spike (S7.9.c).
    against the vanilla map's size and aspect (D93); a cache in EldenNet's user folder, never uploaded, logged or
    reported (D94); masking in the core (D90): tiles that touch a reached area for the browser, and the in-game texture
    as G26 decides. If no route works, the drawn base is the map.
+   **Exact in every base** (the owner, 2026-11-14; D97): the drawn base is built on the player's PC from their own
+   game, its shape traced from their map image (or from the game's own map and terrain data where a map mod does not
+   fit), its areas from the game's map data and its placements by the game's own conversion tables; it is cached
+   locally, and no shape is shipped or committed.
 2. **World positions to map positions**: the open world's tile grid; the legacy dungeons' own frames (a conversion
    table is likely in the game's parameters, to be verified, O48); the underground and the expansion as separate
    sheets. The numbers may be read for research by a DataPiler job; EldenNet verifies them in game.

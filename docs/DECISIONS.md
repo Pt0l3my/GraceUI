@@ -322,6 +322,12 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
 
+**The owner's requirement (2026-11-14), on every answer.** "we will have to add the exact shape of the map, it's parts
+(so the areas match the map shape and fit into it), accurate placements. That is a must even if we ship our own
+texture." Every base therefore has the exact shape, areas and placements; GraceUI's drawn base is built on the
+player's PC from their own game and no shape ships (proposal 0002 §3, D97). Under (b) the drawn base still needs the
+player's game as its source, so (b) no longer avoids the image reader.
+
 ## G22
 
 **May anything on the map loop or pulse?** · *Open since 2026-11-14*
