@@ -36,6 +36,7 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
   that opts in), which supersede G10.
 - **2026-11-14.** G21–G26 put to the owner with proposal 0002 (the map): what it is drawn on, glow and motion, who
   writes lore notes, when it ships, what the map key opens, and how the in-game map is kept to what was reached.
+- **2026-11-14.** G27 (terrain: a local 3D relief and our own sprites), decided the same day, as recommended.
 - **Open.** G18–G26.
 
 ## G1
@@ -387,3 +388,25 @@ player's game as its source, so (b) no longer avoids the image reader.
 **What each answer changes.** (a): invariant 1 gains its exception and a pixel golden; D90. (b): a second style in game until restart. (c): the in-game map is the drawn base only.
 
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
+
+## G27
+
+**How does the map show terrain?** · *2026-11-14 · Decided by the owner, as recommended*
+
+**Question.** The exact land cannot ship (proposal 0002 §3, D97), so terrain is built on each player's PC from their
+own game on first use (a few minutes, then cached), drawn in GraceUI's style. **(a) A local 3D relief and our own
+sprites** (recommended): the exact terrain's heights built locally, shown as a 3D relief in the browser (tilt, rotate,
+zoom; marks and threads on the terrain) and as a relief image in game, uploaded once at start; our own terrain sprites
+and the tile-grid schematic ship as the fallback. **(b) A local 2D relief and our sprites**: top-down only, in both
+views. **(c) Our sprites only**: no terrain built from the game.
+
+**Recommendation.** (a): the owner's idea (a 3D map read from the game, textures rendered on top), with nothing of the
+game shipped; the browser has room for 3D, the in-game view keeps to one upload.
+
+**Decision.** (a).
+
+**Owner's words.** "Local 3D relief + our sprites (Recommended)".
+
+**Follows from.** The owner's messages of 2026-11-14 on topography and a 3D map; [proposal 0002](proposals/0002-map.md)
+§3; D97.
+

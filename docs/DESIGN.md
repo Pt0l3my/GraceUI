@@ -2247,7 +2247,7 @@ a change to a page description or a component shows up in both views or fails CI
 
 **Status: the owner decided G1–G10 and G12 on 2026-11-07 and G13 on 2026-11-08, and made the request G11 records; G14
 widened GraceUI's scope, and its consequences were put as G15–G20 with proposal 0001: G15–G17 decided the same day
-(superseding G10), G18–G20 Open; G21–G26 were put with proposal 0002 (the map) on 2026-11-14, Open.** Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record:
+(superseding G10), G18–G20 Open; G21–G26 were put with proposal 0002 (the map) on 2026-11-14, Open; G27 decided the same day.** Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record:
 the question as it was put, the options, the recommendation as written, what was decided, the owner's words and what
 each amends. This section is its index; each G-number the documents cite is a row here and an entry there. G11 and G12
 were not questions of §12: they were first recorded in §14 and CLAUDE.md, and are indexed here like the rest. G1, G2,
@@ -2284,6 +2284,7 @@ amends an earlier one by a note, never by rewriting it.
 | [G24](DECISIONS.md#g24) | When does the map ship? | Recommended: (a) after v1.0, in 1.1; the spike early | **Open** |
 | [G25](DECISIONS.md#g25) | What does the map key open? | Recommended: (a) a setting, off by default; GraceUI's map when switched on | **Open** |
 | [G26](DECISIONS.md#g26) | In game, how is the game's map kept to what the player has reached? | Recommended: (a) one upload at start, masked at draw time; a tested exception to invariant 1 | **Open** |
+| [G27](DECISIONS.md#g27) | How does the map show terrain? | (a) the exact terrain built locally: a 3D relief in the browser, a relief image in game; our own sprites and the tile-grid schematic as the fallback | Decided 2026-11-14 |
 
 ---
 

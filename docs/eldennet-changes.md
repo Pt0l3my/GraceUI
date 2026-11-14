@@ -270,5 +270,9 @@ before the design fold (EldenNet roadmap S7.8.c) and the map spike (S7.9.c).
 6. **Lore-note proposals** (G23 (a)): from two or more memories tied to one place or person, citing them, batched on a
    light slot under pacing, through the lock filter (SP2); kept, edited or dropped by the player; stored per
    playthrough.
-7. **The map key** (G25 (a)): a setting, off by default; with it on, GraceUI catches the press and the game never sees
+7. **Terrain** (G27 (a), decided 2026-11-14): the terrain's heights read from the player's install (the source to be
+   found by S7.9.c: map pieces, collision or a height texture, each structure verified, O48), built once on the PC
+   with the drawn base and cached; projected for the browser's 3D relief and rendered once as the in-game relief
+   image; masked to what is reached.
+8. **The map key** (G25 (a)): a setting, off by default; with it on, GraceUI catches the press and the game never sees
    it; pressed again or held, it opens the game's map. Checked with the spike's input items and S4.
