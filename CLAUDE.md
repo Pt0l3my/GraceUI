@@ -25,6 +25,8 @@ rewritten; nothing is built meanwhile.
 - Grep with line numbers first, then read only that range. Never open a whole design or research document to find
   one thing, and never re-read a file you have just edited.
 - EldenNet's documents are read in the EldenNet checkout with its `wp` tool (`wp show DESIGN§12`, `wp grep`).
+- The shared reasoning log is EldenNet's `docs/REASONING.md` (`wp show WHY§n`): read its index at the start of a session
+  and after a switch of model, and add GraceUI's findings to it, tagged `#graceui`, by EldenNet's rule for the log.
 - For a wide search, use one subagent and keep only its conclusion. Run long jobs in the background and print only the
   last or matching lines.
 
