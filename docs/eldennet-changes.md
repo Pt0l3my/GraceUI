@@ -243,3 +243,28 @@ player switches `dashboard.lan` on (G9).
 7. **Memories and conversations for every profiled NPC (O45)**: the `memories`, `journal/<id>` and `conversation/<id>`
    projections cover every NPC with a profile, keyed by its profile id; a keepsake about another NPC is projected only
    when every event it cites had the Tarnished in its audience (SP7, D68).
+
+## 10. The map (proposal 0002; G21–G26 Open)
+
+What EldenNet must add if the owner accepts [proposal 0002](proposals/0002-map.md) as recommended. Nothing is built
+before the design fold (EldenNet roadmap S7.8.c) and the map spike (S7.9.c).
+
+1. **The map image reader** (G21 (a)): the player's own map, read from their game at run time by a route the spike
+   finds (the game's memory, or its archives with keys read from the player's game and never shipped); a fit check
+   against the vanilla map's size and aspect (D93); a cache in EldenNet's user folder, never uploaded, logged or
+   reported (D94); masking in the core (D90): tiles that touch a reached area for the browser, and the in-game texture
+   as G26 decides. If no route works, the drawn base is the map.
+2. **World positions to map positions**: the open world's tile grid; the legacy dungeons' own frames (a conversion
+   table is likely in the game's parameters, to be verified, O48); the underground and the expansion as separate
+   sheets. The numbers may be read for research by a DataPiler job; EldenNet verifies them in game.
+3. **The sightings store** (D89): for each profiled NPC, each place and time the Tarnished perceived them, with the
+   stage then; it extends §9 item 4's "where and when last met".
+4. **Map overlays by world stage** (O51): a table of our own drawings keyed by the world stages that hold (a flood, a
+   beacon gone dark, a city in ash), shown only where the area is reached.
+5. **The `map` projection**: marks, lines, areas, labels, tooltip and detail text, timeline events; public fields only
+   (SP1), names as the game shows them (SP3), no counts of anything unreached (SP5), verified flags only (SP6).
+6. **Lore-note proposals** (G23 (a)): from two or more memories tied to one place or person, citing them, batched on a
+   light slot under pacing, through the lock filter (SP2); kept, edited or dropped by the player; stored per
+   playthrough.
+7. **The map key** (G25 (a)): a setting, off by default; with it on, GraceUI catches the press and the game never sees
+   it; pressed again or held, it opens the game's map. Checked with the spike's input items and S4.

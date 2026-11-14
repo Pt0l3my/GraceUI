@@ -34,7 +34,9 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 - **2026-11-08.** G15–G20 put to the owner with proposal 0001 (GraceUI as a UI framework for any mod); G15–G17
   decided the same day, as recommended (GraceUI owns the overlay; page data and panels; the browser view for every mod
   that opts in), which supersede G10.
-- **Open.** G18–G20.
+- **2026-11-14.** G21–G26 put to the owner with proposal 0002 (the map): what it is drawn on, glow and motion, who
+  writes lore notes, when it ships, what the map key opens, and how the in-game map is kept to what was reached.
+- **Open.** G18–G26.
 
 ## G1
 
@@ -307,3 +309,75 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 **What each answer changes.** (a): D82 applies; DESIGN §4, SP1–SP9, EldenNet's halves of PV1–PV8, D61, its fixtures and goldens move to EldenNet in S7.8.c; invariants 1 and 2 take their framework form in GraceUI and their EldenNet form in EldenNet; §5 of this proposal's item 9 goes to eldennet-changes. (b): DESIGN §4, SP1–SP9, the goldens and invariants 1 and 2 stay in GraceUI as they are, beside the framework rules; GraceUI's release carries EldenNet's page data as a bundled space that EldenNet's `connect` activates, and the framework carries one user's content.
 
 **Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
+
+## G21
+
+**What is the map drawn on?** · *Open since 2026-11-14*
+
+**Question.** **(a) The player's own game map, read from their game at run time, masked and never shipped, with GraceUI's drawn base as the fallback when it cannot be read or does not fit** (recommended), and a setting to choose the drawn base or none instead. **(b) GraceUI's drawn base only.** **(c) An image the player exports from their own install with a tool on their PC**, loaded from a folder they choose.
+
+**Recommendation.** (a). It is what the owner asked for ("render the map image from the game process", with "a toggle option" for custom maps), it ships nothing of the game, and the fallback keeps the map working whatever the spike finds. *What (a) gives up:* it depends on a route the spike has yet to find; until then the drawn base is the map.
+
+**What each answer changes.** (a): §3 as written; S7.9.c's image route; D90, D93, D94. (b): no image reader, no cache, no fit check; G26 falls away. (c): a player-side export step and its instructions; the fit check stays.
+
+**Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
+
+## G22
+
+**May anything on the map loop or pulse?** · *Open since 2026-11-14*
+
+**Question.** **(a) No: still glow, hover brightening and one-shot flares; invariant 14 unchanged** (recommended). **(b) A slow ambient shimmer in the browser only**, behind a setting. **(c) Loops in both views**, behind a setting.
+
+**Recommendation.** (a). A still glow reads as high quality without the cost and distraction of motion that never stops; the in-game frame budget (invariant 10) has no room for per-frame animation; one rule for both views keeps them alike (invariant 12). *What (a) gives up:* the living shimmer some map mods use.
+
+**What each answer changes.** (a): §7 as written. (b): invariant 14 gains a browser-only exception and a setting. (c): invariant 14 is replaced by a setting, with a per-frame cost budget in game.
+
+**Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
+
+## G23
+
+**Who writes the lore notes?** · *Open since 2026-11-14*
+
+**Question.** **(a) The model proposes notes from the player's memories, each citing them, and a note joins the map only if the player keeps it** (recommended). **(b) The player writes every note**; no model call. **(c) The model writes notes on its own**, and the player may remove them.
+
+**Recommendation.** (a). It is the owner's idea ("memories that are relevant and could be added as lore") while keeping the player in charge of their own map; notes stay grounded, because each cites memories the player actually has. *What (a) gives up:* a little effort: nothing appears until kept.
+
+**What each answer changes.** (a): §8; one batched proposal job. (b): no model call; an editor only. (c): the job writes directly; a "remove" action and a setting to turn it off.
+
+**Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
+
+## G24
+
+**When does the map ship?** · *Open since 2026-11-14*
+
+**Question.** **(a) After EldenNet v1.0, as part of 1.1**, with the spike done early as research (recommended). **(b) In v1.0, the browser view on the drawn base only**; the game's map and the in-game view in 1.1. **(c) All of it in v1.0.**
+
+**Recommendation.** (a). EldenNet v1 is to be "deliberately minimal and stable"; the map depends on the spike's answer, on the framework's panel kinds (G16) and on the design fold (S7.8.c). The pieces v1 needs anyway (the sightings record behind Playthrough, the world stages of O51) land in v1 and make 1.1's map cheaper. *What (a) gives up:* players wait one release for the map.
+
+**What each answer changes.** (a): the build is planned for 1.1; S7.9.c early. (b): the panel kind and the browser view move into v1.0's scope; the image reader waits. (c): all of §10 moves into v1.0's scope.
+
+**Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
+
+## G25
+
+**What does the map key open?** · *Open since 2026-11-14*
+
+**Question.** **(a) A setting, off by default: the map key opens the game's map, or GraceUI's map when the player switches it on**; with it on, the key pressed again or held opens the game's map (recommended). **(b) Always the game's map**; GraceUI's map only from the menu and the browser. **(c) GraceUI's map by default.**
+
+**Recommendation.** (a). The owner's words ("could be a toggle setting"); fast travel and markers stay in the game's map in v1, so the default should keep them one press away as they are now. *What (a) gives up:* players who would prefer our map must find the setting.
+
+**What each answer changes.** (a): §6; S7.9.c's input checks. (b): no key capture for the map. (c): as (a), with the default flipped and a first-run notice.
+
+**Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
+
+## G26
+
+**In game, how is the game's map kept to what the player has reached?** · *Open since 2026-11-14*
+
+**Question.** hudhook 0.9.3 leaks one buffer per texture upload, so the in-game map can be uploaded only once (invariant 11), while new areas are reached during play. **(a) Upload the whole image once at start, at a reduced size, and mask it at draw time by the reached areas' shapes** (recommended): invariant 1 gains one narrow, tested exception, this texture, which no view shows unmasked and no projection, log or report carries. **(b) Upload it once, masked as at start**; areas reached during the session show on the drawn base until the next start. **(c) The game's map in the browser only**; in game the drawn base.
+
+**Recommendation.** (a). One upload per session, new areas show the moment they are reached, and the guarantee that matters (nothing unreached is drawn, counted or hinted at) holds and is tested by rendering goldens at fixture states. *What (a) gives up:* invariant 1's "never receives" for one texture; a debugger reading video memory could see the whole map.
+
+**What each answer changes.** (a): invariant 1 gains its exception and a pixel golden; D90. (b): a second style in game until restart. (c): the in-game map is the drawn base only.
+
+**Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
