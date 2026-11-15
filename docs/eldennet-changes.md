@@ -326,6 +326,9 @@ design and D89–D98 its decisions. The items below stand with their Later notes
    *Later (2026-11-15):* the expansion and the underground read too (WHY§92, S7.9.h): the run-time read also takes
    the far-view models, to fill where the expansion's land is made of other models, and each underground map's
    pieces with its placement file. Which of the underground's stacked floors to show stays with S7.9.c.
+   *Later (2026-11-15):* the underground's floor rule (WHY§94, S7.9.i): the topmost walkable floor reachable from where
+   each map's characters and resting places stand, so the run-time read also takes the placement files' characters
+   as seeds; where levels stack, the in-game relief shows the upper one.
 8. **The map key** (G25 (a)): a setting, off by default; with it on, GraceUI catches the press and the game never sees
    it; pressed again or held, it opens the game's map. Checked with the spike's input items and S4.
 
