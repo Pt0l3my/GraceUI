@@ -61,7 +61,7 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 **Owner's words.** "GraceUI will be a standalone mod, but EldenNet will feature the latest version with each release (at the release date) as built in, but users will be able to update GraceUI separately (by dragging files into Elden Ring/Game directory and overwriting old files)."
 
-**Later changes.** G10 (2026-11-07) settles which module owns the one overlay: (b), EldenNet.
+**Later changes.** G10 (2026-11-07) settles which module owns the one overlay: (b), EldenNet. 2026-11-08: G15 (a) supersedes G10, and the overlay moves into `graceui.dll`; so D88 replaces "EldenNet keeps playing whatever it finds": EldenNet's launcher checks GraceUI before start and installs the carried copy where none or an older one is (D83), and a failed connect leaves EldenNet headless with a log line. The folder, the carried release and updating by hand stand. Folded into the design on 2026-11-15 (EldenNet's roadmap S7.8.c).
 
 ## G3
 
