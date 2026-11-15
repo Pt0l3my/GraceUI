@@ -321,6 +321,8 @@ design and D89–D98 its decisions. The items below stand with their Later notes
    image; masked to what is reached.
    *Later (2026-11-15):* the relief is part of the base, so it shows only what the player's own game map shows for the
    pieces held (D90), and in game it is composed with the map's texture (D98).
+   *Later (2026-11-15):* the source is found: the ground models at the 1 km level, placed by the tile numbers in
+   their names alone (WHY§90, roadmap S7.9.g). The run-time read of them and a rule for their gaps stay with S7.9.c.
 8. **The map key** (G25 (a)): a setting, off by default; with it on, GraceUI catches the press and the game never sees
    it; pressed again or held, it opens the game's map. Checked with the spike's input items and S4.
 
