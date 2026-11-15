@@ -1593,6 +1593,9 @@ a later version (O41, EldenNet DESIGN §13); v1 is dialogue only and never write
 - **SP2. The lock filter.** Every content or model string passes EldenNet's per-sentence lock check at projection time:
   the Tarnished's set for global strings, the NPC's own set for its journal and lines (`Locked(P)` for a persona,
   `Locked(C)` for a character, EldenNet O45). A failing item is dropped whole and counted on System › Status.
+  *Later (2026-11-15):* EldenNet's O86 keeps spoilers by grounding alone and drops its locked-term sets and output
+  lock, so this filter goes; SP2 is re-cut in EldenNet's fold (its roadmap S7.13.b): the views show only what was
+  shown in game or written impersonal (SP1).
 - **SP3. Names as the game shows them.** On-screen names come from the runtime name of the current row, or the
   first-meeting name (the pre-reveal fallback); a veiled persona stays veiled; regions by the names of regions
   entered. GraceUI stores no name.
