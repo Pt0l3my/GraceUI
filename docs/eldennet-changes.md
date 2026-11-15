@@ -391,4 +391,5 @@ GraceUI's part of EldenNet's own decisions (EldenNet's proposal 0001); EldenNet'
    against it once EldenNet has a hook of its own (EldenNet O65, R12).
 2. **The Content packs page** lists EldenNet's plugins (D103), with EldenNet's commands `plugins.enable`,
    `plugins.order`, `plugins.remove`, and `plugins.install`, which EldenNet marks sensitive (D81).
-3. **The upload route** for the browser's drop zone waits for G28 (Open).
+3. **The upload route** for the browser's drop zone (G28, decided 2026-11-15, as recommended): EldenNet's
+   `plugins.install` takes its file through GraceUI §7.2 item 18, as a command marked sensitive and taking a file.

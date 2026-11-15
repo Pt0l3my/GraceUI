@@ -458,7 +458,7 @@ game shipped; the browser has room for 3D, the in-game view keeps to one upload.
 
 ## G28
 
-**May a space take a file from the browser view?** · *Open since 2026-11-15*
+**May a space take a file from the browser view?** · *Open since 2026-11-15 · Decided by the owner 2026-11-15, as recommended*
 
 **Question.** EldenNet's O67 (a) lets its plugins also be added on the dashboard: a drop zone with an Add file button on
 the Content packs page, in the browser only, this PC only, never for code (D103). GraceUI's frames are capped at 16 KiB
@@ -479,3 +479,10 @@ server suite its cases; D103's drop zone works. (b): D103's drop zone falls away
 folder instead, by its relative name (PV5).
 
 **Follows from.** EldenNet's O67 (2026-11-15); EldenNet's proposal 0001 §6.2.
+
+**Decision (2026-11-15).** (a): one narrow upload route on the loopback listener alone, for a space's file commands
+marked sensitive (EldenNet's `plugins.install` first); one file at a time, at most 32 MiB (EST); every check of §7.2 and
+a one-use ticket; refused from any paired device; GraceUI keeps nothing after handing the bytes to the space (§7.2 item
+18).
+
+**Owner's words.** "Narrow upload route (Recommended)".
