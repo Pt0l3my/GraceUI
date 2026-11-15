@@ -1,10 +1,10 @@
 # Changes EldenNet's design needs for GraceUI
 
 A short list for EldenNet's design (branch `design/v1-proposal`), from [GraceUI's design](DESIGN.md). EldenNet's codes
-(DESIGN, ARCH, NPC, MEM, ER02) refer to its documents; "GraceUI §n", G1–G10 and D1–D68 to GraceUI's. Nothing here is
+(DESIGN, ARCH, NPC, MEM, ER02) refer to its documents; "GraceUI §n", G1–G14 and D1–D68 to GraceUI's. Nothing here is
 changed in EldenNet yet, apart from the roster, which EldenNet's design now records (its O43 as updated, O45 and O46; §9
-item 1). Items marked **(G*n*)** come from that row of GraceUI §12, every one of which the owner has decided (G3 and G10
-on 2026-11-07, as recommended). All of it stays minimal: one overlay, read-only towards the game, no new thread.
+item 1). Items marked **(G*n*)** come from that entry of GraceUI's [DECISIONS.md](DECISIONS.md) (indexed in GraceUI §12),
+every one of which the owner has decided (G3 and G10 on 2026-11-07, as recommended). All of it stays minimal: one overlay, read-only towards the game, no new thread.
 
 ## 1. The main UI on F5 through GraceUI
 
@@ -177,8 +177,9 @@ player switches `dashboard.lan` on (G9).
 3. DESIGN §7.6's page line ("named slots first, then kinds and their types") gains each kind's own row ahead of its
    slots or types, the `named` kind's included (`[allow."named"]`, also `merchant` and `summon`), so every inherited
    source an allowance names has a row of its own to open (GraceUI §4.6.4). G8's answer does not change this.
-4. Record in DESIGN §19, when EldenNet takes these changes up: G1, G2, G4–G6, G8, G9 and G10 as decided by the owner
-   (2026-11-07), in the owner's words as GraceUI §12 gives them (G10: "approved", (b)). G3 (the browser app's framework:
+4. Record in EldenNet's `docs/DECISIONS.md` (indexed in its DESIGN §19), when EldenNet takes these changes up: G1, G2,
+   G4–G6, G8, G9 and G10 as decided by the owner (2026-11-07), in the owner's words as GraceUI's DECISIONS.md gives
+   them (G10: "approved", (b)). G3 (the browser app's framework:
    Preact, "yes") and G7 (the WIP tag) are GraceUI's alone and change nothing in EldenNet.
 
 ## 8. GraceUI as its own mod (G2)
@@ -242,3 +243,36 @@ player switches `dashboard.lan` on (G9).
 7. **Memories and conversations for every profiled NPC (O45)**: the `memories`, `journal/<id>` and `conversation/<id>`
    projections cover every NPC with a profile, keyed by its profile id; a keepsake about another NPC is projected only
    when every event it cites had the Tarnished in its audience (SP7, D68).
+
+## 10. The map (proposal 0002; G21–G26 Open)
+
+What EldenNet must add if the owner accepts [proposal 0002](proposals/0002-map.md) as recommended. Nothing is built
+before the design fold (EldenNet roadmap S7.8.c) and the map spike (S7.9.c).
+
+1. **The map image reader** (G21 (a)): the player's own map, read from their game at run time by a route the spike
+   finds (the game's memory, or its archives with keys read from the player's game and never shipped); a fit check
+   against the vanilla map's size and aspect (D93); a cache in EldenNet's user folder, never uploaded, logged or
+   reported (D94); masking in the core (D90): tiles that touch a reached area for the browser, and the in-game texture
+   as G26 decides. If no route works, the drawn base is the map.
+   **Exact in every base** (the owner, 2026-11-14; D97): the drawn base is built on the player's PC from their own
+   game, its shape traced from their map image (or from the game's own map and terrain data where a map mod does not
+   fit), its areas from the game's map data and its placements by the game's own conversion tables; it is cached
+   locally, and no shape is shipped or committed.
+2. **World positions to map positions**: the open world's tile grid; the legacy dungeons' own frames (a conversion
+   table is likely in the game's parameters, to be verified, O48); the underground and the expansion as separate
+   sheets. The numbers may be read for research by a DataPiler job; EldenNet verifies them in game.
+3. **The sightings store** (D89): for each profiled NPC, each place and time the Tarnished perceived them, with the
+   stage then; it extends §9 item 4's "where and when last met".
+4. **Map overlays by world stage** (O51): a table of our own drawings keyed by the world stages that hold (a flood, a
+   beacon gone dark, a city in ash), shown only where the area is reached.
+5. **The `map` projection**: marks, lines, areas, labels, tooltip and detail text, timeline events; public fields only
+   (SP1), names as the game shows them (SP3), no counts of anything unreached (SP5), verified flags only (SP6).
+6. **Lore-note proposals** (G23 (a)): from two or more memories tied to one place or person, citing them, batched on a
+   light slot under pacing, through the lock filter (SP2); kept, edited or dropped by the player; stored per
+   playthrough.
+7. **Terrain** (G27 (a), decided 2026-11-14): the terrain's heights read from the player's install (the source to be
+   found by S7.9.c: map pieces, collision or a height texture, each structure verified, O48), built once on the PC
+   with the drawn base and cached; projected for the browser's 3D relief and rendered once as the in-game relief
+   image; masked to what is reached.
+8. **The map key** (G25 (a)): a setting, off by default; with it on, GraceUI catches the press and the game never sees
+   it; pressed again or held, it opens the game's map. Checked with the spike's input items and S4.

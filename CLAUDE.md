@@ -6,6 +6,16 @@ EldenNet inactive (DESIGN §7.2 item 1). GraceUI is a mod of its own, with its o
 game's `Game` folder, and each EldenNet release carries the current one (DESIGN G2). EldenNet (a separate repository)
 depends on GraceUI; GraceUI never depends on EldenNet.
 
+**Scope, widened by the owner (G14, 2026-11-08).** GraceUI is to be a UI framework that other modders can use, as
+Magelight UI and PrismaUI are for Skyrim; EldenNet requires it as a dependency and always ships with it, and EldenNet's
+menu and dashboard become its first user. What this changes is in [proposal 0001](docs/proposals/0001-ui-framework.md),
+put to the owner as G15–G20. **Decided the same day, as recommended:** G15, GraceUI owns the one overlay (hudhook, its
+MinHook, the Present hook and the input hooks move into `graceui.dll` with every rule of EldenNet's O25, and EldenNet
+draws through GraceUI), superseding G10; G16, other mods write page data and checked panels, no HTML in game; G17,
+GraceUI serves the browser view for every mod that opts in. G18–G20 are Open. Until the design is folded (EldenNet's
+roadmap S7.8.c), the "One overlay" rule and invariants 15 and 16 below still describe the G10 design and are to be
+rewritten; nothing is built meanwhile.
+
 - The design is [docs/DESIGN.md](docs/DESIGN.md); the evidence is in [docs/research/](docs/research/README.md); what
   EldenNet must change is in [docs/eldennet-changes.md](docs/eldennet-changes.md).
 - EldenNet's own rules bind GraceUI too. Where this file and EldenNet's `CLAUDE.md` overlap, follow the stricter.
@@ -15,6 +25,8 @@ depends on GraceUI; GraceUI never depends on EldenNet.
 - Grep with line numbers first, then read only that range. Never open a whole design or research document to find
   one thing, and never re-read a file you have just edited.
 - EldenNet's documents are read in the EldenNet checkout with its `wp` tool (`wp show DESIGN§12`, `wp grep`).
+- The shared reasoning log is EldenNet's `docs/REASONING.md` (`wp show WHY§n`): read its index at the start of a session
+  and after a switch of model, and add GraceUI's findings to it, tagged `#graceui`, by EldenNet's rule for the log.
 - For a wide search, use one subagent and keep only its conclusion. Run long jobs in the background and print only the
   last or matching lines.
 
@@ -56,11 +68,12 @@ depends on GraceUI; GraceUI never depends on EldenNet.
 
 ## EldenNet's rules that bind GraceUI
 
-- **One overlay** (EldenNet O25): hudhook pinned at exactly 0.9.3, built with `dx12` only; `imgui` only through
-  `hudhook::imgui`, MinHook only through `hudhook::mh`; never its eject path; no second Present hook, no second
-  MinHook. No `imgui-tables-api` feature and no hudhook patch without the owner's approval (DESIGN D28). Under G10
-  (decided by the owner, 2026-11-07: (b)), `graceui.dll` links no hudhook, `imgui` or MinHook, installs no hook and
-  starts no thread; only GraceUI's host kit inside EldenNet (`grace-host`) touches `hudhook::imgui`.
+- **One overlay** (EldenNet O25; its owner becomes GraceUI by G15, see the scope note above): hudhook pinned at
+  exactly 0.9.3, built with `dx12` only; `imgui` only through `hudhook::imgui`, MinHook only through `hudhook::mh`;
+  never its eject path; no second Present hook, no second MinHook. No `imgui-tables-api` feature and no hudhook patch
+  without the owner's approval (DESIGN D28). Under G10 (decided by the owner, 2026-11-07: (b)), `graceui.dll` links no
+  hudhook, `imgui` or MinHook, installs no hook and starts no thread; only GraceUI's host kit inside EldenNet
+  (`grace-host`) touches `hudhook::imgui`.
 - **No me3 and no fromsoftware-rs**, in any form.
 - **Read-only towards the game.** GraceUI never reads or writes game memory and calls no game code; it sees only what
   EldenNet's core projects.
@@ -114,9 +127,11 @@ depends on GraceUI; GraceUI never depends on EldenNet.
 - Work on a topic branch (`design/`, `feat/`, `fix/`, `docs/`, `test/`, `chore/`), never directly on `main` unless
   the owner asks. Commit and push checked work to the topic branch after the privacy sweep passes; open a pull
   request only when asked.
-- Ask the owner, with a recommendation, about anything the design leaves open. Add each question to DESIGN §12
-  ("Decisions for the owner") as a new row marked Open, and record the answer there with its date. Record what you
-  settle yourself in DESIGN §13.
+- Ask the owner, with a recommendation, about anything the design leaves open. Add each question to
+  [docs/DECISIONS.md](docs/DECISIONS.md) as a new entry marked Open, with the next free G-number, its options and the
+  recommendation, and to the index in DESIGN §12 ("Decisions for the owner"). Record the answer in the entry with its
+  date and the owner's words; a later decision amends an earlier entry by a dated note, never by rewriting it, and ids
+  are never renumbered. Record what you settle yourself in DESIGN §13.
 - When a GraceUI decision changes what EldenNet must do, add it to `docs/eldennet-changes.md`.
 - Keep example content original: fixtures, placeholder text, icons and ornaments are ours.
 - Text that players read uses British spelling, as EldenNet's documents do.

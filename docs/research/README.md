@@ -11,6 +11,7 @@ repository.
 | **IA** | [information-architecture.md](information-architecture.md) | The first proposal's sidebar of flavour-named sections and pages (superseded by DESIGN §4's framework categories, D38), every EldenNet setting and view mapped to a home, each page's contents, the spoiler rules (SP1–SP9) and privacy rules (PV1–PV8), and what GraceUI needs from EldenNet; the mapping and the rules still stand |
 | **REN** | [renderers.md](renderers.md) | In-game renderer options (Dear ImGui, Ultralight, CEF, RmlUi, Blitz, Servo and others) against hudhook 0.9.3's limits, and the hardening of the local web server |
 | **SND** | [skyrimnet-dashboard.md](skyrimnet-dashboard.md) | How SkyrimNet's dashboard groups an AI framework: its sidebar categories and pages, top bar, page parts, Home cards, settings groups and kinds of setting, each fact tagged with its source; and what EldenNet takes, adapts, defers or leaves out. The evidence for DESIGN §4 (D38–D48) |
+| **FW** | [ui-frameworks.md](ui-frameworks.md) | Shared UI hosts for game mods, for GraceUI as a framework any Elden Ring mod can use (G14): Skyrim's Magelight UI, Meridian UI and PrismaUI as the Skyrizz session reports them, Elden Ring's ERNativeUI, EROverlay and others, how DLL mods find each other, why one process holds one hudhook, Dear ImGui across DLLs, Proton, licences and the community's view of AI. The evidence for proposal 0001 |
 
 ## Citation conventions
 
