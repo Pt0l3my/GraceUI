@@ -37,7 +37,10 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 - **2026-11-14.** G21–G26 put to the owner with proposal 0002 (the map): what it is drawn on, glow and motion, who
   writes lore notes, when it ships, what the map key opens, and how the in-game map is kept to what was reached.
 - **2026-11-14.** G27 (terrain: a local 3D relief and our own sprites), decided the same day, as recommended.
-- **Open.** G18–G26.
+- **2026-11-15.** G21–G26 decided (G23 not as recommended). G28 (a narrow upload route, for EldenNet's plugins)
+  put and decided the same day, as recommended. G29 (GraceUI's server for hosts outside the game) put with
+  EldenNet's proposal 0002.
+- **Open.** G18–G20, G29.
 
 ## G1
 
@@ -486,3 +489,21 @@ a one-use ticket; refused from any paired device; GraceUI keeps nothing after ha
 18).
 
 **Owner's words.** "Narrow upload route (Recommended)".
+
+## G29
+
+**GraceUI's server for hosts outside the game?** · *2026-11-15 · Open*
+
+**Question.** EldenNet's owner asked for its dashboard in the browser with the game closed, and for the EldenNet
+devkit's tools in the browser (EldenNet's proposal 0002, O76 and O78). Both hosts run outside the game, where
+`graceui.dll` is not loaded. **Options:** (a) **one server library GraceUI publishes** for hosts outside the game (EldenNet's
+launcher, the devkit), with every rule of §7.2 and invariant 4: loopback only; Host, Origin, Fetch Metadata, the session
+cookie and the ticket checked; a strict CSP; only the files listed served; the home-network switch and pairing (G9)
+staying in the game at first; (b) each host writes its own server.
+
+**Recommendation.** (a): one implementation of the server's protections, tested once.
+
+**What each answer changes.** (a): invariant 4 and §7.2 cover a server outside the game; G4 widens to off game while
+EldenNet's launcher runs, if EldenNet's O76 is (a) or (b). (b): nothing in GraceUI; each host carries the rules itself.
+
+**Follows from.** G4, G9, G17; EldenNet's O76 and O78.

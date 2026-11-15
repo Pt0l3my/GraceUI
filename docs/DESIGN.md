@@ -2451,7 +2451,7 @@ a change to a page description or a component shows up in both views or fails CI
 **Status: the owner decided G1–G10 and G12 on 2026-11-07 and G13 on 2026-11-08, and made the request G11 records; G14
 widened GraceUI's scope, and its consequences were put as G15–G20 with proposal 0001: G15–G17 decided the same day
 (superseding G10), G18–G20 Open; G21–G26 were put with proposal 0002 (the map) on 2026-11-14 and decided on 2026-11-15
-(G23 not as recommended); G27 decided on 2026-11-14; G28 put and decided on 2026-11-15, as recommended, for EldenNet's plugins (its O67).**
+(G23 not as recommended); G27 decided on 2026-11-14; G28 put and decided on 2026-11-15, as recommended, for EldenNet's plugins (its O67); G29 put on 2026-11-15 with EldenNet's proposal 0002, Open.**
 Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record: the question as it was put, the
 options, the recommendation as written, what was decided, the owner's words and what each amends. This section is its
 index; each G-number the documents cite is a row here and an entry there. G11 and G12 were not questions of §12: they
@@ -2492,6 +2492,7 @@ it.
 | [G26](DECISIONS.md#g26) | In game, how is the game's map kept to what the player has reached? | (a) as the game shows it: composed at start and again when a map piece is gained; a measured exception to invariant 11 | Decided 2026-11-15 |
 | [G27](DECISIONS.md#g27) | How does the map show terrain? | (a) the exact terrain built locally: a 3D relief in the browser, a relief image in game; our own sprites and the tile-grid schematic as the fallback | Decided 2026-11-14 |
 | [G28](DECISIONS.md#g28) | May a space take a file from the browser view? | (a) a narrow upload route on the loopback listener, for a space's sensitive file commands alone, refused from paired devices | Decided 2026-11-15 |
+| [G29](DECISIONS.md#g29) | GraceUI's server for hosts outside the game? | (a) recommended: one server library GraceUI publishes, with every rule of §7.2 and invariant 4 | Open |
 
 ---
 
