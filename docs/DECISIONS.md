@@ -507,3 +507,8 @@ staying in the game at first; (b) each host writes its own server.
 EldenNet's launcher runs, if EldenNet's O76 is (a) or (b). (b): nothing in GraceUI; each host carries the rules itself.
 
 **Follows from.** G4, G9, G17; EldenNet's O76 and O78.
+
+*Later (2026-11-15):* EldenNet's O76 decided (b): its launcher runs EldenNet's engine off game, once the engine is
+adopted, and serves the dashboard from the saved files; its O78 (b) and O79 put the devkit's tools, viewers included,
+in EldenNet's dashboard behind Developer mode. So a host outside the game will serve GraceUI's pages either way; G29
+asks only how.
