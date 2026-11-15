@@ -73,9 +73,10 @@ depends on G18–G20 stays as written until the owner answers.
   (D69), and its `grace-host` crate alone holds hudhook, pinned at exactly 0.9.3 and built with `dx12` only; `imgui`
   only through `hudhook::imgui`, MinHook only through `hudhook::mh`; never its eject path; no second Present hook and
   no second MinHook in the process. No `imgui-tables-api` feature and no hudhook patch without the owner's approval
-  (DESIGN D28). EldenNet and every other consumer link no hudhook, MinHook or ImGui renderer backend and draw through
-  GraceUI's public C ABI (panels, notices, page data); a consumer may build its draw lists with a headless Dear ImGui
-  of its own, with no backend and no hooks.
+  (DESIGN D28). EldenNet and every other consumer link no hudhook or ImGui renderer backend, hook none of GraceUI's
+  functions (the list GraceUI publishes, D102) and draw through GraceUI's public C ABI (panels, notices, page data); a
+  consumer may build its draw lists with a headless Dear ImGui of its own, with no backend. EldenNet's own later hooks,
+  on other functions, follow its R12 (EldenNet O65, 2026-11-15).
 - **No me3 and no fromsoftware-rs**, in any form.
 - **Read-only towards the game.** GraceUI never reads or writes game memory and calls no game code; its hooks are on
   system DLLs only (Present, the window procedure, DInput and XInput), and it sees only what its spaces publish and
@@ -129,10 +130,13 @@ depends on G18–G20 stays as written until the owner answers.
     answers `ok`, `too_old` (naming both versions), `duplicate_id`, `inactive` or `refused`, never silence; a draw list
     that fails its check is refused (D76); a failed connect leaves the consumer headless with a log line, and EldenNet's
     launcher checks GraceUI before start (D88) (the ABI, handshake and draw-list tests).
-16. **One host, one hook set.** `grace-host` in `graceui.dll` is the only code holding hudhook, a MinHook or a Present
-    hook for GraceUI and its users; no consumer links hudhook or a MinHook or hands GraceUI an ImGui context; the pure
-    crates take no Win32 (G15 (a); CI checks the crate graph, `graceui.dll`'s imports against a reviewed allowlist,
-    and EldenNet's imports and symbols for any hook library).
+16. **GraceUI's functions have one owner.** `grace-host` in `graceui.dll` is the only code holding hudhook or hooking
+    the functions GraceUI hooks: the swap chain's `Present`, `Present1`, `ResizeBuffers` and `ResizeBuffers1`, the
+    command queue's `ExecuteCommandLists`, the game's window procedure, DirectInput's `GetDeviceState` and XInput's
+    `XInputGetState`, a list GraceUI publishes (D102). No consumer links hudhook, hooks one of those functions or hands
+    GraceUI an ImGui context; EldenNet's own hooks on other functions follow its R12 (EldenNet O65); the pure crates
+    take no Win32 (G15 (a); CI checks the crate graph, `graceui.dll`'s imports against a reviewed allowlist, and
+    EldenNet's hook targets against the published list).
 17. **Honest focus.** One input holder at a time; `request_input` is answered at once: `granted`, `refused` naming the
     holder, or `not_now` with the reason; nothing deposes the holder or queues behind it; the player's exit (a second
     menu-key press within 2 s, or Escape held 1 s) is never captured (D77; the input tests across holders).

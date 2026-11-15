@@ -6,7 +6,7 @@ GraceUI into a framework for any mod; its consequences were put as G15–G20 wit
 0001](proposals/0001-ui-framework.md), and G15–G17 decided the same day); the map's G21–G27 were put with [proposal
 0002](proposals/0002-map.md) and decided on 2026-11-14 and 2026-11-15. This design holds those answers (EldenNet's
 roadmap S7.8.c), with what depends on G18–G20, still Open, kept as it was. The decisions this design settles are in the
-log (§13, D1–D101).
+log (§13, D1–D103).
 
 GraceUI is EldenNet's main menu and dashboard: the place where a player sees whether EldenNet is working, who is
 around and what was said, and where every EldenNet setting lives. EldenNet is an AI framework, so GraceUI is laid out
@@ -212,11 +212,13 @@ Game\GraceUI\graceui.dll: the host (D69)                   consumers, each throu
 GraceUI's Rust crates follow EldenNet's dependency discipline (ARCH §2.3): `grace-protocol`, `grace-abi`, `grace-view`
 and `grace-draw` take no I/O, Win32, clock or game knowledge. Only `grace-host` takes `hudhook = { version = "=0.9.3",
 default-features = false, features = ["dx12"] }`, and it reaches `imgui` only through `hudhook::imgui`, so Cargo
-resolves one hudhook and one MinHook for the process. No consumer links hudhook, a MinHook or an ImGui renderer backend
-(invariant 16); a consumer may build its draw lists with a headless Dear ImGui of its own (D76). CI checks the crate
-graph (only `grace-host` depends on hudhook), `graceui.dll`'s import table against a reviewed allowlist (hudhook's
-needs, the server's socket and thread calls and the file calls for GraceUI's own folder, each named with its reason),
-and EldenNet's import table and symbols for any hook library. `graceui.dll` reads only its own folder's listed files
+resolves one hudhook and one MinHook for the process. No consumer links hudhook or an ImGui renderer backend, or hooks
+a function GraceUI hooks (invariant 16, D102); a consumer may build its draw lists with a headless Dear ImGui of its own
+(D76), and EldenNet's own later hooks, on other functions, follow its R12 (EldenNet O65). CI checks the crate graph
+(only `grace-host` depends on hudhook), `graceui.dll`'s import table against a reviewed allowlist (hudhook's needs, the
+server's socket and thread calls and the file calls for GraceUI's own folder, each named with its reason), that
+`grace-host`'s hook targets are exactly D102's published list, and EldenNet's import table and hook targets against
+that list. `graceui.dll` reads only its own folder's listed files
 and writes only under `user\` (D84); it never reads or writes another mod's files. Its panic hook writes one short line
 to its own scrubbed log and nothing to stderr. No GraceUI crate depends on an EldenNet crate.
 
@@ -388,7 +390,7 @@ is the binding summary.
 | Side | Holds | Never |
 |---|---|---|
 | `graceui.dll` (GraceUI's release) | `grace-host` (the hooks, capture and masking, the atlas and textures, the draw-list checker, the input holder and hotkeys, notices, world-state providers, the single-instance mutex, the anti-cheat check and the notice-only mode), the menu (`grace-pages`, `grace-view`, `grace-draw`), spaces and panels, `grace-serve` (§7.2), and `graceui::abi` (the exports) | Game memory or game code; another mod's files; calling a mod on a thread the mod did not choose; a second Present hook or MinHook |
-| A consumer (EldenNet first) | Its space's projections and its one validating command entry point; its panels' draw lists, built with GraceUI's kit or its own headless Dear ImGui; its own settings and files | hudhook, a MinHook, an ImGui renderer backend or any hook; handing GraceUI an ImGui context; leaving its commands to GraceUI to validate |
+| A consumer (EldenNet first) | Its space's projections and its one validating command entry point; its panels' draw lists, built with GraceUI's kit or its own headless Dear ImGui; its own settings and files | hudhook, an ImGui renderer backend, or a hook on a function GraceUI hooks (D102; EldenNet's own hooks on other functions follow its R12, EldenNet O65); handing GraceUI an ImGui context; leaving its commands to GraceUI to validate |
 
 **Finding and connecting** (D70, D73, D74). A consumer's helper, on the consumer's own worker and never in `DllMain`,
 finds `graceui.dll` (by module name, then an export scan, then the canonical path `Game\GraceUI\graceui.dll`, polled
@@ -1527,13 +1529,17 @@ a later version (O41, EldenNet DESIGN §13); v1 is dialogue only and never write
 
 **Content packs** (`content`; 0.2).
 
-- **Purpose.** What content EldenNet is running: the shipped pack and the player's own overrides, with no hub and no
-  downloads (D46).
+- **Purpose.** What content EldenNet is running: the shipped pack, its plugins (from 1.1) and the player's own
+  overrides, with no hub and no downloads (D46, D103).
 - **Sections.** **Shipped content** (name, version, credit; persona and card counts, since the cast is published;
   knowledge and rules as "included", with no counts, SP5) · **Your overrides** (relative paths under `overrides/`,
   each loaded or refused, with file and line) · **Turned off** (`disable.toml`: personas and cards by id; knowledge
-  entries, triggers and rules as counts) · **Reloads** (time, layer, result).
-- **Data.** Reads `content`. Writes nothing in v1 (no content editors, D2).
+  entries, triggers and rules as counts) · **Reloads** (time, layer, result) · **Plugins** (from 1.1, EldenNet O66 and
+  O67; D103): each plugin's name, version, author, licence, summary, state (on, off, refused, waiting for a restart),
+  place in the order, conflicts and check results, by file and line; its switch and its order in both views, Remove,
+  and, in the browser only, a drop zone with Add file (this PC only, never code; G28).
+- **Data.** Reads `content`. Writes nothing in v1 (no content editors, D2); from 1.1 it sends EldenNet's plugin
+  commands (`plugins.enable`, `plugins.order`, `plugins.remove`, and `plugins.install`, a sensitive command, D81).
 - **Rules.** Relative paths only (PV5).
 
 #### 4.6.10 Outside the rail
@@ -2416,15 +2422,17 @@ a change to a page description or a component shows up in both views or fails CI
 
 **Status: the owner decided G1–G10 and G12 on 2026-11-07 and G13 on 2026-11-08, and made the request G11 records; G14
 widened GraceUI's scope, and its consequences were put as G15–G20 with proposal 0001: G15–G17 decided the same day
-(superseding G10), G18–G20 Open; G21–G26 were put with proposal 0002 (the map) on 2026-11-14 and decided on 2026-11-15 (G23 not as recommended); G27 decided on 2026-11-14.** Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record:
-the question as it was put, the options, the recommendation as written, what was decided, the owner's words and what
-each amends. This section is its index; each G-number the documents cite is a row here and an entry there. G11 and G12
-were not questions of §12: they were first recorded in §14 and CLAUDE.md, and are indexed here like the rest. G1, G2,
-G4, G5, G6, G8, G9, G10, G15–G17 and G21–G27 also touch EldenNet's design; [eldennet-changes.md](eldennet-changes.md)
-lists what each answer changes there. G15–G17 and G21–G27 were folded into this design on 2026-11-15 (EldenNet's roadmap
-S7.8.c). A question that comes up later is added to DECISIONS.md as a new entry marked **Open**, with a
-recommendation, and as a row here; the owner's answer is recorded in the entry with its date, and a later decision
-amends an earlier one by a note, never by rewriting it.
+(superseding G10), G18–G20 Open; G21–G26 were put with proposal 0002 (the map) on 2026-11-14 and decided on 2026-11-15
+(G23 not as recommended); G27 decided on 2026-11-14; G28 put on 2026-11-15, for EldenNet's plugins (its O67), Open.**
+Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record: the question as it was put, the
+options, the recommendation as written, what was decided, the owner's words and what each amends. This section is its
+index; each G-number the documents cite is a row here and an entry there. G11 and G12 were not questions of §12: they
+were first recorded in §14 and CLAUDE.md, and are indexed here like the rest. G1, G2, G4, G5, G6, G8, G9, G10, G15–G17
+and G21–G27 also touch EldenNet's design; [eldennet-changes.md](eldennet-changes.md) lists what each answer changes
+there. G15–G17 and G21–G27 were folded into this design on 2026-11-15 (EldenNet's roadmap S7.8.c). A question that comes
+up later is added to DECISIONS.md as a new entry marked **Open**, with a recommendation, and as a row here; the owner's
+answer is recorded in the entry with its date, and a later decision amends an earlier one by a note, never by rewriting
+it.
 
 | # | Question | Decision, in brief | Status |
 |---|---|---|---|
@@ -2455,6 +2463,7 @@ amends an earlier one by a note, never by rewriting it.
 | [G25](DECISIONS.md#g25) | What does the map key open? | (a) a setting, off by default; GraceUI's map when switched on | Decided 2026-11-15 |
 | [G26](DECISIONS.md#g26) | In game, how is the game's map kept to what the player has reached? | (a) as the game shows it: composed at start and again when a map piece is gained; a measured exception to invariant 11 | Decided 2026-11-15 |
 | [G27](DECISIONS.md#g27) | How does the map show terrain? | (a) the exact terrain built locally: a 3D relief in the browser, a relief image in game; our own sprites and the tile-grid schematic as the fallback | Decided 2026-11-14 |
+| [G28](DECISIONS.md#g28) | May a space take a file from the browser view? | Recommended: (a) a narrow upload route on the loopback listener, for a space's sensitive file commands alone, refused from paired devices | **Open** |
 
 ---
 
@@ -2463,7 +2472,8 @@ amends an earlier one by a note, never by rewriting it.
 Settled by this design (2026-11-07) within the owner's request, EldenNet's decided rules and the research. Each can be
 reopened by the owner. D69 to D98 were settled in proposal 0001 (the framework, 2026-11-08) and proposal 0002 (the map,
 2026-11-14) and adopted with the owner's answers G15–G17 and G21–G27 on 2026-11-15 (EldenNet's roadmap S7.8.c); the
-proposals keep their full reasoning; D99 to D101 were settled by the fold itself. D82 (EldenNet's pages in EldenNet's
+proposals keep their full reasoning; D99 to D101 were settled by the fold itself, and D102 and D103 follow EldenNet's
+O65 to O67 (2026-11-15). D82 (EldenNet's pages in EldenNet's
 repository) waits for G20 and is not in force until the owner answers; until then §4 and its rules stay here.
 
 | # | Decision | Choice | Alternatives | Why | Source |
@@ -2513,7 +2523,7 @@ repository) waits for G20 and is not in force until the owner answers; until the
 | D43 | Text presentation | Voice › Text and subtitles holds the line display settings in v1 | A Display page under Settings | Text is the voice until v1.5, so Voice is useful in v1 | §4.6.3 |
 | D44 | History and the monitor | History › Events (stored, perceived events only), Conversations, Memories, World; live events and decisions on Tools › Event monitor | One page for both | SkyrimNet splits the record from the live monitor; SP7 applies to both | SND §2.4, §2.7 |
 | D45 | Page switches | A feature's master switch lives on its page (Memories, Awareness, Speaking up, Conversation) | Every switch on Settings › General | SkyrimNet's pattern; one home each | SND §4 |
-| D46 | Docs and content | Docs bundled and offline; Content packs read-only, with no hub | An online wiki; an add-on hub | PV6; D2 | SND §2.8 |
+| D46 | Docs and content | Docs bundled and offline; Content packs read-only, with no hub (Amended under EldenNet O66 and O67, 2026-11-15: the page also lists EldenNet's plugins with their switches, order and checks, and adds them through the browser's drop zone, D103; "no hub" stands) | An online wiki; an add-on hub | PV6; D2 | SND §2.8 |
 | D47 | Combat | A hub page of shortcuts; its keys live in Reactions, Pacing, NPC types and Models | Combat keys homed on Combat | Presets and the reaction table stay whole | §4.6.6 |
 | D48 | Gold for wayfinding | Section labels and Home card titles are uppercase eyebrows in `gold`, and stat values are `gold`; column heads and captions stay `ink.faint`. Principle 1 of §3.1 says so | Every eyebrow in `ink.faint`, as first proposed | Dense framework pages are scanned by their section labels; `gold` passes 7.5:1 on cards (§3.3); it stays one hue and is never decoration | §3.1, §4.2.4 |
 | D49 | Model-request log | AI › Requests (`ai.requests`) | A view inside System › Logs, as SkyrimNet has it | Calls belong with providers, models and the self-test; Logs stays a scrubbed log (PV5) | SND §2.6, §5.2 |
@@ -2568,6 +2578,8 @@ repository) waits for G20 and is not in force until the owner answers; until the
 | D99 | The Map before 1.1 | Until 1.1 the Map category is a later-version entry in the rail between Characters and History, tagged "WIP" with "1.1" in its tooltip and accessible name, opening a statement page with no controls; Settings › Map joins with the page | Absent until 1.1 | Principle 8 (G7): a planned later-version feature is stated, never faked and never hidden | Fold, 2026-11-15; G7, G24 (a) |
 | D100 | Faults inside GraceUI | A panic in GraceUI's own code never crosses the boundary: an ABI entry returns an error code; a panic in the menu's drawing turns the menu off for the session, releases capture and shows one notice, while panels, notices and the browser view keep working; a fault in a server task closes that connection, and a second stops the server for the session | One fault stopping every surface | Consumers' surfaces should outlive a fault in the menu, as EldenNet's did under D54 | Fold, 2026-11-15; §2.3, §2.8 |
 | D101 | GraceUI's keys | The settings D84 moves keep their names (`hotkeys.menu`, `ui.scale`, `ui.menu.*`, `dashboard.*`), so the migration is a move, not a rename; proposal 0001's `menu.key` is `hotkeys.menu` | Renaming them under a `graceui.` prefix | One name per setting in every document, the README and the settings description | Fold, 2026-11-15; D84 |
+| D102 | GraceUI's published hook list | GraceUI publishes the functions it hooks (the swap chain's `Present`, `Present1`, `ResizeBuffers` and `ResizeBuffers1`, the command queue's `ExecuteCommandLists`, the game's window procedure, DirectInput's `GetDeviceState`, XInput's `XInputGetState`) in its guide and with each release, append-only; no consumer hooks one of them; CI checks `grace-host`'s targets against it, and EldenNet checks its own against it | A ban on every hook library in a consumer (the fold's first wording) | What must have one owner is each hooked function (EldenNet WHY§86); other functions are not GraceUI's to forbid | EldenNet O65 (2026-11-15) |
+| D103 | Plugins on the Content packs page | From 1.1 the page lists EldenNet's plugins (name, version, author, licence, summary, state, order, conflicts, check results), with their switches, order and Remove in both views and, in the browser only, a drop zone with Add file, this PC only and never for code; "no hub" stands | A page of their own | Plugins are content layers, which this page already shows | EldenNet O66, O67; its proposal 0001 §5.6, §6.2; G28 for the upload |
 
 ---
 

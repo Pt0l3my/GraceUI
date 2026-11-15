@@ -382,3 +382,13 @@ item above and one here disagree, this one holds. It replaces §1 item 1's "Elde
     checks gain "one hook library in the process: GraceUI's".
 14. **Unchanged**: the `UiPort`'s core side (projections, one command entry point, the settings export), the
     scheduler's other rules, R14, R16 (EldenNet keeps its own single-instance mutex), the read-only rule.
+
+## 12. EldenNet's plugins (EldenNet O65–O69, decided 2026-11-15)
+
+GraceUI's part of EldenNet's own decisions (EldenNet's proposal 0001); EldenNet's design holds the rest.
+
+1. **The hook list** (D102): GraceUI publishes the functions it hooks, and EldenNet's CI checks its own hook targets
+   against it once EldenNet has a hook of its own (EldenNet O65, R12).
+2. **The Content packs page** lists EldenNet's plugins (D103), with EldenNet's commands `plugins.enable`,
+   `plugins.order`, `plugins.remove`, and `plugins.install`, which EldenNet marks sensitive (D81).
+3. **The upload route** for the browser's drop zone waits for G28 (Open).

@@ -455,3 +455,27 @@ game shipped; the browser has room for 3D, the in-game view keeps to one upload.
 **Follows from.** The owner's messages of 2026-11-14 on topography and a 3D map; [proposal 0002](proposals/0002-map.md)
 §3; D97.
 
+
+## G28
+
+**May a space take a file from the browser view?** · *Open since 2026-11-15*
+
+**Question.** EldenNet's O67 (a) lets its plugins also be added on the dashboard: a drop zone with an Add file button on
+the Content packs page, in the browser only, this PC only, never for code (D103). GraceUI's frames are capped at 16 KiB
+(§6.8), so a file needs a route of its own. **(a) A narrow upload route** (recommended): one route on the loopback
+listener only, for a space's commands that take a file and are marked sensitive (EldenNet's `plugins.install` first);
+one file at a time, at most 32 MiB (EST); every check of §7.2 (Host, Origin, Fetch Metadata, the session cookie) and a
+one-use ticket for that upload; refused from any paired device; the bytes handed to the space's command queue and kept
+by GraceUI no longer than the call; the server suite covering it. **(b) No uploads**: EldenNet's plugins come through
+its Plugins folder alone, and EldenNet's O67 works as its (b). **In plain words:** Should the dashboard in your browser
+be able to hand a plugin file to EldenNet, from this PC only, or should plugins only ever go in through the folder?
+
+**Recommendation.** (a). It is what O67 chose, and a route this narrow keeps invariant 4 whole: loopback only, the same
+checks as every command, one ticket per upload, nothing kept. *What (a) gives up:* a second kind of request on the
+server, which the security suite must cover.
+
+**What each answer changes.** (a): §7.2 gains an item for the upload route, §6 a note on how a file travels, and the
+server suite its cases; D103's drop zone works. (b): D103's drop zone falls away, and the page names EldenNet's Plugins
+folder instead, by its relative name (PV5).
+
+**Follows from.** EldenNet's O67 (2026-11-15); EldenNet's proposal 0001 §6.2.
