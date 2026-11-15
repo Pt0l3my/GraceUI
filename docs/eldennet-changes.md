@@ -244,7 +244,7 @@ player switches `dashboard.lan` on (G9).
    projections cover every NPC with a profile, keyed by its profile id; a keepsake about another NPC is projected only
    when every event it cites had the Tarnished in its audience (SP7, D68).
 
-## 10. The map (proposal 0002; G21–G26 Open)
+## 10. The map (proposal 0002; G21–G26 decided 2026-11-15)
 
 What EldenNet must add if the owner accepts [proposal 0002](proposals/0002-map.md) as recommended. Nothing is built
 before the design fold (EldenNet roadmap S7.8.c) and the map spike (S7.9.c).
@@ -277,6 +277,9 @@ before the design fold (EldenNet roadmap S7.8.c) and the map spike (S7.9.c).
 6. **Lore-note proposals** (G23 (a)): from two or more memories tied to one place or person, citing them, batched on a
    light slot under pacing, through the lock filter (SP2); kept, edited or dropped by the player; stored per
    playthrough.
+   *Later (2026-11-15): G23 decided (c).* The notes are added to the map by the model itself, by the same rules; the
+   player edits or removes them, a removed note is not written again from the same memories, and a setting (Lore notes
+   by AI, on by default) turns it off.
 7. **Terrain** (G27 (a), decided 2026-11-14): the terrain's heights read from the player's install (the source to be
    found by S7.9.c: map pieces, collision or a height texture, each structure verified, O48), built once on the PC
    with the drawn base and cached; projected for the browser's 3D relief and rendered once as the in-game relief

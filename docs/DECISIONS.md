@@ -313,7 +313,7 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 ## G21
 
-**What is the map drawn on?** · *Open since 2026-11-14*
+**What is the map drawn on?** · *Open since 2026-11-14 · Decided by the owner 2026-11-15, as recommended*
 
 **Question.** **(a) The player's own game map, read from their game at run time, masked and never shipped, with GraceUI's drawn base as the fallback when it cannot be read or does not fit** (recommended), and a setting to choose the drawn base or none instead. **(b) GraceUI's drawn base only.** **(c) An image the player exports from their own install with a tool on their PC**, loaded from a folder they choose.
 
@@ -337,9 +337,13 @@ is EldenNet's own run-time read of the game's archives. (c) is proven too, but a
 with a tool, so it stays a developer's route for testing. Placements and areas now have exact sources (proposal 0002
 §14; EldenNet WHY§61 to WHY§82).
 
+**Decision (2026-11-15).** (a): the player's own game map, its tiles composed as the game composes them for the map pieces the player holds, at each zoom, read from their install at run time and never shipped, with GraceUI's drawn base as the fallback and a setting to choose the drawn base or none (proposal 0002 §3, §14).
+
+**Owner's words.** "Your game's own map (Recommended)".
+
 ## G22
 
-**May anything on the map loop or pulse?** · *Open since 2026-11-14*
+**May anything on the map loop or pulse?** · *Open since 2026-11-14 · Decided by the owner 2026-11-15, as recommended*
 
 **Question.** **(a) No: still glow, hover brightening and one-shot flares; invariant 14 unchanged** (recommended). **(b) A slow ambient shimmer in the browser only**, behind a setting. **(c) Loops in both views**, behind a setting.
 
@@ -349,9 +353,13 @@ with a tool, so it stays a developer's route for testing. Placements and areas n
 
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
 
+**Decision (2026-11-15).** (a): no loops; still glow, brightening on hover and a single flare for new things; invariant 14 unchanged.
+
+**Owner's words.** "No: still glow (Recommended)".
+
 ## G23
 
-**Who writes the lore notes?** · *Open since 2026-11-14*
+**Who writes the lore notes?** · *Open since 2026-11-14 · Decided by the owner 2026-11-15, not as recommended*
 
 **Question.** **(a) The model proposes notes from the player's memories, each citing them, and a note joins the map only if the player keeps it** (recommended). **(b) The player writes every note**; no model call. **(c) The model writes notes on its own**, and the player may remove them.
 
@@ -361,9 +369,13 @@ with a tool, so it stays a developer's route for testing. Placements and areas n
 
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
 
+**Decision (2026-11-15).** (c), as the owner put it: the model adds lore notes to the map on its own, each from two or more of the player's memories tied to one place or person and citing them, through the lock filter (SP2), batched on a light slot under EldenNet's pacing; the player may edit or remove any, and a removed note is not proposed again from the same memories. A setting, **Lore notes by AI**, is on by default and turns it off (Settings › Map, D95).
+
+**Owner's words.** "Let AI add notes automatically, a setting on by default."
+
 ## G24
 
-**When does the map ship?** · *Open since 2026-11-14*
+**When does the map ship?** · *Open since 2026-11-14 · Decided by the owner 2026-11-15, as recommended*
 
 **Question.** **(a) After EldenNet v1.0, as part of 1.1**, with the spike done early as research (recommended). **(b) In v1.0, the browser view on the drawn base only**; the game's map and the in-game view in 1.1. **(c) All of it in v1.0.**
 
@@ -377,9 +389,13 @@ with a tool, so it stays a developer's route for testing. Placements and areas n
 §14), so the riskiest part of a 1.1 map is mostly solved; the panel kind, the design fold and EldenNet's own read of
 the game's archives remain.
 
+**Decision (2026-11-15).** (a): after EldenNet v1.0, as part of 1.1, its groundwork (the sightings record, the world stages) built for v1.0 anyway. Asked first: "is there a drawback to building in v1.0?"; told the drawbacks (v1.0 later by the largest single feature, the run-time read of the game's archives a v1.0 risk, more in-game checks), the owner chose (a).
+
+**Owner's words.** "In 1.1, after v1.0 (Recommended)".
+
 ## G25
 
-**What does the map key open?** · *Open since 2026-11-14*
+**What does the map key open?** · *Open since 2026-11-14 · Decided by the owner 2026-11-15, as recommended*
 
 **Question.** **(a) A setting, off by default: the map key opens the game's map, or GraceUI's map when the player switches it on**; with it on, the key pressed again or held opens the game's map (recommended). **(b) Always the game's map**; GraceUI's map only from the menu and the browser. **(c) GraceUI's map by default.**
 
@@ -389,9 +405,13 @@ the game's archives remain.
 
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
 
+**Decision (2026-11-15).** (a): a setting, off by default; with it on, the map key opens GraceUI's map, and pressed again or held opens the game's map, where fast travel and markers stay in v1.
+
+**Owner's words.** "A setting, off by default (Recommended)".
+
 ## G26
 
-**In game, how is the game's map kept to what the player has reached?** · *Open since 2026-11-14*
+**In game, how is the game's map kept to what the player has reached?** · *Open since 2026-11-14 · Decided by the owner 2026-11-15, as recommended when put again*
 
 **Question.** hudhook 0.9.3 leaks one buffer per texture upload, so the in-game map can be uploaded only once (invariant 11), while new areas are reached during play. **(a) Upload the whole image once at start, at a reduced size, and mask it at draw time by the reached areas' shapes** (recommended): invariant 1 gains one narrow, tested exception, this texture, which no view shows unmasked and no projection, log or report carries. **(b) Upload it once, masked as at start**; areas reached during the session show on the drawn base until the next start. **(c) The game's map in the browser only**; in game the drawn base.
 
@@ -409,6 +429,10 @@ matches the game's at once, and invariant 1 stands whole, which the old (a) bent
 (proposal 0002 §14.4).
 
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
+
+**Decision (2026-11-15).** (a) as put again on 2026-11-15: as the game shows it. The in-game texture is composed at start from the tiles for the map pieces the player holds, and composed and uploaded once more when a piece is gained, each such upload leaking one buffer of hudhook 0.9.3 until the game restarts: invariant 11 gains that narrow, measured exception, with a test counting the uploads; invariant 1 stands whole (proposal 0002 §14.4).
+
+**Owner's words.** "Update on a piece gained (Recommended)".
 
 ## G27
 
