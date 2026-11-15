@@ -6,7 +6,7 @@ GraceUI into a framework for any mod; its consequences were put as G15–G20 wit
 0001](proposals/0001-ui-framework.md), and G15–G17 decided the same day); the map's G21–G27 were put with [proposal
 0002](proposals/0002-map.md) and decided on 2026-11-14 and 2026-11-15. This design holds those answers (EldenNet's
 roadmap S7.8.c), with what depends on G18–G20, still Open, kept as it was. The decisions this design settles are in the
-log (§13, D1–D103).
+log (§13, D1–D105).
 
 GraceUI is EldenNet's main menu and dashboard: the place where a player sees whether EldenNet is working, who is
 around and what was said, and where every EldenNet setting lives. EldenNet is an AI framework, so GraceUI is laid out
@@ -845,6 +845,7 @@ Tools              ▸ Event monitor · Bug report · Workshop (browser, develop
 Settings
 Docs
 Content packs
+Plugins (1.1)
 ```
 
 | Category | Pages, with their ids | First shown |
@@ -858,10 +859,11 @@ Content packs
 | Behaviour | Conversation `behaviour.conversation` · Speaking up `behaviour.speaking` · Combat `behaviour.combat` · Awareness `behaviour.awareness` · Reactions `behaviour.reactions` · Pacing `behaviour.pacing` · Acts `behaviour.acts` (WIP: later) | 0.2 (file) to 0.6; Acts a statement from 0.6 |
 | System | Status `system.status` · Performance `system.performance` · Traces `system.traces` · Logs `system.logs` | 0.2 |
 | Tools | Event monitor `tools.monitor` · Bug report `tools.report` · Workshop `tools.workshop` (browser, `debug.panel`) | 0.4; 0.2; 0.2 |
-| Foot | Settings `settings` (groups `settings.general`, `settings.hotkeys`, `settings.menu`, `settings.browser`, `settings.developer`, and `settings.map` from 1.1; tab `settings.all`) · Docs `docs` · Content packs `content` | 0.2 (browser, partly read-only), 0.6 |
+| Foot | Settings `settings` (groups `settings.general`, `settings.hotkeys`, `settings.menu`, `settings.browser`, `settings.developer`, and `settings.map` from 1.1; tab `settings.all`) · Docs `docs` · Content packs `content` · Plugins `plugins` (from 1.1, D104) | 0.2 (browser, partly read-only), 0.6 |
 
 Home and 30 pages in eight categories: Home and 24 pages work in v1, one arrives in 1.1 (Map, §4.13), two in v1.5, two
-are later-version statements and Workshop is for developers; then three foot pages. Outside the rail: First light (the
+are later-version statements and Workshop is for developers; then three foot pages, and a fourth, Plugins, from 1.1
+(D104). Outside the rail: First light (the
 setup flow), search and confirmation modals (§4.6.10).
 
 #### 4.2.2 Sidebar behaviour
@@ -880,8 +882,8 @@ setup flow), search and confirmation modals (§4.6.10).
   with no controls. Features that are not planned never appear (§4.11).
 - **Workshop** appears only in the browser and only while `debug.panel` is on (SP8). In game, Tools shows Event
   monitor and Bug report.
-- **Foot**, pinned to the bottom under a rule: Settings, Docs, Content packs. No account row, community link or
-  sign-in: EldenNet has no accounts (PV rules).
+- **Foot**, pinned to the bottom under a rule: Settings, Docs, Content packs, and from 1.1 Plugins (D104). No account
+  row, community link or sign-in: EldenNet has no accounts (PV rules).
 - **World** is absent from the rail while `ui.menu.show_world = false` (the player's choice, not a spoiler hint).
 - **At the title screen and at L1** the rail stays whole; pages that need a playthrough say so in their body (§4.4).
 - **By increment**: a page joins the rail in the increment it ships in (§10); before then it is absent, not greyed.
@@ -1015,13 +1017,14 @@ Effect timing is ARCH §11.6's: Now, Next moment, Next request, Next launch.
 
 The first proposal's `ui.menu.names` is dropped: names are plain only (D39).
 
-**Other sources.** `providers.toml` (read and write) on AI › Providers (its entries) and AI › Models (slot models and
-the preset); `secrets.toml` **write-only** on AI › Providers (the UI sees set, missing or rejected, never a value);
-`models.toml` (read) on AI › Models; `identity/types.toml` (read) on NPC types; persona and bio display fields only
-(`display_name_fallback`, `public.summary`, the news temperament) on Named NPCs; each persona stage's public line, for
-the stage seen only, on Playthrough; a world stage's `line` only for stages that hold, on History › World; `overrides/`
-and `disable.toml` (read, as relative paths, ids and counts) on Content packs. View state, never stored: live updates,
-the journey in view, the rail collapsed, sections open.
+**Other sources.** From 1.1, `config\plugins.toml` (each plugin's switch, its Cluster or Detached mode and the order;
+changed only through EldenNet's plugin commands) on Plugins. `providers.toml` (read and write) on AI › Providers (its
+entries) and AI › Models (slot models and the preset); `secrets.toml` **write-only** on AI › Providers (the UI sees set,
+missing or rejected, never a value); `models.toml` (read) on AI › Models; `identity/types.toml` (read) on NPC types;
+persona and bio display fields only (`display_name_fallback`, `public.summary`, the news temperament) on Named NPCs;
+each persona stage's public line, for the stage seen only, on Playthrough; a world stage's `line` only for stages that
+hold, on History › World; `overrides/` and `disable.toml` (read, as relative paths, ids and counts) on Content packs.
+View state, never stored: live updates, the journey in view, the rail collapsed, sections open.
 
 **Actions** (each a command, §6.6): Pause AI for this session (Home, D15); run the self-test (AI › Self-test, Home);
 find local servers (AI › Providers); prepare lines now (AI › Models; at rest or at the title only); Forget this NPC
@@ -1529,18 +1532,32 @@ a later version (O41, EldenNet DESIGN §13); v1 is dialogue only and never write
 
 **Content packs** (`content`; 0.2).
 
-- **Purpose.** What content EldenNet is running: the shipped pack, its plugins (from 1.1) and the player's own
-  overrides, with no hub and no downloads (D46, D103).
+- **Purpose.** What content EldenNet is running: the shipped pack and the player's own overrides, with no hub and no
+  downloads (D46). Plugins have a page of their own from 1.1 (D104), which this page links to.
 - **Sections.** **Shipped content** (name, version, credit; persona and card counts, since the cast is published;
   knowledge and rules as "included", with no counts, SP5) · **Your overrides** (relative paths under `overrides/`,
   each loaded or refused, with file and line) · **Turned off** (`disable.toml`: personas and cards by id; knowledge
-  entries, triggers and rules as counts) · **Reloads** (time, layer, result) · **Plugins** (from 1.1, EldenNet O66 and
-  O67; D103): each plugin's name, version, author, licence, summary, state (on, off, refused, waiting for a restart),
-  place in the order, conflicts and check results, by file and line; its switch and its order in both views, Remove,
-  and, in the browser only, a drop zone with Add file (this PC only, never code; G28).
-- **Data.** Reads `content`. Writes nothing in v1 (no content editors, D2); from 1.1 it sends EldenNet's plugin
-  commands (`plugins.enable`, `plugins.order`, `plugins.remove`, and `plugins.install`, a sensitive command, D81).
+  entries, triggers and rules as counts) · **Reloads** (time, layer, result).
+- **Data.** Reads `content`. Writes nothing (no content editors, D2).
 - **Rules.** Relative paths only (PV5).
+
+**Plugins** (`plugins`; 1.1 for content plugins, code plugins after v1.0; D104).
+
+- **Purpose.** The plugins EldenNet runs, as the owner designed the page (EldenNet O70): a list of plugins in rows, each
+  with its switch, and for a code plugin whether it runs in the plugin cluster or detached in a host of its own.
+- **Rows.** Name, version and author; the **On/Off** switch; for a code plugin, **Cluster** or **Detached**; the state
+  (on, off, refused, stopped, waiting for a restart), with a library clash or a failed check in words. Content
+  plugins keep their order, which decides between two plugins holding the same file. Opening a row shows the licence,
+  the summary, what the plugin may reach (a code plugin's, from its imports), its check results by file and line, its
+  reports, and Remove.
+- **Head of the list.** In the browser only: the drop zone with **Add file** (content plugins; this PC only, never code;
+  the file sent by §7.2 item 18's route, G28). When code plugins have stopped, a banner with the plugins-stopped
+  pop-up's choices (D105).
+- **Data.** Reads `plugins`. Sends EldenNet's plugin commands: `plugins.enable`, `plugins.mode`, `plugins.order`,
+  `plugins.remove`, `plugins.restart` (with the pop-up's choice), and `plugins.install`, which EldenNet marks
+  sensitive (D81).
+- **Rules.** Relative paths only (PV5); a plugin's own text (its name, summary and reports) is always text, never
+  markup (D81).
 
 #### 4.6.10 Outside the rail
 
@@ -1549,7 +1566,8 @@ a later version (O41, EldenNet DESIGN §13); v1 is dialogue only and never write
   optional prepared lines → text size (G6) and the browser view (its address, and the switch to turn it off; G4) →
   done, with a checklist and "Open Docs › Getting started". It opens at the title screen on first run (in the browser
   too, if the player opens the dashboard first), and again from Home › Setup and Settings.
-- **Modals**: the Forget confirmations, Reset page or Reset all, key capture, the Workshop spoiler confirmation.
+- **Modals**: the Forget confirmations, Reset page or Reset all, key capture, the Workshop spoiler confirmation, and
+  from 1.1 the plugins-stopped pop-up (D105).
 - **Search** (§4.3) is a modal scope over the page.
 
 ### 4.7 The settings row
@@ -2405,7 +2423,7 @@ a change to a page description or a component shows up in both views or fails CI
 | An input leak: Esc opens the game's menu, B dodges | The mask-until-release rule, the close matrix, tests on pad and keyboard |
 | Proton and the Deck: IME, Steam keyboard, opening a browser under gamescope | On EldenNet's matrix; on a Deck in game mode the in-game menu is the path, and the dashboard is for desktop mode |
 | Scope creep (editors, explorers, sound) | Seams only in v1 (§1.3) |
-| A framework-sized rail (twelve top-level entries and 30 pages) is slow to cross on a pad | The accordion keeps one category open; LT and RT walk every page in order; search reaches any setting and Quick switches the main ones; the rail collapses on small screens (§4.2.2, §5.4) |
+| A framework-sized rail (twelve top-level entries, thirteen with Plugins from 1.1, and 30 pages) is slow to cross on a pad | The accordion keeps one category open; LT and RT walk every page in order; search reaches any setting and Quick switches the main ones; the rail collapses on small screens (§4.2.2, §5.4) |
 | Players expect SkyrimNet's pages that EldenNet does not have | Later EldenNet features are statement pages tagged "WIP" (G7); Docs explains what EldenNet does instead; not-planned pages are simply absent (§4.11) |
 | A second home creeps in through Settings | Settings holds only homeless settings and links out (D40); the page lint fails a key with two homes |
 | Mixed or stale GraceUI copies after a manual update | `graceui.toml` with sizes and hashes, `connect`'s answers, majors that must match, EldenNet's launcher installing or explaining, notices in words; a second copy idles (§2.9, D83, D88) |
@@ -2482,8 +2500,8 @@ it.
 Settled by this design (2026-11-07) within the owner's request, EldenNet's decided rules and the research. Each can be
 reopened by the owner. D69 to D98 were settled in proposal 0001 (the framework, 2026-11-08) and proposal 0002 (the map,
 2026-11-14) and adopted with the owner's answers G15–G17 and G21–G27 on 2026-11-15 (EldenNet's roadmap S7.8.c); the
-proposals keep their full reasoning; D99 to D101 were settled by the fold itself, and D102 and D103 follow EldenNet's
-O65 to O67 (2026-11-15). D82 (EldenNet's pages in EldenNet's
+proposals keep their full reasoning; D99 to D101 were settled by the fold itself, D102 and D103 follow EldenNet's O65
+to O67, and D104 and D105 its O70 (2026-11-15). D82 (EldenNet's pages in EldenNet's
 repository) waits for G20 and is not in force until the owner answers; until then §4 and its rules stay here.
 
 | # | Decision | Choice | Alternatives | Why | Source |
@@ -2533,7 +2551,7 @@ repository) waits for G20 and is not in force until the owner answers; until the
 | D43 | Text presentation | Voice › Text and subtitles holds the line display settings in v1 | A Display page under Settings | Text is the voice until v1.5, so Voice is useful in v1 | §4.6.3 |
 | D44 | History and the monitor | History › Events (stored, perceived events only), Conversations, Memories, World; live events and decisions on Tools › Event monitor | One page for both | SkyrimNet splits the record from the live monitor; SP7 applies to both | SND §2.4, §2.7 |
 | D45 | Page switches | A feature's master switch lives on its page (Memories, Awareness, Speaking up, Conversation) | Every switch on Settings › General | SkyrimNet's pattern; one home each | SND §4 |
-| D46 | Docs and content | Docs bundled and offline; Content packs read-only, with no hub (Amended under EldenNet O66 and O67, 2026-11-15: the page also lists EldenNet's plugins with their switches, order and checks, and adds them through the browser's drop zone, D103; "no hub" stands) | An online wiki; an add-on hub | PV6; D2 | SND §2.8 |
+| D46 | Docs and content | Docs bundled and offline; Content packs read-only, with no hub (Amended under EldenNet O66 and O67, 2026-11-15: the page also lists EldenNet's plugins with their switches, order and checks, and adds them through the browser's drop zone, D103; "no hub" stands) (Later, 2026-11-15: plugins moved to a page of their own, D104, so Content packs is read-only again) | An online wiki; an add-on hub | PV6; D2 | SND §2.8 |
 | D47 | Combat | A hub page of shortcuts; its keys live in Reactions, Pacing, NPC types and Models | Combat keys homed on Combat | Presets and the reaction table stay whole | §4.6.6 |
 | D48 | Gold for wayfinding | Section labels and Home card titles are uppercase eyebrows in `gold`, and stat values are `gold`; column heads and captions stay `ink.faint`. Principle 1 of §3.1 says so | Every eyebrow in `ink.faint`, as first proposed | Dense framework pages are scanned by their section labels; `gold` passes 7.5:1 on cards (§3.3); it stays one hue and is never decoration | §3.1, §4.2.4 |
 | D49 | Model-request log | AI › Requests (`ai.requests`) | A view inside System › Logs, as SkyrimNet has it | Calls belong with providers, models and the self-test; Logs stays a scrubbed log (PV5) | SND §2.6, §5.2 |
@@ -2589,7 +2607,9 @@ repository) waits for G20 and is not in force until the owner answers; until the
 | D100 | Faults inside GraceUI | A panic in GraceUI's own code never crosses the boundary: an ABI entry returns an error code; a panic in the menu's drawing turns the menu off for the session, releases capture and shows one notice, while panels, notices and the browser view keep working; a fault in a server task closes that connection, and a second stops the server for the session | One fault stopping every surface | Consumers' surfaces should outlive a fault in the menu, as EldenNet's did under D54 | Fold, 2026-11-15; §2.3, §2.8 |
 | D101 | GraceUI's keys | The settings D84 moves keep their names (`hotkeys.menu`, `ui.scale`, `ui.menu.*`, `dashboard.*`), so the migration is a move, not a rename; proposal 0001's `menu.key` is `hotkeys.menu` | Renaming them under a `graceui.` prefix | One name per setting in every document, the README and the settings description | Fold, 2026-11-15; D84 |
 | D102 | GraceUI's published hook list | GraceUI publishes the functions it hooks (the swap chain's `Present`, `Present1`, `ResizeBuffers` and `ResizeBuffers1`, the command queue's `ExecuteCommandLists`, the game's window procedure, DirectInput's `GetDeviceState`, XInput's `XInputGetState`) in its guide and with each release, append-only; no consumer hooks one of them; CI checks `grace-host`'s targets against it, and EldenNet checks its own against it | A ban on every hook library in a consumer (the fold's first wording) | What must have one owner is each hooked function (EldenNet WHY§86); other functions are not GraceUI's to forbid | EldenNet O65 (2026-11-15) |
-| D103 | Plugins on the Content packs page | From 1.1 the page lists EldenNet's plugins (name, version, author, licence, summary, state, order, conflicts, check results), with their switches, order and Remove in both views and, in the browser only, a drop zone with Add file, this PC only and never for code, the file sent by §7.2 item 18's route; "no hub" stands | A page of their own | Plugins are content layers, which this page already shows | EldenNet O66, O67; its proposal 0001 §5.6, §6.2; G28 |
+| D103 | Plugins on the Content packs page | From 1.1 the page lists EldenNet's plugins (name, version, author, licence, summary, state, order, conflicts, check results), with their switches, order and Remove in both views and, in the browser only, a drop zone with Add file, this PC only and never for code, the file sent by §7.2 item 18's route; "no hub" stands (Superseded the same day by D104: plugins have a page of their own) | A page of their own | Plugins are content layers, which this page already shows | EldenNet O66, O67; its proposal 0001 §5.6, §6.2; G28 |
+| D104 | The Plugins page | A page of its own at the foot, `plugins`, from 1.1: a row per plugin with its On/Off switch and, for a code plugin, Cluster or Detached; its state and its clashes or failed checks in words; order for content plugins; the drop zone in the browser; Content packs keeps EldenNet's own content and the overrides, read-only | Plugins on Content packs (D103) | Code plugins are not content, and the owner designed the rows for a plugin page of their own | EldenNet O70 (2026-11-15) |
+| D105 | The plugins-stopped pop-up | EldenNet's modal, drawn by GraceUI: "Plugins stopped: <plugin> crashed" (or stopped responding, or used too much memory), the plugin's title in `rot` and bold, how sure the cause is, its version, which plugins stopped and which run on; Details and Copy report; the X at the top right (plugins stay off, the choices stay on the Plugins page) and four buttons: Restart plugins, Restart plugins without <plugin>, Restart plugins with <plugin> detached, Ignore (no plugins). In the browser at once; in game a notice first, the modal only at a safe moment (invariant 9); on EldenNet's launcher at the next start if no choice was made | A notice alone | The owner's design; colour is never the only signal (§3.12) | EldenNet O70; its proposal 0001 §13.6 |
 
 ---
 

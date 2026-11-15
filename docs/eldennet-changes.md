@@ -389,7 +389,12 @@ GraceUI's part of EldenNet's own decisions (EldenNet's proposal 0001); EldenNet'
 
 1. **The hook list** (D102): GraceUI publishes the functions it hooks, and EldenNet's CI checks its own hook targets
    against it once EldenNet has a hook of its own (EldenNet O65, R12).
-2. **The Content packs page** lists EldenNet's plugins (D103), with EldenNet's commands `plugins.enable`,
-   `plugins.order`, `plugins.remove`, and `plugins.install`, which EldenNet marks sensitive (D81).
+2. **The Plugins page** (D104, which superseded D103's place on Content packs) lists EldenNet's plugins in rows, with
+   EldenNet's commands `plugins.enable`, `plugins.mode` (Cluster or Detached, EldenNet O70), `plugins.order`,
+   `plugins.remove`, `plugins.restart`, and `plugins.install`, which EldenNet marks sensitive (D81); EldenNet publishes
+   the `plugins` topic.
 3. **The upload route** for the browser's drop zone (G28, decided 2026-11-15, as recommended): EldenNet's
    `plugins.install` takes its file through GraceUI §7.2 item 18, as a command marked sensitive and taking a file.
+4. **The plugins-stopped pop-up** (D105, EldenNet O70): EldenNet asks GraceUI for it when a plugin host stops, with
+   the plugin, the cause and how sure it is; the choice comes back as `plugins.restart`. In game GraceUI shows a
+   notice first and the modal only at a safe moment.
