@@ -329,6 +329,14 @@ texture." Every base therefore has the exact shape, areas and placements; GraceU
 player's PC from their own game and no shape ships (proposal 0002 §3, D97). Under (b) the drawn base still needs the
 player's game as its source, so (b) no longer avoids the image reader.
 
+**Later (2026-11-15): what the research found.** The recommendation stands, now concrete: the base is the game's own
+map tiles, composed as the game composes them (each tile in the variant for the map pieces the player holds, at
+each zoom level), read from the player's install at run time and never shipped. The image's formats, the game's own
+masks, the zoom levels' sizes and every variant the game draws are found and checked on the owner's PC; the risk left
+is EldenNet's own run-time read of the game's archives. (c) is proven too, but asks each player to unpack the game
+with a tool, so it stays a developer's route for testing. Placements and areas now have exact sources (proposal 0002
+§14; EldenNet WHY§61 to WHY§82).
+
 ## G22
 
 **May anything on the map loop or pulse?** · *Open since 2026-11-14*
@@ -365,6 +373,10 @@ player's game as its source, so (b) no longer avoids the image reader.
 
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
 
+**Later (2026-11-15).** The recommendation stands. The research found the image route and the placements (proposal 0002
+§14), so the riskiest part of a 1.1 map is mostly solved; the panel kind, the design fold and EldenNet's own read of
+the game's archives remain.
+
 ## G25
 
 **What does the map key open?** · *Open since 2026-11-14*
@@ -386,6 +398,15 @@ player's game as its source, so (b) no longer avoids the image reader.
 **Recommendation.** (a). One upload per session, new areas show the moment they are reached, and the guarantee that matters (nothing unreached is drawn, counted or hinted at) holds and is tested by rendering goldens at fixture states. *What (a) gives up:* invariant 1's "never receives" for one texture; a debugger reading video memory could see the whole map.
 
 **What each answer changes.** (a): invariant 1 gains its exception and a pixel golden; D90. (b): a second style in game until restart. (c): the in-game map is the drawn base only.
+
+**Later (2026-11-15): put again, with new options.** The game reveals its map by map piece (32 in all), not by places
+visited, and each tile has a variant for each set of pieces, so nothing unrevealed need ever be held, drawn or sent.
+**(a) As the game shows it: the in-game texture is composed at start from the tiles for the pieces held, and composed
+and uploaded once more when the player gains a piece**, each such upload leaking one buffer of hudhook 0.9.3 until
+the game restarts, a narrow, measured exception to invariant 11 (recommended). **(b) Composed once at start**; a
+piece gained shows from the next start. **(c) The game's map in the browser only.** The recommendation is (a): the map
+matches the game's at once, and invariant 1 stands whole, which the old (a) bent. The old options are withdrawn
+(proposal 0002 §14.4).
 
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
 

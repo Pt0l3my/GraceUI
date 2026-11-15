@@ -2278,12 +2278,12 @@ amends an earlier one by a note, never by rewriting it.
 | [G18](DECISIONS.md#g18) | When does the framework open to other modders? | Recommended: (a) after EldenNet v1.0, as GraceUI 1.1 | **Open** |
 | [G19](DECISIONS.md#g19) | May SkyrimNet-derived material reach other mods through GraceUI? | Recommended: (a) not until Min confirms | **Open** |
 | [G20](DECISIONS.md#g20) | Where do EldenNet's pages live? | Recommended: (a) in EldenNet's repository, registered with GraceUI | **Open** |
-| [G21](DECISIONS.md#g21) | What is the map drawn on? | Recommended: (a) the player's own game map, read at run time, masked, never shipped; the drawn base as fallback | **Open** |
+| [G21](DECISIONS.md#g21) | What is the map drawn on? | Recommended: (a) the player's own game map, its tiles composed as the game composes them for the pieces held, read at run time, never shipped; the drawn base as fallback (made concrete 2026-11-15) | **Open** |
 | [G22](DECISIONS.md#g22) | May anything on the map loop or pulse? | Recommended: (a) no; still glow and one-shot flares (invariant 14 unchanged) | **Open** |
 | [G23](DECISIONS.md#g23) | Who writes the lore notes? | Recommended: (a) the model proposes from memories; the player keeps or drops | **Open** |
 | [G24](DECISIONS.md#g24) | When does the map ship? | Recommended: (a) after v1.0, in 1.1; the spike early | **Open** |
 | [G25](DECISIONS.md#g25) | What does the map key open? | Recommended: (a) a setting, off by default; GraceUI's map when switched on | **Open** |
-| [G26](DECISIONS.md#g26) | In game, how is the game's map kept to what the player has reached? | Recommended: (a) one upload at start, masked at draw time; a tested exception to invariant 1 | **Open** |
+| [G26](DECISIONS.md#g26) | In game, how is the game's map kept to what the player has reached? | Put again 2026-11-15. Recommended: (a) as the game shows it, composed at start and again when a map piece is gained; a measured exception to invariant 11 | **Open** |
 | [G27](DECISIONS.md#g27) | How does the map show terrain? | (a) the exact terrain built locally: a 3D relief in the browser, a relief image in game; our own sprites and the tile-grid schematic as the fallback | Decided 2026-11-14 |
 
 ---

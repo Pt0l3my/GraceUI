@@ -258,9 +258,16 @@ before the design fold (EldenNet roadmap S7.8.c) and the map spike (S7.9.c).
    game, its shape traced from their map image (or from the game's own map and terrain data where a map mod does not
    fit), its areas from the game's map data and its placements by the game's own conversion tables; it is cached
    locally, and no shape is shipped or committed.
+   *Later (2026-11-15), from the research (proposal 0002 §14):* the reader composes the game's own tiles for the map
+   pieces the player holds (the game's own masks say which variant), at each zoom level, so the base needs no masking;
+   the fit check becomes a check of the tile set's structure; the run-time read of the game's archives is what the
+   spike has left.
 2. **World positions to map positions**: the open world's tile grid; the legacy dungeons' own frames (a conversion
    table is likely in the game's parameters, to be verified, O48); the underground and the expansion as separate
    sheets. The numbers may be read for research by a DataPiler job; EldenNet verifies them in game.
+   *Later (2026-11-15):* found (EldenNet WHY§78): one transform per open-world sheet, about 20 units; the underground
+   and the dungeons through the game's own conversion table, about 40; the game's area image gives the area under a
+   point at 4 m (WHY§80, §82). EldenNet still verifies them in game.
 3. **The sightings store** (D89): for each profiled NPC, each place and time the Tarnished perceived them, with the
    stage then; it extends §9 item 4's "where and when last met".
 4. **Map overlays by world stage** (O51): a table of our own drawings keyed by the world stages that hold (a flood, a
