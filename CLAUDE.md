@@ -32,10 +32,10 @@ rewritten; nothing is built meanwhile.
 
 ## Privacy and safety: the sweep comes first
 
-- Nothing is pushed or uploaded before the privacy and safety sweep passes. The sweep is the owner's `privsweep`
-  (kept identical in Skyrizz and EldenNet under `tools/privsweep/`), installed as git's global pre-push gate. If
-  `~/.config/privsweep` is missing, run `python3 -I tools/privsweep/privsweep.py install` in the EldenNet checkout
-  first. Sweep by hand anything the gate doesn't cover, such as a message to another session or a file sent to the
+- Nothing is pushed or uploaded before the privacy and safety sweep passes. The sweep is the owner's `privsweep`,
+  kept only in the owner's private Skyrizz repository under `tools/privsweep/` and never in a public one (owner,
+  2026-11-15), installed as git's global pre-push gate. If `~/.config/privsweep` is missing, run
+  `python3 -I tools/privsweep/privsweep.py install` in the Skyrizz checkout first. Sweep by hand anything the gate doesn't cover, such as a message to another session or a file sent to the
   owner.
 - Never bypass it: no `--no-verify`, no change to `core.hooksPath`, no HOME or GIT_CONFIG override. Remove what it
   finds; a personal hit is never allowed.
