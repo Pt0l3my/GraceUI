@@ -6,7 +6,9 @@ on their PC, which GraceUI serves while the game runs, unless anti-cheat or an u
 GraceUI holds the game's one overlay, so other Elden Ring mods can draw their own pages and panels through it, as
 Magelight UI and PrismaUI let mods do for Skyrim; when it opens to other modders is still to be decided.
 
-**Status: design.** Nothing is built yet. The design is in [docs/DESIGN.md](docs/DESIGN.md), with the owner's decisions
+**Status: design, and the first code.** The overlay host's render half is built: `graceui.dll` starts on a mod's first
+request, hooks the game's frames and draws Dear ImGui on them, checked by a Direct3D 12 harness under Wine
+([BUILD.md](BUILD.md)). The design is in [docs/DESIGN.md](docs/DESIGN.md), with the owner's decisions
 (indexed in §12, in full in [docs/DECISIONS.md](docs/DECISIONS.md)) and the decisions it settles (§13). The framework
 and the map were put to the owner as proposals, which keep their reasoning ([docs/proposals/](docs/proposals/)). The
 roadmap for both GraceUI and EldenNet is EldenNet's `docs/ROADMAP.md`.
