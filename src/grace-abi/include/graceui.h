@@ -111,7 +111,7 @@ typedef uint32_t GraceUiStatus;
 #define GRACEUI_NOTICE_TEXT_MAX 512u   /* bytes of a notice's text */
 #define GRACEUI_NOTICES_PER_MOD 4u     /* a mod's notices showing at once */
 #define GRACEUI_PANELS_MAX 64u         /* panels in the session (EST) */
-#define GRACEUI_PANELS_PER_MOD 8u      /* a mod's panels (EST) */
+#define GRACEUI_PANELS_PER_MOD 16u     /* a mod's panels (EST: EldenNet's surfaces are eight or more) */
 #define GRACEUI_TEXTURES_MAX 64u       /* textures in the session (EST) */
 #define GRACEUI_TEXTURES_PER_MOD 8u    /* a mod's textures (EST) */
 #define GRACEUI_TEXTURE_BYTES_PER_MOD 8388608u /* a mod's textures' pixels, 4 bytes each (EST: 8 MiB) */

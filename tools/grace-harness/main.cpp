@@ -2680,9 +2680,9 @@ void run_panels(const std::wstring& dll) {
 
   // Its panels: hud at the top left under the test panel; a modal over the test panel, which takes input; a modal under
   // the notices; hud under the example's panel; hud at the bottom right; a panel-layer panel that takes input, with a
-  // glyph of GraceUI's atlas. Then two more, hidden: eight a mod, the ninth full.
-  std::uint64_t hud = 0, modal = 0, top_modal = 0, low_hud = 0, corner = 0, glyph_panel = 0, spare_a = 0, spare_b = 0,
-                ninth = 0, bad_layer = 0;
+  // glyph of GraceUI's atlas. Then more, hidden, up to a mod's bound; the next is full.
+  std::uint64_t hud = 0, modal = 0, top_modal = 0, low_hud = 0, corner = 0, glyph_panel = 0, spare = 0, beyond = 0,
+                bad_layer = 0;
   const bool made =
       mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_TOP_LEFT, 8, 8, 60, 60, 0, hud) == GRACEUI_OK &&
       mod.panel(GRACEUI_LAYER_MODAL, GRACEUI_ANCHOR_TOP_LEFT, 150, 60, 80, 40, GRACEUI_PANEL_TAKES_INPUT, modal) ==
@@ -2691,10 +2691,12 @@ void run_panels(const std::wstring& dll) {
       mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_TOP_LEFT, 20, 200, 40, 60, 0, low_hud) == GRACEUI_OK &&
       mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_BOTTOM_RIGHT, 10, 10, 50, 30, 0, corner) == GRACEUI_OK &&
       mod.panel(GRACEUI_LAYER_PANEL, GRACEUI_ANCHOR_TOP_LEFT, 300, 150, 60, 40, GRACEUI_PANEL_TAKES_INPUT,
-                glyph_panel) == GRACEUI_OK &&
-      mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_CENTRE, 0, 0, 10, 10, 0, spare_a) == GRACEUI_OK &&
-      mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_CENTRE, 0, 0, 10, 10, 0, spare_b) == GRACEUI_OK;
-  const GraceUiStatus ninth_status = mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_CENTRE, 0, 0, 10, 10, 0, ninth);
+                glyph_panel) == GRACEUI_OK;
+  bool spares = true;
+  for (std::uint32_t i = 6; i < GRACEUI_PANELS_PER_MOD; ++i) {
+    spares = mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_CENTRE, 0, 0, 10, 10, 0, spare) == GRACEUI_OK && spares;
+  }
+  const GraceUiStatus beyond_status = mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_CENTRE, 0, 0, 10, 10, 0, beyond);
   const GraceUiStatus bad_layer_status = mod.panel(3, GRACEUI_ANCHOR_CENTRE, 0, 0, 10, 10, 0, bad_layer);
   const std::uint32_t shown_before = grace.state().panels_shown;
   mod.quad(hud, 60, 60, kHud);
@@ -2709,12 +2711,14 @@ void run_panels(const std::wstring& dll) {
     table->show_panel(mod.me, id);
   }
   const GraceUiTestState registered = grace.state();
-  check(made && ninth_status == GRACEUI_FULL && bad_layer_status == GRACEUI_REFUSED && shown_before == 1 &&
-            registered.panels == 9 && registered.panels_shown == 7 && late_texture == GRACEUI_TOO_LATE,
+  check(made && spares && beyond_status == GRACEUI_FULL && bad_layer_status == GRACEUI_REFUSED && shown_before == 1 &&
+            registered.panels == 1 + GRACEUI_PANELS_PER_MOD && registered.panels_shown == 7 &&
+            late_texture == GRACEUI_TOO_LATE,
         "panels made",
-        "eight panels of the harness's mod made (%s), the ninth %s, GraceUI's menu layer %s; hidden at first: %u shown "
+        "%u panels of the harness's mod made (%s), the next %s, GraceUI's menu layer %s; hidden at first: %u shown "
         "of %u (the example's own); then %u of %u; a texture after its first submit: %s",
-        made ? "yes" : "NO", status_name(ninth_status), status_name(bad_layer_status), shown_before,
+        GRACEUI_PANELS_PER_MOD, made && spares ? "yes" : "NO", status_name(beyond_status), status_name(bad_layer_status),
+        shown_before,
         registered.panels, registered.panels_shown, registered.panels, status_name(late_texture));
 
   // 2. Warm-up: the atlas baked once with GraceUI's notices' face and the three faces of the mods; the four textures in
@@ -3150,7 +3154,8 @@ void run_panels(const std::wstring& dll) {
   const Connected again_mod = connect(table, request_for("harness-mod", GRACEUI_VERSION_PACK(0, 1, 0), "Harness mod"));
   std::uint64_t fresh = 0;
   const GraceUiStatus fresh_texture = HarnessMod{table, again_mod.answer.consumer, 0}.texture(4, 4, white_pixels, fresh);
-  check(gone_ok && released_all && gone.panels == 1 && before_gone.panels == 9 && gone.textures == 2 &&
+  check(gone_ok && released_all && gone.panels == 1 && before_gone.panels == 1 + GRACEUI_PANELS_PER_MOD &&
+            gone.textures == 2 &&
             again_mod.status == GRACEUI_OK && fresh_texture == GRACEUI_OK,
         "disconnect",
         "panels %u, then %u; textures ready %u, then %u (released once no frame could draw them); %s; connected again "
