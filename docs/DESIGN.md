@@ -1,9 +1,12 @@
 # GraceUI: design
 
-**Status: proposal, 2026-11-07.** Nothing is built yet. The owner decided G1–G10 and G12
-([DECISIONS.md](DECISIONS.md), indexed in §12), and G13 and G14 on 2026-11-08 (G14 widened GraceUI into a framework
-for any mod; its consequences were put as G15–G20 with proposal 0001, and G15–G17 decided the same day); the decisions
-this design settles are in the log (§13, D1–D68).
+**Status: proposal, 2026-11-07; the framework and the map folded in on 2026-11-15.** Nothing is built yet. The owner
+decided G1–G10 and G12 ([DECISIONS.md](DECISIONS.md), indexed in §12), and G13 and G14 on 2026-11-08 (G14 widened
+GraceUI into a framework for any mod; its consequences were put as G15–G20 with [proposal
+0001](proposals/0001-ui-framework.md), and G15–G17 decided the same day); the map's G21–G27 were put with [proposal
+0002](proposals/0002-map.md) and decided on 2026-11-14 and 2026-11-15. This design holds those answers (EldenNet's
+roadmap S7.8.c), with what depends on G18–G20, still Open, kept as it was. The decisions this design settles are in the
+log (§13, D1–D105).
 
 GraceUI is EldenNet's main menu and dashboard: the place where a player sees whether EldenNet is working, who is
 around and what was said, and where every EldenNet setting lives. EldenNet is an AI framework, so GraceUI is laid out
@@ -14,39 +17,47 @@ theme), and every page holds EldenNet's own features and settings, in Elden Ring
 
 **How to read the references.** "§n" is a section of this document. EldenNet's documents keep their own codes:
 "EldenNet DESIGN §n" (its master design), ARCH, NPC and MEM (its architecture, NPC and memory documents), its spikes
-S0–S10, success criteria C1–C14 and owner decisions O1–O60 (its `docs/DECISIONS.md`); GraceUI's own are G1–G14
+S0–S10, success criteria C1–C14 and owner decisions O1–O64 (its `docs/DECISIONS.md`); GraceUI's own are G1–G27
 ([DECISIONS.md](DECISIONS.md)). GraceUI's research notes are ML (Magelight UI), LOOK
-(the look and the Grace theme), IA (information architecture), REN (renderers) and SND (SkyrimNet's dashboard), in
-[research/](research/README.md).
+(the look and the Grace theme), IA (information architecture), REN (renderers), SND (SkyrimNet's dashboard) and FW
+(UI frameworks), in [research/](research/README.md). "Proposal 0001 §n" and "proposal 0002 §n" point into the two
+proposals, whose parts this design adopts by reference where it says so.
 
 ---
 
 ## 0. At a glance
 
 - **One menu, two views.** The same categories, pages, settings rows and bridge protocol are shown in game on **F5**
-  (rebindable) and in the player's own **web browser** at `http://127.0.0.1:8642`, which EldenNet serves while the game
-  runs, unless anti-cheat or an unknown build keeps EldenNet inactive (G4, §7.2 item 1). F10's settings panel folds into
-  the menu. F11's debug view stays separate (D5, D6).
+  (rebindable) and in the player's own **web browser** at `http://127.0.0.1:8642`, which GraceUI serves while the game
+  runs (G17 (a)), unless anti-cheat or an unknown build keeps EldenNet inactive (G4, §7.2 item 1, D81). F10's settings
+  panel folds into the menu. F11's debug view stays separate (D5, D6).
 - **Framework categories** (D38–D48). A sidebar of categories with pages: Home; AI (providers, models, self-test,
-  requests); Voice (text and subtitles now, speech in v1.5); Characters (playthrough, named NPCs, NPC types); History
-  (events, conversations, memories, world); Behaviour (conversation, speaking up, combat, awareness, reactions, pacing);
-  System (status, performance, traces, logs); Tools (event monitor, bug report, Workshop); at the foot Settings, Docs
-  and Content packs. A top bar with search, a status lamp, live updates, the journey in view, the theme and quick
-  switches. Every setting has one home; Settings holds only those no category page can hold (D40). Later-version
-  features appear as statement pages without controls, tagged "WIP" (G7).
-- **In game, safe moments only.** The game never pauses. The menu opens only when EldenNet's `safe_context` holds
-  and no game menu is open, or at the title screen. Danger closes it at once and keeps every change (D7).
-- **Renderer (G1, decided by the owner).** In game, the menu is drawn with **Dear ImGui and a native Grace theme** inside
-  EldenNet's one existing hudhook overlay: no second Present hook and no new licence; under G10 (decided by the
-  owner), GraceUI's own DLL draws through that overlay and hooks nothing. The browser gets the full web version (HTML,
-  CSS, TypeScript). HTML in game (Ultralight in CPU mode) stays a later, owner-gated spike,
-  because hudhook 0.9.3 cannot upload changing textures without leaking memory (REN §2.1).
+  requests); Voice (text and subtitles now, speech in v1.5); Characters (playthrough, named NPCs, NPC types); Map (the
+  journey's map, in 1.1, §4.13); History (events, conversations, memories, world); Behaviour (conversation, speaking up,
+  combat, awareness, reactions, pacing); System (status, performance, traces, logs); Tools (event monitor, bug report,
+  Workshop); at the foot Settings, Docs and Content packs. A top bar with search, a status lamp, live updates, the
+  journey in view, the theme and quick switches. Every setting has one home; Settings holds only those no category page
+  can hold (D40). Later-version features appear as statement pages without controls, tagged "WIP" (G7).
+- **In game, safe moments only.** The game never pauses. The menu opens only when every world-state provider allows
+  it (with EldenNet present, when its `safe_context` holds and no game menu is open; D78), or at the title screen.
+  Danger closes every view at once and keeps every change (D7).
+- **Renderer (G1, decided by the owner).** In game, the menu is drawn with **Dear ImGui and a native Grace theme**
+  inside the process's one hudhook overlay, which GraceUI's own `graceui.dll` hosts (G15 (a)): no second Present hook
+  and no new licence. The browser gets the full web version (HTML, CSS, TypeScript). HTML in game (Ultralight in CPU
+  mode) stays a later, owner-gated spike, because hudhook 0.9.3 cannot upload changing textures without leaking memory
+  (REN §2.1).
 - **A mod of its own (G2, decided by the owner).** GraceUI has its own releases and one folder, `Game\GraceUI\`,
   with a version file; each EldenNet release carries the GraceUI release current at its date, and a player can
-  update GraceUI on its own by copying a newer folder over it. EldenNet checks what it finds at every start and keeps
-  playing whatever it finds (§2.7, §2.9).
-- **The overlay (G10, decided by the owner).** EldenNet keeps its one overlay and loads `graceui.dll`, which lays out
-  and tessellates the menu and hooks nothing; EldenNet checks its vertex lists and copies them into ImGui's draw list.
+  update GraceUI on its own by copying a newer folder over it. EldenNet's launcher checks it and installs the carried
+  copy before the game starts where none or an older one is; a mod requires GraceUI and never carries a private copy
+  (D83, D88; §2.7).
+- **The host (G15 (a), decided by the owner; it supersedes G10).** `graceui.dll` holds the one overlay: hudhook 0.9.3
+  with every rule of EldenNet's O25, its MinHook, the Present hook and the input hooks. EldenNet and any other mod find
+  it and connect through one versioned C ABI, draw panels from checked draw lists, publish page data and take input
+  through one honest focus rule; EldenNet hooks nothing (§2, D69–D78).
+- **A framework for any mod (G14, G16, G17).** A mod registers a space (page data drawn by Grace in both views, no
+  HTML in game) and panels (its own drawing, in game); GraceUI serves the browser view for every space that opts in.
+  The ABI is designed now and EldenNet is its first user; when it opens to other modders is G18 (Open).
 - **Browser app (G3, decided by the owner).** Preact with TypeScript, signals for live data, built with Vite.
 - **Browser dashboard (G4, decided by the owner).** **Always on**, as SkyrimNet's: the player opens the address and
   types nothing else. Loopback by default, with Host, Origin and Fetch Metadata checks and a session cookie (§7). Other
@@ -57,13 +68,17 @@ S0–S10, success criteria C1–C14 and owner decisions O1–O60 (its `docs/DECI
   meeting shows; a new Characters › Playthrough page shows the people this playthrough has met, their status and their
   stories as seen.
 - **Smaller answers.** The Steam Deck starts at a 1.35 text scale (G6); later-version entries carry a "WIP" tag (G7).
+- **The map (G21–G27, decided by the owner; ships in 1.1).** A map of the player's own journey over the player's own
+  game map, composed from their install for the map pieces they hold and never shipped, with trails, quest steps seen,
+  world changes and lore notes, a still glow, and the map key as a setting off by default (§4.13).
 - **Spoiler-safe.** GraceUI receives only player-safe projections from EldenNet's core; no page shows a stage, flag,
   name or item the player has not reached, the roster's first-meeting profiles aside (G5, G8); absence is silent (§4.8).
 - **Grace theme.** Ash-umber grounds, one gold light for "here, selected, focused, primary" and for the section labels
   a player scans for (D48), parchment ink at four levels with every readable text at 4.5:1 or better, OFL fonts from
   their publishers, flat and still (§3).
-- **Minimal and stable.** No game-data explorer, no content editors, no sound, no remote access and no host API for
-  other mods in v1. The menu writes settings through EldenNet; EldenNet stays read-only towards the game.
+- **Minimal and stable.** No game-data explorer, no content editors, no sound and no remote access in v1; the host API
+  for other mods is designed now and opens when G18 says. Each space's pages write settings only through that space
+  (EldenNet's through EldenNet); GraceUI and EldenNet stay read-only towards the game.
 
 ## 1. Purpose and scope
 
@@ -71,27 +86,32 @@ S0–S10, success criteria C1–C14 and owner decisions O1–O60 (its `docs/DECI
 
 - **EldenNet's main UI**, by framework category (§4): Home (status, setup, nearby characters, what is happening, lines
   and model calls); AI (providers, models, the self-test, requests); Voice (text and subtitles, and speech from v1.5);
-  Characters (this playthrough, the named NPCs, NPC types and their allowances); History (events, conversations,
-  memories, the world); Behaviour (conversation, speaking up, combat dialogue, awareness, reactions, pacing); System
-  (status, performance, traces, logs); Tools (an event monitor, a bug-report builder, the developer Workshop);
-  Settings, Docs and Content packs.
-- **Owned by EldenNet's needs.** The protocol carries EldenNet's views and commands. GraceUI is EldenNet's menu,
-  released as a mod of its own (G2); it is not a UI host for other mods in v1 (G10), and it holds no game knowledge
-  of its own: every name, place and fact it shows comes from EldenNet at run time.
-- **A separate repository and a mod of its own** (D1, G2). EldenNet links GraceUI's host kit (`grace-abi`,
-  `grace-host`, `grace-protocol`, `grace-serve`) and carries GraceUI's release folder; GraceUI depends on nothing of
-  EldenNet's.
+  Characters (this playthrough, the named NPCs, NPC types and their allowances); Map (the journey's map, from 1.1,
+  §4.13); History (events, conversations, memories, the world); Behaviour (conversation, speaking up, combat dialogue,
+  awareness, reactions, pacing); System (status, performance, traces, logs); Tools (an event monitor, a bug-report
+  builder, the developer Workshop); Settings, Docs and Content packs.
+- **The host, and a framework for any mod** (G14–G17). GraceUI holds the process's one overlay (G15 (a)) and is
+  released as a mod of its own (G2). Its protocol carries each space's views and commands; EldenNet's space is the
+  first. GraceUI holds no game knowledge of its own: every name, place and fact it shows comes from its spaces at run
+  time, EldenNet's first. The public ABI is designed and built now, EldenNet uses it from GraceUI 0.1, and it opens to
+  other modders when G18 says.
+- **A separate repository and a mod of its own** (D1, G2). EldenNet links only GraceUI's consumer crates (§2.7) and
+  carries GraceUI's release folder; GraceUI depends on nothing of EldenNet's.
 
 ### 1.2 In scope for v1
 
 - The menu in game (from EldenNet v0.6) and the browser dashboard (from EldenNet v0.2, always on).
-- GraceUI as a mod of its own: its folder, version file, handshake and the handling of a missing, older, newer or
-  mixed copy (§2.7, §2.9).
+- GraceUI as a mod of its own and the host: its folder, version file, the public ABI with `connect`'s answers, the
+  single-instance guard and the handling of a missing, older, newer, mixed or second copy (§2.7, §2.9).
+- The host's services from GraceUI 0.1 (EldenNet v0.1): the one overlay, capture and masking, panels and their
+  checked draw lists, notices, the input holder and hotkeys, world-state providers (§2.9, D69–D78).
 - Every EldenNet setting, with one home page each, and every player-facing view §4 lists (§4.5, §4.10).
 - First light, the setup wizard (D16).
-- The Grace theme in both views, two variants (Grace and Grace Clear), scale 75–150%, HDR through EldenNet's overlay.
+- The Grace theme in both views, two variants (Grace and Grace Clear), scale 75–150%, HDR in the host (EldenNet NPC
+  §10.7's rules, moved with the overlay).
 - Mouse, keyboard and pad in game; the Steam on-screen keyboard for text on a pad; keyboard and mouse in the browser.
-- A desktop harness that runs the web app against a fake EldenNet, and a Windows harness for the in-game view (§9).
+- A desktop harness that runs the web app against a fake host for any space (`grace-dev`), and a Windows harness for
+  the in-game view (`grace-harness`) (§9, D85).
 
 ### 1.3 Not in v1
 
@@ -102,25 +122,26 @@ S0–S10, success criteria C1–C14 and owner decisions O1–O60 (its `docs/DECI
 - Sound of any kind (D27). Voice previews arrive with EldenNet's TTS in v1.5, through EldenNet's audio.
 - Remote access, TLS, accounts, analytics, any request to the internet from a page; other devices on the home network
   unless the player switches that on and pairs each one (G9).
-- A host API for other Elden Ring mods (G2, G10).
+- Opening the host API to other modders before G18 is answered (recommended: GraceUI 1.1): until then ABI 1 is a
+  preview, used by EldenNet and our own example mod in CI (proposal 0001 §4.3).
 - HTML rendered in game (G1).
 - EldenNet's other surfaces: the lower-third subtitles, chat box, call-out box, labels and feed, toasts, banner,
-  pause badge, rollback modal and F11 debug view stay in EldenNet's overlay (EldenNet DESIGN §12). They may adopt
-  Grace's tokens; that is EldenNet's choice.
+  pause badge, rollback modal and F11 debug view are EldenNet's own, drawn as its panels and notices through the host
+  (EldenNet DESIGN §12, D76). They may adopt Grace's tokens; that is EldenNet's choice.
 
 ### 1.4 Success criteria (checked from the increment each subject ships in)
 
 | # | Criterion | Measure |
 |---|---|---|
 | U1 | No spoiler through the UI | Every page's goldens over EldenNet's fixture states show nothing outside the projections it was sent; counts, search and titles carry nothing veiled or absent (§9) |
-| U2 | No input leak | EldenNet's input-leak tests, extended to F5, Esc, B and every exit path, pass on Windows and Proton |
-| U3 | Every exit path closes cleanly | The close matrix (§5.1) passes in game: capture released, the closing press masked, changes kept |
-| U4 | Frame cost | Menu open: ≤ 0.8 ms p99 on the present thread at 1440p, ≤ 1.5 ms on the Steam Deck. Menu closed: no cost beyond EldenNet's C3 (§8) |
+| U2 | No input leak | EldenNet's input-leak tests, extended to F5, Esc, B, every exit path and every input holder, pass on Windows and Proton |
+| U3 | Every exit path closes cleanly | The close matrix (§5.1) passes in game for every holder, the player's exit among them: capture released, the closing press masked, changes kept |
+| U4 | Frame cost | Menu open: ≤ 0.8 ms p99 on the present thread at 1440p, ≤ 1.5 ms on the Steam Deck. Menu closed: all panels together ≤ 1.0 ms p99 (EST), within EldenNet's C3 for its own (§8) |
 | U5 | Local server holds | The server security suite (§7.2) passes with zero failures |
 | U6 | The two views agree | Each page's structure (rows, labels, values, order) matches between views (§9.3) |
 | U7 | Legible | Every readable text 4.5:1 or better on its ground; control edges 3:1 or better; checked from the token file in CI |
 | U8 | Nothing personal leaves | No key, path, user name, SteamID, character name, local address or chat text in any GraceUI log, URL, title or report (PV1–PV8) |
-| U9 | A mismatched GraceUI never stops EldenNet | The ABI and handshake tests (§9.1) pass, and in game a GraceUI patch dropped over the bundled copy, an older copy and a half-copied folder each give §2.9's behaviour |
+| U9 | A mismatched GraceUI is always explained | The ABI and connect tests (§9.1) pass; EldenNet's launcher installs or explains in each case of §2.9's table; in game a GraceUI patch dropped over the bundled copy, an older copy, a half-copied folder and a second copy each give §2.9's behaviour (D83, D88) |
 
 ---
 
@@ -129,104 +150,127 @@ S0–S10, success criteria C1–C14 and owner decisions O1–O60 (its `docs/DECI
 ### 2.1 Shape
 
 ```
-eldennet.dll (one process, one hudhook overlay)          Game\GraceUI\ (GraceUI's own folder, G2)
+eldenring.exe: one process, one hudhook overlay, GraceUI's (G15 (a))
 
-  core (T6) ── builds ──► projections per topic (player-safe; SP1–SP9),
-     ▲                    encoded once per revision as bridge frames, only while watched
-     │                         │                                      │
-     │                  ingest on T6 (C ABI)                          ▼
-     │                         ▼                           grace-serve (Net runtime T7–T8)
-     │            graceui.dll: grace-view + grace-draw     HTTP + WebSocket on 127.0.0.1:8642,
-     │            lays out and tessellates the menu         always on (G4); serves GraceUI\web\
-     │                         │ vertex lists (T3)                    │  ▲
-     │                         ▼                                      │  │ JSON over WebSocket
-     │            grace-host (in en-overlay) checks them              ▼
-     │            and copies them into hudhook::imgui's     the player's browser: the web app
-     │            draw list                                 (Preact + TypeScript, from GraceUI\web\)
-     │
-     └──── commands (one validating entry point) ◄──── both views
+Game\GraceUI\graceui.dll: the host (D69)                   consumers, each through GraceUI_RequestApi (D70, D73)
+  grace-host: hudhook 0.9.3 (dx12), its MinHook,             eldennet.dll, the first:
+    the Present hook, the window procedure,                    core (T6): projections per topic (SP1–SP9),
+    the DInput and XInput detours (capture, masking)             encoded once per revision as bridge frames,
+  spaces ◄────────── publish (page data, topics) ─────────────   only while watched
+  commands, subscriptions ── poll, on the space's thread ───►  its one validating command entry point
+  panels ◄────────── submit (checked draw lists, D76) ───────  en-overlay: subtitles, chat box, call-outs and
+  one input holder (request_input, D77); hotkeys                 toasts as panels; F11 on a headless Dear ImGui
+  notices; world-state providers (D78) ◄─────────────────────   of its own; its banner through notice
+  the menu: grace-view + grace-draw, into hudhook::imgui     other mods: spaces and panels, the same ABI
+  grace-serve (threads of its own, D81): 127.0.0.1:8642,
+    always on for EldenNet's space (G4), for any space that opts in (G17 (a))
+       ▲ │ JSON over WebSocket
+       │ ▼
+  the player's browser: the web app (Preact + TypeScript, from GraceUI\web\)
 ```
 
-- **EldenNet's core owns the truth.** It builds every view the UI shows as a player-safe projection (§4.8), applies
-  every command after validating it, and writes `settings.toml`. GraceUI never reads EldenNet's files, the game or
-  the stores directly.
-- **Two views of one menu.** The in-game view (`graceui.dll`) and the web app interpret the same page descriptions
-  (§2.5) with the same component vocabulary, the same tokens (§3.15) and the same protocol frames (§6).
-- **Two deliverables.** GraceUI's folder (the DLL, the web app, the fonts) is GraceUI's release and can be replaced by
-  hand (§2.7); GraceUI's host kit is compiled into EldenNet. Under G10 (b), decided by the owner, the overlay, its
-  hooks and EldenNet's own surfaces stay in EldenNet, and `graceui.dll` hooks nothing (§2.9).
-- **One command path.** Both views send the same commands into one validating entry point in the core. A browser tab
-  is treated exactly like the in-game menu, and both like untrusted input (§7.3).
+- **Each space's owner holds its truth.** EldenNet's core builds every view of EldenNet's pages as a player-safe
+  projection (§4.8), applies every command after validating it, and writes `settings.toml`. GraceUI never reads
+  EldenNet's files, the game or the stores directly: it holds only what its spaces publish and its world-state
+  providers report.
+- **Two views of one menu.** The in-game view (`grace-view` and `grace-draw` in `graceui.dll`) and the web app interpret
+  the same page descriptions (§2.5) with the same component vocabulary, the same tokens (§3.15) and the same protocol
+  frames (§6).
+- **One host.** GraceUI's folder (the DLL, which is the host, the web app, the fonts) is GraceUI's release and can be
+  replaced by hand (§2.7). No consumer links GraceUI's host code or any hook library: each reaches GraceUI only through
+  its public C ABI (invariants 15 and 16), and EldenNet's own surfaces are panels and notices (§2.9).
+- **One command path per space.** Both views send a space's commands to that space's one validating entry point, which
+  pulls them on its own thread (D71). A browser tab is treated exactly like the in-game menu, and both like untrusted
+  input (§7.3).
+- **Adopted by reference.** Proposal 0001's §4.1 to §4.9 and §4.11 to §4.14 (the host, spaces and panels, the ABI,
+  threads, input, game awareness, the menu's shape, theming, the server, packaging, docs and harnesses, tests,
+  licences and the public face) are part of this design, with D69 to D88 as their decisions; its §4.10 waits for G20.
+  This section is their binding summary; where a detail is not repeated here, the proposal's holds.
 
 ### 2.2 Parts
 
 | Part | Kind | Holds | Runs where |
 |---|---|---|---|
-| `grace-protocol` | Rust crate (`serde` only; no I/O, threads or clocks) | Topic payloads, commands, results, error codes, version constants. The TypeScript types are generated from it, and CI fails on drift | EldenNet's core and server; `graceui.dll` |
-| `grace-abi` | Rust crate (no dependencies) | The C ABI between `graceui.dll` and EldenNet: `repr(C)` structs, the two append-only function tables, constants; a C header generated for review; CI fails if a table shrinks or reorders against the last release (§2.9) | Both sides |
-| `grace-pages` | Data (TOML) | The information architecture as data: the sidebar's categories and pages, the top bar's controls, Home's cards, each page's id, name, one-line description, help text and Related links, its tabs and sections, rows by setting key, component blocks bound to topics, and the increment it ships in (or its later-version tag, shown as "WIP") | Compiled into `graceui.dll` and the web app |
-| `grace-view` | Rust crate (pure) | Page descriptions loaded into a widget tree; the focus and navigation model; the pad ledger; hotkey rules; search; text layout; GraceUI's own text field (D57). No ImGui, no Win32, so it is tested on Linux | `graceui.dll` |
-| `grace-draw` | Rust crate (pure) | Tessellates `grace-view`'s tree with the Grace tokens into vertex and index lists: rectangles with per-corner rounding, hairlines snapped to device pixels, quads, circles, paths, text runs from the atlas's glyph tables, the shadow nine-slice and the grain tile (§3.16). No ImGui, no Win32 | `graceui.dll`; runs on T3 |
-| `graceui` | Rust `cdylib`: `graceui.dll` | The one export and the entries of §2.9 (the only `unsafe`, in `graceui::abi`); parsing frames on T6; drawing on T3. No hook, ImGui, MinHook, thread, socket or file | Loaded by EldenNet from `Game\GraceUI\` |
-| `grace-host` | Rust crate (Windows) | EldenNet's side of the ABI: finds and checks `Game\GraceUI\`, loads `graceui.dll`, the handshake, bakes its faces into the one atlas and uploads its two textures once at load, passes input, checks and copies vertex lists into ImGui's draw list through `hudhook::imgui` only, hands the IME caret, capture and the DLL's requests (clipboard, opening the dashboard's address) to `en-overlay`, and turns the menu off on a fault; its `unsafe` only in `grace_host::{abi, draw}` (EldenNet R9); the Win32 calls behind what it hands over (placing the IME window, confining the cursor, the clipboard, opening the dashboard's address) are EldenNet's own, in R9's existing modules (`en-overlay::hooks`, `en-gal::sys`; eldennet-changes §3 item 4, §4 items 3, 5 and 7, §8 item 4), since GraceUI never depends on EldenNet | Linked into EldenNet's overlay; runs on T1, T3 and T6 |
-| `grace-serve` | Rust crate | The loopback HTTP and WebSocket server with every rule of §7.2, serving the web files `graceui.toml` lists, ticketing and rate limits | Linked into `eldennet.dll`; tasks on EldenNet's Net runtime (T7–T8) |
+| `grace-protocol` | Rust crate (`serde` only; no I/O, threads or clocks) | Topic payloads, commands, results, error codes, version constants; every frame carries its space (D81). The TypeScript types are generated from it, and CI fails on drift | `graceui.dll` (the in-game view and the server); Rust consumers (EldenNet's core) |
+| `grace-abi` | Rust crate (no dependencies) | The public C ABI (D73): the exports `GraceUI_Version` and `GraceUI_RequestApi`, the append-only table per major (`GraceUiApi1`), `repr(C)` structs each starting with its size, constants; the public header `graceui.h` (SPDX MIT) generated from it; CI fails if a table shrinks or reorders against the last release (§2.9) | `graceui.dll`; consumers through the header |
+| `graceui-sys` | Rust crate, and a header-only C helper | The official helper (D70: finding GraceUI from a worker, never in `DllMain`, polling with a bound) and a thin safe wrapper over the table | Linked into consumers (EldenNet's core and `en-overlay`) |
+| `grace-pages` | Data (TOML) | The information architecture as data: GraceUI's own space (Menu, Hotkeys, Browser view, Installed mods, Compatibility, About; D79), a demo space with invented content, and, until G20 is answered, EldenNet's pages of §4: the sidebar's categories and pages, the top bar's controls, Home's cards, each page's id, name, one-line description, help text and Related links, its tabs and sections, rows by setting key, component blocks bound to topics, and the increment it ships in (or its later-version tag, shown as "WIP") | Compiled into `graceui.dll` and the web app |
+| `grace-view` | Rust crate (pure) | Page descriptions loaded into a widget tree; the focus and navigation model; the pad ledger; hotkey rules; search; text layout; GraceUI's own text field (D57). No ImGui, no Win32, so it is tested on Linux | `graceui.dll`; consumers' panels, as a crate pinned by tag (D76) |
+| `grace-draw` | Rust crate (pure) | Tessellates `grace-view`'s tree with the Grace tokens into vertex and index lists: rectangles with per-corner rounding, hairlines snapped to device pixels, quads, circles, paths, text runs from the atlas's glyph tables, the shadow nine-slice and the grain tile (§3.16). No ImGui, no Win32 | `graceui.dll`, on the present thread; consumers' panels, as a crate pinned by tag (D76) |
+| `grace-host` | Rust crate (Windows), inside `graceui.dll` | The host (D69): the only crate that depends on hudhook (`=0.9.3`, `dx12` only; `imgui` only through `hudhook::imgui`, MinHook only through `hudhook::mh`, never the eject path). The Present hook and render callback; the window-procedure filter (the `WM_CHAR` surrogate fix, IME placement, focus loss, the player's exit); the DInput and XInput detours (capture and masking); the anti-cheat check before hooking and the notice-only mode (D88); the single-instance mutex (D72); the one atlas and the registered textures within their budgets; the draw-list checker (D76); the input holder, hotkeys and the one close routine (D77); notices and world-state providers (D78). Its `unsafe` lives only in `grace_host::{abi, hooks, draw}`, each block with a `// SAFETY:` note | `graceui.dll`: the init thread, the present thread, the window procedure and the input detours |
+| `graceui` | Rust `cdylib`: `graceui.dll` | The two exports and the table's entries (`graceui::abi`, the only other `unsafe`); spaces, panels, the menu and the server | Loaded from `Game\GraceUI\` by the first consumer that asks, or listed by the player as a native in a loader (D70, D83) |
+| `grace-serve` | Rust crate | The loopback HTTP and WebSocket server with every rule of §7.2 and D81's per-space isolation, serving the web files `graceui.toml` lists, ticketing and rate limits | Inside `graceui.dll`, on threads of its own (two, EST) |
 | `tokens/grace.toml` | Data | Every colour, size, space, radius and duration, by role. A build step writes CSS custom properties for the web app and Rust constants for `grace-draw` | Build time |
 | `web/` | TypeScript app | The browser view: shell, components, pages, the protocol client, a development-only injection panel | Built into `GraceUI\web\`; the player's browser |
-| `tools/grace-dev` | Rust binary | A fake EldenNet: the real `grace-serve` and `grace-protocol` over fixture states, accepting commands, and a host for `graceui.dll`'s entries on Linux (§9.2). It never touches a game | Developer machines and CI |
-| `fixtures/` | Data | Scenario states with invented names and our own words, mirroring EldenNet's fixture states | Tests and the harness |
+| `tools/grace-dev` | Rust binary | A fake host for any space: the real `grace-serve` and `grace-protocol` over a space's page data and fixture states, accepting commands (D85; §9.2). It never touches a game | Developer machines and CI |
+| `tools/grace-harness` | Rust binary (Windows) | A Direct3D 12 window that loads `graceui.dll` and a mod's DLL and feeds input, so the in-game view runs without the game (WARP in CI: LIKELY, to be confirmed; D85) | Developer machines and Windows CI |
+| `abi-mock/` | C | A mock of the ABI for authors' unit tests (D85) | Authors' tests |
+| `examples/` | C, Rust and C++ | Three example mods of our own, with invented content (D85) | CI, in the harness |
+| `fixtures/` | Data | Scenario states with invented names and our own words, mirroring EldenNet's fixture states, and the demo space's | Tests and the harnesses |
 | `mock/` | Static HTML and CSS | A look mock of the frame and a few pages, placeholder data only | A browser, from disk |
 
 GraceUI's Rust crates follow EldenNet's dependency discipline (ARCH §2.3): `grace-protocol`, `grace-abi`, `grace-view`
 and `grace-draw` take no I/O, Win32, clock or game knowledge. Only `grace-host` takes `hudhook = { version = "=0.9.3",
-default-features = false, features = ["dx12"] }`, and it reaches `imgui` only through `hudhook::imgui`, exactly as
-EldenNet's `en-overlay` does, so Cargo resolves one hudhook and one MinHook for the process. `graceui.dll` links
-neither: a CI check reads its import table and symbols against a deny list and a reviewed allowlist. Imports come from
-system DLLs only; no import from `ws2_32.dll` or any other socket API; no `CreateThread`, `_beginthreadex` or
-`CreateRemoteThread`; no `CreateFileW` or `CreateFileA`; no `LoadLibrary*` or `GetProcAddress` beyond the Rust
-runtime's own use (std's dbghelp loader), and no `WriteFile` or `GetStdHandle` beyond std's panic-output path, each
-named with its reason in the check's allowlist; no hudhook, ImGui or `MH_` symbol. `init` installs a panic hook that
-sends one short line through `GraceHost.log` and writes nothing to stderr. No GraceUI crate depends on an EldenNet
-crate.
+default-features = false, features = ["dx12"] }`, and it reaches `imgui` only through `hudhook::imgui`, so Cargo
+resolves one hudhook and one MinHook for the process. No consumer links hudhook or an ImGui renderer backend, or hooks
+a function GraceUI hooks (invariant 16, D102); a consumer may build its draw lists with a headless Dear ImGui of its own
+(D76), and EldenNet's own later hooks, on other functions, follow its R12 (EldenNet O65). CI checks the crate graph
+(only `grace-host` depends on hudhook), `graceui.dll`'s import table against a reviewed allowlist (hudhook's needs, the
+server's socket and thread calls and the file calls for GraceUI's own folder, each named with its reason), that
+`grace-host`'s hook targets are exactly D102's published list, and EldenNet's import table and hook targets against
+that list. `graceui.dll` reads only its own folder's listed files
+and writes only under `user\` (D84); it never reads or writes another mod's files. Its panic hook writes one short line
+to its own scrubbed log and nothing to stderr. No GraceUI crate depends on an EldenNet crate.
 
-### 2.3 Threads (no new thread)
+### 2.3 Threads
 
-EldenNet's thread inventory (ARCH §1.2) stays as it is: "No other thread is created" still holds.
+Under G15 (a) the game's present thread, its window procedure and the input detours (EldenNet's T3, T4 and T5) carry
+GraceUI's hooks, and EldenNet's work on them becomes GraceUI's or its `on_present` callback; EldenNet creates no thread
+for the UI. GraceUI starts one short-lived init thread and, while the server runs, threads of its own (D71, D81).
 
-| EldenNet thread | GraceUI work |
+| Thread | GraceUI's work |
 |---|---|
-| T1 Init | `grace-host` finds, checks and loads `graceui.dll`, and the handshake, after the settings step and before the overlay's hooks are installed (§2.9) |
-| T3 Present (hudhook render callback) | Calls `graceui.dll`'s `frame` after EldenNet's world surfaces and before its toasts and banner, checks the vertex list and copies it into ImGui's draw list. GraceUI reads its newest snapshot through `arc-swap`, never waits, never allocates per frame after warm-up, and sends commands through the host's non-blocking `send` |
-| T4 Window procedure | EldenNet's existing filter: characters, IME messages, focus loss. GraceUI adds nothing here; it receives that input in `frame` on T3 |
-| T6 Core | Builds projections for watched topics at most 4 times a second each, and only while the menu is open or a browser is connected; encodes each revision once and gives it to `graceui.dll` (`ingest`) and to the server; drains the command ring; validates and applies commands; writes settings (debounced 300 ms) |
-| T7–T8 Net (tokio) | `grace-serve`'s listener, connections and pushes, from the end of init's gate and safety steps to exit while `dashboard.enabled` is on (G4; never after a gate or safety failure or a later anti-cheat hit, §7.2 item 1). Off means no socket and no task |
-| T10 Watcher | Unchanged: hot reload sees EldenNet's own settings writes and applies them as any edit (ARCH §11.6) |
+| Init (GraceUI's, short-lived) | Started by the first `GraceUI_RequestApi`, in the copy that holds the mutex: the anti-cheat check, waiting for the game's window, installing the hooks; then it exits (D71, D72) |
+| Present (T3, hudhook's render callback) | The menu, every visible panel's newest draw list, and notices, on their layers; opted-in `on_present` callbacks within their budgets (EldenNet's subtitle fades and world labels). GraceUI reads its newest snapshot through `arc-swap`, never waits and never allocates per frame after warm-up (invariant 10) |
+| Window procedure (T4) | GraceUI's filter: characters with surrogates paired, IME messages and the composition window, focus loss, the player's exit (D77) |
+| Input detours (T5: DInput `GetDeviceState`, XInput `XInputGetState`) | Capture and masking while a holder has input, and until a closing press is released (invariants 7 and 8) |
+| A consumer's own threads (EldenNet's T6 Core) | `publish` (page data and topics, parsed and copied into a bounded ring), `submit` (draw lists into a triple buffer), `poll` (commands, subscriptions, panel input and host events, from a bounded queue per consumer), `request_input`, `notice`, `set_world_state`. EldenNet's T6 builds projections for watched topics at most 4 times a second each, drains its commands, validates and applies them, and writes settings (debounced 300 ms) |
+| Server (GraceUI's own, D81) | `grace-serve`'s listener, connections and pushes, while any space registers with `browser = "always"` (EldenNet, G4) or the player turns it on, and never after an anti-cheat hit (§7.2 item 1); GraceUI's module re-check every 60 s while it runs. `dashboard.enabled = false` means no socket and no thread |
+| EldenNet's T10 Watcher | Unchanged: hot reload sees EldenNet's own settings writes and applies them as any edit (ARCH §11.6) |
 
-A panic inside `graceui.dll` is caught at its entry and returned as an error code; `grace-host` then turns the menu
-off for the session, releases capture, shows one toast and never calls it again, and EldenNet's other surfaces keep
-drawing. A fault in a server task closes that connection; a second fault stops the server for the session with one
-toast.
+A panic inside GraceUI's own code is caught where it would cross the boundary: an ABI entry returns an error code, and
+a panic in the menu's drawing turns the menu off for the session, releases capture and shows one notice, while panels
+and notices keep drawing. A consumer's `on_present` callback over its budget for 120 frames running is suspended for
+the session with one notice naming the mod (D71), and a draw list that fails its check is refused and logged once
+(D76). A fault in a server task closes that connection; a second fault stops the server for the session with one
+notice.
 
 ### 2.4 Data flow
 
-1. **Watching.** A view subscribes to the topics its page needs (§6.5). The in-game view subscribes when the menu
-   opens and drops them when it closes; the browser subscribes per page. With nothing watched, the core builds
-   nothing.
+1. **Watching.** A view subscribes to the topics its page needs (§6.5), and GraceUI passes each subscription to the
+   space that owns the topic. The in-game view subscribes when the menu opens and drops them when it closes; the
+   browser subscribes per page. With nothing watched, a space builds nothing.
 2. **Projections.** The core builds a topic's payload from its own state, applies the spoiler and privacy rules
    (§4.8, §4.9), stamps a revision number, encodes it once as a frame (§6.3) and publishes it. State topics replace
    the whole payload; stream topics append rows to a bounded ring with sequence numbers.
-3. **Showing.** `graceui.dll` parses a new revision on T6 and draws its newest snapshot each frame. `grace-serve`
-   sends a state topic when its revision changes (coalesced to 4 Hz at most) and stream rows in batches.
-4. **Changing.** A control sends a command. The core validates it against the settings description (§6.9), applies
-   it, writes the file after 300 ms of quiet, and publishes the new revision to every view. There is no Save button,
-   and the last write wins if both views change one setting (D14).
+3. **Showing.** GraceUI parses a new revision in `publish`, on the publisher's thread (EldenNet's T6), and draws its
+   newest snapshot each frame. `grace-serve` sends a state topic when its revision changes (coalesced to 4 Hz at most)
+   and stream rows in batches.
+4. **Changing.** A control sends a command; GraceUI routes it to the owning space's queue. The space pulls it with
+   `poll`, validates it against its settings description (§6.9), applies it, writes its file after 300 ms of quiet, and
+   publishes the new revision to every view. There is no Save button, and the last write wins if both views change one
+   setting (D14).
 
 ### 2.5 Pages as data
 
 - **Page descriptions.** `grace-pages` holds the IA of §4 as data: the sidebar tree, the top bar, Home's cards and
   every page. A page has an id (`behaviour.pacing`), a category, a name, a one-line description, help text (what it is
   for, how to use it, Related links), the increment it ships in or a later-version tag, header actions, tabs, and
-  sections of blocks. A block is either a list of setting keys (their rows come from EldenNet's settings
+  sections of blocks. A block is either a list of setting keys (their rows come from the space's settings
   description) or a component bound to a topic.
+- **Spaces** (D75). Each consumer registers a space: its rail of categories and pages and its settings description,
+  handed over as page data at `register_pages`, drawn with GraceUI's components in both views. GraceUI's own space and,
+  until G20 is answered, EldenNet's pages (§4) are compiled into `grace-pages`.
 - **Components** (the shared vocabulary): settings rows (switch, slider, segmented choice, tri-state, duration, key
   capture, text, masked secret, model picker); shortcut row; stat tiles; filter bar; table with sort, selection,
   per-row actions and a row drawer; editable table cells; master–detail; card grid with Customise; collapsible
@@ -234,14 +278,18 @@ toast.
   conversation transcript; live feed; check list; log tail; report preview; computed sentence; action button with an
   optional confirm modal; wizard steps; empty and stale states.
 - **Rule.** A page that needs something no component offers adds the component to both views, with its structural
-  test (§9.3). There are no hand-written pages in one view only, except Workshop, which is browser-only (D10).
+  test (§9.3). There are no hand-written pages in one view only, except Workshop, which is browser-only (D10). Only
+  GraceUI adds a component: a mod cannot, so the vocabulary is versioned with the protocol (§6.4), each component
+  named in the guide's feature table with the minor that added it, and a space names the minor it needs (D74, D75).
 - **Why data.** Most of the menu is settings, which already come from EldenNet's description (D8). Describing the
-  rest as data too keeps two views of the same menu from drifting (U6), and keeps the IA reviewable in one place.
+  rest as data too keeps two views of the same menu from drifting (U6), keeps the IA reviewable in one place, and lets
+  any mod's pages appear in both views with no web code of its own (D81).
 
 ### 2.6 The in-game renderer (G1)
 
-Decided (G1, 2026-11-07): Dear ImGui with the Grace theme (§3.16), inside EldenNet's one hudhook 0.9.3 overlay. The
-reasons, the options and what the owner gives up are in G1 ([DECISIONS.md](DECISIONS.md#g1)). In short:
+Decided (G1, 2026-11-07): Dear ImGui with the Grace theme (§3.16), inside the process's one hudhook 0.9.3 overlay,
+GraceUI's own since G15 (a). The reasons, the options and what the owner gives up are in G1
+([DECISIONS.md](DECISIONS.md#g1)). In short:
 
 - hudhook 0.9.3 gives a renderer ImGui draw lists and textures. Its texture replacement copies the whole image,
   leaks a new upload buffer on every call and waits for the GPU on the present thread, and it exposes no device,
@@ -252,22 +300,24 @@ reasons, the options and what the owner gives up are in G1 ([DECISIONS.md](DECIS
   work anyway (REN §4.1).
 - The Grace theme was designed flat and still (hairlines, flat grounds, fades only), so nearly all of it can be drawn
   with ImGui primitives. What is lost is typographic detail (kerning, OpenType features) and authoring speed.
-- Since G2, the menu's code is GraceUI's own DLL. It still draws only through this one overlay, as vertex lists
-  EldenNet copies into ImGui's draw list, and hooks nothing (§2.9, G10).
+- G1's reasons hold for every mod (D76): no mod gets HTML, video or live images in game; page data is drawn with
+  Grace in both views, panels only in game. Since G15 (a), `grace-host` in `graceui.dll` draws the menu and every
+  consumer's panels into hudhook's ImGui draw list (§2.9).
 
 ### 2.7 Packaging and updates (G2)
 
 GraceUI is a mod of its own (G2, decided by the owner): its own releases, one folder in the game's `Game` folder, a
-version file, and updates by copying a newer folder over the old one (D51–D54). It is still EldenNet's menu: without
-EldenNet it does nothing.
+version file, and updates by copying a newer folder over the old one (D51–D54, D83). It is the host for any mod and
+EldenNet's menu; with no consumer it does nothing.
 
 ```
 ELDEN RING\Game\GraceUI\        beside eldenring.exe
-  graceui.dll     the in-game menu: pages, layout, focus and input rules, drawing as vertex lists (§2.9)
+  graceui.dll     the host: the one overlay and its hooks, the ABI, spaces, panels, the menu, the server (§2.9)
   graceui.toml    the version file
   web\            the browser app: index.html and content-hashed scripts, styles and WOFF2 fonts
   fonts\          the OFL faces the in-game menu bakes (static TTF), each with its OFL.txt
   LICENSE.txt  NOTICE.txt  README.txt
+  user\           written at run time: GraceUI's settings, paired devices and scrubbed log; in no release (D84)
 ```
 
 - **The version file**, `graceui.toml`, written by GraceUI's release job (example values):
@@ -283,39 +333,46 @@ ELDEN RING\Game\GraceUI\        beside eldenring.exe
   "web/index.html" = { size = 2311, sha256 = "…" }
   ```
 
-  EldenNet loads only what it lists, and the server serves only the web files it lists (D52).
-- **Compiled in.** Page descriptions and tokens are compiled into `graceui.dll` and into the web app; the only loose
-  parts are the DLL, the web app and the fonts.
+  GraceUI loads only what it lists, the server serves only the web files it lists, and EldenNet's launcher checks the
+  listed sizes and hashes before start (D52, D83).
+- **Compiled in.** GraceUI's page descriptions and tokens are compiled into `graceui.dll` and into the web app; the
+  only loose parts are the DLL, the web app, the fonts and `user\`. Other spaces' page data comes from their mods at
+  run time (D75).
 - **Updating by hand.** Close the game; extract GraceUI's release zip, which holds the one `GraceUI` folder, into
   `ELDEN RING\Game\` so that it replaces the old folder. Windows locks a loaded DLL, so an update with the game
   running fails; the web files are read once at start, so a change applies at the next start. Files a newer release
   no longer lists are ignored and never served; `README.txt` says they may be deleted.
-- **What EldenNet's release carries** (D53): its own files and the `GraceUI` folder of the GraceUI release current at
-  its release date, byte for byte. EldenNet's release job checks the folder against GraceUI's published
-  `graceui.toml` and runs the handshake against it; EldenNet's release notes name the GraceUI version, and a build
-  constant records it. EldenNet links GraceUI's host kit from the same tag (`grace-abi`, `grace-host` and
-  `grace-protocol` in its overlay and core, `grace-serve` in its DLL), pinned by git tag and commit in `Cargo.lock`;
-  `cargo deny` allows that one git source.
-- **Before the in-game menu ships** (EldenNet v0.2 to v0.5) the folder holds `graceui.toml`, `web\` and the licence
-  files; `graceui.dll` and `fonts\` join in v0.6.
+- **What EldenNet's release carries** (D53, D83): its own files and, in a staging folder, the `GraceUI` folder of the
+  GraceUI release current at its release date, byte for byte, which its launcher installs into `Game\GraceUI\` only
+  where none or an older one is. EldenNet's release job checks the folder against GraceUI's published `graceui.toml`
+  and connects to it; EldenNet's release notes name the GraceUI version, and a build constant records it. EldenNet
+  links only GraceUI's consumer crates from the same tag (`grace-abi` through `graceui-sys`, `grace-protocol`, and
+  `grace-draw` and `grace-view` for its panels), pinned by git tag and commit in `Cargo.lock`, never `grace-host` or
+  `grace-serve` (invariant 16); `cargo deny` allows that one git source.
+- **By increment** (§10): `graceui.dll` from GraceUI 0.1 (the host: EldenNet's banner and F11 view draw through it
+  from EldenNet v0.1), `web\` from 0.2, and the in-game menu with its faces in `fonts\` from 0.6.
 - **The web app** is built by GraceUI's CI and committed at each release tag under `web/dist/`, with a check that
   rebuilding gives the same bytes; the release copies it into the folder's `web\`. EldenNet's build needs no Node
   toolchain (D32).
 - **Versions.** GraceUI's minor versions follow EldenNet's increments (0.6 for EldenNet v0.6), with patch numbers of its
   own, so GraceUI 0.6.x is for EldenNet 0.6 and a patch can be dropped in on its own. The ABI and the protocol have
-  their own numbers (§2.9, §6.4) (D37).
+  their own numbers (§2.9, §6.4) (D37). From GraceUI 1.0 its version is its own semantic version (D74).
 - **Integrity, not signatures.** The sizes and hashes catch a corrupt or half-copied folder. They are not a signature:
-  whoever can write the game folder can replace `eldennet.dll` too.
-- **Loaded only by EldenNet.** `graceui.dll`'s `DllMain` does nothing, and only EldenNet calls its one export, so a
-  loader that lists it as a native of its own starts nothing.
+  whoever can write the game folder can replace `eldennet.dll` too. Release pages publish the files' hashes (D87).
+- **Loaded by whichever consumer asks first** (D70, D71). `graceui.dll`'s `DllMain` does nothing; the first
+  `GraceUI_RequestApi` starts the host. Any consumer may load it by its canonical path, and a player may list it as a
+  native in their own loader; both give the same module, and listing it alone starts nothing until a mod asks. A
+  second copy loaded from another folder idles (D72, invariant 18).
 
 ### 2.8 Failure contract (what the player sees)
 
 | Failure | Behaviour |
 |---|---|
-| The menu panics, returns an error code or sends a vertex list that fails its check, or the overlay trips | Menu off for the session; capture released; toast "The menu is unavailable this session. Settings still work in settings.toml."; EldenNet keeps running |
-| GraceUI missing, half-copied, or made for another EldenNet | The rows of §2.9's table; EldenNet keeps playing |
-| No overlay render for 2 s while the menu holds input | Capture released (EldenNet DESIGN §8.1); the menu closes |
+| GraceUI's menu panics or its draw list fails the checker | Menu off for the session; capture released; a notice "The menu is unavailable this session. Settings still work in settings.toml."; panels, notices and the browser view keep working |
+| A consumer's draw list fails its check, or its `on_present` callback stays over budget for 120 frames | The list is refused and logged once (D76); the callback is suspended for the session with one notice naming the mod (D71) |
+| GraceUI missing, half-copied, or too old for EldenNet | EldenNet's launcher installs the carried release or explains (D83); in the process, a failed connect leaves EldenNet headless with a log line (§2.9's table, D88) |
+| An anti-cheat module present | GraceUI draws notices only (EldenNet's banner among them) and serves no menu, panel, input or socket for the session (D88) |
+| No overlay render for 2 s while any holder has input | Capture released (EldenNet DESIGN §8.1); the holder's view closes and the holder is told why (D77) |
 | The dashboard port is taken | Server off for the session; one toast and one log line naming the port and where to change it (Settings › Browser view, or `dashboard.port`); never another interface or port |
 | A browser tab from an earlier game start | The session cookie no longer matches: the page reloads itself once and gets a new one; nothing to copy |
 | Protocol major mismatch (a stale cached page) | "This page needs updating: reload it" (§6.4); never a crash |
@@ -323,96 +380,86 @@ ELDEN RING\Game\GraceUI\        beside eldenring.exe
 | Lost contact (browser) | The last snapshot stays, dimmed and read-only, with "Reconnecting" and Retry (§3.9) |
 | A command refused | The control returns to its previous value and shows the reason in words (§6.7) |
 
-### 2.9 GraceUI's DLL and EldenNet (G2, G10)
+### 2.9 The host and its consumers (G15–G17)
 
-Exactly one module owns hudhook, the Present hook and MinHook (EldenNet O25). Under G10's answer, (b), EldenNet keeps
-the overlay, its own surfaces and its hooks, and loads `graceui.dll`, which hooks nothing (D56).
+Exactly one module owns hudhook, the Present hook and MinHook (EldenNet O25): since G15 (a), decided by the owner,
+`graceui.dll` (D69). EldenNet is a consumer like any other mod, with two differences only: it always ships GraceUI (G2,
+D53, D83), and it is the first world-state provider (D78). Proposal 0001 §4.1 to §4.6 and §4.11 hold the detail; this
+is the binding summary.
 
 | Side | Holds | Never |
 |---|---|---|
-| `graceui.dll` (GraceUI's release) | `grace-protocol`, `grace-pages`, `grace-view` (page model, focus, pad ledger, search, layout, the text field, D57), `grace-draw` (tessellation with the Grace tokens) and `graceui::abi` (the exports, the only `unsafe`) | hudhook, ImGui, MinHook, hooks, threads, sockets, files, clocks, game memory |
-| EldenNet, through GraceUI's host kit | `grace-host` in `en-overlay` (find, check, load and drive the DLL; bake its faces into the one atlas and upload its two textures at load; pass input; check vertex lists and copy them into ImGui's draw list; hand the IME caret, capture and the DLL's requests (clipboard, opening the dashboard's address) to `en-overlay`'s own IME, capture, clipboard and open-address code), `grace-serve` (§7.2), the core's projections and its one command entry point | Drawing a GraceUI page itself; trusting anything the DLL returns unchecked |
+| `graceui.dll` (GraceUI's release) | `grace-host` (the hooks, capture and masking, the atlas and textures, the draw-list checker, the input holder and hotkeys, notices, world-state providers, the single-instance mutex, the anti-cheat check and the notice-only mode), the menu (`grace-pages`, `grace-view`, `grace-draw`), spaces and panels, `grace-serve` (§7.2), and `graceui::abi` (the exports) | Game memory or game code; another mod's files; calling a mod on a thread the mod did not choose; a second Present hook or MinHook |
+| A consumer (EldenNet first) | Its space's projections and its one validating command entry point; its panels' draw lists, built with GraceUI's kit or its own headless Dear ImGui; its own settings and files | hudhook, an ImGui renderer backend, or a hook on a function GraceUI hooks (D102; EldenNet's own hooks on other functions follow its R12, EldenNet O65); handing GraceUI an ImGui context; leaving its commands to GraceUI to validate |
 
-**The C ABI** (`grace-abi`, `repr(C)` only):
+**Finding and connecting** (D70, D73, D74). A consumer's helper, on the consumer's own worker and never in `DllMain`,
+finds `graceui.dll` (by module name, then an export scan, then the canonical path `Game\GraceUI\graceui.dll`, polled
+every 250 ms for at most 30 s, EST) and calls `GraceUI_RequestApi(1)`, which returns `GraceUiApi1` or null. The first
+request takes the single-instance mutex and starts the host (D71, D72). `connect` names the consumer's id, display name,
+version, the GraceUI floor it needs and its caps, and answers `ok`, `too_old` (GraceUI then shows a notice naming the
+mod and both versions, and logs one line), `duplicate_id`, `inactive` (with the reason) or `refused`; after `inactive`
+or `render_dead`, calls do nothing. A consumer calls a slot only if the table's size covers it, and checks `has_cap`
+for a feature. Every struct a caller passes starts with its size; the host reads the smaller of the two sizes, defaults
+the rest and refuses one below the 1.0 size. Strings are UTF-8 with a length and are copied before the call returns;
+nothing is freed across the boundary; every callback carries a user pointer.
 
-- `graceui.dll` exports one function, `graceui_entry(abi_major: u32) -> *const GraceUiApi`, which returns null for a
-  major it does not speak.
-- `GraceUiApi` is an append-only table that starts with its size and its ABI minor: `init` (T1), `fonts` (T3, at
-  warm-up and after an atlas rebuild), `ingest` (T6), `open` and `close` (T3, with the reason: F5, Esc or B, danger,
-  loading, focus loss, fault) and `frame` (T3). A minor adds entries at the end; EldenNet calls an entry only if the
-  table's size covers it.
-- `GraceHost`, EldenNet's table handed to `init`, grows the same way: EldenNet's version, its protocol version and
-  caps, `send` (one outbound frame, copied into a bounded ring of 32 frames of at most 16 KiB; it never blocks and
-  answers "full") and `log` (a line for EldenNet's scrubbed logger; GraceUI writes no log of its own).
-- `frame` takes the input since the last frame (key names, characters already paired by EldenNet's `WM_CHAR`
-  handling, mouse, XInput state, display size, effective scale, time) and fills an output: vertices in ImGui's
-  `ImDrawVert` layout (position f32×2, texture coordinate f32×2, colour as four bytes R, G, B, A), u16 indices
-  relative to each draw command's own vertex range, and draw commands (clip rectangle, texture, vertex range of at
-  most 65,536 vertices, index range), whether it wants the keyboard and mouse, the cursor shape, the caret rectangle
-  for the IME, keys and buttons to mask until release, and requests (close; put this text on the clipboard after a
-  click, PV7; open the dashboard's own address). EldenNet never opens an address GraceUI names.
-- Buffers are borrowed: a pointer GraceUI returns stays valid until its next call of the same entry; nothing is freed
-  across the boundary; strings are UTF-8 with a length.
-- Every entry catches panics and returns an error code, with `panic = "unwind"`. In `graceui.dll`, `unsafe` lives
-  only in `graceui::abi`, and on EldenNet's side only in `grace_host::{abi, draw}`, each block with a `// SAFETY:`
-  note; both join R9's in-process list (eldennet-changes §8 item 4).
-- `grace-host`'s check of each frame (the mismatch table below) also confirms that each command's indices fall within
-  its own vertex range, and it copies each command with its vertex offset: hudhook 0.9.3's dx12 renderer sets
-  `RENDERER_HAS_VTX_OFFSET` and honours per-command vertex offsets, so a page of more than 65,536 vertices is split
-  across commands, never across draw lists (S4 confirms it in game).
-- A C header generated from `grace-abi` is kept for review; CI fails if a table shrinks or reorders against the last
-  release's header.
+**Draw lists** (D76). A panel's draw list uses Dear ImGui's default `ImDrawVert` layout (position f32×2, texture
+coordinate f32×2, colour as four bytes R, G, B, A), u16 indices relative to each draw command's own vertex range, and
+draw commands (clip rectangle, texture id, a vertex range of at most 65,536 vertices, an index range). The checker
+refuses a list whose counts, indices (each within its command's own vertex range), clip rectangles (within the
+display), texture ids (registered by that consumer, or the shared atlas at the generation the list names) or size
+(more than 256 KiB of vertices or 64 commands, EST) fail. The host copies each command with its vertex offset: hudhook
+0.9.3's dx12 renderer sets `RENDERER_HAS_VTX_OFFSET` and honours per-command vertex offsets, so a page of more than
+65,536 vertices is split across commands, never across draw lists (S4 confirms it in game). GraceUI's own menu passes
+the same checker.
 
-**Threads.** `init` runs on T1, `ingest` on T6, the rest on T3. Inside the DLL the T6 side publishes parsed snapshots
-with `arc-swap` and the T3 side reads the newest, so T3 never waits; after warm-up neither side allocates per frame
-(invariant 10). No thread is created (§2.3). T3 never frees a snapshot: the T6 side keeps each superseded one in a
-retire slot and frees it on a later `ingest`, once T3 has marked a newer revision as loaded. The allocation test
-counts frees on T3 as well as allocations.
+**Threads and memory** (D71, invariant 10). `publish` and `submit` copy on the caller's thread; the present thread
+reads only the newest snapshot, through `arc-swap`, and never waits. The present thread never frees a snapshot: the
+publisher's side keeps each superseded one in a retire slot and frees it on a later call, once the present thread has
+marked a newer revision as loaded. The allocation test counts frees on the present thread as well as allocations.
 
-**The handshake**, at every start:
+**Safety.** Every entry catches panics and returns an error code (`panic = "unwind"` inside, never across the
+boundary); an `on_present` callback must not unwind across it. In `graceui.dll`, `unsafe` lives only in `graceui::abi`
+and `grace_host::{abi, hooks, draw}`, each block with a `// SAFETY:` note. A C header generated from `grace-abi` is the
+public one; CI fails if a table shrinks or reorders against the last release's header. `graceui.dll` is never
+unloaded, and does nothing at detach (EldenNet R14).
 
-1. On T1, after the settings step and before T1 installs the overlay's hooks (EldenNet ARCH §1.4), `grace-host`
-   finds `GraceUI\` beside `eldenring.exe`, reads `graceui.toml` (64 KB at most) and checks the size and SHA-256 of
-   `graceui.dll` and of each face in `fonts\`. If the handshake has not finished when hudhook initialises, the menu
-   stays off for the session rather than rebuilding the atlas.
-2. It loads `graceui.dll` by its full path, with only the DLL-folder and System32 search flags, and calls
-   `graceui_entry(1)`.
-3. `init` returns GraceUI's version, which must equal `graceui.toml`'s; its protocol version, whose major must equal
-   EldenNet's, and its caps; its faces (file, sizes, glyph ranges; at most ten, D29); and its two textures (the shadow
-   nine-slice and the grain tile).
-4. When hudhook's render loop starts, `grace-host` bakes those faces into the one atlas with EldenNet's own, uploads
-   the two textures once, and hands GraceUI the glyph tables (`fonts`).
-5. GraceUI's first frame through `send` is `hello`; the core answers `welcome` through `ingest`, as for a browser
-   (§6.3), without a ticket: the channel is the identity (§7.3).
+**EldenNet's start.** Its launcher has checked `Game\GraceUI\` before the game starts (D83, D88). In the process, on
+T1 after its settings and safety steps (EldenNet ARCH §1.4), EldenNet's helper finds GraceUI and connects; it then
+registers its faces before warm-up (`register_face`), its panels, its hotkeys and itself as a world-state provider, and
+its space for the browser view only once its gate and safety steps pass (D81). On GraceUI's own anti-cheat hit,
+`connect` answers `inactive (anti-cheat)` and EldenNet's banner goes through `notice`, which stays callable (D88).
 
-`graceui.dll` is never unloaded (EldenNet R14).
+**Mismatches** (D88, amending D54). "Headless" means EldenNet runs with nothing drawn, at L2 at most, as EldenNet ARCH
+§10.3's "Overlay failed to install" row has it.
 
-**Mismatches** (D54). In every row EldenNet keeps playing: its subtitles, chat box, call-outs, labels, toasts, banner
-and F11 are its own.
-
-| Found | In game | In the browser |
+| Found | Before start (EldenNet's launcher) | In the process |
 |---|---|---|
-| No `GraceUI` folder | No menu. F5: "The menu isn't installed: GraceUI is missing. EldenNet still works, and its settings are in settings.toml." | A plain notice page built into EldenNet, saying the same |
-| `graceui.toml` unreadable, or a file's size or hash differs from it | Menu off: "GraceUI's files don't match each other: copy the whole GraceUI folder again." | The same notice if a web file differs |
-| No `graceui_entry`, null for ABI major 1, or a protocol major other than EldenNet's | Menu off: "This GraceUI (0.x) is not for this EldenNet (0.y): install the GraceUI that came with EldenNet, or a newer one made for it." | `bye` with `version` and the same words (§6.4) |
-| A lower protocol minor (an older GraceUI) | Works. Settings whose home page it lacks appear under Settings › All settings as "Newer settings", so none is out of reach. System › Status › Compatibility: "GraceUI 0.6.1 is older than the one this EldenNet came with (0.6.3)." | The same |
-| A higher protocol minor (a newer GraceUI) | Works with the caps EldenNet announces; a page that needs another is absent, as before its increment (§4.2.2) | The same |
-| A caught panic, an error code, or a vertex list that fails `grace-host`'s check (counts, each command's indices within its own vertex range, clip rectangles within the display, known texture ids) | Menu off for the session, capture released, one toast (§2.8), logged once | Unaffected |
+| No `GraceUI` folder | It installs the release EldenNet carries; if it cannot, it explains in E08's manner what is missing | A failed connect: EldenNet headless with a log line, and a hint the next time the launcher runs |
+| `graceui.toml` unreadable, or a file's size or hash differs from it | It installs the carried release over it, unless the installed one is newer; otherwise it explains | GraceUI neither loads nor serves a file that fails, and one notice names it by relative name, never a path (PV5) |
+| An older major than EldenNet needs, or an older minor than its floor | It replaces it while the carried release still serves that major (D74), otherwise it explains, naming the mods that connected on it, and installs only when the player confirms (D83) | `too_old`: GraceUI's notice names EldenNet and both versions; EldenNet headless with a log line |
+| A lower minor than the one EldenNet was built against, within its floor | Nothing to do | Works, slots checked by size. Settings whose home page it lacks appear under Settings › All settings as "Newer settings", so none is out of reach; System › Status › Compatibility names both versions |
+| A higher minor (a newer GraceUI) | Nothing to do; it never installs over a newer one | Works with the caps EldenNet announces; a page that needs another is absent, as before its increment (§4.2.2) |
+| A second copy of GraceUI in another folder | Nothing to do | It idles; the active copy names it in one notice (D72, invariant 18) |
+| GraceUI's menu panics | — | Menu off for the session, capture released, one notice (§2.8); panels, notices and the browser view keep working |
 
-F5 while the menu is off shows its notice as a toast; F11 and System › Status › Compatibility (in the browser) show the
-installed and expected versions and which file failed its check, by relative name, never a path (PV5).
+F5 while the menu is off shows its notice; System › Status › Compatibility and GraceUI's own Compatibility page show
+the installed and expected versions, each consumer and its state, and which file failed its check, by relative name.
 
-**The bridge across it** (D55). The in-game view speaks the bridge protocol of §6 as a browser tab does, with the C ABI
-as its transport: the same `{"v": 1, "t": …}` frames in UTF-8 JSON, the same handshake and versioning (§6.4) and the
-same limits (§6.8). The core encodes each watched topic's revision once and gives the same bytes to the browser and to
-the DLL, which parses them on T6. Display strings still come ready from the core (§6.1).
+**The bridge across it** (D55, generalised). The in-game view and every browser tab speak the bridge protocol of §6
+with GraceUI's host, which routes each space's subscriptions and commands to that space's queue and takes its frames
+through `publish`: the same `{"v": 1, "t": …}` frames in UTF-8 JSON, each carrying its space (D81), the same versioning
+(§6.4) and the same limits (§6.8). A space encodes each watched topic's revision once, and the host gives the same bytes
+to the in-game view and to the browser. Display strings still come ready from the space (§6.1).
 
 ---
 
 ## 3. The Grace theme
 
 The theme is LOOK §3, adopted with the settlements recorded in §13. LOOK §1 describes the menu that inspired it in our
-own words; nothing of that menu's CSS, markup, images, sigils, texts or theme names is used (CLAUDE.md).
+own words; nothing of that menu's CSS, markup, images, sigils, texts or theme names is used (CLAUDE.md). Grace is the
+one look of every space's pages, in both views, from one token file; a space ships no tokens in v1, and panels look as
+their mods choose (D80).
 
 ### 3.1 Principles
 
@@ -664,8 +711,9 @@ voice previews play through EldenNet's audio path at the player's request, never
 
 ### 3.13 Scale 75–150% and screens
 
-- **One scale for all EldenNet text**: the effective scale is `(H / 1080) × ui.scale` (NPC §10.7). In game it sets
-  the baked font sizes and the layout units; in the browser it is a root zoom over CSS px.
+- **One scale for all text**: the effective scale is `(H / 1080) × ui.scale` (NPC §10.7). `ui.scale` is GraceUI's
+  setting (D84); EldenNet's subtitles and other text follow it through the host's display-changed event, which carries
+  the scale. In game it sets the baked font sizes and the layout units; in the browser it is a root zoom over CSS px.
 - **Breakpoints** on the resulting width in CSS px: 1600 or more, rail, page and detail pane side by side; 1200–1599,
   the detail pane narrows to 320; 960–1199, the detail pane becomes a drawer opened with Enter or A on a row; under
   1100, the rail collapses to its 56 px icon rail with names on focus and flyouts (§4.2.2). Home's grid fits two to
@@ -678,8 +726,8 @@ voice previews play through EldenNet's audio path at the player's request, never
 
 ### 3.14 HDR
 
-- Grace is defined once, in sRGB. In game the menu goes through EldenNet's overlay HDR path (NPC §10.7: linearise,
-  scale by `paper_white_nits / 80`, default 203), like every EldenNet surface; there is no second palette.
+- Grace is defined once, in sRGB. In game the menu goes through the host's HDR path (EldenNet NPC §10.7's rules:
+  linearise, scale by `paper_white_nits / 80`, default 203), like every panel; there is no second palette.
 - **Ceiling**: the brightest UI colour is `ink.hi` (relative luminance 0.76), about 154 nits at the default paper
   white; `gold.hi` about 117 and `gold` about 82. No pure white, no additive blend and no glow above paper white; the
   grace glow is alpha over the ground.
@@ -700,10 +748,10 @@ voice previews play through EldenNet's audio path at the player's request, never
   marks of ours, never traced from game icons. A permissively licensed set (Lucide, ISC; Tabler, MIT) may be used
   for generic icons after its licence is checked.
 
-### 3.16 Drawing Grace in game (G1, G10)
+### 3.16 Drawing Grace in game (G1, G15)
 
-`grace-draw` tessellates each element below into vertex lists; EldenNet's overlay copies them into the draw list of
-ImGui 1.89.2 through hudhook 0.9.3, so ImGui's renderer draws them (§2.9).
+`grace-draw` tessellates each element below into vertex lists; the host (`grace-host`) checks them and copies them into
+the draw list of ImGui 1.89.2 through hudhook 0.9.3, so ImGui's renderer draws them (§2.9).
 
 | Grace element | In game | Cost or loss |
 |---|---|---|
@@ -712,15 +760,18 @@ ImGui 1.89.2 through hudhook 0.9.3, so ImGui's renderer draws them (§2.9).
 | The one soft shadow | A pre-blurred nine-slice texture of ours, uploaded once at load | Small: fixed blur radius |
 | Grace glow, ash grain | A vertex-coloured triangle fan; a tiled noise texture of ours, uploaded once at load | Small |
 | Fades and transitions | Our own alpha tweening per element | None |
-| Cinzel, EB Garamond, Noto | TTF from `GraceUI\fonts\`, baked by EldenNet into the one atlas through stb_truetype, static instances only, per effective size; GraceUI lays text out from the glyph tables it is handed | Variable fonts ship as static weights |
+| Cinzel, EB Garamond, Noto | TTF from `GraceUI\fonts\`, baked by the host into the one atlas through stb_truetype, static instances only, per effective size; GraceUI lays text out from the atlas's glyph tables | Variable fonts ship as static weights |
 | Tracking (+0.02 to +0.14 em) | Added by GraceUI's text layout to each advance | None: no tracked bake is needed |
 | Kerning | Not in ImGui's bakes. If the owner's look review asks, GraceUI's text layout applies the font's pair kerning to display text only, from a table extracted from the OFL font at build time | Titles in Cinzel and EB Garamond look slightly loose until then |
 | OpenType features (lining figures, small caps) | Not applied | Numbers use mono or Cinzel (§3.4); small caps are never faked |
 | Tables and flex-like layout | Our own layout helpers in `grace-view`; ImGui's tables are not used (D28) | Development time, not looks |
 | Accessibility tree | None | The browser view is the accessible surface |
 
-**Atlas budget (D29).** EldenNet's surfaces and the menu share one ImGui font atlas, and hudhook uploads it as RGBA
-once, leaking one upload buffer per rebuild (REN §2.4). So:
+**Atlas budget (D29, D80).** The menu, EldenNet's surfaces and every mod that connects before warm-up share one ImGui
+font atlas, and hudhook uploads it as RGBA once, leaking one upload buffer per rebuild (REN §2.4). Each consumer adds
+its faces with `register_face` before warm-up (at most two for each mod other than EldenNet, EST); a late mod brings
+its own atlas texture within its texture budget; `glyph_table` gives a consumer the shared atlas's glyphs with its
+generation number. So:
 
 - the menu bakes at most ten faces: Cinzel 40 and 22 (capitals, figures and punctuation only); EB Garamond SemiBold 19,
   Regular 17 (rail items too, in game) and Italic 17; Noto Sans Regular 15, SemiBold 15 (buttons) and Regular 13.5; one
@@ -729,7 +780,8 @@ once, leaking one upload buffer per rebuild (REN §2.4). So:
 - the atlas stays within 2048 × 2048 at 1080p–1440p and scale up to 1.25, and within 4096 × 4096 at 4K or 150%;
   S4 measures it;
 - a scale change rebuilds the atlas only when the menu is closed, at most four times a session (later changes apply
-  at the next launch), and each rebuild is logged with its size.
+  at the next launch), and each rebuild is logged with its size. A rebuild raises the atlas's generation and tells every
+  consumer; the checker refuses a draw list built against an older generation, so no stale glyph is drawn (D73).
 
 ### 3.17 What we never do
 
@@ -784,6 +836,7 @@ Home
 AI                 ▸ Providers · Models · Self-test · Requests · Director (WIP)
 Voice              ▸ Text and subtitles · Text-to-speech (WIP) · Speech-to-text (WIP)
 Characters         ▸ Playthrough · Named NPCs · NPC types
+Map (WIP)
 History            ▸ Events · Conversations · Memories · World
 Behaviour          ▸ Conversation · Speaking up · Combat · Awareness · Reactions · Pacing · Acts (WIP)
 System             ▸ Status · Performance · Traces · Logs
@@ -792,6 +845,7 @@ Tools              ▸ Event monitor · Bug report · Workshop (browser, develop
 Settings
 Docs
 Content packs
+Plugins (1.1)
 ```
 
 | Category | Pages, with their ids | First shown |
@@ -800,15 +854,17 @@ Content packs
 | AI | Providers `ai.providers` · Models `ai.models` · Self-test `ai.selftest` · Requests `ai.requests` · Director `ai.director` (WIP: later) | 0.2; Director a statement from 0.6 |
 | Voice | Text and subtitles `voice.text` · Text-to-speech `voice.tts` (WIP: v1.5) · Speech-to-text `voice.stt` (WIP: v1.5) | 0.4 (browser), 0.6; the two v1.5 statements from 0.6 |
 | Characters | Playthrough `characters.playthrough` · Named NPCs `characters.named` · NPC types `characters.types` | 0.3; 0.3; 0.4 |
+| Map | Map `map` (WIP: v1.1; §4.13) | A statement from 0.6; the page in 1.1 |
 | History | Events `history.events` · Conversations `history.conversations` · Memories `history.memories` · World `history.world` | 0.4; 0.3; 0.3; 0.5 |
 | Behaviour | Conversation `behaviour.conversation` · Speaking up `behaviour.speaking` · Combat `behaviour.combat` · Awareness `behaviour.awareness` · Reactions `behaviour.reactions` · Pacing `behaviour.pacing` · Acts `behaviour.acts` (WIP: later) | 0.2 (file) to 0.6; Acts a statement from 0.6 |
 | System | Status `system.status` · Performance `system.performance` · Traces `system.traces` · Logs `system.logs` | 0.2 |
 | Tools | Event monitor `tools.monitor` · Bug report `tools.report` · Workshop `tools.workshop` (browser, `debug.panel`) | 0.4; 0.2; 0.2 |
-| Foot | Settings `settings` (groups `settings.general`, `settings.hotkeys`, `settings.menu`, `settings.browser`, `settings.developer`; tab `settings.all`) · Docs `docs` · Content packs `content` | 0.2 (browser, partly read-only), 0.6 |
+| Foot | Settings `settings` (groups `settings.general`, `settings.hotkeys`, `settings.menu`, `settings.browser`, `settings.developer`, and `settings.map` from 1.1; tab `settings.all`) · Docs `docs` · Content packs `content` · Plugins `plugins` (from 1.1, D104) | 0.2 (browser, partly read-only), 0.6 |
 
-Home and 29 pages in seven categories: Home and 24 pages work in v1, two arrive in v1.5, two are later-version
-statements and Workshop is for developers; then three foot pages. Outside the rail: First light (the setup flow),
-search and confirmation modals (§4.6.10).
+Home and 30 pages in eight categories: Home and 24 pages work in v1, one arrives in 1.1 (Map, §4.13), two in v1.5, two
+are later-version statements and Workshop is for developers; then three foot pages, and a fourth, Plugins, from 1.1
+(D104). Outside the rail: First light (the
+setup flow), search and confirmation modals (§4.6.10).
 
 #### 4.2.2 Sidebar behaviour
 
@@ -821,13 +877,13 @@ search and confirmation modals (§4.6.10).
 - **Collapsed rail**: icons only (56 px), each with its name on hover and on focus; a category opens a flyout of its
   pages. The rail collapses by itself under 1100 px of menu width and in the drawer layout (§3.13, G6). Collapsed or
   not is view state for the session, never a setting.
-- **Later-version entries** (Text-to-speech, Speech-to-text, Director, Acts; G7): `ink.mute`, a small "WIP" tag
-  whose tooltip and accessible name say when (v1.5 or a later version), focusable, each opening a statement page with
-  no controls. Features that are not planned never appear (§4.11).
+- **Later-version entries** (Map, Text-to-speech, Speech-to-text, Director, Acts; G7): `ink.mute`, a small "WIP" tag
+  whose tooltip and accessible name say when (1.1, v1.5 or a later version), focusable, each opening a statement page
+  with no controls. Features that are not planned never appear (§4.11).
 - **Workshop** appears only in the browser and only while `debug.panel` is on (SP8). In game, Tools shows Event
   monitor and Bug report.
-- **Foot**, pinned to the bottom under a rule: Settings, Docs, Content packs. No account row, community link or
-  sign-in: EldenNet has no accounts (PV rules).
+- **Foot**, pinned to the bottom under a rule: Settings, Docs, Content packs, and from 1.1 Plugins (D104). No account
+  row, community link or sign-in: EldenNet has no accounts (PV rules).
 - **World** is absent from the rail while `ui.menu.show_world = false` (the player's choice, not a spoiler hint).
 - **At the title screen and at L1** the rail stays whole; pages that need a playthrough say so in their body (§4.4).
 - **By increment**: a page joins the rail in the increment it ships in (§10); before then it is absent, not greyed.
@@ -904,7 +960,7 @@ In CSS px at the effective scale (§3.13):
 | State | Usable | The rest says |
 |---|---|---|
 | Title screen (no playthrough loaded) | Home (Setup, Status, Problems), all of AI, Voice › Text and subtitles, System, Tools › Bug report, Settings, Docs, Content packs, every settings row of Behaviour, Characters › Named NPCs (the roster: Profile, Allowances, Reactions) and NPC types (every type, G5), First light | Playthrough, the History pages and the Event monitor: "Load a character to see this" |
-| L1 banner (EldenNet DESIGN §4.4) | System, Tools › Bug report, Settings, Docs, Voice › Text and subtitles; in the browser only after a later L1 trip that is not anti-cheat, since the server never starts when the gate or the safety step fails and stops when anti-cheat is found later (§7.2 item 1) | Greyed: "EldenNet is inactive: reason" |
+| L1 banner (EldenNet DESIGN §4.4) | System, Tools › Bug report, Settings, Docs, Voice › Text and subtitles; in the browser only after a later L1 trip that is not anti-cheat, since EldenNet's space is never registered for the browser when the gate or the safety step fails, and the server stops when anti-cheat is found later (§7.2 item 1, D81) | Greyed: "EldenNet is inactive: reason" |
 | L2 observing (no healthy model), or AI paused | All | Home and AI lead with the cause |
 | Dormant (multiplayer, loading) | All; live views paused | "Paused (multiplayer)"; settings stay editable |
 | Lost contact (browser) | The last snapshot, read-only | The stale state (§3.9) |
@@ -912,8 +968,12 @@ In CSS px at the effective scale (§3.13):
 ### 4.5 Every setting and its home
 
 Keys are EldenNet's `settings.toml` (ARCH §11.5, schema 2) plus the keys GraceUI asks for (marked *new*; see
-[eldennet-changes.md](eldennet-changes.md)). Effect timing is ARCH §11.6's: Now, Next moment, Next request, Next
-launch.
+[eldennet-changes.md](eldennet-changes.md)). Since D84, the menu's and the server's own keys (`hotkeys.menu`,
+`ui.scale`, `ui.menu.*` and `dashboard.*`, marked *GraceUI's* below) are GraceUI's settings, kept in
+`Game\GraceUI\user\` and migrated out of EldenNet's `settings.toml`; the bindings of every registered hotkey, EldenNet's
+included, are kept by GraceUI too (D77). Their rows and homes stay as listed; how GraceUI's own space (D79: Menu,
+Hotkeys, Browser view, Installed mods, Compatibility, About) meets EldenNet's Settings groups is settled with G20.
+Effect timing is ARCH §11.6's: Now, Next moment, Next request, Next launch.
 
 | Key | Player label | Home | Shortcuts on | Effect |
 |---|---|---|---|---|
@@ -936,33 +996,35 @@ launch.
 | `pacing.idle_max`, `pacing.talk_max` | Idle remarks per window; talk per window | Behaviour › Pacing | Speaking up | Next moment |
 | `reactions.<id>.on`, `.cooldown_s` (20 ids, NPC §9.1) | Per reaction | Behaviour › Reactions | In battle on Combat; Afflictions on Awareness; To you, Between NPCs and Calm remarks on Speaking up | Next moment |
 | `allow."<kind\|type\|slot>".<key>`, `.reactions.<id>` (EldenNet DESIGN §7.6) | Per allowance | Characters › NPC types | Named NPCs (the slot's row), Combat (`combat`, `boss_fight`), Awareness (`status_reactions`, awareness); Voice › Text-to-speech (a read-only `tts` summary) | Next moment |
-| `ui.scale` | Text and menu size | Voice › Text and subtitles | Settings › Menu | Now; in game the atlas rebuilds when the menu closes (D29) |
+| `ui.scale` *GraceUI's* | Text and menu size | Voice › Text and subtitles | Settings › Menu | Now; in game the atlas rebuilds when the menu closes (D29) |
 | `ui.hdr`, `ui.paper_white_nits` | HDR; paper white | Voice › Text and subtitles | — | Now |
 | `ui.follow_game_subtitles` | Follow the game's subtitle setting | Voice › Text and subtitles | Conversation | Now |
 | `ui.latency_toasts` | Latency toasts | Settings › Developer | Traces | Now |
 | `pools.max_jobs_per_session` | Prepared-line batches per session | AI › Models (Prepared lines) | Combat | Next request |
 | `safety.level` | Content safety: faithful or gentle (O17) | Behaviour › Conversation | — | Next request |
 | `hotkeys.talk`, `hotkeys.skip_page` | Talk; skip page | Settings › Hotkeys | Conversation | Now |
-| `hotkeys.menu` *new*, replacing `hotkeys.settings` | Open the menu (F5) | Settings › Hotkeys | — | Now |
+| `hotkeys.menu` *new*, *GraceUI's*, replacing `hotkeys.settings` | Open the menu (F5) | Settings › Hotkeys | — | Now |
 | `hotkeys.debug` | Debug view (F11) | Settings › Hotkeys | Settings › Developer | Now |
-| `ui.menu.theme` *new* | Grace or Grace Clear | Settings › Menu | Top bar | Now |
-| `ui.menu.plain_text`, `.reduce_motion`, `.key_hints`, `.pad_glyphs`, `.backdrop`, `.compact_rows` *new* | The menu's own options (D19) | Settings › Menu | — | Now |
-| `ui.menu.show_world` *new* | Show the World page | Settings › Menu | — | Now |
-| `ui.menu.home_cards` *new* | Home's cards, their order and Setup's place | Home › Customise | — | Now |
-| `dashboard.enabled` (on), `dashboard.port` (8642) *new* (G4) | Serve the browser dashboard; its port | Settings › Browser view | — | Now (the server starts, stops or moves) |
-| `dashboard.lan` (off) *new* (G9) | Other devices on your network | Settings › Browser view | — | Now |
+| `ui.menu.theme` *new*, *GraceUI's* | Grace or Grace Clear | Settings › Menu | Top bar | Now |
+| `ui.menu.plain_text`, `.reduce_motion`, `.key_hints`, `.pad_glyphs`, `.backdrop`, `.compact_rows` *new*, *GraceUI's* | The menu's own options (D19) | Settings › Menu | — | Now |
+| `ui.menu.show_world` *new*, *GraceUI's* | Show the World page | Settings › Menu | — | Now |
+| `ui.menu.home_cards` *new*, *GraceUI's* | Home's cards, their order and Setup's place | Home › Customise | — | Now |
+| `dashboard.enabled` (on), `dashboard.port` (8642) *new*, *GraceUI's* (G4) | Serve the browser dashboard; its port | Settings › Browser view | — | Now (the server starts, stops or moves) |
+| `dashboard.lan` (off) *new*, *GraceUI's* (G9) | Other devices on your network | Settings › Browser view | — | Now |
+| `map.base`, `map.key_opens` (the game's map), `map.glow`, `map.flare_new`, `map.layers`, `map.lore_by_ai` (on) *new* (1.1, D95) | The map's settings: base map, the map key, glow, brighten new things once, the layers shown, Lore notes by AI | Settings › Map | Map | Now |
 | `augur.allow_custom_rules` | Your own event rules | Behaviour › Reactions (a locked "later version" row) | — | — |
 | `debug.panel`, `.record_sessions`, `.record_redact_text`, `.log_level` | Developer options | Settings › Developer | Logs (log level), Workshop (panel) | Now |
 
 The first proposal's `ui.menu.names` is dropped: names are plain only (D39).
 
-**Other sources.** `providers.toml` (read and write) on AI › Providers (its entries) and AI › Models (slot models and
-the preset); `secrets.toml` **write-only** on AI › Providers (the UI sees set, missing or rejected, never a value);
-`models.toml` (read) on AI › Models; `identity/types.toml` (read) on NPC types; persona and bio display fields only
-(`display_name_fallback`, `public.summary`, the news temperament) on Named NPCs; each persona stage's public line, for
-the stage seen only, on Playthrough; a world stage's `line` only for stages that hold, on History › World; `overrides/`
-and `disable.toml` (read, as relative paths, ids and counts) on Content packs. View state, never stored: live updates,
-the journey in view, the rail collapsed, sections open.
+**Other sources.** From 1.1, `config\plugins.toml` (each plugin's switch, its Cluster or Detached mode and the order;
+changed only through EldenNet's plugin commands) on Plugins. `providers.toml` (read and write) on AI › Providers (its
+entries) and AI › Models (slot models and the preset); `secrets.toml` **write-only** on AI › Providers (the UI sees set,
+missing or rejected, never a value); `models.toml` (read) on AI › Models; `identity/types.toml` (read) on NPC types;
+persona and bio display fields only (`display_name_fallback`, `public.summary`, the news temperament) on Named NPCs;
+each persona stage's public line, for the stage seen only, on Playthrough; a world stage's `line` only for stages that
+hold, on History › World; `overrides/` and `disable.toml` (read, as relative paths, ids and counts) on Content packs.
+View state, never stored: live updates, the journey in view, the rail collapsed, sections open.
 
 **Actions** (each a command, §6.6): Pause AI for this session (Home, D15); run the self-test (AI › Self-test, Home);
 find local servers (AI › Providers); prepare lines now (AI › Models; at rest or at the title only); Forget this NPC
@@ -974,8 +1036,8 @@ Browser view); pair a device while `dashboard.lan` is on (in game only), and for
 **The page lint** (invariant 12, §9.1) checks every key above against EldenNet's settings description: exactly one
 `home`, and the home is one of the page ids `home`, `ai.models`, `voice.text`, `characters.types`, `history.memories`,
 `behaviour.conversation`, `behaviour.speaking`, `behaviour.awareness`, `behaviour.reactions`, `behaviour.pacing`,
-`settings.general`, `settings.hotkeys`, `settings.menu`, `settings.browser` or `settings.developer`. AI › Providers
-holds `providers.toml` entries and keys, which are not settings rows.
+`settings.general`, `settings.hotkeys`, `settings.menu`, `settings.browser` or `settings.developer`, and from 1.1
+`settings.map`. AI › Providers holds `providers.toml` entries and keys, which are not settings rows.
 
 ### 4.6 Pages
 
@@ -1471,13 +1533,31 @@ a later version (O41, EldenNet DESIGN §13); v1 is dialogue only and never write
 **Content packs** (`content`; 0.2).
 
 - **Purpose.** What content EldenNet is running: the shipped pack and the player's own overrides, with no hub and no
-  downloads (D46).
+  downloads (D46). Plugins have a page of their own from 1.1 (D104), which this page links to.
 - **Sections.** **Shipped content** (name, version, credit; persona and card counts, since the cast is published;
   knowledge and rules as "included", with no counts, SP5) · **Your overrides** (relative paths under `overrides/`,
   each loaded or refused, with file and line) · **Turned off** (`disable.toml`: personas and cards by id; knowledge
   entries, triggers and rules as counts) · **Reloads** (time, layer, result).
-- **Data.** Reads `content`. Writes nothing in v1 (no content editors, D2).
+- **Data.** Reads `content`. Writes nothing (no content editors, D2).
 - **Rules.** Relative paths only (PV5).
+
+**Plugins** (`plugins`; 1.1 for content plugins, code plugins after v1.0; D104).
+
+- **Purpose.** The plugins EldenNet runs, as the owner designed the page (EldenNet O70): a list of plugins in rows, each
+  with its switch, and for a code plugin whether it runs in the plugin cluster or detached in a host of its own.
+- **Rows.** Name, version and author; the **On/Off** switch; for a code plugin, **Cluster** or **Detached**; the state
+  (on, off, refused, stopped, waiting for a restart), with a library clash or a failed check in words. Content
+  plugins keep their order, which decides between two plugins holding the same file. Opening a row shows the licence,
+  the summary, what the plugin may reach (a code plugin's, from its imports), its check results by file and line, its
+  reports, and Remove.
+- **Head of the list.** In the browser only: the drop zone with **Add file** (content plugins; this PC only, never code;
+  the file sent by §7.2 item 18's route, G28). When code plugins have stopped, a banner with the plugins-stopped
+  pop-up's choices (D105).
+- **Data.** Reads `plugins`. Sends EldenNet's plugin commands: `plugins.enable`, `plugins.mode`, `plugins.order`,
+  `plugins.remove`, `plugins.restart` (with the pop-up's choice), and `plugins.install`, which EldenNet marks
+  sensitive (D81).
+- **Rules.** Relative paths only (PV5); a plugin's own text (its name, summary and reports) is always text, never
+  markup (D81).
 
 #### 4.6.10 Outside the rail
 
@@ -1486,7 +1566,8 @@ a later version (O41, EldenNet DESIGN §13); v1 is dialogue only and never write
   optional prepared lines → text size (G6) and the browser view (its address, and the switch to turn it off; G4) →
   done, with a checklist and "Open Docs › Getting started". It opens at the title screen on first run (in the browser
   too, if the player opens the dashboard first), and again from Home › Setup and Settings.
-- **Modals**: the Forget confirmations, Reset page or Reset all, key capture, the Workshop spoiler confirmation.
+- **Modals**: the Forget confirmations, Reset page or Reset all, key capture, the Workshop spoiler confirmation, and
+  from 1.1 the plugins-stopped pop-up (D105).
 - **Search** (§4.3) is a modal scope over the page.
 
 ### 4.7 The settings row
@@ -1512,6 +1593,9 @@ a later version (O41, EldenNet DESIGN §13); v1 is dialogue only and never write
 - **SP2. The lock filter.** Every content or model string passes EldenNet's per-sentence lock check at projection time:
   the Tarnished's set for global strings, the NPC's own set for its journal and lines (`Locked(P)` for a persona,
   `Locked(C)` for a character, EldenNet O45). A failing item is dropped whole and counted on System › Status.
+  *Later (2026-11-15):* EldenNet's O86 keeps spoilers by grounding alone and drops its locked-term sets and output
+  lock, so this filter goes; SP2 is re-cut in EldenNet's fold (its roadmap S7.13.b): the views show only what was
+  shown in game or written impersonal (SP1).
 - **SP3. Names as the game shows them.** On-screen names come from the runtime name of the current row, or the
   first-meeting name (the pre-reveal fallback); a veiled persona stays veiled; regions by the names of regions
   entered. GraceUI stores no name.
@@ -1611,7 +1695,7 @@ a later version (O41, EldenNet DESIGN §13); v1 is dialogue only and never write
 | Content layers, overrides, `disable.toml`, reload results | Content packs | — | 0.2 |
 | Documentation, the AI disclosure, licences | Docs | First light (disclosure) | 0.2 |
 | The setup flow | First light (outside the rail) | Home › Setup, Settings | 0.6 |
-| Toasts, banner, chat box, call-out box, rollback modal, F11 | EldenNet's overlay, not GraceUI (§1.3) | — | — |
+| Toasts, banner, chat box, call-out box, rollback modal, F11 | EldenNet's own panels and notices, drawn through GraceUI's host; not pages (§1.3) | — | — |
 | Command-line tools (`en-tools replay`, `eval`, `selftest`, `probe-exe`) | Not in the UI; Docs › Troubleshooting names them | — | — |
 
 ### 4.11 SkyrimNet pages with no EldenNet counterpart
@@ -1697,23 +1781,78 @@ The first proposal's flavour-named sections map to the new pages so:
 | All settings | Settings › All settings |
 | First light | First light |
 
+### 4.13 The map (1.1)
+
+Decided by the owner on 2026-11-15 (G21–G26) and 2026-11-14 (G27), and adopted from [proposal
+0002](proposals/0002-map.md), which keeps the evidence and the reasoning; its §14 records what the research found
+(EldenNet WHY§58 to WHY§82). The map ships after EldenNet v1.0, as part of 1.1 (G24 (a)); v1.0 builds its groundwork
+anyway (the sightings record behind Playthrough, the world stages of O51). Until 1.1 the Map category is a later-version
+statement in the rail (principle 8, §4.2.1).
+
+- **What it is.** A map of the player's own journey: where they have been, whom they met and where, how those people's
+  stories went as far as the player saw them, what changed in the world, and lore notes. SP1–SP9 bind it in both views.
+- **The parts.** GraceUI's map panel (D91), a panel kind of the framework: a base, layers of marks, lines, areas and
+  labels, a tooltip and a detail pane from page data, zoom and a timeline; GraceUI draws it and never reads the game.
+  EldenNet's part: the `map` projection and its topics, the image read from the player's install, the masking, the
+  drawn base, and its Map page, its own category between Characters and History (D92).
+- **The base** (G21 (a)). The player's own game map: the game's own tiles, composed as the game composes them, each in
+  the variant for the map pieces the player holds, at each zoom level, read from the player's install at run time and
+  never shipped, committed or shown in our documents. Every base shows only what the player's own game map shows
+  (D90). The fallback is GraceUI's drawn base, exact and built on the player's PC from their own game (D97); a setting
+  chooses the game's map, the drawn base or none (D95). The fit check (D93) and the cache on the player's PC (D94)
+  guard it. Terrain (G27 (a), D98): a 3D relief in the browser, a relief image in game, and our own sprites and the
+  tile-grid schematic as the fallback.
+- **The layers** (proposal 0002 §4): discovery (areas reached, resting places used, foes felled); people and their
+  trails, which are sightings, never tracking (D89); quests (the steps seen, from verified flags only, with no counts
+  and no next step, SP5 and SP6); world changes (a world stage that holds, drawn by us); notes; and the player. Tooltips
+  and the detail pane carry projected text only; search, titles and URLs carry no story text (SP9). The journey
+  timeline replays the playthrough and never goes past now (D96).
+- **Two views.** In the browser: WebGL2 with a still bloom glow, zoom and pan, tooltips, the timeline and the 3D relief,
+  with tiles from the loopback server (invariants 4 and 6). In game: the map panel from vertex lists (invariant 10), the
+  glow as one halo sprite baked into the atlas at load, and the map's texture composed at start from the tiles for the
+  pieces held, then composed and uploaded once more each time a piece is gained (G26 (a), invariant 11's one
+  exception; at most 2048 × 2048 RGBA, 16 MB, unless measured otherwise). Danger closes it as it closes every view
+  (invariant 9).
+- **The map key** (G25 (a)). A setting, off by default. With it on, GraceUI catches the map key and opens its map, the
+  press masked from the game as the menu's closing press is (invariant 8); the key pressed again, or held, opens the
+  game's map, where fast travel and markers stay in v1. Fast travel from GraceUI's map is a later-version seam.
+- **Glow and motion** (G22 (a)). A still glow, brightening on hover, and one flare for a thing new since the map was
+  last opened (off under reduced motion); invariant 14 is unchanged. Glow is full, soft or off (D95).
+- **Lore notes** (G23 (c)). The model adds notes on its own, each from two or more of the player's memories tied to one
+  place or person and citing them, through the lock filter (SP2), batched on a light slot under EldenNet's pacing; the
+  player may edit or remove any, and a removed note is not written again from the same memories. **Lore notes by AI**,
+  on by default in Settings › Map, turns it off. Notes are kept per playthrough and shown on Map and History ›
+  Memories.
+- **Privacy** (proposal 0002 §9). The player's map never leaves their PC except to their own browser on loopback, or a
+  paired device on their home network while they have switched that on (G9); never in a log, report, URL or support
+  bundle (PV1–PV8). Tiles are served only to an authorised session and listed in no index. Documents, fixtures and
+  goldens use invented land.
+- **Tests.** Rendering goldens at fixture states check that the map draws nothing the fixture's game map would not show
+  and no layer beyond what was reached and seen; the upload counter counts the map's uploads (invariant 11); the input
+  tests cover the map key on keyboard and pad.
+
 ---
 
 ## 5. Input, focus and capture (in game)
 
-The menu captures input exactly as EldenNet's chat box does (EldenNet DESIGN §8.1), with the additions ML §6 draws
-from Magelight's field reports. The browser view is an ordinary web page (§5.9).
+Since G15 (a), capture and masking are GraceUI's, for every input holder: the menu, a panel that takes input
+(EldenNet's chat box and call-out box) or a modal, one at a time under one honest rule (D77, invariant 17). Its rules
+are EldenNet DESIGN §8.1's, moved with the overlay, with the additions ML §6 draws from Magelight's field reports.
+Proposal 0001 §4.5 holds the detail. The browser view is an ordinary web page (§5.9).
 
 ### 5.1 Opening and closing
 
-- **Key.** `hotkeys.menu`, default **F5**, rebindable in Settings › Hotkeys, stored by name. EldenNet's S4 spike
-  confirms that F5 is free in the game's default layout. The key is always masked from the game. F10 no longer opens
-  anything; a schema migration removes `hotkeys.settings` (D6).
-- **When it opens.** Only when EldenNet's `safe_context` holds (alive, not riding, not in a boss fight or combat, no
-  engaged hostile within 25 m and none at all within 12 m, the HUD in its default state; sheltered places waive the
-  distance checks) and no game menu or text entry is open, read through EldenNet's `ui` group and failing closed when
-  unknown; or at the title screen. Otherwise F5 shows the status toast "Not now: you are in danger" (or the reason)
-  and nothing opens. It never opens while the chat box or call-out box holds input.
+- **Key.** `hotkeys.menu`, default **F5**, rebindable in Settings › Hotkeys, stored by name; GraceUI's own setting
+  (D79, D84), migrated out of EldenNet's `settings.toml`. EldenNet's S4 spike confirms that F5 is free in the game's
+  default layout. The key is always masked from the game. F10 no longer opens anything; a schema migration removes
+  `hotkeys.settings` (D6).
+- **When it opens.** Only when every world-state provider allows it (D78), or at the title screen. With EldenNet
+  present that means its `safe_context` holds (alive, not riding, not in a boss fight or combat, no engaged hostile
+  within 25 m and none at all within 12 m, the HUD in its default state; sheltered places waive the distance checks)
+  and no game menu or text entry is open, read through EldenNet's `ui` group and failing closed when unknown. Without
+  a provider it opens at any time, as the guide documents; capture still masks game input. Otherwise F5 shows the
+  status notice "Not now: you are in danger" (or the reason) and nothing opens. While another holder has input, F5
+  shows "‹Mod› has the controls" and opens nothing; a second press within 2 s is the player's exit (below).
 - **First open of a session.** Projections are built when the menu opens, so the first frame has data; the fonts are
   already in the atlas; nothing is uploaded (U4).
 - **One close routine** for every exit path. It releases capture, masks every key and button still held until it is
@@ -1723,19 +1862,24 @@ from Magelight's field reports. The browser view is an ordinary web page (§5.9)
 | Exit path | Fade | Notes |
 |---|---|---|
 | F5 again, Esc or B on the top level, the close button | 200 ms | Esc and B close a modal or a drawer first, then go back up a level, then close |
-| Danger: `safe_context` stops holding (NPC §5.4) | 0 ms | Toast "The moment has passed." as for the chat box; text in a search or key field is dropped |
+| Danger: any provider's danger (EldenNet's `safe_context` stops holding, NPC §5.4) | 0 ms | Notice "The moment has passed." as for the chat box; text in a search or key field is dropped; every view closes (invariant 9) |
 | Loading screen, death, quit to title, fast travel, multiplayer gate | 0 ms | The title screen may open it again |
 | Focus loss, Alt+Tab | 0 ms | Key-ups sent for everything seen held |
-| No overlay render for 2 s | — | EldenNet's existing release rule |
-| A fault in the menu or overlay | 0 ms | Menu off for the session (§2.8) |
+| No overlay render for 2 s | — | The release rule of EldenNet DESIGN §8.1, now the host's |
+| A fault in the menu | 0 ms | Menu off for the session (§2.8) |
+| The player's exit: a second menu-key press within 2 s of "‹Mod› has the controls", or Escape held 1 s (EST) | 0 ms | Ends any holder, whether or not its view has reported ready; the holder is told `closed (player)` (D77) |
 
 ### 5.2 Capture
 
-- **Capture stays EldenNet's.** `graceui.dll` only says what it wants (keyboard, mouse, keys and buttons to mask until
-  release); EldenNet's capture rules decide (§2.9).
-- **EldenNet's rules** (EldenNet DESIGN §8.1): one capture atomic shared with the chat box; DirectInput keyboard and
-  mouse buffers zeroed; XInput neutral; ImGui draws its own cursor; keys held at close masked until released; released
-  on Esc, focus loss, 2 s without a render, danger, loading and any core fault.
+- **Capture is GraceUI's** (G15 (a)). The host holds one capture state for every holder; a holder says what it wants
+  (keyboard, mouse, keys and buttons to mask until release) through `request_input` and its input events (§2.9).
+- **One holder, honest answers** (D77). `request_input` is answered at once: `granted`, `refused` naming the holder,
+  or `not_now` with the reason; nothing deposes the holder or queues behind it, and a refused mod may ask to be told
+  when input is free. The one close routine ends any holder and tells it why. Every consumer can watch an "input held
+  by" event.
+- **The rules** (EldenNet DESIGN §8.1, moved with the overlay): one capture state across every holder; DirectInput
+  keyboard and mouse buffers zeroed; XInput neutral; ImGui draws its own cursor; keys held at close masked until
+  released; released on Esc, focus loss, 2 s without a render, danger, loading and any fault.
 - **Additions** (ML lesson 8–9, for S4 to verify):
   - buffered DirectInput reads are neutralised too, if the game uses them, so typed keys never replay after close;
   - the closing press never reaches the game: Esc would open the game's menu, and B would dodge;
@@ -1744,8 +1888,13 @@ from Magelight's field reports. The browser view is an ordinary web page (§5.9)
     where keyboard focus was;
   - the OS cursor is confined to the window while the menu holds the mouse, and the previous clip is restored on close
     and on focus loss; its visibility is put back as it was, never forced.
-- **Other mods' polled hotkeys** may still fire on letters typed into a search field. EldenNet does not hook user32
-  process-wide to stop them; the compatibility notes document it.
+- **Hotkeys belong to the framework** (D77): a mod registers a named action with a default key and modifiers or a
+  pad chord; a later mod whose default is taken is registered unbound, with a line on GraceUI's Hotkeys page naming
+  the holder; the player binds every mod's keys there. Hotkeys stand aside while any holder has input or a text field
+  has focus. Escape stays the host's until a view reports ready, and a view that fails to load gives the input back.
+- **Other mods' polled hotkeys**, and other overlays' own input hooks, may still fire on letters typed into a search
+  field. GraceUI does not hook user32 process-wide to stop them, and cannot negotiate with another overlay's hooks; the
+  guide and the compatibility notes document both.
 
 ### 5.3 Keyboard
 
@@ -1781,8 +1930,8 @@ While a text field has focus, keys type into it; only Esc and F5 act, and only t
 | View | Toggle the key-hint footer |
 | Right stick | Scroll the page |
 
-- EldenNet passes XInput state to `graceui.dll` in each frame's input while the menu holds input; hudhook reads no
-  pads (REN §4.1).
+- The host reads XInput state in its own detour, in every XInput DLL loaded at install, found by module name, and
+  hands it to the holder; hudhook reads no pads (REN §4.1).
 - Focus model: the rail, the top bar, the page, and the drawer or detail pane are four scopes. A modal is a scope
   that takes focus and gives it back to the control that opened it. In a table, ↑↓ moves through rows, A opens the
   row's drawer and → reaches the row's actions. Sliders and choices are edited in place with ← →.
@@ -1794,24 +1943,24 @@ While a text field has focus, keys type into it; only Esc and F5 act, and only t
 
 ### 5.5 Mouse and cursor
 
-- ImGui's cursor, drawn by EldenNet's overlay in the shape `graceui.dll` asks for, so it never lags. Hover tints; the
-  wheel scrolls; a held button's moves and release go to the control it was pressed on.
+- ImGui's cursor, drawn by the host in the shape the holder asks for, so it never lags. Hover tints; the wheel scrolls;
+  a held button's moves and release go to the control it was pressed on.
 - Nothing is hover-only: every hover-revealed action is also in the detail pane or on the focused row.
 
 ### 5.6 Text entry
 
 - **Fields**: search, a provider's base URL and headers, a masked API key, numeric entry, the bug report's free text;
   each is GraceUI's own single-line field (D57).
-- **On a pad**: when a text field gains focus from a pad, EldenNet opens Steam's floating keyboard through
-  `ShowFloatingGamepadTextInput` in the already-loaded `steam_api64.dll`, as for the chat box (EldenNet DESIGN §8.1,
-  O11). The masked key field stays masked.
-- **IME**: in v1 the OS composition window, positioned by EldenNet through the IMM functions at the caret rectangle
-  `graceui.dll` reports (D57). Escape while composing belongs to the IME and never closes the menu. Drawing the
+- **On a pad**: when a text field gains focus from a pad, GraceUI opens Steam's floating keyboard through
+  `ShowFloatingGamepadTextInput` in the already-loaded `steam_api64.dll`, as EldenNet does for its chat box (EldenNet
+  DESIGN §8.1, O11). The masked key field stays masked.
+- **IME**: in v1 the OS composition window, positioned by the host through the IMM functions at the caret rectangle
+  the holder reports (D57). Escape while composing belongs to the IME and never closes the menu. Drawing the
   composition inside the field, and our own candidate list, are later work. The IME under Proton is unproven and on
   the compatibility matrix.
 - **Emoji and other characters outside the Basic Multilingual Plane**: hudhook 0.9.3 panics on a lone surrogate in
-  `WM_CHAR` (REN §2.4). EldenNet takes `WM_CHAR` itself, pairs surrogates and passes the characters to
-  `graceui.dll` (and to ImGui for the chat box); this is needed for the chat box from v0.2 regardless of GraceUI.
+  `WM_CHAR` (REN §2.4). The host takes `WM_CHAR` and `WM_UNICHAR` itself, pairs surrogates and passes the characters
+  to the holder, the menu or EldenNet's chat box alike; it is needed for the chat box from v0.2.
 
 ### 5.7 Focus and navigation model
 
@@ -1825,10 +1974,12 @@ While a text field has focus, keys type into it; only Esc and F5 act, and only t
 ### 5.8 While the menu is open
 
 - **The game runs on.** Nothing pauses (EldenNet O9).
-- **EldenNet's toasts and banner draw above the menu**, so danger and failures are always seen.
-- **Lines addressed to the Tarnished wait** (D34): while the menu is open, EldenNet's scheduler treats the player as
-  busy, as it does while the chat box is open, so greetings, quest business and news are not spent on a player who
-  cannot see them. Barks and NPC-to-NPC lines continue and appear on Home's Lines card.
+- **Notices draw above the menu** (the `notice` layer, D76), so EldenNet's toasts and banner, danger and failures are
+  always seen.
+- **Lines addressed to the Tarnished wait** (D34, widened): while any holder has input (GraceUI's "input held by"
+  event), EldenNet's scheduler treats the player as busy, as it does while the chat box is open, so greetings, quest
+  business and news are not spent on a player who cannot see them. Barks and NPC-to-NPC lines continue and appear on
+  Home's Lines card.
 - **Live views stay live** at their rates (§6.5), so the player can watch the Event monitor explain a decision as it
   happens; the top bar's Live updates control holds them when a table must be read.
 
@@ -1836,9 +1987,9 @@ While a text field has focus, keys type into it; only Esc and F5 act, and only t
 
 - An ordinary page: no capture, the browser's own focus, the same keyboard map where the browser allows it (`/`,
   Q and E, Page Up and Page Down, Esc for modals). Tab order follows the visual order.
-- Key capture on Settings › Hotkeys records `KeyboardEvent.code` and maps it to EldenNet's key names; keys a browser
-  reserves for itself (F5 reloads the page, F11 is full screen) are captured only while the capture field holds focus,
-  and a note says so.
+- Key capture on Settings › Hotkeys records `KeyboardEvent.code` and maps it to the framework's key names (EldenNet's,
+  moved with the hotkeys); keys a browser reserves for itself (F5 reloads the page, F11 is full screen) are captured
+  only while the capture field holds focus, and a note says so.
 - Gamepads in the browser are not supported in v1.
 
 ---
@@ -1847,55 +1998,61 @@ While a text field has focus, keys type into it; only Esc and F5 act, and only t
 
 ### 6.1 Model
 
-- **Topics out, commands in.** EldenNet's core publishes topics (§6.5); a view subscribes to the ones its page needs.
-  A view changes anything only by sending a command (§6.6), which the core validates and answers.
+- **Topics out, commands in.** Each space publishes topics (EldenNet's core for EldenNet's space, §6.5); a view
+  subscribes to the ones its page needs, and GraceUI passes the subscription to the space that owns the topic. A view
+  changes anything only by sending a command (§6.6); GraceUI routes it to the space that owns the page, which validates
+  and answers it (invariant 3).
 - **Two shapes of topic.** A **state** topic is a whole payload with a revision number, replaced on change (status,
   settings, a persona's page). A **stream** topic is a bounded ring of rows with sequence numbers, appended to (live
   activity, events, decisions, logs). There is no generic diffing or patching: state payloads are small, and streams
   only append. That keeps both ends simple and stable.
-- **One set of types.** `grace-protocol` defines every payload, command and result in Rust; the TypeScript types are
-  generated from it, and CI fails if they drift.
-- **Display strings come ready.** The core formats what a player reads ("2.5 s", "badly hurt", "3 min ago") in the
+- **One set of types.** `grace-protocol` defines the envelope and every payload, command and result in Rust; the
+  TypeScript types are generated from it, and CI fails if they drift. A space's topics and commands are its own
+  schema; EldenNet's stay in `grace-protocol` until G20 is answered.
+- **Display strings come ready.** Each space formats what a player reads ("2.5 s", "badly hurt", "3 min ago") in the
   projection, so both views show identical words, and the in-game view never formats or allocates per frame.
 
 ### 6.2 Transports
 
 | View | Transport | Encoding |
 |---|---|---|
-| In game | In process, across `graceui.dll`'s C ABI (§2.9): frames handed to `ingest` on T6; commands through the host's bounded ring with a non-blocking `send` | The same JSON frames as the WebSocket, UTF-8 (D55) |
-| Browser | One WebSocket per tab to `grace-serve`, after the HTTP handshake of §7.2 | JSON text frames, UTF-8 |
+| A space and the host | Across the public C ABI (§2.9): frames handed over with `publish` and subscriptions and commands pulled with `poll`, on the space's own thread | The same JSON frames as the WebSocket, UTF-8 (D55) |
+| In game | Inside the host: the in-game view reads each space's newest snapshot and sends commands into the space's queue | The same frames |
+| Browser | One WebSocket per tab to `grace-serve` in the host, after the HTTP handshake of §7.2; GraceUI routes each frame to and from its space | JSON text frames, UTF-8 |
 
-`graceui.dll` and the web app come from GraceUI's folder, the core and the server from EldenNet's release; after a
-player updates either they may differ, and the handshake of §6.4 settles it (§2.9). A browser may also hold an older
-page.
+`graceui.dll` and the web app come from GraceUI's folder, each space from its own mod's release; after a player
+updates either they may differ, and `connect` (§2.9) and the handshake of §6.4 settle it. A browser may also hold an
+older page.
 
-### 6.3 Envelope and message kinds (WebSocket)
+### 6.3 Envelope and message kinds
 
-Every frame is one JSON object: `{"v": 1, "t": "<kind>", ...}`. `v` is the protocol's major version.
+Every frame is one JSON object: `{"v": 1, "t": "<kind>", ...}`. `v` is the protocol's major version. Every frame of a
+space's traffic also carries `space`, the space's id (D81); GraceUI's own frames (`hello`, `welcome`, `ping`, `pong`,
+`bye`) carry none, and a page subscribes and sends commands only within the spaces `welcome` names.
 
 | Kind | Direction | Fields | Meaning |
 |---|---|---|---|
-| `hello` | page → EldenNet | `protocol` ("1.0"), `bundle` (the web app's or `graceui.dll`'s version), `caps`, `ticket` (§7.2; browser only) | First frame: within 2 s of connecting (browser), right after `init` (in game) |
-| `welcome` | EldenNet → page | `protocol`, `caps`, `eldennet` (version and increment), `graceui`, `settings_schema`, `session` (an opaque id, never the cookie) | Handshake accepted |
-| `sub`, `unsub` | page → EldenNet | `id`, `topic`, for streams `since` | Watch or stop watching a topic |
-| `state` | EldenNet → page | `topic`, `rev`, `body` | A state topic's whole payload |
-| `rows` | EldenNet → page | `topic`, `from_seq`, `rows`, `dropped` (rows lost to the ring) | Stream rows, in order |
-| `cmd` | page → EldenNet | `id`, `name`, `args` | A command |
-| `result` | EldenNet → page | `id`, `ok` or `error` (§6.7), optional `body` | The answer to one command |
-| `error` | EldenNet → page | `code`, `detail` | A protocol-level error not tied to a command |
-| `bye` | EldenNet → page | `reason`: `shutdown`, `superseded`, `unauthorised`, `version`, `fault` | EldenNet is closing the connection |
+| `hello` | page → GraceUI | `protocol` ("1.0"), `bundle` (the web app's or `graceui.dll`'s version), `caps`, `ticket` (§7.2; browser only) | First frame: within 2 s of connecting (browser), when the in-game view starts (in game) |
+| `welcome` | GraceUI → page | `protocol`, `caps`, `graceui`, `spaces` (each space this view may show: its id, name, version and increment, and its `settings_schema`), `session` (an opaque id, never the cookie) | Handshake accepted |
+| `sub`, `unsub` | page → space | `space`, `id`, `topic`, for streams `since` | Watch or stop watching a topic |
+| `state` | space → page | `space`, `topic`, `rev`, `body` | A state topic's whole payload |
+| `rows` | space → page | `space`, `topic`, `from_seq`, `rows`, `dropped` (rows lost to the ring) | Stream rows, in order |
+| `cmd` | page → space | `space`, `id`, `name`, `args` | A command |
+| `result` | space → page | `space`, `id`, `ok` or `error` (§6.7), optional `body` | The answer to one command |
+| `error` | GraceUI or a space → page | `code`, `detail`, and `space` when a space's | A protocol-level error not tied to a command |
+| `bye` | GraceUI → page | `reason`: `shutdown`, `superseded`, `unauthorised`, `version`, `fault` | GraceUI is closing the connection |
 | `ping`, `pong` | both | — | Liveness every 15 s; two missed pongs close the socket |
 
 ### 6.4 Versioning
 
 - **Protocol**: `MAJOR.MINOR`. A minor version adds optional fields, topics, commands or capabilities and never
   removes or changes one; unknown fields are ignored on both sides. A major version is a breaking change. Features are
-  also announced by name in `caps`, so a page can ask "does this EldenNet have `monitor.decisions`?" (ML §3.15).
-- **Handshake**: the same major is required. On a mismatch EldenNet answers `bye` with `version`; the page shows
+  also announced by name in `caps`, so a page can ask "does this space have `monitor.decisions`?" (ML §3.15).
+- **Handshake**: the same major is required. On a mismatch GraceUI answers `bye` with `version`; the page shows
   "This page needs updating: reload it" when a reload would fetch a matching web app, and otherwise names the GraceUI
   to install (§2.9). In game the menu stays off with the same words.
-- **Settings schema**: `welcome` carries EldenNet's settings schema number and a hash of the settings description;
-  the page reloads the description when either changes.
+- **Settings schema**: `welcome` carries each space's settings schema number and a hash of its settings description;
+  the page reloads a description when either changes.
 - **Caching**: the HTML is `no-store`; scripts, styles and fonts have content-hashed names and are cached for good.
 - **Release tie**: `grace-protocol`'s version is in `graceui.toml` and in both projects' release notes; a major bump
   is a release item for both. v1 aims to keep protocol major 1 and ABI major 1 throughout.
@@ -1962,12 +2119,15 @@ pushes, and EldenNet's rates are unchanged. A hidden Home card subscribes to not
 | `menu.close` | — | In game only |
 | `workshop.*` | various | Only with `debug.panel` and the session's confirmation |
 
+Each space marks its sensitive commands, which GraceUI refuses from a paired device (D81); EldenNet marks
+`providers.update`, `secrets.set` and `secrets.clear` (G9).
+
 ### 6.7 Errors
 
 | Code | Meaning | What the view shows |
 |---|---|---|
 | `bad_message` | Not JSON, not an object, missing fields, wrong types | Nothing (logged once, without the payload); after 3 the connection closes |
-| `unknown_topic`, `unknown_command`, `unknown_key` | Not in this EldenNet | "Not available in this version" |
+| `unknown_topic`, `unknown_command`, `unknown_key` | Not in this space's version, or not in any space this view may show | "Not available in this version" |
 | `invalid_value` | Wrong type or out of bounds | The field's error state, with the bounds in words |
 | `locked` | A later-version, always-on or developer-only item | The row's badge |
 | `not_now` | Not allowed at this moment (gated network, a fight, the title screen) | The reason in words |
@@ -1976,7 +2136,7 @@ pushes, and EldenNet's rates are unchanged. A hidden Home card subscribes to not
 | `unauthorised` | No or stale session cookie, no or forgotten device cookie (G9), or a stale ticket | The page reloads once for a new cookie; a device on the home network is asked to pair (G9) |
 | `rate_limited` | Over the command rate | Retried once after 1 s |
 | `version` | Protocol major mismatch | "This page needs updating" |
-| `internal` | A fault in EldenNet while handling it | "Something went wrong; the log has the details", and the control reverts |
+| `internal` | A fault in the space, or in GraceUI, while handling it | "Something went wrong; the log has the details", and the control reverts |
 
 Errors never echo a secret, a payload or a path. Parsing never panics: a malformed frame is dropped with a short log
 note (ML lesson 23).
@@ -1984,20 +2144,23 @@ note (ML lesson 23).
 ### 6.8 Limits
 
 - Frames from a page: at most 16 KiB; at most 20 commands a second per connection; at most 32 subscriptions.
+- A file never travels in a frame: it goes by the upload route of §7.2 item 18 (G28), with a one-use ticket.
 - Connections: at most two at once (a second tab is allowed; a third gets `bye` with `superseded` for the oldest).
+  Limits apply per connection and per space (D81).
 - Frames to a page: pushes coalesced per topic to the rates of §6.5; one state payload at most 256 KiB (NPC types'
   `kinds` is the largest); a stream batch at most 100 rows.
-- In game the command channel holds 32 commands; a full channel drops the newest with a toast, never blocks T3.
+- Each space's command queue holds 32 commands; a full queue drops the newest with a notice and never blocks the
+  present thread.
 
 ### 6.9 The settings description
 
-EldenNet exports a description of every setting, generated from its own settings types, so labels, help and bounds
-have one source for EldenNet's README, the browser and the game (D8). Each entry carries: `key`; `type` (bool,
-integer, number, duration in seconds, choice, tri-state, key name, text, secret); `default`; `min`, `max`, `step`,
-`unit`; `choices` with their labels; `label`; `help`; `synonyms`; `home` (a page id from `grace-pages`, §4.5); `effect`
-(now, next moment, next request, next launch); `availability` (live, or the check, version or dependency that holds
-it); `locked`. GraceUI's page lint checks that every key has exactly one home and that every key EldenNet exports
-appears on a page.
+Each space exports a description of every setting it owns; EldenNet's is generated from its own settings types, so
+labels, help and bounds have one source for EldenNet's README, the browser and the game (D8). Each entry carries: `key`;
+`type` (bool, integer, number, duration in seconds, choice, tri-state, key name, text, secret); `default`; `min`, `max`,
+`step`, `unit`; `choices` with their labels; `label`; `help`; `synonyms`; `home` (a page id of the space's pages, §4.5);
+`effect` (now, next moment, next request, next launch); `availability` (live, or the check, version or dependency that
+holds it); `locked`. GraceUI's page lint checks that every key has exactly one home and that every key a space exports
+appears on one of its pages. GraceUI's own settings (D84) are described the same way, in GraceUI's space.
 
 An entry, as an example of the shape:
 
@@ -2011,9 +2174,10 @@ An entry, as an example of the shape:
 A command and its answer:
 
 ```json
-{"v": 1, "t": "cmd", "id": 41, "name": "settings.set", "args": {"key": "pacing.gap_s", "value": 3.0}}
-{"v": 1, "t": "result", "id": 41, "ok": true}
-{"v": 1, "t": "state", "topic": "settings", "rev": 118, "body": {"...": "..."}}
+{"v": 1, "t": "cmd", "space": "eldennet", "id": 41, "name": "settings.set",
+ "args": {"key": "pacing.gap_s", "value": 3.0}}
+{"v": 1, "t": "result", "space": "eldennet", "id": 41, "ok": true}
+{"v": 1, "t": "state", "space": "eldennet", "topic": "settings", "rev": 118, "body": {"...": "..."}}
 ```
 
 ---
@@ -2037,18 +2201,27 @@ A command and its answer:
   items 12 and 16). Docs › Privacy says both.
 - **Other devices on the home network**: none unless the player switches `dashboard.lan` on, and then only after
   pairing (G9; §7.2 item 16).
-- **The in-game view and the browser are untrusted input** to EldenNet's core, alike.
+- **The in-game view and the browser are untrusted input** to every space, EldenNet's core among them, alike.
+- **Other mods in the process** (D81). Every consumer is native code with the player's rights, so there is no
+  isolation in process: GraceUI's checks (page data, frame sizes, draw lists, budgets) protect against mistakes, never
+  against a hostile DLL. In the browser, isolation is by our code: one origin, no mod's HTML, script or CSS, every frame
+  carrying its space, subscriptions and commands only within their space, limits per connection and per space.
 - **Leaks**: keys, chat text, paths or names reaching logs, reports, URLs, titles or the clipboard unasked.
 - **Supply chain**: the web app's dependencies.
 
 ### 7.2 The local server (always on, G4)
 
-1. **Always on** (G4). The server starts with EldenNet, as soon as its settings are read, and stops with the game; it
-   serves at the title screen and while dormant, and keeps serving after a later L1 trip so that Status and Bug
-   report stay reachable. It never starts when init ends at L1 because the gate or the safety step failed (an unknown
-   build or anti-cheat), and it stops if T10's anti-cheat re-check (ARCH channel C14) finds anti-cheat, so no socket
-   stays open beside anti-cheat or an unknown build (EldenNet ARCH §1.4, as eldennet-changes §3 item 1 amends it).
-   `dashboard.enabled = false` turns it off (D59); off means no socket.
+1. **Always on** (G4), served by GraceUI (G17 (a)). The server runs while any space registers with `browser = "always"`,
+   or the player turns it on in GraceUI's space, and stops with the game; `dashboard.enabled = false` turns it off
+   (D59), and off means no socket. EldenNet registers its space with `browser = "always"` as soon as its settings are
+   read and its gate and safety steps pass; it is served at the title screen and while dormant, and stays served after a
+   later L1 trip of another kind so that Status and Bug report stay reachable. The gate clause is kept as four rules
+   (D81): EldenNet never registers its space when init ends at L1 because the gate or the safety step failed, and
+   withdraws it on T10's anti-cheat re-check (ARCH channel C14); GraceUI opens no socket after its own anti-cheat hit; a
+   later hit, from GraceUI's own module re-check (every 60 s while the server runs) or from any provider's anti-cheat
+   flag, closes the server for every space for the rest of the session; and an unknown game build binds EldenNet's space
+   alone, since GraceUI has no build gate. So no socket stays open beside anti-cheat, and EldenNet's pages are never
+   served beside an unknown build.
 2. **Bind 127.0.0.1 only** (and `::1` if offered), never `0.0.0.0`; other devices only through item 16, once the
    player switches it on (G9). The default port is 8642 (D58), configurable from 1024 to 65535; if it is taken, fail
    closed with one toast and one log line naming the port and where to change it, never fall back to another port or
@@ -2089,33 +2262,43 @@ A command and its answer:
     click; the server's own checks are what hold.
 14. **Opening the page**: the player types `http://127.0.0.1:8642` (or `localhost:8642`) or uses a bookmark, and needs
     nothing else. The address is shown in Settings › Browser view with Copy address (on a click, PV7) and Open in
-    browser (EldenNet asks Windows to open the dashboard's own address, never another), on Home's Status card, in F11
-    from v0.2, and on the launcher's first screen, which reads the port from `settings.toml`.
+    browser (GraceUI asks Windows to open the dashboard's own address, never another), on Home's Status card, in F11
+    from v0.2, and on EldenNet's launcher's first screen, which reads the port from GraceUI's settings (D84).
 15. **Only listed files**: static files come only from `GraceUI\web\`, as `graceui.toml` lists them, read and checked
     once at start; anything else is 404, so nothing stray in the folder is served and no path reaches outside it.
-    Without the folder, or if a web file fails its check, a plain notice page built into EldenNet (§2.9).
+    If a web file fails its check, a plain notice page built into `graceui.dll` (§2.9).
 16. **Other devices (G9, decided by the owner)**: `dashboard.lan` is off by default, and use on this PC never needs a
-    code. With it on, the server also listens on the PC's private network addresses only (never a public address,
-    never every interface); Windows asks once whether the game may accept connections on private networks. Host must
-    be one of those addresses with the port (item 5). "This PC" means a connection on the loopback listener. On the
-    network listener only a device cookie is accepted (`HttpOnly; SameSite=Strict`, host-only), and without one only
-    the pairing page and the code request answer: a device that has not paired sees only the pairing page. "Pair a
-    device" in game shows a six-digit code there for two minutes; it works once and is void after five wrong tries.
-    A paired device gets a random device cookie that lasts until the player forgets the device. EldenNet keeps only
-    its hash, with the name the player gives the device and the date it paired, in a file of its own in its config
-    folder (`devices.toml`), never in `settings.toml`, so Copy settings, the bug report and recordings never carry it.
-    Each paired device is listed on Settings › Browser view, whether `dashboard.lan` is on or off, with a Forget
-    button, which revokes it at once and closes its connections. Switching
-    `dashboard.lan` off closes the network listener and every device connection; paired devices stay listed until
-    forgotten. Paired devices are refused `secrets.set`, `secrets.clear` and `providers.update`.
+    code. With it on, the server also listens on the PC's private network addresses only (never a public address, never
+    every interface); Windows asks once whether the game may accept connections on private networks. Host must be one of
+    those addresses with the port (item 5). "This PC" means a connection on the loopback listener. On the network
+    listener only a device cookie is accepted (`HttpOnly; SameSite=Strict`, host-only), and without one only the pairing
+    page and the code request answer: a device that has not paired sees only the pairing page. "Pair a device" in game
+    shows a six-digit code there for two minutes; it works once and is void after five wrong tries. A paired device gets
+    a random device cookie that lasts until the player forgets the device. GraceUI keeps only its hash, with the name
+    the player gives the device and the date it paired, in a file of its own in its user folder
+    (`Game\GraceUI\user\devices.toml`, D84), never in a settings file, so Copy settings, the bug report and recordings
+    never carry it. Each paired device is listed on Settings › Browser view, whether `dashboard.lan` is on or off, with
+    a Forget button, which revokes it at once and closes its connections. Switching `dashboard.lan` off closes the
+    network listener and every device connection; paired devices stay listed until forgotten. Paired devices are refused
+    every command a space marks as sensitive: EldenNet's `secrets.set`, `secrets.clear` and `providers.update` (D81).
 17. **Disconnect browsers**: Settings › Browser view drops every connection and renews the cookie
     (`dashboard.disconnect`); at most two connections at once (§6.8).
+18. **Uploads (G28, decided by the owner)**: one route, `POST /upload`, on the loopback listener alone, for a space's
+    commands that take a file and are marked sensitive (EldenNet's `plugins.install` first); the page first asks for a
+    one-use ticket through the WebSocket, bound to the session, the space, the command and the file's size and
+    SHA-256, valid for 60 s; the request needs Host, Origin, Fetch Metadata and the session cookie as every API call
+    does, and the ticket; one upload at a time per session; at most 32 MiB (EST), refused at once when the declared
+    size is larger, and checked against the ticket's hash when it has arrived; refused from the network listener and
+    so from every paired device; the bytes go to the space's command queue with the command, and GraceUI keeps nothing
+    after the call, in memory or on disk; no file name from the browser is ever used as a path. The result comes back
+    as the command's `result` (§6.7).
 
 ### 7.3 Every command is untrusted
 
-- One validating entry point in the core for both views; types, bounds, keys and guards are checked there, never only
-  in a view.
-- A view cannot name the actor: the core knows which view sent a command from the channel it arrived on.
+- One validating entry point per space for both views (EldenNet's in its core); types, bounds, keys and guards are
+  checked there, never only in a view. GraceUI routes a command only to the space that owns the page (invariant 3).
+- A view cannot name the actor: GraceUI tells the space which view sent a command (the in-game menu, this PC's
+  browser or a paired device) from the channel it arrived on.
 - Destructive commands need `confirm: true` and an exact target; nothing acts on a GET.
 
 ### 7.4 Secrets
@@ -2144,16 +2327,19 @@ A command and its answer:
 
 | Item | Budget | First measured |
 |---|---|---|
-| Menu closed, in game | No projection built, no draw; EldenNet's overlay stays within C3 (≤ 0.3 ms a frame) | v0.6 |
-| Menu open, densest page (NPC types, Reactions, Home with every card), desktop at 1440p | ≤ 0.8 ms p99 CPU on the present thread, `graceui.dll`'s `frame` and `grace-host`'s check and copy included; ≤ 0.2 ms GPU | S4 sample, then v0.6 |
+| Menu closed, in game | No projection built, no menu drawn; EldenNet's own panels within its C3 (≤ 0.3 ms a frame) | v0.6 |
+| All panels together, menu closed (D71) | ≤ 1.0 ms p99 CPU on the present thread (EST), the host's check and copy included; each opted-in `on_present` callback ≤ 0.5 ms p99 (EST), suspended after 120 frames over it | S4, then 0.2 |
+| A submission | ≤ 256 KiB of vertices and ≤ 64 commands (EST); larger is refused and logged (D76) | 0.1, by test |
+| Menu open, densest page (NPC types, Reactions, Home with every card), desktop at 1440p | ≤ 0.8 ms p99 CPU on the present thread, the menu's layout and tessellation and the host's check and copy included; ≤ 0.2 ms GPU | S4 sample, then v0.6 |
 | Menu open, Steam Deck at 800p | ≤ 1.5 ms p99 CPU on the present thread | S4 sample, then v0.6 |
 | FPS while the menu is open (at safe moments only) | ≤ 2 FPS lost at the 60 FPS cap | v0.6 |
 | First frame after F5 | No frame over 1.5 × the budget: no uploads, no atlas build | v0.6 |
-| Allocation on the present thread | None per frame after warm-up, in `graceui.dll` and in `grace-host` (ARCH §1.2, T3) | v0.6, by test |
+| Allocation on the present thread | None per frame after warm-up, in `graceui.dll` and in every opted-in `on_present` callback (ARCH §1.2, T3; invariant 10) | 0.1, by test |
 | Core projections | Only for watched topics; ≤ 0.3 ms per core step at 32 characters; ≤ 4 Hz per topic | v0.2, v0.4 |
-| The in-process bridge | Encoding a revision, and `ingest` parsing it: ≤ 0.5 ms each on T6 for the largest payload (`kinds`, 256 KiB); only watched topics | S4 sample, then v0.6 |
-| Font atlas | ≤ 2048² RGBA at up to 1440p and scale 1.25; ≤ 4096² at 4K or 150%; ≤ 4 rebuilds a session (D29) | S4 |
-| Local server | With no tab open, one listening socket and no other work; ≤ 2 connections; ≤ 1% of one core with one tab on Home | v0.2 |
+| The in-process bridge | Encoding a revision, and `publish` parsing it: ≤ 0.5 ms each on the publisher's thread (EldenNet's T6) for the largest payload (`kinds`, 256 KiB); only watched topics | S4 sample, then v0.6 |
+| Font atlas | ≤ 2048² RGBA at up to 1440p and scale 1.25; ≤ 4096² at 4K or 150%; ≤ 4 rebuilds a session (D29); at most two faces for each mod other than EldenNet (D80) | S4 |
+| Textures | Registered once in each mod's registration window, within its budget, logged; the one exception the in-game map's texture, composed and uploaded again when a map piece is gained (G26, invariant 11) | 0.1; the map in 1.1 |
+| Local server | With no tab open, one listening socket and no other work; ≤ 2 connections; ≤ 1% of one core with one tab on Home; its threads GraceUI's own (two, EST) | v0.2 |
 | Pushes | ≤ 64 KB/s per connection on Home with every card shown, during a fight | v0.4 |
 | History pages | A `history.page` answer ≤ 50 ms of core time for 100 rows; never on T3 | v0.4 |
 | Web bundle | Scripts ≤ 100 KB gzip; styles ≤ 25 KB; fonts ≤ 700 KB as subset WOFF2; first paint ≤ 1 s on loopback | 0.2 |
@@ -2169,20 +2355,25 @@ A command and its answer:
 |---|---|---|
 | Pure logic | `grace-view`: page loading, the widget tree, the rail's accordion, flyouts and page order (Page Up and Page Down cross categories), focus scopes (rail, top bar, page, drawer, modal), the pad ledger (the opening press inert until released; B and Start never passed on), hotkey rules, search indexing (nothing from SP9's or §4.3's never-indexed lists), text layout; GraceUI's text field (caret, selection, masked drawing); `grace-draw`'s tessellation against golden vertex lists | Linux CI |
 | Protocol | Round trips of every payload and command; the Rust-to-TypeScript generation has no drift; a fuzzer feeds malformed frames and nothing panics | Linux CI |
-| ABI and handshake | Every row of §2.9's mismatch table, each way round: no folder, a half-copied folder, a wrong hash, no export, an unknown ABI major, protocol majors and minors on either side; a DLL that panics in each entry; vertex lists with bad counts, indices, clip rectangles or texture ids. Each ends as §2.9 says, with EldenNet's surfaces still drawing. The ABI header against the last release's (append only). `graceui.dll`'s imports and symbols against §2.2's deny list and reviewed allowlist (system DLLs only; no socket, thread-creation or file-opening import; std's dbghelp loader and panic-output path only as allowlisted; no hudhook, ImGui or `MH_` symbol); a frame of more than 65,536 vertices split across commands with their vertex offsets | Linux CI (with `grace-dev` as the host), Windows CI |
+| ABI and connect | Every row of §2.9's mismatch table, each way round: no folder, a half-copied folder, a wrong hash, null for an unknown major, `too_old` naming both versions, `duplicate_id`, `inactive`, protocol majors and minors on either side; an older and a newer consumer, a smaller and a larger struct, a struct below the 1.0 size refused; calls after `inactive` or `render_dead` doing nothing; GraceUI panicking in each entry; two consumers, one faulty, the other still drawing; a second copy at a second path going idle, and two copies requested at once from two threads yielding exactly one non-null table; a consumer loading GraceUI by path while a loader also listed it. Draw lists with bad counts, indices, clip rectangles, texture ids, an older atlas generation, an overridden vertex layout or 32-bit indices, each refused; a list of more than 65,536 vertices split across commands with their vertex offsets. The ABI header against the last release's (append only). The crate graph (only `grace-host` depends on hudhook), `graceui.dll`'s imports against the reviewed allowlist, and `eldennet.dll`'s imports and symbols for any hook library (invariant 16) | Linux CI (with `grace-dev` and the C mock), Windows CI (with `grace-harness`) |
+| Input across holders | Refusals name the holder; nothing deposes or queues; the close routine releases every holder and masks the closing press for each; the player's exit (a second menu-key press, Escape held) ends every kind of holder, a panel that has reported ready and never releases among them; hotkey conflicts registered unbound and shown (D77) | Linux CI (`grace-view`'s rules), Windows CI (`grace-harness`) |
+| Providers and anti-cheat | Two providers combined: either's danger closes every view, a view opens only when both allow; no provider, no danger close; the anti-cheat path draws notices only, with no menu, panel, input or socket; a later hit closing the server for every space (D78, D81, D88) | Linux CI, Windows CI |
+| Budgets and fuzzing | Texture and face budgets; the `on_present` budget and suspension; a fuzzer for page data, settings descriptions, frames and draw lists (malformed input never panics and stays within limits) | Linux CI, Windows CI |
 | Page lint | Every exported setting has exactly one home, and that home is one of §4.5's page ids; every shortcut row and quick switch names a home that exists; no unknown keys; every page has an id, a category, a description, help text and at least one Related link that resolves, and names its increment or a later-version tag; statement pages hold no controls; Settings' link-out groups hold no rows; every component used exists in both views | Linux CI |
-| Server security suite | Wrong or missing `Host`; foreign or missing `Origin` on upgrades; a missing, stale or foreign session cookie; a replayed ticket; a cookie overwritten from another port; a narrower-Path `en_session` and a cookie flood from another port; files not listed in `graceui.toml`; a missing web folder; `Sec-Fetch-Site` cross-site; oversized frames; command floods; no CORS headers; every security header present; no cookie in any log line; port taken → fail closed; with `dashboard.lan` on: a Host naming an address not bound, an unpaired device reaching anything but the pairing page, five wrong codes, an expired or reused code, `dashboard.pair` from any browser, a forgotten device's cookie, `secrets.set`, `secrets.clear` and `providers.update` from a paired device, and `dashboard.lan` off closing every device connection; on the network listener, an unpaired device's page load gets no session cookie, a loopback `Host` gets 421, a forged loopback `Origin` is refused, a session cookie is not accepted, and `dashboard.forget_device` and `dashboard.disconnect` are refused; a device name or network address in a log line or report | Linux CI, against `grace-serve` |
+| Server security suite | Run with two spaces: a page cannot reach another space's topics or commands, and each space's sensitive commands are refused from a paired device. Uploads (§7.2 item 18): no ticket, a reused or expired ticket, another session's ticket, a size or hash that differs from the ticket's, an oversized body, a second upload at once, an upload on the network listener, a cross-site or foreign-origin request, a command not marked as taking a file, each refused; nothing of an upload left in memory or on disk after the call. Wrong or missing `Host`; foreign or missing `Origin` on upgrades; a missing, stale or foreign session cookie; a replayed ticket; a cookie overwritten from another port; a narrower-Path `en_session` and a cookie flood from another port; files not listed in `graceui.toml`; a missing web folder; `Sec-Fetch-Site` cross-site; oversized frames; command floods; no CORS headers; every security header present; no cookie in any log line; port taken → fail closed; with `dashboard.lan` on: a Host naming an address not bound, an unpaired device reaching anything but the pairing page, five wrong codes, an expired or reused code, `dashboard.pair` from any browser, a forgotten device's cookie, `secrets.set`, `secrets.clear` and `providers.update` from a paired device, and `dashboard.lan` off closing every device connection; on the network listener, an unpaired device's page load gets no session cookie, a loopback `Host` gets 421, a forged loopback `Origin` is refused, a session cookie is not accepted, and `dashboard.forget_device` and `dashboard.disconnect` are refused; a device name or network address in a log line or report | Linux CI, against `grace-serve` |
 | Web app | Component tests; each page against fixture states; the key-field lint (no password-type input, key fields in no form and cleared after `secrets.set`, §7.4); keyboard-only walkthroughs of the rail, top bar and every page; Home's Customise round trip (`ui.menu.home_cards`); Live updates holding a stream; an automated accessibility check (its licence checked first); the mock's two window sizes (1280 × 720, 2560 × 1440) | Linux CI, headless browser |
 | Spoiler goldens | For each of EldenNet's fixture states (with our invented names), each page's and each Home card's rendered text, tiles and counts match a golden; no count includes a veiled or absent item; a hidden character, a boss before its bar or an unannounced invader changes no count; History › Events lists no event the Tarnished did not perceive; an earlier journey shows read-only; titles and URLs carry no chat text; the roster at the title-screen fixture, named bosses included, shows only general profiles that pass the opening lock set, in name order, and an overlap fixture (an invented character the game can show calm, with a later boss form) shows no "Boss" tag and no bar name, met or not; Playthrough shows nothing of anyone not met, "Alive when last met" for someone who died unseen, the line of the stage seen and never a later one, and no related story for an unmet person | Linux CI (web), Windows CI (in game) |
-| View parity | Each page's structure (rows, labels, values, order, focus order), the rail, the top bar and Home's grid dumped from both views and compared with one golden (U6) | Linux CI (the in-game structure from `graceui.dll` driven by `grace-dev`), Windows CI |
+| View parity | Each page's structure (rows, labels, values, order, focus order), the rail, the top bar and Home's grid dumped from both views and compared with one golden (U6), per space | Linux CI (the in-game structure from `graceui.dll` driven by `grace-dev`), Windows CI |
 | Contrast | The table of §3.3 recomputed from `tokens/grace.toml` (U7) | Linux CI |
-| In-game view harness | A small Windows program that opens a Direct3D 12 window, applies hudhook 0.9.3 to itself as hudhook's own examples do, and draws the menu through `grace-host` and `graceui.dll` against `grace-dev`'s fixtures: screenshots compared within a tolerance, frame cost, atlas size | Windows CI and developer machines |
-| In game | EldenNet's per-increment checks (O29): input leaks with F5, Esc and B; the close matrix of §5.1; danger closing; the title screen; frame cost; Proton and the Deck; HDR | Testers' machines, EldenNet's matrix |
+| In-game view harness (`grace-harness`, D85) | A Windows program that opens a Direct3D 12 window, loads `graceui.dll` and a mod's DLL (our example mods, and EldenNet's panels with fixtures) and feeds input: screenshots compared within a tolerance, frame cost, atlas size, the upload counter. WARP in CI is LIKELY to work, to be confirmed | Windows CI and developer machines |
+| Example mods | The three example mods build and run in the harness; the guide's snippets compile (D85) | Windows CI |
+| In game | EldenNet's per-increment checks (O29): input leaks with F5, Esc and B across every holder; the close matrix of §5.1; danger closing; the title screen; frame cost; one hook library in the process; Proton and the Deck; HDR | Testers' machines, EldenNet's matrix |
 
-### 9.2 The fake EldenNet (`grace-dev`)
+### 9.2 The fake host (`grace-dev`)
 
-- A small Rust program that links the real `grace-serve` and `grace-protocol` and answers from fixture states instead
-  of a game. Developing the web app against it exercises the real server, its security checks included.
+- A small Rust program that links the real `grace-serve` and `grace-protocol` and answers from a space's page data and
+  fixture states instead of a game and a mod (D85): EldenNet's, the demo space's or any author's. Developing the web
+  app against it exercises the real server, its security checks included.
 - **Fixtures**: scenario files in `fixtures/` (a first run with Setup open, a quiet road, a busy fight, the title
   screen, an L1 banner, multiplayer, lost contact, a second journey after NG+, a long history, every badge state),
   with invented names and our own words. Never game text or names.
@@ -2192,8 +2383,9 @@ A command and its answer:
   as with EldenNet.
 - **Injection panel**: in development builds only, a small panel in the web app shows the frames sent and received
   and lets a developer push any payload. It is absent from release bundles, and a test checks that.
-- **A host for `graceui.dll`**: `grace-dev` also implements `GraceHost`, so the in-game view runs on Linux against the
-  same fixtures; its structure dumps, vertex lists and the ABI tests need no Windows.
+- **The in-game view on Linux**: `grace-dev` also drives `grace-view` and `grace-draw` and plays a consumer over the
+  ABI (with the C mock for authors' tests), so the in-game view's structure dumps, vertex lists and the ABI tests need
+  no Windows; the hooks themselves are tested in `grace-harness` on Windows.
 
 ### 9.3 Parity between the two views
 
@@ -2208,14 +2400,14 @@ a change to a page description or a component shows up in both views or fails CI
 
 | EldenNet | GraceUI | Pages | Views | Exit checks |
 |---|---|---|---|---|
-| Before v0.2 (with spike S4) | 0.1 Foundations | Tokens, protocol, page descriptions, the web shell (the rail with its categories, accordion and flyouts; the top bar; search; the page parts of §4.2.4), `grace-dev` with fixtures, the mock. **For S4**: one settings page (Behaviour › Pacing) drawn in game through `grace-host` from `graceui.dll`'s vertex lists | Harness; S4 | Protocol, lint and contrast tests; S4's frame cost (the copy included), atlas size, the ABI round trip and screenshots for the owner's look review (G1) |
-| v0.1 Eyes | — | None: EldenNet's F11 view covers testing | — | — |
-| v0.2 First words | 0.2 | The `GraceUI` folder (`graceui.toml`, `web\`) in EldenNet's release; Home (Setup, Status, Problems, Lines, Model calls; Customise); AI › Providers and Models (read-only), Self-test, Requests; System › Status (Health), Performance, Traces, Logs; Tools › Bug report (preview), Workshop; Content packs; Docs; Settings › Developer and Browser view (readable) | Browser, always on (G4) | The bundled folder's check; Server security suite; spoiler goldens; no secret in any log; the `WM_CHAR` fix in EldenNet |
+| v0.1 Eyes | 0.1 Host (G15 (a)) | No pages. `graceui.dll` as the host: hudhook 0.9.3, its MinHook, Present, the window procedure with the `WM_CHAR` fix, DInput and XInput, capture and masking, the anti-cheat check and the notice-only mode, the single-instance guard; ABI 1 as a preview; panels, draw lists, textures at load, faces and glyph tables, notices; the player's exit; EldenNet's banner as a notice and its F11 view on a headless Dear ImGui of its own, submitted as a panel; our example consumer in CI | In game: notices and F11 | One hook library in the process; S0-E's present-hook half and the first-build MinHook check (EldenNet roadmap S10.1.c, e) on GraceUI's host; two consumers each way round; a second copy idles; the frame cost |
+| v0.2 First words (with spike S4) | 0.2 Foundations | Tokens, protocol, page descriptions, the web shell (the rail with its categories, accordion and flyouts; the top bar; search; the page parts of §4.2.4), `grace-dev` for any space, the mock; **for S4**, one settings page (Behaviour › Pacing) drawn in game by the host; EldenNet's subtitles, chat box and call-out box as panels with `request_input`; the server in GraceUI. The `GraceUI` folder (`graceui.toml`, `graceui.dll`, `web\`) carried by EldenNet's release; Home (Setup, Status, Problems, Lines, Model calls; Customise); AI › Providers and Models (read-only), Self-test, Requests; System › Status (Health), Performance, Traces, Logs; Tools › Bug report (preview), Workshop; Content packs; Docs; Settings › Developer and Browser view (readable) | Browser, always on (G4); S4 in game | Protocol, lint and contrast tests; S4's frame cost (the host's check and copy included), atlas size and screenshots for the owner's look review (G1); the launcher's check of the carried folder; the server suite with two spaces and per-space routing; the input-leak tests across holders; spoiler goldens; no secret in any log |
 | v0.3 Remembrance | 0.3 | Characters › Named NPCs (the pilot NPC); Characters › Playthrough (people met, status, last met, disposition, has heard of, notes); History › Conversations and Memories with Forget; Home › Nearby; Behaviour › Speaking up (named NPCs); the top bar's Journey | Browser | Forget's confirmation and backup; SP3 and SP7 goldens; the NG+ journey fixture |
-| v0.4 War cries | 0.4 | Characters › NPC types; Behaviour › Pacing, Reactions, Speaking up (all), Combat, Awareness (as S8 passes); History › Events; Tools › Event monitor; Home › Happening now and Recent events; Voice › Text and subtitles (browser); settings writable in the browser (D17) | Browser | Command validation; the event monitor's rates and ring; `history.page` and the `seen` bit; testers tune pacing (EldenNet X2) |
+| v0.4 War cries | 0.4 | Characters › NPC types; Behaviour › Pacing, Reactions, Speaking up (all), Combat, Awareness (as S8 passes); History › Events; Tools › Event monitor; Home › Happening now and Recent events; Voice › Text and subtitles (browser); settings writable in the browser (D17); GraceUI's own Hotkeys page in the browser (D77) and search across spaces | Browser | Command validation; the event monitor's rates and ring; `history.page` and the `seen` bit; testers tune pacing (EldenNet X2) |
 | v0.5 Veil | 0.5 | History › World; Named NPCs for every persona and the roster's first bios, with general profiles; Playthrough's story lines and World now | Browser | SP5 and SP6 goldens on all world stages; the roster and Playthrough goldens |
-| v0.6 Threshold | 0.6 | `graceui.dll` and `fonts\` in the folder; **The menu in game on F5**: every page but Workshop, F10 folded in; Settings (General, Hotkeys, Menu, Browser view, Developer, All settings); First light; Settings › Browser view's home-network switch and pairing (G9); Behaviour › Conversation with the call-out; Voice › Text and subtitles in game; AI › Providers and Models writable; Bug report's copy and save; the later-version statement pages with their "WIP" tags (G7) | Both | U2–U4 and U6 in game; the close matrix; Proton, the Deck and HDR on EldenNet's matrix; the ABI and handshake tests; a GraceUI patch dropped over the bundled copy, in game; the pairing cases of the server suite |
-| v1.0 | 1.0 | Accessibility pass, pad-only walkthrough, the Deck's scale (G6), the full matrix; Named NPCs with the whole base-game roster (EldenNet v1.0) | Both | U1–U9 green on the release candidate |
+| v0.6 Threshold | 0.6 | `fonts\` in the folder; **The menu in game on F5**: every page but Workshop, F10 folded in; Settings (General, Hotkeys, Menu, Browser view, Developer, All settings); First light; Settings › Browser view's home-network switch and pairing (G9); Behaviour › Conversation with the call-out; Voice › Text and subtitles in game; AI › Providers and Models writable; Bug report's copy and save; the later-version statement pages with their "WIP" tags (G7), Map's among them; the space switcher and GraceUI's own space (D79); the demo space beside EldenNet's | Both | U2–U4 and U6 in game, across holders; the close matrix for every holder, the player's exit among them; the providers' danger close; Proton, the Deck and HDR on EldenNet's matrix; the ABI and connect tests; a GraceUI patch dropped over the bundled copy, in game; the pairing cases of the server suite |
+| v1.0 | 1.0 | Accessibility pass, pad-only walkthrough, the Deck's scale (G6), the full matrix; Named NPCs with the whole base-game roster (EldenNet v1.0); GraceUI's own semantic versions from here (D74) | Both | U1–U9 green on the release candidate |
+| v1.1 | 1.1 | **The map** (G24 (a), §4.13): the Map page and Settings › Map, the map panel kind (D91), the browser's WebGL map with its 3D relief, the in-game map and its texture (G26). **Under G18 (a)**, still Open, the framework opens to other modders: the modders' guide, the three example mods, the C mock, GraceUI's own release page, a frozen ABI 1 | Both | The map's goldens (nothing beyond the fixture's game map and the reached and seen layers), the upload counter, the map key's input tests; under G18 (a), the examples in the harness and the guide's snippets compiling in CI |
 | v1.5 | 1.5 | Voice › Text-to-speech and Speech-to-text become pages with controls (EldenNet's TTS, push-to-talk in Settings › Hotkeys) | Both | — |
 | Later | — | AI › Director and Behaviour › Acts become pages; Acts allowances live; diaries and scene memories on History; your own event rules on Reactions; Workshop editors; HTML in game if G1 ever changes | — | — |
 
@@ -2228,17 +2420,31 @@ a change to a page description or a component shows up in both views or fails CI
 | The ImGui look falls short of what the owner wants from the SeverActions spirit (typography) | S4 draws a Grace page in game early and the owner reviews screenshots beside the browser mock; a kerning routine for display text if asked (§3.16); fallbacks in G1 (RmlUi drawn as ImGui geometry, or an Ultralight spike) |
 | The two views drift | Pages as data (§2.5), one token file, generated protocol types, parity goldens (§9.3) |
 | The atlas grows too large at 4K and 150% | The face budget and rebuild cap (D29); S4 measures |
-| hudhook 0.9.3's input and texture hazards | EldenNet's `WM_CHAR` fix; no texture updates after load (D28) |
+| hudhook 0.9.3's input and texture hazards | The host's `WM_CHAR` fix; no texture updates after load, the map's on a piece gained alone, counted (D28, D76, G26) |
 | An attack on the local server, now always on | The checks and suite of §7.2; keys bound to their address (D61); only listed files served; other devices kept out unless paired (G9) |
 | A spoiler through the UI | Projections only (SP1), goldens per fixture state, absence silent |
 | An input leak: Esc opens the game's menu, B dodges | The mask-until-release rule, the close matrix, tests on pad and keyboard |
 | Proton and the Deck: IME, Steam keyboard, opening a browser under gamescope | On EldenNet's matrix; on a Deck in game mode the in-game menu is the path, and the dashboard is for desktop mode |
 | Scope creep (editors, explorers, sound) | Seams only in v1 (§1.3) |
-| A framework-sized rail (eleven top-level entries and 29 pages) is slow to cross on a pad | The accordion keeps one category open; LT and RT walk every page in order; search reaches any setting and Quick switches the main ones; the rail collapses on small screens (§4.2.2, §5.4) |
+| A framework-sized rail (twelve top-level entries, thirteen with Plugins from 1.1, and 30 pages) is slow to cross on a pad | The accordion keeps one category open; LT and RT walk every page in order; search reaches any setting and Quick switches the main ones; the rail collapses on small screens (§4.2.2, §5.4) |
 | Players expect SkyrimNet's pages that EldenNet does not have | Later EldenNet features are statement pages tagged "WIP" (G7); Docs explains what EldenNet does instead; not-planned pages are simply absent (§4.11) |
 | A second home creeps in through Settings | Settings holds only homeless settings and links out (D40); the page lint fails a key with two homes |
-| Mixed or stale GraceUI copies after a manual update | `graceui.toml` with sizes and hashes, the handshake, majors that must match, notices in words; EldenNet keeps playing (§2.9) |
-| The ABI drifts between releases | Append-only tables with sizes, a CI check against the last release's header, the handshake tests both ways round (§9.1) |
+| Mixed or stale GraceUI copies after a manual update | `graceui.toml` with sizes and hashes, `connect`'s answers, majors that must match, EldenNet's launcher installing or explaining, notices in words; a second copy idles (§2.9, D83, D88) |
+| The ABI drifts between releases | Append-only tables with sizes, a CI check against the last release's header, the connect tests both ways round (§9.1); ABI 1 a preview until G18's answer |
+| A public ABI's support burden outlives EldenNet's needs | A preview until G18's answer; append-only tables; a stated window per major (D74); the release header check |
+| EldenNet v0.1 now waits on GraceUI's host | The host is mostly the hudhook glue EldenNet's overlay would have had, built in GraceUI 0.1 from the same spike work (S0-E); EldenNet's side is its banner as a `notice` call and F11's frame glue on a headless context |
+| A third-party mod's fault (a panel, an `on_present` callback) stops EldenNet's surfaces or the game, and is reported against GraceUI or EldenNet | Budgets and suspension; checked draw lists; the bug-report checklist names every consumer; documented: native mods share one process (§7.1) |
+| Another hooking overlay beside GraceUI goes silently dead, or kills GraceUI's | Documented in the guide and the matrix; the install-time warning (D86); cannot be prevented by GraceUI |
+| The server becomes a port for every mod's commands | Loopback only, mods opt in, no mod web code, per-space routing, sensitive commands, the server suite with several spaces (D81) |
+| Modders used to HTML hosts find page data too narrow | Panels for anything else; the vocabulary grows by minors; HTML in game stays G1's gated spike |
+| Scope creep against EldenNet's "minimal and stable" | The framework's additions are designed now and opened when G18 says; EldenNet uses only what it needs |
+| Reception of an AI-built framework | The disclosure, the reviewed design, the tests in the open; no presence where AI is refused (D87) |
+| Texture and atlas budgets shared across mods | Per-mod budgets, a registration window, the limits logged (D76, D80) |
+| Name and download impersonation | Hashes on release pages; one canonical page (D87) |
+| The map: no run-time route to the player's own map | The drawn base is the map (designed in); the research found the tiles and their masks, leaving EldenNet's own read of the game's archives (§4.13) |
+| The map key cannot be caught cleanly on every input path | The setting stays off where it cannot (G25 defaults to off) |
+| The map's video memory | The in-game texture capped (§4.13) and measured; each re-upload counted (G26) |
+| A spoiler through the map | Every base only what the player's own game map shows (D90); the layers masked in EldenNet; goldens that render the map at fixture states |
 | A port clash with another local tool | Fail closed with a toast naming the port and where to change it; the default 8642 avoids the ports of the local model servers EldenNet probes (D58) |
 
 ---
@@ -2247,18 +2453,21 @@ a change to a page description or a component shows up in both views or fails CI
 
 **Status: the owner decided G1–G10 and G12 on 2026-11-07 and G13 on 2026-11-08, and made the request G11 records; G14
 widened GraceUI's scope, and its consequences were put as G15–G20 with proposal 0001: G15–G17 decided the same day
-(superseding G10), G18–G20 Open; G21–G26 were put with proposal 0002 (the map) on 2026-11-14, Open; G27 decided the same day.** Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record:
-the question as it was put, the options, the recommendation as written, what was decided, the owner's words and what
-each amends. This section is its index; each G-number the documents cite is a row here and an entry there. G11 and G12
-were not questions of §12: they were first recorded in §14 and CLAUDE.md, and are indexed here like the rest. G1, G2,
-G4, G5, G6, G8, G9 and G10 also touch EldenNet's design; [eldennet-changes.md](eldennet-changes.md) lists what each
-answer changes there. A question that comes up later is added to DECISIONS.md as a new entry marked **Open**, with a
-recommendation, and as a row here; the owner's answer is recorded in the entry with its date, and a later decision
-amends an earlier one by a note, never by rewriting it.
+(superseding G10), G18–G20 Open; G21–G26 were put with proposal 0002 (the map) on 2026-11-14 and decided on 2026-11-15
+(G23 not as recommended); G27 decided on 2026-11-14; G28 put and decided on 2026-11-15, as recommended, for EldenNet's plugins (its O67); G29 put on 2026-11-15 with EldenNet's proposal 0002, Open.**
+Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record: the question as it was put, the
+options, the recommendation as written, what was decided, the owner's words and what each amends. This section is its
+index; each G-number the documents cite is a row here and an entry there. G11 and G12 were not questions of §12: they
+were first recorded in §14 and CLAUDE.md, and are indexed here like the rest. G1, G2, G4, G5, G6, G8, G9, G10, G15–G17
+and G21–G27 also touch EldenNet's design; [eldennet-changes.md](eldennet-changes.md) lists what each answer changes
+there. G15–G17 and G21–G27 were folded into this design on 2026-11-15 (EldenNet's roadmap S7.8.c). A question that comes
+up later is added to DECISIONS.md as a new entry marked **Open**, with a recommendation, and as a row here; the owner's
+answer is recorded in the entry with its date, and a later decision amends an earlier one by a note, never by rewriting
+it.
 
 | # | Question | Decision, in brief | Status |
 |---|---|---|---|
-| [G1](DECISIONS.md#g1) | Which renderer draws the menu in game? | (a) Dear ImGui with the Grace theme in EldenNet's one overlay; the full web UI in the browser | Decided 2026-11-07 |
+| [G1](DECISIONS.md#g1) | Which renderer draws the menu in game? | (a) Dear ImGui with the Grace theme in EldenNet's one overlay; the full web UI in the browser (the overlay GraceUI's since G15; no HTML in game for any mod, G16) | Decided 2026-11-07 |
 | [G2](DECISIONS.md#g2) | A library inside EldenNet, or a standalone mod? | A standalone mod; each EldenNet release carries the current one | Decided 2026-11-07 |
 | [G3](DECISIONS.md#g3) | Which framework for the browser app? | (b) Preact with TypeScript and signals, built with Vite | Decided 2026-11-07 |
 | [G4](DECISIONS.md#g4) | Is the browser dashboard on by default? | (b) always on, on this PC | Decided 2026-11-07 |
@@ -2278,20 +2487,26 @@ amends an earlier one by a note, never by rewriting it.
 | [G18](DECISIONS.md#g18) | When does the framework open to other modders? | Recommended: (a) after EldenNet v1.0, as GraceUI 1.1 | **Open** |
 | [G19](DECISIONS.md#g19) | May SkyrimNet-derived material reach other mods through GraceUI? | Recommended: (a) not until Min confirms | **Open** |
 | [G20](DECISIONS.md#g20) | Where do EldenNet's pages live? | Recommended: (a) in EldenNet's repository, registered with GraceUI | **Open** |
-| [G21](DECISIONS.md#g21) | What is the map drawn on? | Recommended: (a) the player's own game map, read at run time, masked, never shipped; the drawn base as fallback | **Open** |
-| [G22](DECISIONS.md#g22) | May anything on the map loop or pulse? | Recommended: (a) no; still glow and one-shot flares (invariant 14 unchanged) | **Open** |
-| [G23](DECISIONS.md#g23) | Who writes the lore notes? | Recommended: (a) the model proposes from memories; the player keeps or drops | **Open** |
-| [G24](DECISIONS.md#g24) | When does the map ship? | Recommended: (a) after v1.0, in 1.1; the spike early | **Open** |
-| [G25](DECISIONS.md#g25) | What does the map key open? | Recommended: (a) a setting, off by default; GraceUI's map when switched on | **Open** |
-| [G26](DECISIONS.md#g26) | In game, how is the game's map kept to what the player has reached? | Recommended: (a) one upload at start, masked at draw time; a tested exception to invariant 1 | **Open** |
+| [G21](DECISIONS.md#g21) | What is the map drawn on? | (a) the player's own game map, its tiles composed as the game composes them for the pieces held, read at run time, never shipped; the drawn base as fallback | Decided 2026-11-15 |
+| [G22](DECISIONS.md#g22) | May anything on the map loop or pulse? | (a) no; still glow and one-shot flares (invariant 14 unchanged) | Decided 2026-11-15 |
+| [G23](DECISIONS.md#g23) | Who writes the lore notes? | (c) the model adds notes on its own, citing memories; the player edits or removes them; a setting, on by default | Decided 2026-11-15 |
+| [G24](DECISIONS.md#g24) | When does the map ship? | (a) after v1.0, in 1.1; the spike early | Decided 2026-11-15 |
+| [G25](DECISIONS.md#g25) | What does the map key open? | (a) a setting, off by default; GraceUI's map when switched on | Decided 2026-11-15 |
+| [G26](DECISIONS.md#g26) | In game, how is the game's map kept to what the player has reached? | (a) as the game shows it: composed at start and again when a map piece is gained; a measured exception to invariant 11 | Decided 2026-11-15 |
 | [G27](DECISIONS.md#g27) | How does the map show terrain? | (a) the exact terrain built locally: a 3D relief in the browser, a relief image in game; our own sprites and the tile-grid schematic as the fallback | Decided 2026-11-14 |
+| [G28](DECISIONS.md#g28) | May a space take a file from the browser view? | (a) a narrow upload route on the loopback listener, for a space's sensitive file commands alone, refused from paired devices | Decided 2026-11-15 |
+| [G29](DECISIONS.md#g29) | GraceUI's server for hosts outside the game? | (a) recommended: one server library GraceUI publishes, with every rule of §7.2 and invariant 4 | Open |
 
 ---
 
 ## 13. Decision log
 
 Settled by this design (2026-11-07) within the owner's request, EldenNet's decided rules and the research. Each can be
-reopened by the owner.
+reopened by the owner. D69 to D98 were settled in proposal 0001 (the framework, 2026-11-08) and proposal 0002 (the map,
+2026-11-14) and adopted with the owner's answers G15–G17 and G21–G27 on 2026-11-15 (EldenNet's roadmap S7.8.c); the
+proposals keep their full reasoning; D99 to D101 were settled by the fold itself, D102 and D103 follow EldenNet's O65
+to O67, and D104 and D105 its O70 (2026-11-15). D82 (EldenNet's pages in EldenNet's
+repository) waits for G20 and is not in force until the owner answers; until then §4 and its rules stay here.
 
 | # | Decision | Choice | Alternatives | Why | Source |
 |---|---|---|---|---|---|
@@ -2313,7 +2528,7 @@ reopened by the owner.
 | D16 | Setup wizard | First light is a GraceUI flow in both views from v0.6; EldenNet's planned separate ImGui wizard is not built | A separate wizard with GraceUI as an extra | Under G1 the in-game menu is ImGui already | IA §11 #10 |
 | D17 | Browser writes | From v0.4, when the keys exist; read-only before | From v0.6 | Testers tune pacing in v0.4 (X2) | IA §11 #11 |
 | D18 | Cost | Calls and tokens; money only where the provider's response reports it | A price table | Prices are volatile | IA §11 #14 |
-| D19 | Menu preferences | In `settings.toml` under `ui.menu`, never in browser storage | Browser storage | One file for both views | IA §11 #15 |
+| D19 | Menu preferences | In `settings.toml` under `ui.menu`, never in browser storage (Amended by D84, 2026-11-15: GraceUI's own settings, kept in `Game\GraceUI\user\`, still never in browser storage) | Browser storage | One file for both views | IA §11 #15 |
 | D20 | Pacing presets | Quiet, Default and Lively, writing the six pacing keys; values from X2 | None | A safe way in for players who do not want six sliders | IA §11 #16 |
 | D21 | Search | Settings, pages and names as shown only; never journals, keepsakes, conversations, World lines, event rows, request text or Docs' bodies (§4.3) | Full-text search | Search must not surface a spoiler or a private line | IA §3.3 |
 | D22 | Fonts | Cinzel (display, 20 px or more), EB Garamond, Noto Sans, Noto Sans Mono; OFL, from their publishers, bundled; no system fonts | Forum, or EB Garamond's small caps, for display | Inscriptional capitals suit the setting; the rest are EldenNet's fonts already; Proton and the Deck lack Windows fonts | LOOK §3.4, §4 #1 |
@@ -2322,16 +2537,16 @@ reopened by the owner.
 | D25 | Warning colour | `ember #DB9550`, always with an icon | EldenNet's toast warning `#D2A24C` | That yellow is as light as Grace's gold (1.08:1) | LOOK §4 #4 |
 | D26 | HDR backdrop | Opaque in HDR; 96% in SDR; a player option | Darkening the game image first | A bright sky behind a 96% backdrop still shows at about 40 nits | LOOK §3.13, §4 #6 |
 | D27 | Sound | None in v1 | UI sounds | Minimal; voice previews come with v1.5 through EldenNet's audio | ML lesson 14 |
-| D28 | hudhook | Exactly 0.9.3 with no patch; `imgui-tables-api` stays off and tables are laid out by us; no texture uploads after load | A region-upload patch; enabling the feature | O25 stands; per-change uploads leak and stall | REN §2, §7 |
-| D29 | Font atlas | One atlas shared with EldenNet's surfaces; at most ten menu faces; rebuilt only on a scale change with the menu closed, at most four times a session, logged | Rebuilding at every change | Each rebuild leaks one upload buffer under 0.9.3 | REN §2.4; §3.16 |
+| D28 | hudhook | Exactly 0.9.3 with no patch; `imgui-tables-api` stays off and tables are laid out by us; no texture uploads after load (The pin and these rules are `grace-host`'s, in `graceui.dll`, since G15 (a); D69) | A region-upload patch; enabling the feature | O25 stands; per-change uploads leak and stall | REN §2, §7 |
+| D29 | Font atlas | One atlas shared with EldenNet's surfaces; at most ten menu faces; rebuilt only on a scale change with the menu closed, at most four times a session, logged (Widened by D80: the atlas is shared with every mod that connects before warm-up, at most two faces for each mod other than EldenNet; a rebuild raises its generation, D73) | Rebuilding at every change | Each rebuild leaks one upload buffer under 0.9.3 | REN §2.4; §3.16 |
 | D30 | Steam overlay browser | A hand test in S4 only; no code | An "open in the Steam overlay" button | A new kind of Steam call for an unproven path | REN §4.7 |
 | D31 | Local server | *Changed in part by D60 (G4): the link carries no token, and one session cookie is used; and by D66 (G9): paired devices on the home network, each with a device cookie, once the player switches that on.* Loopback only, a per-session token in the URL fragment, a WebSocket ticket, Host, Origin and Fetch-Metadata checks, no CORS, no cookies, a strict CSP, write-only secrets, nothing logged | Fewer checks | Known attacks on local servers (DNS rebinding, CSRF, WebSocket hijacking) | §7.2; REN §6 |
 | D32 | Web build | *Changed by D53 (G2): shipped in the `GraceUI\web\` folder and served from there.* Built in GraceUI's CI, committed at release tags as `web/dist`, rebuilt reproducibly in CI, embedded by `grace-serve` | Node in EldenNet's build; loose files | EldenNet's build stays Rust-only; nothing loose to mix | §2.7 |
 | D33 | Opening on a pad | No default chord in v1; Steam Input or a Deck back button mapped to F5, documented; a chord later if S4 finds one free | A default chord | Every pad button has a game function | §5.4 |
-| D34 | While the menu is open | Lines addressed to the Tarnished wait, as while typing; barks and NPC-to-NPC lines continue; EldenNet's toasts draw above the menu | Pausing EldenNet | Lines are not spent on a player who cannot see them | §5.8 |
+| D34 | While the menu is open | Lines addressed to the Tarnished wait, as while typing; barks and NPC-to-NPC lines continue; EldenNet's toasts draw above the menu (Widened by D77: they wait while any input holder is active, from GraceUI's "input held by" event) | Pausing EldenNet | Lines are not spent on a player who cannot see them | §5.8 |
 | D35 | Third-party code | Our own code only; nothing from Magelight in v1, so no `NOTICE` entry yet; candidates for later reuse with attribution are listed in ML §1 | Reusing Magelight's SDK | The protocol is EldenNet-specific; the rules are simpler with none | ML §1 |
 | D36 | NPC types layout | Master–detail; a grid view in the browser on wide screens | A 15-column grid everywhere | It fits the menu's width and a pad | IA §5.3 |
-| D37 | Versions | GraceUI's minor versions follow EldenNet's increments; the protocol is `MAJOR.MINOR` with named capabilities | Independent numbering | Testers can match the two at a glance | §2.7, §6.4 |
+| D37 | Versions | GraceUI's minor versions follow EldenNet's increments; the protocol is `MAJOR.MINOR` with named capabilities (From GraceUI 1.0, its own semantic version: D74) | Independent numbering | Testers can match the two at a glance | §2.7, §6.4 |
 | D38 | Structure | SkyrimNet's framework categories: Home, AI, Voice, Characters, History, Behaviour, System, Tools; Settings, Docs and Content packs at the foot; an accordion rail with pages, a top bar, a Home card grid, regular page parts (§4.2). Supersedes D2's rail of sections | The first proposal's flavour-named sections (FOLK, VOICES, WORLD, CRAFT, UPKEEP) | The owner, 2026-11-07: EldenNet is a framework, so the aim is categories of an AI framework, taken from how SkyrimNet groups them | Owner, 2026-11-07; SND §1, §4 |
 | D39 | Names | Plain framework names in British spelling in the rail and titles; Elden Ring features and settings inside pages, in our own words; game names only at run time; flavour names and `ui.menu.names` dropped. Supersedes D4 | Flavour names with plain subtitles | A framework's categories should read as such; one set of names is easier to search and to document | Owner, 2026-11-07; SND §5.1 |
 | D40 | Settings page | Holds only the settings with no category page (General, Hotkeys, Menu, Browser view, Developer), links out to the rest, and has an All settings tab | SkyrimNet's second full tree of settings | One home per setting (invariant 12); SkyrimNet itself links out for some topics | SND §3, §6 #2 |
@@ -2340,29 +2555,65 @@ reopened by the owner.
 | D43 | Text presentation | Voice › Text and subtitles holds the line display settings in v1 | A Display page under Settings | Text is the voice until v1.5, so Voice is useful in v1 | §4.6.3 |
 | D44 | History and the monitor | History › Events (stored, perceived events only), Conversations, Memories, World; live events and decisions on Tools › Event monitor | One page for both | SkyrimNet splits the record from the live monitor; SP7 applies to both | SND §2.4, §2.7 |
 | D45 | Page switches | A feature's master switch lives on its page (Memories, Awareness, Speaking up, Conversation) | Every switch on Settings › General | SkyrimNet's pattern; one home each | SND §4 |
-| D46 | Docs and content | Docs bundled and offline; Content packs read-only, with no hub | An online wiki; an add-on hub | PV6; D2 | SND §2.8 |
+| D46 | Docs and content | Docs bundled and offline; Content packs read-only, with no hub (Amended under EldenNet O66 and O67, 2026-11-15: the page also lists EldenNet's plugins with their switches, order and checks, and adds them through the browser's drop zone, D103; "no hub" stands) (Later, 2026-11-15: plugins moved to a page of their own, D104, so Content packs is read-only again) | An online wiki; an add-on hub | PV6; D2 | SND §2.8 |
 | D47 | Combat | A hub page of shortcuts; its keys live in Reactions, Pacing, NPC types and Models | Combat keys homed on Combat | Presets and the reaction table stay whole | §4.6.6 |
 | D48 | Gold for wayfinding | Section labels and Home card titles are uppercase eyebrows in `gold`, and stat values are `gold`; column heads and captions stay `ink.faint`. Principle 1 of §3.1 says so | Every eyebrow in `ink.faint`, as first proposed | Dense framework pages are scanned by their section labels; `gold` passes 7.5:1 on cards (§3.3); it stays one hue and is never decoration | §3.1, §4.2.4 |
 | D49 | Model-request log | AI › Requests (`ai.requests`) | A view inside System › Logs, as SkyrimNet has it | Calls belong with providers, models and the self-test; Logs stays a scrubbed log (PV5) | SND §2.6, §5.2 |
 | D50 | Kind rows on NPC types | Each kind with slots or types has its own row ahead of them ("Named, every NPC", "Merchant, every type", "Summon, every type" as well as humanoid and creature); a kind whose only type is itself is one row | Kind rows for humanoid and creature only; a `named` row only under G8 (b) | Every inherited source an allowance names must have a row to open and set (`allow."<kind>"`, EldenNet DESIGN §7.6's precedence), under either answer to G8 | §4.6.4 |
-| D51 | GraceUI's folder | `Game\GraceUI\` in the game's install, beside `eldenring.exe`: `graceui.dll`, `graceui.toml`, `web\`, `fonts\`, `LICENSE.txt`, `NOTICE.txt`, `README.txt`. GraceUI puts nothing anywhere else and writes nothing there at run time; EldenNet finds it from the game's own module path | Inside EldenNet's install folder; under `%APPDATA%` | The owner's G2 words name the game's `Game` folder; one folder is one thing to copy over | Owner, G2 |
+| D51 | GraceUI's folder | `Game\GraceUI\` in the game's install, beside `eldenring.exe`: `graceui.dll`, `graceui.toml`, `web\`, `fonts\`, `LICENSE.txt`, `NOTICE.txt`, `README.txt`. GraceUI puts nothing anywhere else and writes nothing there at run time; EldenNet finds it from the game's own module path (Amended by D84: GraceUI writes at run time only under `user\`, which no release contains and `graceui.toml` does not list; any consumer finds the folder through the helper, D70) | Inside EldenNet's install folder; under `%APPDATA%` | The owner's G2 words name the game's `Game` folder; one folder is one thing to copy over | Owner, G2 |
 | D52 | The version file | `graceui.toml`: GraceUI's version, the ABI's major and minor, the protocol's MAJOR.MINOR and caps, the release date, and every file with its size and SHA-256. EldenNet loads only what it lists, and the server serves only listed web files | The DLL alone reporting its version | A player or a report can name the version without starting the game; a half-copied folder is caught at start; nothing stray in the folder is ever served | ML §3.15; §2.7 |
-| D53 | Bundling and pins | Each EldenNet release carries GraceUI's release folder byte for byte: the latest GraceUI release at EldenNet's release date, checked by EldenNet's release job with the handshake; its release notes name it; EldenNet links GraceUI's host kit (`grace-abi`, `grace-host`, `grace-protocol`, `grace-serve`) from the same tag | Rebuilding GraceUI inside EldenNet's release | The owner's G2 words; a bundled copy and a downloaded one are the same bytes | Owner, G2 |
-| D54 | Missing, older, newer, mixed | EldenNet keeps playing with its own surfaces in every case. Missing: no menu, a notice on F5, settings in the file. Mixed or unreadable files, or another ABI or protocol major: the menu stays off with a notice naming what to install. An older minor works, and settings whose home page it lacks appear under Settings › All settings as "Newer settings"; a newer minor works with the capabilities EldenNet announces. The browser follows the same rules for the web app (§2.9) | Refusing to start; loading whatever is there | EldenNet's subtitles, chat box and call-outs never depend on GraceUI, and a player always has a way to their settings | §2.8, §2.9 |
-| D55 | The bridge in process | The same JSON frames as the WebSocket (§6.3) cross `graceui.dll`'s C ABI: the core encodes each revision once and hands it to GraceUI on T6, where it is parsed; commands go out through a bounded ring with a non-blocking send. A binary encoding only as a later capability if §8's budget needs it | Typed Rust values; a binary encoding now | Rust types do not cross separately built DLLs; one encoding, one fuzzer and one set of golden frames serve both views | §6.2, §2.9 |
-| D56 | Drawing across the boundary | `graceui.dll` lays out and tessellates; `grace-host` checks each frame's vertex list (counts, indices, clip rectangles, texture ids) and copies it into ImGui's draw list through `hudhook::imgui`; `graceui.dll` links no hudhook, ImGui or MinHook, installs no hook, starts no thread and opens no socket or file. Follows G10 (b), decided by the owner | One ImGui context shared by two DLLs; GraceUI calling ImGui through a host API | ImGui's context and allocator are per copy of the library; a second hudhook brings a second MinHook (ER02 §7.1); a narrow contract changes rarely | G10 (b) |
-| D57 | Text fields in game | GraceUI's own single-line field in `grace-view` (caret, selection, keyboard editing, paste only on a deliberate press, the key field drawn as discs), with the IME window placed at the caret rectangle it reports | ImGui's `InputText` | ImGui's widgets are not reachable from `graceui.dll` under D56 | §5.6 |
-| D58 | Dashboard address | `http://127.0.0.1:8642` (also `localhost` and `[::1]`); `dashboard.port` from 1024 to 65535 | SkyrimNet's 8080 | 8080 is llama.cpp's legacy port, which EldenNet probes (ARCH §11.4), and a common default of local tools; 8642 is the default of no local model server EldenNet probes, and testers confirm it is free from v0.2 | ARCH §11.4 |
-| D59 | The off switch | `dashboard.enabled`, on by default, homed in Settings › Browser view; off means no socket | No switch | Always on is the owner's default; a player who wants no listening port, such as on a Deck in game mode, can still have none | Owner, G4 |
-| D60 | Loopback sign-in | A session cookie (256 random bits, new at each game start; `HttpOnly`, `SameSite=Strict`, host-only, no expiry) is set on any top-level page load that arrives on the loopback listener with a loopback `Host` (never on the network listener, D66); API calls and the WebSocket ticket need it as well as `Origin` and Fetch Metadata; the page acts on nothing in its URL. Changes D31 in part | No credential on loopback, the other checks only; keeping the token in the link | The player types the address and nothing else (G4); the cookie is a second lock beside Host and Origin against web pages and survives a reload; what limits other programs is §7.1's | §7.2; REN §6 |
-| D61 | Keys bound to their address | Changing a provider's base URL or kind, from either view, clears its key and its extra header values, which must then be set again | A confirmation in game for every address change | No visitor to the dashboard can send a player's key to another address | §7.4 |
-| D62 | The WIP tag | "WIP" on the four later-version rail entries and their flyout rows, beside statement-page titles and on AI › Models' dimmed Decisions card; tooltips and accessible names say when; settings rows keep their availability badges | "WIP" on rows too | The owner named the entries' tag; a row's badge says when the setting starts to work (§4.1 principle 3) | Owner, G7 |
+| D53 | Bundling and pins | Each EldenNet release carries GraceUI's release folder byte for byte: the latest GraceUI release at EldenNet's release date, checked by EldenNet's release job with the handshake; its release notes name it; EldenNet links GraceUI's host kit (`grace-abi`, `grace-host`, `grace-protocol`, `grace-serve`) from the same tag (Under G15 (a): EldenNet links only GraceUI's consumer crates, never `grace-host` or `grace-serve`, and carries the release in a staging folder its launcher installs from, D83) | Rebuilding GraceUI inside EldenNet's release | The owner's G2 words; a bundled copy and a downloaded one are the same bytes | Owner, G2 |
+| D54 | Missing, older, newer, mixed | EldenNet keeps playing with its own surfaces in every case. Missing: no menu, a notice on F5, settings in the file. Mixed or unreadable files, or another ABI or protocol major: the menu stays off with a notice naming what to install. An older minor works, and settings whose home page it lacks appear under Settings › All settings as "Newer settings"; a newer minor works with the capabilities EldenNet announces. The browser follows the same rules for the web app (§2.9) (Replaced by D88 under G15 (a): EldenNet's launcher checks and installs before start, and a failed connect leaves EldenNet headless; the rules for older and newer minors stand, §2.9) | Refusing to start; loading whatever is there | EldenNet's subtitles, chat box and call-outs never depend on GraceUI, and a player always has a way to their settings | §2.8, §2.9 |
+| D55 | The bridge in process | The same JSON frames as the WebSocket (§6.3) cross `graceui.dll`'s C ABI: the core encodes each revision once and hands it to GraceUI on T6, where it is parsed; commands go out through a bounded ring with a non-blocking send. A binary encoding only as a later capability if §8's budget needs it (Per space since D75 and D81: every frame carries its space, and frames cross with `publish` and `poll` on the space's own thread, §2.9) | Typed Rust values; a binary encoding now | Rust types do not cross separately built DLLs; one encoding, one fuzzer and one set of golden frames serve both views | §6.2, §2.9 |
+| D56 | Drawing across the boundary | `graceui.dll` lays out and tessellates; `grace-host` checks each frame's vertex list (counts, indices, clip rectangles, texture ids) and copies it into ImGui's draw list through `hudhook::imgui`; `graceui.dll` links no hudhook, ImGui or MinHook, installs no hook, starts no thread and opens no socket or file. Follows G10 (b), decided by the owner (Superseded in part under G15 (a): `graceui.dll` is the host (D69), and this checker checks every consumer's draw lists, GraceUI's own menu included (D76)) | One ImGui context shared by two DLLs; GraceUI calling ImGui through a host API | ImGui's context and allocator are per copy of the library; a second hudhook brings a second MinHook (ER02 §7.1); a narrow contract changes rarely | G10 (b) |
+| D57 | Text fields in game | GraceUI's own single-line field in `grace-view` (caret, selection, keyboard editing, paste only on a deliberate press, the key field drawn as discs), with the IME window placed at the caret rectangle it reports (Stands under G15 (a), now for one look and one input rule in both views rather than for reach) | ImGui's `InputText` | ImGui's widgets are not reachable from `graceui.dll` under D56 | §5.6 |
+| D58 | Dashboard address | `http://127.0.0.1:8642` (also `localhost` and `[::1]`); `dashboard.port` from 1024 to 65535 (Served by GraceUI since G17 (a); D81) | SkyrimNet's 8080 | 8080 is llama.cpp's legacy port, which EldenNet probes (ARCH §11.4), and a common default of local tools; 8642 is the default of no local model server EldenNet probes, and testers confirm it is free from v0.2 | ARCH §11.4 |
+| D59 | The off switch | `dashboard.enabled`, on by default, homed in Settings › Browser view; off means no socket (GraceUI's own setting, D84; the player's switch wins over any space's `browser = "always"`, D81) | No switch | Always on is the owner's default; a player who wants no listening port, such as on a Deck in game mode, can still have none | Owner, G4 |
+| D60 | Loopback sign-in | A session cookie (256 random bits, new at each game start; `HttpOnly`, `SameSite=Strict`, host-only, no expiry) is set on any top-level page load that arrives on the loopback listener with a loopback `Host` (never on the network listener, D66); API calls and the WebSocket ticket need it as well as `Origin` and Fetch Metadata; the page acts on nothing in its URL. Changes D31 in part (GraceUI's server since G17 (a); the cookie and its rules unchanged) | No credential on loopback, the other checks only; keeping the token in the link | The player types the address and nothing else (G4); the cookie is a second lock beside Host and Origin against web pages and survives a reload; what limits other programs is §7.1's | §7.2; REN §6 |
+| D61 | Keys bound to their address | Changing a provider's base URL or kind, from either view, clears its key and its extra header values, which must then be set again (EldenNet's rule for its own provider settings, applied by EldenNet's command entry point; where it is recorded follows G20) | A confirmation in game for every address change | No visitor to the dashboard can send a player's key to another address | §7.4 |
+| D62 | The WIP tag | "WIP" on the four later-version rail entries and their flyout rows, beside statement-page titles and on AI › Models' dimmed Decisions card; tooltips and accessible names say when; settings rows keep their availability badges (Five entries since the Map's statement, §4.13) | "WIP" on rows too | The owner named the entries' tag; a row's badge says when the setting starts to work (§4.1 principle 3) | Owner, G7 |
 | D63 | Playthrough's place | Characters › Playthrough (`characters.playthrough`), first in Characters | History › Playthrough | It is about people and how they are now, beside the roster it complements; History holds records of what happened, and its World page stays the record of world stages | Owner, G5 and G8 |
 | D64 | Roster and playthrough | Named NPCs and NPC types hold what is the same in every playthrough (general profiles, allowances, reactions, the news temperament); Playthrough holds this journey's state. Named NPCs' "Now" and "Has heard of" move to Playthrough, and the roster is usable at the title screen | One page for both | Under G8 the roster is shown before any meeting, so the journey's state needs a page bound to the journey | Owner, G8 |
 | D65 | What Playthrough may say | Status from perception only (here now; alive when last met; away, when the Tarnished passed where they were last met and did not perceive them; fell, when the Tarnished saw it); a story line only for the stage active at the last meeting (EldenNet's `stage_seen`), never a later one; related stories only for met people the stage's own line links; notes only from records; never a next step, a "has something for you" mark, a fate or a count of what is left; its lines and notes are never searched (D21) | Reading flags directly; quest tracks | A flag can hold before its effect is seen (D11); `stage_seen` is what the Tarnished witnessed | SP1–SP9; MEM §2.2 |
-| D66 | Pairing a device (G9) | A six-digit code shown in game for two minutes, one use, void after five wrong tries; one random device cookie per device, kept by EldenNet only as a hash with its name and date in `devices.toml` until the player forgets it; Forget revokes it at once and closes its connections, whether `dashboard.lan` is on or off; `dashboard.lan` off closes the network listener and every device connection; the network listener accepts only device cookies and never grants the session cookie; paired devices are refused `secrets.set`, `secrets.clear` and `providers.update`; this PC (a connection on the loopback listener) never needs a code | A host field with no pairing; a code per session; a code shown in this PC's browser too | The owner's G9 words; a key is never typed over the network; a code shown in a browser could be read by another user signed in on the same PC (§7.1) | Owner, G9; §7.2 item 16 |
+| D66 | Pairing a device (G9) | A six-digit code shown in game for two minutes, one use, void after five wrong tries; one random device cookie per device, kept by EldenNet only as a hash with its name and date in `devices.toml` until the player forgets it; Forget revokes it at once and closes its connections, whether `dashboard.lan` is on or off; `dashboard.lan` off closes the network listener and every device connection; the network listener accepts only device cookies and never grants the session cookie; paired devices are refused `secrets.set`, `secrets.clear` and `providers.update`; this PC (a connection on the loopback listener) never needs a code (Since G17 (a) GraceUI keeps the hashes, in `Game\GraceUI\user\devices.toml` (D84); paired devices are refused every command a space marks as sensitive (D81)) | A host field with no pairing; a code per session; a code shown in this PC's browser too | The owner's G9 words; a key is never typed over the network; a code shown in a browser could be read by another user signed in on the same PC (§7.1) | Owner, G9; §7.2 item 16 |
 | D67 | Named bosses in the roster | Characters › Named NPCs lists every named NPC and every named boss with a shipped bio from the start (named invaders among the named NPCs), by the name the game shows at a first meeting, read from the player's install. A boss the game never shows calm before its fight is listed by the name its bar shows and carries a "Boss" tag. An NPC the game can show calm before any fight (persona or not; one profile id across forms, EldenNet §7.8) carries no tag and is never listed by its bar name. Which entries carry the tag is fixed per entry in EldenNet's index, never by the playthrough (D64). Its general profile says only what a first meeting shows: for a tagged boss, what the opening of its fight shows; for every other entry, its calm first meeting; each group (Met, Not met, Seen) is in name order, never grouped or ordered by region, kind or order of play, and nothing is counted per region; on NPC types a named boss appears only as its slot among the named slots, and the boss kind row still names no one | Bosses only once their bar has shown (SP4 before); a separate Bosses group; order of play | The owner's answers to EldenNet's roster questions ("bios for every named NPCs and bosses with names", "shipped full roster from beginning"); an order by region or progression would hint at what comes next | Owner, EldenNet O43 as updated; G5, G8 |
 | D68 | Memories of other NPCs | A keepsake about another NPC (EldenNet O45) shows on History › Memories, and in the `journal/<id>` projection (and its count in `memories`), only when every event it cites had the Tarnished in its audience, and names that NPC as the game shows them (SP3); otherwise it is shown and counted nowhere | Every keepsake; no keepsake about another NPC | Absence is silent (SP5); what the Tarnished heard is theirs to see (SP7) | EldenNet O45; SP3, SP5, SP7 |
+| D69 | The host's shape | `graceui.dll` itself is the host: its `grace-host` crate alone holds hudhook 0.9.3 with every O25 rule, its MinHook, the Present hook, the window procedure (with EldenNet's `WM_CHAR` surrogate fix and IME placement) and the DInput and XInput detours for capture and masking; XInput is hooked in every XInput DLL already loaded at install, found by name, so GraceUI reads no import table of the game's; no second GraceUI module. Supersedes G10 (b)'s split and D56's "links no hudhook" | A hook-free GraceUI module beside the host; a dual mode in which EldenNet hosts when present | One process holds one hudhook and one MinHook safely; a framework other mods use must be present without EldenNet; a second module adds a private ABI and a second copy to guard, for no isolation within one process | G15 (a); proposal 0001 §4.1 |
+| D70 | Finding GraceUI | The helper (header-only C, and the `graceui-sys` crate with a thin safe wrapper) runs on the mod's own worker, never in `DllMain`: `GetModuleHandleW(L"graceui.dll")` and its export; else a scan of loaded modules for the export, the first that answers; else, if the mod allows it, `LoadLibraryExW` of `<folder of eldenring.exe>\GraceUI\graceui.dll`; polled every 250 ms for at most 30 s (EST). Exports: `GraceUI_Version()` (callable from any thread, needs no start) and `GraceUI_RequestApi(major)`. Absence means the mod's UI is off, never an error dialog | Load order or a loader's API; a registry of hosts | Every peer host uses this shape, and it survives renaming and duplicates | G15 (a); proposal 0001 §4.3 |
+| D71 | Start and threads | Nothing at load. The first `GraceUI_RequestApi` takes the mutex (D72) and starts one short init thread (the anti-cheat check, the game's window, the hooks), which then exits; GraceUI then runs on the present thread, its window procedure and the input detours, plus the server's threads (D81). Mods pull commands, subscriptions, panel input and host events with `poll` on their own threads, from a bounded queue per mod with an optional event handle; `publish` and `submit` copy on the caller's thread into a bounded ring and a triple buffer. An opt-in `on_present` callback binds invariant 10 with a budget (0.5 ms p99 per mod, EST) and is suspended for the session, with one notice, after 120 frames over it. No call posts work to the game's thread | Calling mods back on the present thread; a post to the game's thread | Third-party code stays off the present thread by default; one frame of latency is invisible for menus and HUD text; GraceUI calls no game code | G15 (a); proposal 0001 §4.4 |
+| D72 | Single instance | A per-process named mutex (`Local\GraceUI.Host.<pid>`), taken once-guarded in the first `GraceUI_RequestApi` on the calling thread, before any table is returned; a second copy loaded from another folder installs no hook, answers every request with null from its first, idles, and is named by its relative name in one notice (invariant 18) | The first copy by load order; copies negotiating between themselves | A second hooking copy is a second MinHook; bundled copies fight file by file in mod managers | G15 (a); proposal 0001 §4.4, §4.11 |
+| D73 | ABI rules | Plain C, default x64 packing; one append-only table per major (`GraceUiApi1`: its size, its ABI minor and GraceUI's version, then `has_cap`, `connect`, `disconnect`, `register_pages`, `publish`, `poll`, `answer`, `register_texture`, `register_face`, `glyph_table`, `create_panel`, `submit`, `show_panel`, `hide_panel`, `request_input`, `release_input`, `register_hotkey`, `notice`, `set_world_state`, `log`); no C++ vtables, Rust types, STL, exceptions, panics or heap ownership across it; every struct a caller passes starts with its size, and the host reads the smaller of the two sizes, defaults the rest and refuses one below the 1.0 size; strings UTF-8 with a length, copied before the call returns; a user pointer on every callback; an SPDX MIT line in every public header. `connect` answers `ok`, `too_old` (with both versions, a notice naming the mod and one log line), `duplicate_id`, `inactive` (with the reason) or `refused`; after `inactive` or `render_dead`, calls do nothing | Rust types or C++ interfaces across the boundary | What every peer host does; an explicit too-old answer avoids the silence the Skyrizz session met on two hosts | Proposal 0001 §4.3, §4.15 |
+| D74 | Versions and support | One compatibility rule, written once in the header: the same major, and a minor at least the one built against, or slots checked by size; a new major is a new table from the same export, each major served for at least two minor releases and 12 months after the next (EST); `graceui.toml` and the guide's feature table give the "added in" version of every slot and capability; from GraceUI 1.0 its version is its own semantic version (amending D37 from then on) | A new export per major; no stated window | A public ABI is a promise mods must be able to read; one host name per process | Proposal 0001 §4.3 |
+| D75 | Spaces | A space is an id (`[a-z0-9-]{3,32}`, unique, refused if taken), a display name, a version, the GraceUI floor it needs, the views it wants (`game`, `browser`), its rail of categories and pages, and a settings description in §6.9's shape; page data is handed over as UTF-8 JSON bytes at `register_pages`, compiled in or from the mod's own folder; GraceUI never reads or writes another mod's files; each space validates its own commands (invariant 3) | GraceUI reading mods' folders | A mod keeps its files where it chooses; one validating entry point per space | Proposal 0001 §4.2 |
+| D76 | Panels and draw lists | Five layers (`hud` < `panel` < `menu` < `modal` < `notice`), with an anchor, bounds and whether a panel may take input; panels start hidden. Draw lists in the default `ImDrawVert` layout (position f32×2, UV f32×2, colour RGBA8) with u16 indices relative to each command's vertex range, from any producer: GraceUI's Rust kit (`grace-draw`, `grace-view`, glyphs from the shared atlas) or a consumer's headless Dear ImGui with no backend and no hooks; a build that overrides either converts first. D56's checker checks every list (counts, indices, clip rectangles, texture ids, the atlas generation); a submission over 256 KiB of vertices or 64 commands is refused and logged (EST). Textures registered once, in the mod's registration window and within its budget (invariant 11) | HTML or a web view in game; a shared ImGui context | hudhook 0.9.3 cannot update a texture without leaking a buffer, so G1's reasons hold for every mod; panels let a mod draw anything without sharing a context, an allocator or a Rust type | G16 (a); proposal 0001 §4.2 |
+| D77 | Input and hotkeys | One input holder in the process at a time (the menu, a panel that takes input, a modal); `request_input` answered at once: `granted`, `refused` naming the holder, or `not_now` with the reason (danger, a game menu open, not ready); nothing deposes the holder or queues behind it, and a refused mod may ask to be told when input is free. The one close routine ends any holder, masks held keys until release and tells the holder why. Hotkeys belong to the framework: a named action with a default key and modifiers or a pad chord; a taken default registers unbound, named on GraceUI's Hotkeys page; hotkeys stand aside while any holder has input. The player's exit, a second menu-key press within 2 s of "‹Mod› has the controls" or Escape held 1 s (EST, S4 checks both), ends any holder and is never captured (invariant 17) | Last asker wins; an Ok that only queues | Silent deposing, a true that does nothing and an Ok that only queues are the failures the Skyrizz session met; first holder wins is the rule a player can predict | G15 (a); proposal 0001 §4.5 |
+| D78 | Game awareness | Read-only kept. Each space may close and refuse its own views; any consumer may register as a world-state provider (danger, loading, a game menu or text entry open, the title screen, multiplayer, an anti-cheat hit), and every claim is accepted and combined: any provider's danger closes every view and cancels confirmations (invariant 9), a view opens only when every provider allows it or at the title, and any provider's anti-cheat flag closes the server. Without a provider views open at any time and there is no danger close, as the guide says; capture still masks game input while a holder has it. The Compatibility page lists each provider and what it last reported. EldenNet is a provider when present, publishing only these flags | GraceUI reading game state; one provider chosen by load order | Reading game state would need EldenNet's game-access layer, its patch work and O48's checks; a provider gives every mod EldenNet's safety when EldenNet runs | Proposal 0001 §4.6 |
+| D79 | The menu's shape | One menu on one key (`hotkeys.menu`, F5 by default, GraceUI's own setting, D84), with GraceUI's frame (rail, top bar, search, key hints); each space brings its own rail; with one space the menu is that space, as designed; from two, a space switcher heads the rail (LB/RB with a modifier, or Ctrl+PageUp/PageDown, EST); GraceUI's own space at the rail's foot (Menu, Hotkeys, Browser view, Installed mods, Compatibility, About); search across every space, each result badged with its space; mods' panels stay outside the menu, on their layers | A menu and a key per mod | One capture owner and one close routine keep input safe (invariants 7 to 9); players with EldenNet alone see no change | Proposal 0001 §4.7 |
+| D80 | Theme | Grace is the one look of every space's pages, in both views, from one token file (invariant 13); a space ships no tokens in v1, and a per-space accent token checked for contrast is a later seam; panels look as their mods choose; the shared atlas holds Grace's faces, EldenNet's and at most two for each other mod connected before warm-up (`register_face`, EST), within D29's limits; a rebuild on a scale change raises the atlas's generation | A theme per space | One look and one contrast check for page data; the one atlas and hudhook's upload leak bound fonts either way | Proposal 0001 §4.8 |
+| D81 | Isolation and the gate clause | One origin: no mod supplies HTML, script or CSS, so a space's pages in the browser are its page data drawn by our components, and its strings are always text. Every frame carries its space; subscriptions and commands stay within their space, and limits apply per connection and per space; a space marks its sensitive commands, which paired devices are refused (EldenNet's `secrets.set`, `secrets.clear`, `providers.update`, G9). §7.2 item 1's gate clause kept as four rules: EldenNet registers its space for the browser view only once its gate and safety steps pass, and withdraws it on T10's anti-cheat hit; GraceUI opens no socket after its own anti-cheat hit; a later hit (GraceUI's module re-check every 60 s while the server runs, or any provider's flag) closes the server for every space for the session; an unknown game build binds EldenNet's space alone | Mods' own web code; an origin per mod | One page source and one set of server checks for every mod; in process there is no isolation, so GraceUI's checks guard against mistakes, never a hostile DLL (§7.1) | G17 (a); proposal 0001 §4.9 |
+| D83 | Packaging | `Game\GraceUI\` is the only copy (D51), with `graceui.toml` listing every file's size and hash (D52); a mod states its floor and requires GraceUI, never carrying a private copy; EldenNet carries the release current at its date (D53) in a staging folder, and its launcher, before the game starts, installs it only where none or an older one is installed, never over a newer one, verifying the hashes; an older major is replaced only while the bundled release still serves it (D74), otherwise the launcher explains in E08's manner, naming the mods GraceUI's last log shows connecting on it, and installs only when the player confirms; a player updates by copying a newer release over the folder (G2) | Mods bundling GraceUI; EldenNet copying over whatever is there | Bundled copies fight file by file in mod managers, and a second hooking copy is a second MinHook; the launcher runs before the game, without a running DLL's lock | Proposal 0001 §4.11 |
+| D84 | GraceUI's own files | `Game\GraceUI\user\` holds GraceUI's settings, paired devices and scrubbed log: never in a release, outside `graceui.toml`'s hash list, kept when a release is copied over (amends D51 and D19). Its preferences (the menu key, the one `ui.scale` of G6, which EldenNet's text follows, the theme variant, hotkeys, the server) are GraceUI's, migrated out of EldenNet's `settings.toml` | Keeping them in EldenNet's files | A framework's settings cannot live in one consumer's files | Proposal 0001 §4.11 |
+| D85 | Docs and harnesses | A modders' guide in `docs/modders/` (the space and page format, every component, the settings description, the protocol, the C ABI and its feature table, panels and "your own Dear ImGui", input and focus, threads and budgets, secrets, versions, distribution, troubleshooting, a bug-report checklist, what MIT allows, how GraceUI is built); three example mods of our own with invented content (a C mod with page data only, a Rust mod with topics and commands, a C++ mod drawing a panel with its own headless Dear ImGui); `grace-dev` as a fake host for any space; `grace-harness` (Windows, Direct3D 12, WARP in CI: LIKELY, to be confirmed); a C mock of the ABI; the log's first line names the version, ABI and protocol | No public docs or samples | What Magelight and Meridian offer and what Skyrizz had to build itself | Proposal 0001 §4.12 |
+| D86 | Other overlays | Documented: an overlay drawing after GraceUI at Present covers it, and GraceUI cannot draw under the game's own UI; a log warning when Present's first bytes already hold a jump at install (SPECULATION, as a cue only); rows in the compatibility matrix | Detecting and refusing other overlays | A second hooking overlay is outside GraceUI's control under any answer | G15 (a); proposal 0001 §4.1 |
+| D87 | Public face | EldenNet's channels (O22: GitHub and a Nexus mirror), with GraceUI's own page; a true AI-assisted disclosure in the README, the guide and every release page (a human-owned design; code, text and docs written with AI assistance and reviewed by hand; no AI-generated images; the tests that guard it); no presence in me3's spaces, with a note that a player may list GraceUI as a native in their own me3 profile; file hashes on every release page | Saying nothing about AI | An honest statement is what the middle ground asks for; unlicensed look-alike "mod menu" repositories exist | Proposal 0001 §4.14 |
+| D88 | EldenNet without GraceUI, and anti-cheat | EldenNet's launcher checks GraceUI before start and explains what is missing; in the process, a failed connect leaves EldenNet headless at L2 with a log line, as ARCH §3.2's overlay-error row. On an anti-cheat hit GraceUI installs its hooks as EldenNet's banner path does (capture never on, the input detours pure pass-through), draws notices only (its own, and consumers' `notice`, callable after `connect` answers `inactive (anti-cheat)`), and serves no menu, panel, input or socket for the session. Replaces G2's and D54's "EldenNet keeps playing whatever it finds" | Hooking nothing on a hit, so that EldenNet's banner gives way to the launcher's next-run hint | Under G15 (a) EldenNet cannot draw even its banner without GraceUI; the decided L1 banner stays what players see | G15 (a); proposal 0001 §4.1 |
+| D89 | Trails | A trail is the places where the Tarnished perceived a profiled NPC, in order, with the stage then; never a position the Tarnished did not perceive | Tracking positions read from the game | Elden Ring's NPCs do not wander, and EldenNet sees only the characters loaded near the player; perception is SP7's rule | Proposal 0002 §4 |
+| D90 | Where masking happens | In EldenNet's core. Every base shows only what the player's own game map shows: the game's tiles in the variant for the map pieces held, so no unrevealed tile is held, drawn or sent anywhere; the layers keep the reached and seen rules and are masked before any projection | Masking in the views; one whole image masked at draw time (the first G26 (a), withdrawn) | The game reveals its map by map piece, so invariant 1 holds whole | G21 (a), G26 (a); proposal 0002 §14.3 |
+| D91 | The map panel | A panel kind of the framework: a base (an image a mod hands over, or a vector drawing), layers of marks, lines, areas and labels, a tooltip and a detail pane from page data, zoom and a timeline; one per page; GraceUI draws it and never reads the game | A map drawn by EldenNet's page alone | Both views from one source; a panel kind any mod can use once the framework opens (G18) | G16 (a); proposal 0002 §2 |
+| D92 | The Map page's place | Its own category, Map, between Characters and History in EldenNet's rail; opened from the menu, in the browser, or by the map key when its setting is on (G25). Which repository holds the page follows G20 | A page under Characters or History | The map joins the people of Characters and the records of History on one surface | Proposal 0002 §5 |
+| D93 | The fit check | A check of the tile set's structure: each tile 256 pixels, the grids 41, 31 and 9 tiles a side, every variant the game's masks name present; a failure draws the drawn base with a one-line notice saying why; never a mismatched image under the layers | The image's size and aspect against the vanilla map's (the proposal's first form) | The game's map is a set of tiles at three zoom levels, revealed by map piece (EldenNet WHY§61, §72, §73, §76, §77) | G21 (a); proposal 0002 §14.3 |
+| D94 | The image cache | The composed tiles, in EldenNet's user folder on the player's PC, keyed by the game's version, the source files' hashes and the pieces held; never uploaded, logged or put in a report | Composing at every start; a cache in GraceUI's folder | Composed once per set of pieces; the player's map never leaves their PC except to their own views (PV1–PV8) | G21 (a); proposal 0002 §3, §14.3 |
+| D95 | Settings › Map | Base map (your game's map, GraceUI's drawn base, none); The map key opens (the game's map by default, or GraceUI's map); glow (full, soft, off); brighten new things once (off under reduced motion); the layers shown when the map opens; Lore notes by AI (on by default). Each setting has its one home here (invariant 12) | Map settings spread over other pages | One home for every setting | G21 (a), G22 (a), G23 (c), G25 (a); proposal 0002 §3, §6–§8 |
+| D96 | The journey timeline | Replays the playthrough from EldenNet's event log; dragged back, the map shows what was reached, who was met and what had changed at that play time; never past now | A live map only | The event log already holds the journey; a replay that stops at now shows nothing not yet reached (SP5) | Proposal 0002 §4 |
+| D97 | The drawn base | Exact (the owner, 2026-11-14): built on the player's PC from their own game and cached locally: its areas from the game's area image, its placements by the game's own transforms and conversion table, its shape from the player's own map or, where that does not fit, from the game's map and terrain data; no shape is shipped or committed; not offered if no exact source exists | A shipped, approximate shape of our own | The owner's requirement on every base ("the exact shape of the map, it's parts … accurate placements"); an exact shape traced from the game's map is a copy of its art, so it is built where the game is | Owner, 2026-11-14 (G21's note); proposal 0002 §3, §14.2 |
+| D98 | Terrain | Heights built locally with the drawn base and cached, from the game's ground models at the 1 km level, the expansion's land that other models make filled from its far view, and the underground from its maps' own pieces, its floors told from ceilings by their facing and shown as the topmost walkable floor reachable from where the map's characters stand (EldenNet WHY§90, WHY§92, WHY§94); a 3D relief in the browser (tilt, rotate, zoom, with the layers on the terrain); in game a relief image composed with the map's texture and uploaded with it (G26); our own terrain sprites and the tile-grid schematic ship as the fallback | A local 2D relief; our sprites only | The owner's idea of a 3D map read from the game, with nothing of the game shipped; the browser has room for 3D, the in-game view keeps to the map's uploads | G27 (a); proposal 0002 §3 |
+| D99 | The Map before 1.1 | Until 1.1 the Map category is a later-version entry in the rail between Characters and History, tagged "WIP" with "1.1" in its tooltip and accessible name, opening a statement page with no controls; Settings › Map joins with the page | Absent until 1.1 | Principle 8 (G7): a planned later-version feature is stated, never faked and never hidden | Fold, 2026-11-15; G7, G24 (a) |
+| D100 | Faults inside GraceUI | A panic in GraceUI's own code never crosses the boundary: an ABI entry returns an error code; a panic in the menu's drawing turns the menu off for the session, releases capture and shows one notice, while panels, notices and the browser view keep working; a fault in a server task closes that connection, and a second stops the server for the session | One fault stopping every surface | Consumers' surfaces should outlive a fault in the menu, as EldenNet's did under D54 | Fold, 2026-11-15; §2.3, §2.8 |
+| D101 | GraceUI's keys | The settings D84 moves keep their names (`hotkeys.menu`, `ui.scale`, `ui.menu.*`, `dashboard.*`), so the migration is a move, not a rename; proposal 0001's `menu.key` is `hotkeys.menu` | Renaming them under a `graceui.` prefix | One name per setting in every document, the README and the settings description | Fold, 2026-11-15; D84 |
+| D102 | GraceUI's published hook list | GraceUI publishes the functions it hooks (the swap chain's `Present`, `Present1`, `ResizeBuffers` and `ResizeBuffers1`, the command queue's `ExecuteCommandLists`, the game's window procedure, DirectInput's `GetDeviceState`, XInput's `XInputGetState`) in its guide and with each release, append-only; no consumer hooks one of them; CI checks `grace-host`'s targets against it, and EldenNet checks its own against it | A ban on every hook library in a consumer (the fold's first wording) | What must have one owner is each hooked function (EldenNet WHY§86); other functions are not GraceUI's to forbid | EldenNet O65 (2026-11-15) |
+| D103 | Plugins on the Content packs page | From 1.1 the page lists EldenNet's plugins (name, version, author, licence, summary, state, order, conflicts, check results), with their switches, order and Remove in both views and, in the browser only, a drop zone with Add file, this PC only and never for code, the file sent by §7.2 item 18's route; "no hub" stands (Superseded the same day by D104: plugins have a page of their own) | A page of their own | Plugins are content layers, which this page already shows | EldenNet O66, O67; its proposal 0001 §5.6, §6.2; G28 |
+| D104 | The Plugins page | A page of its own at the foot, `plugins`, from 1.1: a row per plugin with its On/Off switch and, for a code plugin, Cluster or Detached; its state and its clashes or failed checks in words; order for content plugins; the drop zone in the browser; Content packs keeps EldenNet's own content and the overrides, read-only | Plugins on Content packs (D103) | Code plugins are not content, and the owner designed the rows for a plugin page of their own | EldenNet O70 (2026-11-15) |
+| D105 | The plugins-stopped pop-up | EldenNet's modal, drawn by GraceUI: "Plugins stopped: <plugin> crashed" (or stopped responding, or used too much memory), the plugin's title in `rot` and bold, how sure the cause is, its version, which plugins stopped and which run on; Details and Copy report; the X at the top right (plugins stay off, the choices stay on the Plugins page) and four buttons: Restart plugins, Restart plugins without <plugin>, Restart plugins with <plugin> detached, Ignore (no plugins). In the browser at once; in game a notice first, the modal only at a safe moment (invariant 9); on EldenNet's launcher at the next start if no choice was made | A notice alone | The owner's design; colour is never the only signal (§3.12) | EldenNet O70; its proposal 0001 §13.6 |
 
 ---
 

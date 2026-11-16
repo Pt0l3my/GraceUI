@@ -37,7 +37,10 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 - **2026-11-14.** G21–G26 put to the owner with proposal 0002 (the map): what it is drawn on, glow and motion, who
   writes lore notes, when it ships, what the map key opens, and how the in-game map is kept to what was reached.
 - **2026-11-14.** G27 (terrain: a local 3D relief and our own sprites), decided the same day, as recommended.
-- **Open.** G18–G26.
+- **2026-11-15.** G21–G26 decided (G23 not as recommended). G28 (a narrow upload route, for EldenNet's plugins)
+  put and decided the same day, as recommended. G29 (GraceUI's server for hosts outside the game) put with
+  EldenNet's proposal 0002.
+- **Open.** G18–G20, G29.
 
 ## G1
 
@@ -61,7 +64,7 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 **Owner's words.** "GraceUI will be a standalone mod, but EldenNet will feature the latest version with each release (at the release date) as built in, but users will be able to update GraceUI separately (by dragging files into Elden Ring/Game directory and overwriting old files)."
 
-**Later changes.** G10 (2026-11-07) settles which module owns the one overlay: (b), EldenNet.
+**Later changes.** G10 (2026-11-07) settles which module owns the one overlay: (b), EldenNet. 2026-11-08: G15 (a) supersedes G10, and the overlay moves into `graceui.dll`; so D88 replaces "EldenNet keeps playing whatever it finds": EldenNet's launcher checks GraceUI before start and installs the carried copy where none or an older one is (D83), and a failed connect leaves EldenNet headless with a log line. The folder, the carried release and updating by hand stand. Folded into the design on 2026-11-15 (EldenNet's roadmap S7.8.c).
 
 ## G3
 
@@ -313,7 +316,7 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 ## G21
 
-**What is the map drawn on?** · *Open since 2026-11-14*
+**What is the map drawn on?** · *Open since 2026-11-14 · Decided by the owner 2026-11-15, as recommended*
 
 **Question.** **(a) The player's own game map, read from their game at run time, masked and never shipped, with GraceUI's drawn base as the fallback when it cannot be read or does not fit** (recommended), and a setting to choose the drawn base or none instead. **(b) GraceUI's drawn base only.** **(c) An image the player exports from their own install with a tool on their PC**, loaded from a folder they choose.
 
@@ -329,9 +332,21 @@ texture." Every base therefore has the exact shape, areas and placements; GraceU
 player's PC from their own game and no shape ships (proposal 0002 §3, D97). Under (b) the drawn base still needs the
 player's game as its source, so (b) no longer avoids the image reader.
 
+**Later (2026-11-15): what the research found.** The recommendation stands, now concrete: the base is the game's own
+map tiles, composed as the game composes them (each tile in the variant for the map pieces the player holds, at
+each zoom level), read from the player's install at run time and never shipped. The image's formats, the game's own
+masks, the zoom levels' sizes and every variant the game draws are found and checked on the owner's PC; the risk left
+is EldenNet's own run-time read of the game's archives. (c) is proven too, but asks each player to unpack the game
+with a tool, so it stays a developer's route for testing. Placements and areas now have exact sources (proposal 0002
+§14; EldenNet WHY§61 to WHY§82).
+
+**Decision (2026-11-15).** (a): the player's own game map, its tiles composed as the game composes them for the map pieces the player holds, at each zoom, read from their install at run time and never shipped, with GraceUI's drawn base as the fallback and a setting to choose the drawn base or none (proposal 0002 §3, §14).
+
+**Owner's words.** "Your game's own map (Recommended)".
+
 ## G22
 
-**May anything on the map loop or pulse?** · *Open since 2026-11-14*
+**May anything on the map loop or pulse?** · *Open since 2026-11-14 · Decided by the owner 2026-11-15, as recommended*
 
 **Question.** **(a) No: still glow, hover brightening and one-shot flares; invariant 14 unchanged** (recommended). **(b) A slow ambient shimmer in the browser only**, behind a setting. **(c) Loops in both views**, behind a setting.
 
@@ -341,9 +356,13 @@ player's game as its source, so (b) no longer avoids the image reader.
 
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
 
+**Decision (2026-11-15).** (a): no loops; still glow, brightening on hover and a single flare for new things; invariant 14 unchanged.
+
+**Owner's words.** "No: still glow (Recommended)".
+
 ## G23
 
-**Who writes the lore notes?** · *Open since 2026-11-14*
+**Who writes the lore notes?** · *Open since 2026-11-14 · Decided by the owner 2026-11-15, not as recommended*
 
 **Question.** **(a) The model proposes notes from the player's memories, each citing them, and a note joins the map only if the player keeps it** (recommended). **(b) The player writes every note**; no model call. **(c) The model writes notes on its own**, and the player may remove them.
 
@@ -353,9 +372,13 @@ player's game as its source, so (b) no longer avoids the image reader.
 
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
 
+**Decision (2026-11-15).** (c), as the owner put it: the model adds lore notes to the map on its own, each from two or more of the player's memories tied to one place or person and citing them, through the lock filter (SP2), batched on a light slot under EldenNet's pacing; the player may edit or remove any, and a removed note is not proposed again from the same memories. A setting, **Lore notes by AI**, is on by default and turns it off (Settings › Map, D95).
+
+**Owner's words.** "Let AI add notes automatically, a setting on by default."
+
 ## G24
 
-**When does the map ship?** · *Open since 2026-11-14*
+**When does the map ship?** · *Open since 2026-11-14 · Decided by the owner 2026-11-15, as recommended*
 
 **Question.** **(a) After EldenNet v1.0, as part of 1.1**, with the spike done early as research (recommended). **(b) In v1.0, the browser view on the drawn base only**; the game's map and the in-game view in 1.1. **(c) All of it in v1.0.**
 
@@ -365,9 +388,17 @@ player's game as its source, so (b) no longer avoids the image reader.
 
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
 
+**Later (2026-11-15).** The recommendation stands. The research found the image route and the placements (proposal 0002
+§14), so the riskiest part of a 1.1 map is mostly solved; the panel kind, the design fold and EldenNet's own read of
+the game's archives remain.
+
+**Decision (2026-11-15).** (a): after EldenNet v1.0, as part of 1.1, its groundwork (the sightings record, the world stages) built for v1.0 anyway. Asked first: "is there a drawback to building in v1.0?"; told the drawbacks (v1.0 later by the largest single feature, the run-time read of the game's archives a v1.0 risk, more in-game checks), the owner chose (a).
+
+**Owner's words.** "In 1.1, after v1.0 (Recommended)".
+
 ## G25
 
-**What does the map key open?** · *Open since 2026-11-14*
+**What does the map key open?** · *Open since 2026-11-14 · Decided by the owner 2026-11-15, as recommended*
 
 **Question.** **(a) A setting, off by default: the map key opens the game's map, or GraceUI's map when the player switches it on**; with it on, the key pressed again or held opens the game's map (recommended). **(b) Always the game's map**; GraceUI's map only from the menu and the browser. **(c) GraceUI's map by default.**
 
@@ -377,9 +408,13 @@ player's game as its source, so (b) no longer avoids the image reader.
 
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
 
+**Decision (2026-11-15).** (a): a setting, off by default; with it on, the map key opens GraceUI's map, and pressed again or held opens the game's map, where fast travel and markers stay in v1.
+
+**Owner's words.** "A setting, off by default (Recommended)".
+
 ## G26
 
-**In game, how is the game's map kept to what the player has reached?** · *Open since 2026-11-14*
+**In game, how is the game's map kept to what the player has reached?** · *Open since 2026-11-14 · Decided by the owner 2026-11-15, as recommended when put again*
 
 **Question.** hudhook 0.9.3 leaks one buffer per texture upload, so the in-game map can be uploaded only once (invariant 11), while new areas are reached during play. **(a) Upload the whole image once at start, at a reduced size, and mask it at draw time by the reached areas' shapes** (recommended): invariant 1 gains one narrow, tested exception, this texture, which no view shows unmasked and no projection, log or report carries. **(b) Upload it once, masked as at start**; areas reached during the session show on the drawn base until the next start. **(c) The game's map in the browser only**; in game the drawn base.
 
@@ -387,7 +422,20 @@ player's game as its source, so (b) no longer avoids the image reader.
 
 **What each answer changes.** (a): invariant 1 gains its exception and a pixel golden; D90. (b): a second style in game until restart. (c): the in-game map is the drawn base only.
 
+**Later (2026-11-15): put again, with new options.** The game reveals its map by map piece (32 in all), not by places
+visited, and each tile has a variant for each set of pieces, so nothing unrevealed need ever be held, drawn or sent.
+**(a) As the game shows it: the in-game texture is composed at start from the tiles for the pieces held, and composed
+and uploaded once more when the player gains a piece**, each such upload leaking one buffer of hudhook 0.9.3 until
+the game restarts, a narrow, measured exception to invariant 11 (recommended). **(b) Composed once at start**; a
+piece gained shows from the next start. **(c) The game's map in the browser only.** The recommendation is (a): the map
+matches the game's at once, and invariant 1 stands whole, which the old (a) bent. The old options are withdrawn
+(proposal 0002 §14.4).
+
 **Follows from.** The owner's request for an interactive map (2026-11-14); [proposal 0002](proposals/0002-map.md) §13, with its reasons in §3–§8.
+
+**Decision (2026-11-15).** (a) as put again on 2026-11-15: as the game shows it. The in-game texture is composed at start from the tiles for the map pieces the player holds, and composed and uploaded once more when a piece is gained, each such upload leaking one buffer of hudhook 0.9.3 until the game restarts: invariant 11 gains that narrow, measured exception, with a test counting the uploads; invariant 1 stands whole (proposal 0002 §14.4).
+
+**Owner's words.** "Update on a piece gained (Recommended)".
 
 ## G27
 
@@ -410,3 +458,57 @@ game shipped; the browser has room for 3D, the in-game view keeps to one upload.
 **Follows from.** The owner's messages of 2026-11-14 on topography and a 3D map; [proposal 0002](proposals/0002-map.md)
 §3; D97.
 
+
+## G28
+
+**May a space take a file from the browser view?** · *Open since 2026-11-15 · Decided by the owner 2026-11-15, as recommended*
+
+**Question.** EldenNet's O67 (a) lets its plugins also be added on the dashboard: a drop zone with an Add file button on
+the Content packs page, in the browser only, this PC only, never for code (D103). GraceUI's frames are capped at 16 KiB
+(§6.8), so a file needs a route of its own. **(a) A narrow upload route** (recommended): one route on the loopback
+listener only, for a space's commands that take a file and are marked sensitive (EldenNet's `plugins.install` first);
+one file at a time, at most 32 MiB (EST); every check of §7.2 (Host, Origin, Fetch Metadata, the session cookie) and a
+one-use ticket for that upload; refused from any paired device; the bytes handed to the space's command queue and kept
+by GraceUI no longer than the call; the server suite covering it. **(b) No uploads**: EldenNet's plugins come through
+its Plugins folder alone, and EldenNet's O67 works as its (b). **In plain words:** Should the dashboard in your browser
+be able to hand a plugin file to EldenNet, from this PC only, or should plugins only ever go in through the folder?
+
+**Recommendation.** (a). It is what O67 chose, and a route this narrow keeps invariant 4 whole: loopback only, the same
+checks as every command, one ticket per upload, nothing kept. *What (a) gives up:* a second kind of request on the
+server, which the security suite must cover.
+
+**What each answer changes.** (a): §7.2 gains an item for the upload route, §6 a note on how a file travels, and the
+server suite its cases; D103's drop zone works. (b): D103's drop zone falls away, and the page names EldenNet's Plugins
+folder instead, by its relative name (PV5).
+
+**Follows from.** EldenNet's O67 (2026-11-15); EldenNet's proposal 0001 §6.2.
+
+**Decision (2026-11-15).** (a): one narrow upload route on the loopback listener alone, for a space's file commands
+marked sensitive (EldenNet's `plugins.install` first); one file at a time, at most 32 MiB (EST); every check of §7.2 and
+a one-use ticket; refused from any paired device; GraceUI keeps nothing after handing the bytes to the space (§7.2 item
+18).
+
+**Owner's words.** "Narrow upload route (Recommended)".
+
+## G29
+
+**GraceUI's server for hosts outside the game?** · *2026-11-15 · Open*
+
+**Question.** EldenNet's owner asked for its dashboard in the browser with the game closed, and for the EldenNet
+devkit's tools in the browser (EldenNet's proposal 0002, O76 and O78). Both hosts run outside the game, where
+`graceui.dll` is not loaded. **Options:** (a) **one server library GraceUI publishes** for hosts outside the game (EldenNet's
+launcher, the devkit), with every rule of §7.2 and invariant 4: loopback only; Host, Origin, Fetch Metadata, the session
+cookie and the ticket checked; a strict CSP; only the files listed served; the home-network switch and pairing (G9)
+staying in the game at first; (b) each host writes its own server.
+
+**Recommendation.** (a): one implementation of the server's protections, tested once.
+
+**What each answer changes.** (a): invariant 4 and §7.2 cover a server outside the game; G4 widens to off game while
+EldenNet's launcher runs, if EldenNet's O76 is (a) or (b). (b): nothing in GraceUI; each host carries the rules itself.
+
+**Follows from.** G4, G9, G17; EldenNet's O76 and O78.
+
+*Later (2026-11-15):* EldenNet's O76 decided (b): its launcher runs EldenNet's engine off game, once the engine is
+adopted, and serves the dashboard from the saved files; its O78 (b) and O79 put the devkit's tools, viewers included,
+in EldenNet's dashboard behind Developer mode. So a host outside the game will serve GraceUI's pages either way; G29
+asks only how.
