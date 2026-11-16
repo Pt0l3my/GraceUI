@@ -36,11 +36,14 @@ CC=gcc CXX=g++ cmake -S . -B build-linux-gcc -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build-linux-gcc && ctest --test-dir build-linux-gcc --output-on-failure
 ```
 
-`grace-input`'s 58 cases cover the holder's answers, the close routine from every exit path, the player's exit and its
+`grace-input`'s 64 cases cover the holder's answers, the close routine from every exit path, the player's exit and its
 timing, the watchdog, the game's view of DirectInput and XInput (untouched, at rest, a closing press hidden until
 released, the packet number), the holder's pad view with the opening press, the window-message routing, the surrogate
-pairing (lone and swapped halves too) and the ANSI byte joiner, and the hand-overs between threads under
-ThreadSanitizer. Wine has no pad, so the pads' masking is checked here only.
+pairing (lone and swapped halves too), the ANSI byte joiner and the UTF-8 one (cut short, stray, overlong, a surrogate,
+past U+10FFFF), and the hand-overs between threads under ThreadSanitizer. From the host's review (D145): a claim of
+danger or input turned off between a request's read and its grant ends the new holder at once, the newest claims
+decide whatever order the writers settle in, and no holder outlives a danger claim over 2,000 rounds of two threads.
+Wine has no pad, so the pads' masking is checked here only.
 
 `grace-abi`'s 48 cases cover `connect`'s answers across versions, ids and the session's states (ok, too_old against
 floors below, at and above GraceUI's, duplicate_id, inactive with each reason, refused with each), handles that outlive
@@ -59,19 +62,29 @@ present thread's view of a slot that a writer makes and removes meanwhile; textu
 registration window, their life from a mod's copy to the GPU and back, a texture never uploaded taken back, and the
 present thread's side making no allocation or free while a mod's thread registers; faces' budgets, the seal at
 warm-up and a face being written then, a font file's table directory and a face's ranges; and the providers' claims,
-combined, replaced, gone with their provider and read without waiting.
+combined, replaced, gone with their provider and read without waiting. From the host's review (D148, D152, D153): the
+code points a font's character map gives (formats 4, 12 and 13 on invented maps, and every code point where the map
+cannot be read), a face's area and the atlas's room (EldenNet's faces first, the other mods' within their half), a
+command stride bounded at 256 bytes, a long name cut to its end on a character's start, `Panels::shown`, and a
+disconnecting mod's slot given to nobody until its clean-up is done.
 
-The draw-list checker also has a libFuzzer target, `grace_drawlist_fuzz` (Clang on Linux; its corpus is yours):
+The draw-list checker also has a libFuzzer target, `grace_drawlist_fuzz`, and a mod's font file another,
+`grace_font_fuzz` (Clang on Linux; their corpora are yours). The rules' library carries the fuzzers' coverage, so that
+each is guided by what the rules do with its bytes:
 
 ```sh
 CC=clang-18 CXX=clang++-18 cmake -S . -B build-linux-fuzz -G Ninja -DGRACEUI_FUZZ=ON -DGRACEUI_UNIT_TESTS=OFF \
   -DGRACEUI_SANITIZE=address,undefined
-cmake --build build-linux-fuzz --target grace_drawlist_fuzz
+cmake --build build-linux-fuzz --target grace_drawlist_fuzz grace_font_fuzz
 build-linux-fuzz/bin/grace_drawlist_fuzz -max_total_time=60 -max_len=4096 <a corpus folder>
+build-linux-fuzz/bin/grace_font_fuzz -max_total_time=60 -max_len=8192 <another corpus folder>
 ```
 
 Any bytes become a list and a context; the checker must answer without a crash or undefined behaviour, and a list it
-lets through must index only its own vertices (188,667 runs in 60 s, none failing, on 2026-11-16). `grace_abi_layout_c` and
+lets through must index only its own vertices (188,667 runs in 60 s, none failing, on 2026-11-16; 134,050 in 40 s with
+the rules instrumented). Any bytes become a font file and a face's ranges; the font checks and the character map's
+count must answer without a crash or undefined behaviour, and the count never exceeds the ranges' own (210,174 runs in
+60 s from a corpus seeded with invented maps of formats 0, 4, 6, 12 and 13, none failing, on 2026-11-16). `grace_abi_layout_c` and
 `grace_abi_layout_cpp` compile `graceui.h` as C and as C++ with a `static_assert` on every struct's size and every
 field's offset; CTest runs both on Linux, and both Windows builds compile them.
 
@@ -110,7 +123,7 @@ cmake -S . -B build-cl-test -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/clang-cl-xwin.
   -DGRACEUI_TEST_EXPORTS=ON
 cmake --build build-cl-test
 python3 -I tools/check_safety.py --exports build-cl-test/bin/graceui.dll --test
-export WINEPREFIX=<a prefix of its own> WINEDEBUG=-all
+export WINEPREFIX=<a prefix of its own> WINEDEBUG=-all LC_ALL=C.UTF-8
 wine64 reg add 'HKCU\Software\Wine\Direct3D' /v renderer /t REG_SZ /d vulkan /f    # once per prefix: see below
 xvfb-run -a -s "-screen 0 1280x720x24" wine64 build-cl-test/bin/grace-harness.exe
 ```
@@ -118,7 +131,10 @@ xvfb-run -a -s "-screen 0 1280x720x24" wine64 build-cl-test/bin/grace-harness.ex
 A run fails with "no window" when a Wine server is still running for the prefix from an earlier `xvfb-run`. That
 server stays bound to a display that has gone, so the harness can't open its window. Stop it before every run with
 `wineserver -k` (Debian keeps it in `/usr/lib/wine`); with that, three runs in a row of each build passed all 82 checks
-(2026-11-16, S10.4.c). Two other clang-cl runs that day each failed one frame-cost check (a p99 of about 1.55 ms
+(2026-11-16, S10.4.c), and after the host's review every run of both builds passed all 95 but one MinGW-w64 run, whose
+"notice allocations" p99 was 1.33 ms while the machine's load average was about 3; three reruns of that scenario
+passed. The long-name scenario names a folder in Unicode, which Wine can do only in a UTF-8 locale: hence
+`LC_ALL=C.UTF-8` above; without it that scenario fails, saying so. Two other clang-cl runs that day each failed one frame-cost check (a p99 of about 1.55 ms
 against 1 ms, with no allocation, its median as usual) while another build kept the machine's four cores busy: under
 Wine the "GPU" and the detour share those cores, so rerun such a failure before calling it one. On a new prefix, run `xvfb-run -a wine64 wineboot -u` once first. Debian's Wine packages keep `wine64`
 in `/usr/lib/wine`: put it on the `PATH` first.
@@ -136,19 +152,22 @@ wined3d. It plays the game's part: it presents frames of a known clear colour, l
 `GraceUI_RequestApi(1)` and reads each checked frame back after GraceUI drew on it. A different clear colour for each
 check keeps a stale frame from passing for a new one.
 
-It runs eleven scenarios, each in a process of its own: the render half's checks ("main"); two direct queues; the input
+It runs sixteen scenarios, each in a process of its own: the render half's checks ("main"); two direct queues; the input
 half ("input"), in a process whose game loads three XInput DLLs before GraceUI starts; the input half on an ANSI window
 ("input-ansi"); ABI 1 ("abi"), whose first request is the example mod's; panels and the rest of S10.4.c ("panels"),
 whose warm-up comes after the second example mod and a mod of the harness's own have registered their faces and
 textures, since nothing is presented until they have; two copies asked at once ("copies"); the
 example finding a copy under another name ("found-by-scan") and GraceUI's own folder ("found-by-path", which runs a copy
 of the harness from `bin\by-path`, beside the example and `GraceUI\graceui.dll`, as a game's folder); and a simulated
-anti-cheat hit by each clause ("anti-cheat", "anti-cheat-parent"). Each scenario whose first `GraceUI_RequestApi`
+anti-cheat hit by each clause ("anti-cheat", "anti-cheat-parent"); and five from the host's review: a larger window
+found before the game's ("decoy-window"), the shared atlas running out of room ("atlas-full"), a request made while
+the first is still running ("slow-first"), a second copy with a long name ("long-name") and the game moving to a new
+device ("device-change"). Each scenario whose first `GraceUI_RequestApi`
 matters has a process of its own: the anti-cheat check and the mutex are the first request's (D133, D135). A test build
 is told to look for names of the harness's own (`GraceUI_Test_SetAntiCheatNames`): `grace-harness-shield.dll`, loaded
 before the first request, and `grace-harness.exe`, every scenario's parent; no anti-cheat software, and no file named
-after one, is needed. Four scenarios make no window ("copies", "found-by-scan", "found-by-path", "anti-cheat-parent"),
-so GraceUI's init thread is still looking for one when their process ends, and Wine may then print a "wine client error"
+after one, is needed. Six scenarios make no window ("copies", "found-by-scan", "found-by-path", "anti-cheat-parent",
+"slow-first", "long-name"), so GraceUI's init thread is still looking for one when their process ends, and Wine may then print a "wine client error"
 line among the harness's own; it is harmless. Each process ends with a "-- N passed, M failed" line, the main process's
 counting each other process as one check.
 
@@ -168,7 +187,7 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | version | `GraceUI_Version` answers 0.1 |
 | start | `GraceUI_RequestApi(1)` answers ABI 1's table (its size, minor and version this header's), the anti-cheat check finds nothing, and one init thread starts, which installs the hooks in one run: the render half's five, `GetDeviceState` (DirectInput is loaded), and the window procedure's filter, each named in D102's list |
 | untouched | With nothing to draw, every pixel of the frame is the clear colour, though the host has bound the swap chain |
-| warm-up | The present queue is found (and how is printed), the renderer is built and the atlas uploaded |
+| warm-up | The present queue is found (and how is printed), the atlas is baked on GraceUI's own thread (D147, D148), the renderer is built and the atlas uploaded |
 | Present | The test panel appears through `Present`: its colour, its text's ink, and the clear colour everywhere else |
 | Present1 | The same through `Present1`, drawn in every one of five frames |
 | references | Each back buffer's references besides the game's are what they were before GraceUI was loaded |
@@ -203,7 +222,8 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | input cost | GraceUI's own work per message in the filter and per read in each detour, the original's time left out, with and without a holder: within 50 µs at p99 each (EST) |
 | holder frame cost | With a holder fed input and its cursor drawn, the GPU idle before each frame, over 300 frames: GraceUI's own work in the detour within 1 ms at p99 |
 | input path | The render path and input are still on after every check |
-| ANSI characters | (the input-ansi scenario, a fourth process) On an ANSI window, filtered as one: bytes in Windows-1252, a Shift-JIS character in two posted `WM_CHAR`s and one whole in `WM_IME_CHAR`, and `WM_UNICHAR`, reach Dear ImGui as code points, and none reaches the game |
+| render off | Last, the render path turned off as a fault turns it off: input goes off with it, the holder ends (a fault), F5 reaches DirectInput and the window again, and a request is not now (D150) |
+| ANSI characters | (the input-ansi scenario, a fourth process) On an ANSI window, filtered as one: bytes in Windows-1252, a Shift-JIS character in two posted `WM_CHAR`s and one whole in `WM_IME_CHAR`, `WM_UNICHAR`, and in UTF-8 as the code page characters of two, three and four bytes and a sequence cut short (U+FFFD), reach Dear ImGui as code points, and none reaches the game |
 | example mod | (the abi scenario) `hello-notice.dll`, loaded before GraceUI, finds it through `graceui-sys` by name once it is loaded (at its fourth look or later), connects as it names itself, and its request starts the host |
 | example's notice | Its notice is drawn at the top right, and nothing else |
 | table | 176 bytes, ABI 1.0, GraceUI's version, every slot set; majors 0, 2 and 0xFFFFFFFF answer null; `has_cap` names `notices`, `panels`, `textures`, `faces`, `input` and `world-state`, and nothing else |
@@ -214,16 +234,18 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | not yet | The six slots still only declared (the bridge protocol's four, `register_hotkey`, `log`) answer not_yet to a connected mod, and all sixteen after `notice` not_connected to a handle of 0 |
 | notices | Shown, replaced in place by key, drawn in its tone, withdrawn by an empty text; a timed one goes when its time is up; four a mod, a fifth full; refused when it is not UTF-8, too long, empty without a key, of an unknown tone, null or too small; a long text three lines at most, on the Grace look's 22 px lines (D141); a mod's notices go with it |
 | notice allocations | As notices come, change and go over 300 frames after warm-up: no allocation or free on the present thread, and GraceUI's own work within 1 ms at p99 |
-| before warm-up | (the panels scenario) `hello-panel.dll`, loaded before GraceUI, connects and registers its face, two textures and its panel; the harness's mod registers a texture and faces of 18 and 24 px, a third face full, a file that is not a font and a size of 2 px refused; `glyph_table` answers not_ready |
+| before warm-up | (the panels scenario) `hello-panel.dll`, loaded before GraceUI, connects and registers its face, two textures and its panel; the harness's mod registers a texture and faces of 18 and 24 px, a third face full, a file that is not a font and a size of 2 px refused, the font's whole BMP at 128 px full (over the atlas's room, D148); `glyph_table` answers not_ready |
 | panels made | The harness's mod makes 16 panels (EST), the next full, GraceUI's menu layer refused; panels start hidden; a texture after the mod's first submit is too late |
 | atlas and faces | Warm-up bakes one atlas, generation 1, with four faces (GraceUI's notices' face from `bin\fonts\` and the mods' three) and uploads the three textures with it, in one upload; face 1's table: over 300 glyphs, 15 px, sorted, 'A' in it; the 24 px face's own size; face 999 refused; a face after warm-up too late |
 | example's panel | The example's list, built by its own headless Dear ImGui and placed by its anchor: its ground, its checker's squares, its own font's ink (its own atlas, its texture) and its gold line from the shared atlas's glyph table, read back from the frame |
 | layers | hud < panel < GraceUI's own drawing (the test panel) < modal < notices, each where two overlap; a panel anchored at the bottom right; a 'W' of GraceUI's atlas drawn on a panel, and the same list built against generation 2 refused |
 | anchors | After `ResizeBuffers` to 800×450, the bottom-right panel follows its anchor, and the top-left one stays |
-| draw list refusals | Through `submit`: an index past its command's vertices, a clip past the panel, nobody's texture, a command's vertices past the list's, 65 commands, a stride of 16, no vertices, 13,108 vertices, a stale panel id; each refused, the panel keeping its last list, one log line for the mod |
+| draw list refusals | Through `submit`: an index past its command's vertices, a clip past the panel, nobody's texture, a command's vertices past the list's, 65 commands, a stride of 16, a stride of 2 GiB (D152), no vertices, 13,108 vertices, a stale panel id; each refused, the panel keeping its last list, one log line for the mod |
 | late textures | A mod connected after warm-up: a texture ok, 8 MiB more full, an unknown format and rows shorter than the width refused, eight in all, the ninth full; after its first submit too late; its eight uploaded in one upload at the next frame (the upload counter) and drawn |
 | request_input | Through ABI 1: a modal granted; another mod refused, naming `harness-mod` and its kind; the holder asking again granted; the wrong kind, a panel that takes no input and another mod's panel refused; hiding the panel ends the holder (released); a hidden panel's request not now (not ready) |
 | player's exit | A panel's holder: the first F5 shows "Harness mod has the controls. Press F5 again to take them back.", the second ends it (the player's exit); Escape held 1 s ends the next; neither reaches the game; a release ends the next (released) |
+| providers on threads | 3,000 claims of danger and clears from one provider's thread, 3,000 clears from another's and requests for input from a third, ending on danger: no holder is left, the combined claims say danger, and a request is not now (danger) (D145) |
+| hidden on a thread | 3,000 shows and hides of a modal on one thread while another asks for input with it, ending hidden: no holder is left (D153) |
 | providers | One provider's danger ends the holder and a request is not now (danger); another's game menu, the first clear: two providers, a request not now (game menu); an unknown flag refused; the second disconnected: its claims gone, a request granted |
 | panel frames | Over 300 frames with seven panels shown while the example publishes a list every 10 ms from its thread, the GPU idle before each: every frame draws panels, no allocation and no free on the present thread (nor over the 300 frames run as a game runs them), and GraceUI's own work within 1 ms at p99 |
 | disconnect | The harness's mod disconnects: its panels leave the frame, its textures are released after their last frame, the example's stay; its id connects again with a new budget and window |
@@ -236,6 +258,11 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | pure pass-through | F5 and A reach DirectInput and the window; a holder's request answers not_now, and nobody holds input |
 | notice-only render path | The render path is still on |
 | anti-cheat parent | (anti-cheat-parent) Started by a process named as the check was told: the notice-only mode by the parent clause; `connect` answers inactive (anti-cheat), and `notice` works |
+| window followed | (decoy-window) A loader's window of our own, larger than the game's and made before it, is filtered first; once the game's swap chain is bound the filter moves to its window (two windows filtered, one log line), F5 posted to the decoy reaches its own procedure and F5 posted to the game's does not, and a request is granted (D146) |
+| atlas fallback | (atlas-full) With the atlas held to 1,024 px (a test build's limit), a mod's faces of 18 and 96 px: the first bake fails, the second leaves the 96 px face out with a log line, the render path stays on, two faces are baked, and the 96 px face's glyph table is refused (D148) |
+| first request's wait | (slow-first) With the first request slowed by 3 s (a test build's delay), a request on another thread answers null after 2 s, with one log line; the first answers its table, and so does the next request (D153) |
+| long name | (long-name) A second copy two folders of 60 characters of three bytes each deep: named in one notice by the end of its name, after "...", from a character's start (D153) |
+| device change | (device-change) The game's swap chain ends and it goes on with a new device on another window: the render path turns off, and the old device's references come back to what they were before GraceUI loaded (D149) |
 
 A frame's cost is the detour's time less the original `Present`'s. Of it, the time inside the runtime's
 `ExecuteCommandLists` and `Signal` on GraceUI's own submission is counted apart: on Mesa's software Vulkan a submission

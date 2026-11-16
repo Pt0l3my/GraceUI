@@ -547,3 +547,32 @@ is folded into EldenNet's design yet.
    loading, a game menu or text entry, the title screen, multiplayer, its own anti-cheat finding), replaced whole at
    each call; danger and loading end any holder at once, and a game menu keeps `request_input` at not now. EldenNet's
    hud panels are its own to hide on danger: GraceUI ends only the view that holds input.
+
+## 16. The host review's fixes (2026-11-16, D145 to D153)
+
+An independent review of GraceUI's in-game host found three Medium and fourteen Low issues, all fixed the same day.
+What EldenNet must know or change; none of it is folded into EldenNet's design yet:
+
+1. **Faces within the atlas's room** (D148): each face counts its estimated area against the shared atlas's room when
+   it is registered: the glyphs its font has in its ranges, each as a box of (2 × size + 2) by (size + 2) pixels. The
+   mods' faces share 8192 × 4096 estimated pixels; the mods other than EldenNet use at most half of it, so EldenNet's
+   faces always have the other half, and all of it when no other mod registers faces. A face past the room answers
+   `full` (and leaves the face's count as it was). EldenNet registers only the ranges each face needs: a CJK face of
+   the whole unified block at 24 px is about 27 million estimated pixels on its own, which fits only while the other
+   mods use little; its language's own kana and common kanji are a fraction of that. Should Dear ImGui still run out of
+   room, the bake is made again without the later faces, and their `glyph_table` answers refused: EldenNet's text then
+   falls back to GraceUI's face 1 or its own atlas texture, as for a face that came too late.
+2. **The bake takes a few frames** (D147, D148): warm-up bakes on GraceUI's own thread, so `glyph_table` answers
+   `not_ready` for some frames after the seal rather than for none; EldenNet already asks until it is ready.
+3. **A command stride of at most 256 bytes** (D152, `GRACEUI_DRAW_COMMAND_SIZE_MAX`): EldenNet's lists use ABI 1.0's
+   40-byte command, well within it.
+4. **World-state claims** (D145): nothing changes in what EldenNet calls; a request made just as a provider claims
+   danger is now answered not now (danger) rather than granted, and the last claim any provider made decides.
+5. **The first request** (D153): a request made while another thread's first request is still running waits 2 s at
+   most, then answers null; EldenNet asks from a thread of its own (D70), never from `DllMain`, and `graceui-sys`'s
+   look every 250 ms asks again.
+6. **The game's window** (D146): GraceUI now filters the bound swap chain's window, whatever window appeared first in
+   the game's process (a mod loader's console is never taken for it); nothing for EldenNet to change.
+7. **When the overlay is off** (D149, D150): a removed or replaced device, or a fault, turns the render path off for
+   the session, and input with it; `connect` and the slots then answer inactive (render dead), and F5 reaches the game.
+   EldenNet shows its own fallback (its launcher's notice, its log) as for any inactive session.
