@@ -1,24 +1,33 @@
 #!/usr/bin/env python3
-"""GraceUI's checks of D110 and invariant 16, until CI runs them (§2.9 asks for a grep and a clang-tidy rule; this is
-the grep). Run it with python3 -I from anywhere:
+"""GraceUI's checks of D110, invariant 16 and the ABI's append-only rule, until CI runs them (§2.9 asks for a grep and a
+clang-tidy rule; this is the grep). Run it with python3 -I from anywhere:
 
     python3 -I tools/check_safety.py                      # the source checks
     python3 -I tools/check_safety.py --exports DLL        # and a release build's export table: the two exports only
     python3 -I tools/check_safety.py --exports DLL --test # a test build's: those two and GraceUI_Test_* only
+    python3 -I tools/check_safety.py --abi-self-test      # shows that check 8 refuses what it must, and nothing else
 
-The source checks, over src/ (our own code; third-party code is fetched into the build tree and not looked at):
-  1. reinterpret_cast, const_cast and std::bit_cast appear only in grace-host's abi, hooks and draw files and the DLL's
-     abi files (D110), each with a "// SAFETY:" comment on its statement or in the three lines before it; a C file's
-     pointer casts only in those files too.
+The source checks, over src/ and examples/ (our own code; third-party code is fetched into the build tree and not
+looked at):
+  1. reinterpret_cast, const_cast and std::bit_cast appear only in grace-host's abi, hooks and draw files, the DLL's
+     abi files (D110) and graceui-sys's headers (a mod's side: GetProcAddress's answer made a function), each with a
+     "// SAFETY:" comment on its statement or in the three lines before it; a C file's pointer casts only in those files
+     too.
   2. Each of those files that holds raw pointers from callers, casts or hook code carries a SAFETY comment.
   3. MinHook is included and called only in grace-host's hooks files, and so is any other way of hooking a window
-     (SetWindowLongPtr, SetWindowsHookEx), and Dear ImGui's backends only in grace-host (invariant 16); only
-     grace-host's CMakeLists.txt links MinHook or Dear ImGui (the module graph).
-  4. Only the DLL's abi files export anything.
+     (SetWindowLongPtr, SetWindowsHookEx), and Dear ImGui's backends only in grace-host (invariant 16): graceui-sys and
+     the example mods, a mod's side, hook nothing; only grace-host's CMakeLists.txt links MinHook or Dear ImGui (the
+     module graph).
+  4. Only the DLL's abi files export anything (the public header declares the two exports).
   5. hooks.cpp's hook table names only functions of D102's published list, and is the only place MinHook makes a hook.
   6. No project that EldenNet's O47 and O48 exclude is named in a build file (D106).
-  7. The pure modules (grace-input) include no Windows header, no Dear ImGui and no MinHook, and link nothing (G15 (a),
-     D124): their unit tests build on Linux, which proves the first, and this check names the line.
+  7. The pure modules (grace-input, grace-abi) include no Windows header, no Dear ImGui and no MinHook, and their
+     libraries link nothing (G15 (a), D124, D131): their unit tests build on Linux, which proves the first, and this
+     check names the line.
+  8. graceui.h only grows against ABI 1.0's first header, src/grace-abi/baseline/graceui-abi1-0.h (D109, D132): every
+     constant keeps its value (GRACEUI_ABI1_MINOR may only rise), every typedef and export its declaration, and every
+     struct, the table GraceUiApi1 among them, keeps its members in their order, adding members only at its end; a slot
+     of the table declared as GraceUiReservedSlot may be given its type, keeping its name and place.
 Exit status 0 when every check passes; each failure is printed with its file and line.
 """
 import pathlib
@@ -28,9 +37,15 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
+EXAMPLES = ROOT / "examples"
 
-# D110: the files where raw pointers from callers, casts and hook code may live.
-ALLOWED = re.compile(r"^src/(grace-host/(abi|hooks|draw)[^/]*|graceui/abi[^/]*)\.(cpp|c|h)$")
+ABI_HEADER = "src/grace-abi/include/graceui.h"
+ABI_BASELINE = "src/grace-abi/baseline/graceui-abi1-0.h"
+
+# D110: the files where raw pointers from callers, casts and hook code may live; and graceui-sys's headers, the mod's
+# side of the boundary, whose one cast turns GetProcAddress's answer into the export's type.
+ALLOWED = re.compile(
+    r"^src/(grace-host/(abi|hooks|draw)[^/]*|graceui/abi[^/]*)\.(cpp|c|h)$|^src/graceui-sys/include/[^/]+\.(h|hpp)$")
 HOOK_FILES = re.compile(r"^src/grace-host/hooks[^/]*\.(cpp|c|h)$")
 GRACE_HOST_FILES = re.compile(r"^src/grace-host/")
 DLL_ABI_FILES = re.compile(r"^src/graceui/abi[^/]*\.cpp$")
@@ -53,11 +68,11 @@ PUBLISHED_HOOKS = {
 
 EXCLUDED_PROJECTS = re.compile(r"\bme3\b|fromsoftware-rs|fromsoftware_rs", re.IGNORECASE)
 
-# The pure modules: no Win32, no Dear ImGui, no MinHook (D124).
-PURE_MODULES = ("src/grace-input/",)
+# The pure modules and their libraries: no Win32, no Dear ImGui, no MinHook (D124, D131).
+PURE_MODULES = {"src/grace-input/": ("grace_input",), "src/grace-abi/": ("grace_abi", "grace_abi_rules")}
 IMPURE_INCLUDE = re.compile(
-    r'#\s*include\s*[<"](windows|winuser|windef|winbase|imm|dinput|xinput|d3d1\d|dxgi[0-9_]*|imgui[a-z_]*|MinHook)'
-    r'\.h[">]', re.IGNORECASE)
+    r'#\s*include\s*[<"](windows|winuser|windef|winbase|imm|dinput|xinput|d3d1\d|dxgi[0-9_]*|psapi|tlhelp32|'
+    r'imgui[a-z_]*|MinHook)\.h[">]', re.IGNORECASE)
 
 failures = []
 
@@ -67,9 +82,12 @@ def fail(path, line, message):
 
 
 def own_sources():
-    for path in sorted(SRC.rglob("*")):
-        if path.suffix in (".cpp", ".c", ".h") and path.is_file():
-            yield path, path.relative_to(ROOT).as_posix()
+    for folder in (SRC, EXAMPLES):
+        for path in sorted(folder.rglob("*")):
+            rel = path.relative_to(ROOT).as_posix()
+            if path.suffix in (".cpp", ".c", ".h", ".hpp") and path.is_file() and not rel.startswith(
+                    "src/grace-abi/baseline/"):
+                yield path, rel
 
 
 def comment_free(line, in_c_comment):
@@ -159,15 +177,17 @@ def check_module_graph():
                 if rel != "src/grace-host/CMakeLists.txt" and re.search(r"target_link_libraries", code):
                     fail(rel, number, "a module other than grace-host links MinHook or Dear ImGui (invariant 16)")
     for path in [ROOT / "CMakeLists.txt", *sorted((ROOT / "cmake").glob("*.cmake")),
-                 *sorted(SRC.rglob("CMakeLists.txt")), *sorted((ROOT / "tools").rglob("CMakeLists.txt"))]:
+                 *sorted(SRC.rglob("CMakeLists.txt")), *sorted((ROOT / "tools").rglob("CMakeLists.txt")),
+                 *sorted(EXAMPLES.rglob("CMakeLists.txt"))]:
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if EXCLUDED_PROJECTS.search(line):
                 fail(path.relative_to(ROOT).as_posix(), number, "names a project EldenNet's O47 or O48 excludes")
 
 
 def check_pure_modules():
-    for module in PURE_MODULES:
+    for module, libraries in PURE_MODULES.items():
         folder = ROOT / module
+        linking = re.compile(r"target_link_libraries\s*\(\s*(" + "|".join(libraries) + r")\b")
         for path in sorted(folder.rglob("*")):
             rel = path.relative_to(ROOT).as_posix()
             if path.suffix in (".cpp", ".c", ".h"):
@@ -177,8 +197,169 @@ def check_pure_modules():
             elif path.name == "CMakeLists.txt":
                 for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                     code = line.split("#", 1)[0]
-                    if re.search(r"target_link_libraries\s*\(\s*grace_input\b", code):
-                        fail(rel, number, "a pure module links a library (D124)")
+                    if linking.search(code):
+                        fail(rel, number, "a pure module's library links a library (D124)")
+
+
+# ---- Check 8: graceui.h only grows against ABI 1.0's first header (D109, D132).
+
+RESERVED_SLOT = "GraceUiReservedSlot"
+GROWING_DEFINES = {"GRACEUI_ABI1_MINOR"}  # may rise with each minor, never fall
+
+
+def _without_comments(text):
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    return re.sub(r"//[^\n]*", " ", text)
+
+
+def _tokens(text):
+    return " ".join(re.findall(r"[A-Za-z_]\w*|\d\w*|\"[^\"]*\"|\S", text))
+
+
+def _declared_name(member):
+    pointer = re.search(r"\(\s*\*\s*([A-Za-z_]\w*)\s*\)", member)
+    if pointer:
+        return pointer.group(1)
+    names = re.findall(r"[A-Za-z_]\w*", re.sub(r"\[[^\]]*\]", "", member))
+    return names[-1] if names else ""
+
+
+def _members(body):
+    """A struct's members, one per declarator: "float x0, y0" is two members, "float x0" and "float y0"."""
+    out = []
+    for declaration in body.split(";"):
+        declaration = " ".join(declaration.split())
+        if not declaration:
+            continue
+        if "(" in declaration or "," not in declaration:
+            out.append(_tokens(declaration))
+            continue
+        first, *rest = [part.strip() for part in declaration.split(",")]
+        name = _declared_name(first)
+        base = first[: first.rfind(name)]
+        out.append(_tokens(first))
+        out.extend(_tokens(base + part) for part in rest)
+    return out
+
+
+def abi_parts(text):
+    """The parts of a public header the append-only rule compares: #defines, structs, other typedefs and exports."""
+    code = _without_comments(text)
+    defines = {}
+    for match in re.finditer(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)(\([^)]*\))?((?:[^\n]*\\\n)*[^\n]*)$", code, re.M):
+        name, parameters, body = match.group(1), match.group(2) or "", match.group(3).replace("\\\n", " ")
+        if name != "GRACEUI_H":  # the include guard
+            defines[name] = _tokens(parameters + " " + body)
+    structs = {}
+    for match in re.finditer(r"typedef\s+struct\s+(\w+)\s*\{(.*?)\}\s*(\w+)\s*;", code, re.S):
+        structs[match.group(3)] = _members(match.group(2))
+    without_structs = re.sub(r"typedef\s+struct\s+\w+\s*\{.*?\}\s*\w+\s*;", " ", code, flags=re.S)
+    without_structs = re.sub(r"^[ \t]*#(?:[^\n]*\\\n)*[^\n]*$", " ", without_structs, flags=re.M)  # no directive
+    typedefs = {}
+    for match in re.finditer(r"typedef\s+([^;{}]*?);", without_structs, re.S):
+        declaration = _tokens(match.group(1))
+        typedefs[_declared_name(match.group(1))] = declaration
+    exports = {}
+    for match in re.finditer(r"\bGRACEUI_API\s+([^;{}#]*?\([^;{}]*?\))\s*;", without_structs, re.S):
+        declaration = _tokens(match.group(1))
+        exports[re.search(r"([A-Za-z_]\w*)\s*\(", match.group(1)).group(1)] = declaration
+    return {"defines": defines, "structs": structs, "typedefs": typedefs, "exports": exports}
+
+
+def abi_breaks(baseline_text, current_text):
+    """What `current_text` changes of `baseline_text` that the append-only rule forbids: a list of reasons."""
+    old, new = abi_parts(baseline_text), abi_parts(current_text)
+    breaks = []
+    for name, body in old["defines"].items():
+        if name not in new["defines"]:
+            breaks.append(f"#define {name} is gone")
+        elif name in GROWING_DEFINES:
+            try:
+                if int(new["defines"][name].rstrip("uU"), 0) < int(body.rstrip("uU"), 0):
+                    breaks.append(f"{name} fell from {body} to {new['defines'][name]}")
+            except ValueError:
+                breaks.append(f"{name} is not a number")
+        elif new["defines"][name] != body:
+            breaks.append(f"#define {name} changed from '{body}' to '{new['defines'][name]}'")
+    for kind in ("typedefs", "exports"):
+        for name, declaration in old[kind].items():
+            if new[kind].get(name) != declaration:
+                breaks.append(f"{kind[:-1]} {name} changed or is gone: '{declaration}'")
+    for name, members in old["structs"].items():
+        current = new["structs"].get(name)
+        if current is None:
+            breaks.append(f"struct {name} is gone")
+            continue
+        if len(current) < len(members):
+            breaks.append(f"struct {name} shrinks: {len(members)} members, now {len(current)}")
+        for index, (was, now) in enumerate(zip(members, current)):
+            if was == now:
+                continue
+            if name == "GraceUiApi1" and was.split(" ", 1)[0] == RESERVED_SLOT and \
+                    _declared_name(was) == _declared_name(now):
+                continue  # a reserved slot given its type, in its place
+            breaks.append(f"struct {name}'s member {index} changed from '{was}' to '{now}' (a reordered, removed, "
+                          f"inserted or retyped member)")
+            break
+    return breaks
+
+
+def check_abi():
+    header, baseline = ROOT / ABI_HEADER, ROOT / ABI_BASELINE
+    if not baseline.is_file():
+        fail(ABI_BASELINE, 0, "ABI 1.0's first header is missing (D132)")
+        return
+    for reason in abi_breaks(baseline.read_text(encoding="utf-8"), header.read_text(encoding="utf-8")):
+        fail(ABI_HEADER, 0, f"breaks ABI 1's append-only rule against {ABI_BASELINE}: {reason}")
+
+
+def abi_self_test():
+    """Check 8 refuses each kind of break and lets each kind of growth through, on edits of today's header."""
+    text = (ROOT / ABI_HEADER).read_text(encoding="utf-8")
+    log_slot = re.search(r"\n  GraceUiStatus \(\*log\)\([^;]*;", text).group(0)
+    publish = "\n  GraceUiReservedSlot publish;"
+    poll = "\n  GraceUiReservedSlot poll;"
+    minor_one = text.replace("#define GRACEUI_ABI1_MINOR 0u", "#define GRACEUI_ABI1_MINOR 1u")
+    # (what, allowed, the baseline, the header compared with it)
+    cases = [
+        ("the table shrinks", False, text, text.replace(log_slot, "")),
+        ("two slots swap", False, text, text.replace(publish + poll, poll + publish)),
+        ("a slot retyped", False, text,
+         text.replace("GraceUiStatus (*notice)(GraceUiConsumer consumer, const GraceUiNotice*",
+                      "GraceUiStatus (*notice)(GraceUiConsumer consumer, const void*")),
+        ("a status renumbered", False, text, text.replace("#define GRACEUI_OK 0u", "#define GRACEUI_OK 9u")),
+        ("a constant gone", False, text, text.replace("#define GRACEUI_TONE_DANGER 2u", "")),
+        ("a struct gone", False, text,
+         re.sub(r"typedef struct GraceUiWorldState \{.*?\} GraceUiWorldState;", "", text, flags=re.S)),
+        ("a member inserted", False, text,
+         text.replace("  uint32_t reason;           /*", "  uint32_t inserted;\n  uint32_t reason;           /*")),
+        ("one of several declarators gone", False, text, text.replace("float x0, y0, x1, y1;", "float x0, y0, x1;")),
+        ("an export changed", False, text,
+         text.replace("GraceUI_RequestApi(uint32_t major);", "GraceUI_RequestApi(uint64_t major);")),
+        ("a typedef changed", False, text,
+         text.replace("typedef uint64_t GraceUiConsumer;", "typedef uint32_t GraceUiConsumer;")),
+        ("the minor falls", False, minor_one, text),
+        ("a slot appended", True, text, text.replace(log_slot, log_slot + "\n  GraceUiStatus (*later)(GraceUiConsumer c);")),
+        ("a member appended", True, text, text.replace("  uint64_t text_length;\n} GraceUiNotice;",
+                                                       "  uint64_t text_length;\n  uint32_t later;\n} GraceUiNotice;")),
+        ("a reserved slot typed", True, text, text.replace(poll, "\n  GraceUiStatus (*poll)(GraceUiConsumer c, void* e);")),
+        ("the minor rises", True, text, minor_one),
+        ("a constant added", True, text, text.replace("#define GRACEUI_TONE_DANGER 2u",
+                                                      "#define GRACEUI_TONE_DANGER 2u\n#define GRACEUI_TONE_LATER 3u")),
+        ("comments and spacing only", True, text, text.replace("uint32_t size;", "uint32_t   size ;  /* changed */")),
+    ]
+    wrong = 0
+    for name, allowed, baseline, edited in cases:
+        if edited == baseline:
+            print(f"self-test: '{name}' did not edit the header (has its text moved?)")
+            wrong += 1
+            continue
+        breaks = abi_breaks(baseline, edited)
+        if bool(breaks) == allowed:
+            print(f"self-test: '{name}' was {'refused' if breaks else 'let through'}: {breaks}")
+            wrong += 1
+    print("check_safety --abi-self-test: " + ("ok" if not wrong else f"{wrong} wrong"))
+    return 0 if not wrong else 1
 
 
 def check_hook_table():
@@ -245,10 +426,13 @@ def check_exports(dll, test_build):
 
 
 def main(argv):
+    if "--abi-self-test" in argv:
+        return abi_self_test()
     check_sources()
     check_module_graph()
     check_pure_modules()
     check_hook_table()
+    check_abi()
     if "--exports" in argv:
         check_exports(argv[argv.index("--exports") + 1], "--test" in argv)
     for failure in failures:
