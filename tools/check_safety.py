@@ -16,8 +16,9 @@ looked at):
   2. Each of those files that holds raw pointers from callers, casts or hook code carries a SAFETY comment.
   3. MinHook is included and called only in grace-host's hooks files, and so is any other way of hooking a window
      (SetWindowLongPtr, SetWindowsHookEx), and Dear ImGui's backends only in grace-host (invariant 16): graceui-sys and
-     the example mods, a mod's side, hook nothing; only grace-host's CMakeLists.txt links MinHook or Dear ImGui (the
-     module graph).
+     the example mods, a mod's side, hook nothing; only grace-host's CMakeLists.txt links MinHook or Dear ImGui with
+     its backends (the module graph). Dear ImGui's core alone (gu_imgui_core: no backend, D76) is linked only by the
+     example mods, and its target compiles no backend.
   4. Only the DLL's abi files export anything (the public header declares the two exports).
   5. hooks.cpp's hook table names only functions of D102's published list, and is the only place MinHook makes a hook.
   6. No project that EldenNet's O47 and O48 exclude is named in a build file (D106).
@@ -182,6 +183,25 @@ def check_module_graph():
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if EXCLUDED_PROJECTS.search(line):
                 fail(path.relative_to(ROOT).as_posix(), number, "names a project EldenNet's O47 or O48 excludes")
+
+
+def check_imgui_core():
+    """Dear ImGui's core alone is a mod's (D76): only the example mods link it, and it compiles no backend."""
+    for path in sorted(ROOT.rglob("CMakeLists.txt")):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel.startswith("build"):
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            code = line.split("#", 1)[0]
+            if re.search(r"\bgu_imgui_core\b", code) and "target_link_libraries" in code and \
+                    not rel.startswith("examples/"):
+                fail(rel, number, "Dear ImGui's core linked outside the example mods (D76)")
+    third_party = (ROOT / "cmake" / "third_party.cmake").read_text(encoding="utf-8")
+    block = re.search(r"add_library\(gu_imgui_core\b(.*?)\)", third_party, re.S)
+    if block is None:
+        fail("cmake/third_party.cmake", 0, "gu_imgui_core, Dear ImGui's core alone, is missing")
+    elif "backends" in block.group(1):
+        fail("cmake/third_party.cmake", 0, "gu_imgui_core compiles a Dear ImGui backend (invariant 16)")
 
 
 def check_pure_modules():
@@ -430,6 +450,7 @@ def main(argv):
         return abi_self_test()
     check_sources()
     check_module_graph()
+    check_imgui_core()
     check_pure_modules()
     check_hook_table()
     check_abi()

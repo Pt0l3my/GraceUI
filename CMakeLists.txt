@@ -39,6 +39,7 @@ endif()
 
 if(WIN32)
   include(cmake/third_party.cmake)
+  include(cmake/fonts.cmake)
 endif()
 if(GRACEUI_UNIT_TESTS)
   include(cmake/doctest.cmake)

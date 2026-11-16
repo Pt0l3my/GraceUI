@@ -83,3 +83,17 @@ add_library(gu_minhook STATIC
   ${GU_MINHOOK_DIR}/src/hde/hde64.c)
 target_include_directories(gu_minhook SYSTEM PUBLIC ${GU_MINHOOK_DIR}/include)
 target_compile_options(gu_minhook PRIVATE ${_gu_third_party_flags})
+
+# Dear ImGui's core alone, at the same version, with no backend and none of GraceUI's configuration: what a mod may
+# compile to build its panels' draw lists headless (D76, D107). Only the example mods link it (tools/check_safety.py);
+# graceui.dll never does.
+add_library(gu_imgui_core STATIC
+  ${GU_IMGUI_DIR}/imgui.cpp
+  ${GU_IMGUI_DIR}/imgui_draw.cpp
+  ${GU_IMGUI_DIR}/imgui_tables.cpp
+  ${GU_IMGUI_DIR}/imgui_widgets.cpp)
+target_include_directories(gu_imgui_core SYSTEM PUBLIC ${GU_IMGUI_DIR})
+target_compile_definitions(gu_imgui_core PUBLIC
+  IMGUI_DISABLE_OBSOLETE_FUNCTIONS IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS IMGUI_DISABLE_FILE_FUNCTIONS
+  IMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS IMGUI_DISABLE_WIN32_FUNCTIONS)
+target_compile_options(gu_imgui_core PRIVATE ${_gu_third_party_flags})

@@ -6,7 +6,8 @@ add_executable(grace_harness main.cpp)
 set_target_properties(grace_harness PROPERTIES OUTPUT_NAME grace-harness)
 target_link_libraries(grace_harness PRIVATE grace_abi graceui_sys d3d12 dxgi user32 dinput8 dxguid imm32)
 target_compile_definitions(grace_harness PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
-add_dependencies(grace_harness graceui hello_notice grace_harness_shield)
+target_include_directories(grace_harness PRIVATE ${CMAKE_SOURCE_DIR}/examples/hello-panel)  # what the example draws
+add_dependencies(grace_harness graceui hello_notice hello_panel grace_harness_shield)
 gu_own_code(grace_harness)
 if(MINGW)
   target_link_options(grace_harness PRIVATE -municode)  # its entry point is wmain

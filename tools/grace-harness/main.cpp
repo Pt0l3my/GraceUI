@@ -11,7 +11,9 @@
 // starts, and "input-ansi" one whose game window is an ANSI window; "abi" (ABI 1's table, connect and notices, and the
 // example mod finding GraceUI by name), "copies" (two copies asked at once), "found-by-scan" and "found-by-path" (the
 // example finding a renamed copy, and GraceUI's own folder), "anti-cheat" and "anti-cheat-parent" (a simulated hit by
-// each clause) each need a process whose first GraceUI_RequestApi is theirs.
+// each clause) each need a process whose first GraceUI_RequestApi is theirs; "panels" (S10.4.c: panels and draw lists,
+// textures, faces and glyph tables, input through ABI 1 and providers, with the second example mod) one whose
+// warm-up comes after its mods have registered their faces.
 #define DIRECTINPUT_VERSION 0x0800
 #include <windows.h>
 
@@ -37,6 +39,7 @@
 
 #include "graceui_sys.hpp"
 #include "graceui_test.h"
+#include "hello_panel.h"
 
 namespace {
 
@@ -1969,11 +1972,14 @@ const char* status_name(GraceUiStatus status) {
     case GRACEUI_NOT_YET: return "not_yet";
     case GRACEUI_FULL: return "full";
     case GRACEUI_FAULT: return "fault";
+    case GRACEUI_NOT_READY: return "not_ready";
+    case GRACEUI_TOO_LATE: return "too_late";
     default: return "UNKNOWN";
   }
 }
 
-// What every slot that GraceUI 0.1 declares but does not provide answers for `consumer`, in the table's order.
+// What the sixteen slots after connect, disconnect and notice answer for `consumer`, in the table's order, each called
+// with empty arguments: for a handle that names nobody, not connected; for a mod while GraceUI is inactive, inactive.
 std::vector<GraceUiStatus> unbuilt_answers(const GraceUiApi1* table, GraceUiConsumer consumer) {
   std::uint64_t id64 = 0;
   std::uint32_t id32 = 0;
@@ -2010,6 +2016,16 @@ std::vector<GraceUiStatus> unbuilt_answers(const GraceUiApi1* table, GraceUiCons
           table->release_input(consumer),
           table->register_hotkey(consumer, &hotkey, &id32),
           table->set_world_state(consumer, &world),
+          table->log(consumer, GRACEUI_LOG_INFO, "invented", 8)};
+}
+
+// The six slots GraceUI 0.1 still only declares (the bridge protocol's four, register_hotkey and log): not yet.
+std::vector<GraceUiStatus> declared_answers(const GraceUiApi1* table, GraceUiConsumer consumer) {
+  std::uint32_t id32 = 0;
+  GraceUiHotkeyDesc hotkey{};
+  hotkey.size = sizeof hotkey;
+  return {table->register_pages(consumer, nullptr), table->publish(consumer, nullptr), table->poll(consumer, nullptr),
+          table->answer(consumer, nullptr), table->register_hotkey(consumer, &hotkey, &id32),
           table->log(consumer, GRACEUI_LOG_INFO, "invented", 8)};
 }
 
@@ -2123,7 +2139,10 @@ void run_abi(const std::wstring& dll) {
   const bool only_major_1 = grace.request_api(0) == nullptr && grace.request_api(2) == nullptr &&
                             grace.request_api(0xFFFFFFFFu) == nullptr && grace.table() == table;
   const graceui::Api api(table);
-  const bool caps_ok = api.has_cap(GRACEUI_CAP_NOTICES) && !api.has_cap("panels") && !api.has_cap("") &&
+  const bool caps_ok = api.has_cap(GRACEUI_CAP_NOTICES) && api.has_cap(GRACEUI_CAP_PANELS) &&
+                       api.has_cap(GRACEUI_CAP_TEXTURES) && api.has_cap(GRACEUI_CAP_FACES) &&
+                       api.has_cap(GRACEUI_CAP_INPUT) && api.has_cap(GRACEUI_CAP_WORLD_STATE) &&
+                       !api.has_cap("hotkeys") && !api.has_cap("Panels") && !api.has_cap("") &&
                        !api.has_cap("Notices") && table->has_cap(nullptr, 0) == 0 && table->has_cap(nullptr, 7) == 0;
   bool slots_present = true;
   for (std::size_t offset = offsetof(GraceUiApi1, has_cap); offset < sizeof(GraceUiApi1); offset += sizeof(void*)) {
@@ -2136,7 +2155,8 @@ void run_abi(const std::wstring& dll) {
             GRACEUI_API1_COVERS(table, log),
         "table",
         "%u bytes (this header's %zu), ABI 1.%u, GraceUI %u.%u.%u; every one of the 20 slots %s; majors 0, 2 and "
-        "0xFFFFFFFF %s; has_cap: notices yes, panels, \"\", \"Notices\" and a null name %s",
+        "0xFFFFFFFF %s; has_cap: notices, panels, textures, faces, input and world-state yes, hotkeys, \"Panels\", "
+        "\"\", \"Notices\" and a null name %s",
         table->size, sizeof(GraceUiApi1), table->abi_minor, GRACEUI_VERSION_MAJOR(table->graceui_version),
         GRACEUI_VERSION_MINOR(table->graceui_version), GRACEUI_VERSION_PATCH(table->graceui_version),
         slots_present ? "set" : "NOT SET", only_major_1 ? "answered null" : "ANSWERED A TABLE",
@@ -2312,11 +2332,13 @@ void run_abi(const std::wstring& dll) {
         status_name(still_stale));
   table->disconnect(back.answer.consumer);
 
-  // 7. The slots the next increments build: "not yet" to a connected mod, "not connected" to anyone else.
+  // 7. The slots later increments build: "not yet" to a connected mod; every slot after notice "not connected" to a
+  // handle that names nobody.
   const Connected waiting = connect(table, request_for("abi-waiting"));
-  const std::vector<GraceUiStatus> unbuilt = unbuilt_answers(table, waiting.answer.consumer);
+  const std::vector<GraceUiStatus> unbuilt = declared_answers(table, waiting.answer.consumer);
   const std::vector<GraceUiStatus> nobody = unbuilt_answers(table, 0);
-  check(all_answer(unbuilt, GRACEUI_NOT_YET) && all_answer(nobody, GRACEUI_NOT_CONNECTED) && unbuilt.size() == 16,
+  check(all_answer(unbuilt, GRACEUI_NOT_YET) && all_answer(nobody, GRACEUI_NOT_CONNECTED) && unbuilt.size() == 6 &&
+            nobody.size() == 16,
         "not yet", "a connected mod: %s; a handle of 0: %s", answers_text(unbuilt).c_str(),
         answers_text(nobody).c_str());
 
@@ -2381,8 +2403,15 @@ void run_abi(const std::wstring& dll) {
     frame = game.frame_and_read(kAbiColour, PresentWith::present);
   }
   const std::vector<NoticeBox> wordy_boxes = notice_boxes(frame);
-  step("a long text: three lines at most", wordy_boxes.size() == 1 && wordy_boxes[0].bottom - wordy_boxes[0].top <= 56 &&
-                                               wordy_boxes[0].bottom - wordy_boxes[0].top >= 40);
+  // Three lines of the notices' face (Grace's 22 px lines, or Dear ImGui's own font's where GraceUI's fonts folder
+  // lacks Noto Sans), its padding above and below; the accent's rounded corners take a row or two off what is measured.
+  const int line = grace.state().notice_face_grace != 0 ? GRACEUI_TEST_NOTICE_LINE : GRACEUI_TEST_NOTICE_LINE_FALLBACK;
+  const int three_lines = 2 * GRACEUI_TEST_NOTICE_PAD_Y + 3 * line;
+  const int wordy_height = wordy_boxes.empty() ? 0 : static_cast<int>(wordy_boxes[0].bottom - wordy_boxes[0].top);
+  char wordy_step[120];
+  std::snprintf(wordy_step, sizeof wordy_step, "a long text: three lines at most (%zu box, %d rows high of %d)",
+                wordy_boxes.size(), wordy_height, three_lines);
+  step(wordy_step, wordy_boxes.size() == 1 && wordy_height <= three_lines && wordy_height >= three_lines - 5);
   table->disconnect(wordy.answer.consumer);
   check(notices_ok, "notices", "%s", steps.c_str());
 
@@ -2417,6 +2446,717 @@ void run_abi(const std::wstring& dll) {
         static_cast<unsigned long long>(after.allocations), static_cast<unsigned long long>(after.frees),
         costs.own.median_us, costs.own.p99_us);
   table->disconnect(busy.answer.consumer);
+  grace.print_log();
+}
+
+// ---- S10.4.c: panels and their checked draw lists, textures at load, faces and glyph tables, input through ABI 1 and
+// the world-state providers (D76 to D80), with the second example mod, hello-panel, and two mods of the harness's own.
+
+constexpr Colour kPanelsColour{36, 36, 44};
+constexpr Colour kHelloGround{HELLO_PANEL_GROUND_R, HELLO_PANEL_GROUND_G, HELLO_PANEL_GROUND_B};
+constexpr Colour kCheckerA{HELLO_CHECKER_A_R, HELLO_CHECKER_A_G, HELLO_CHECKER_A_B};
+constexpr Colour kCheckerB{HELLO_CHECKER_B_R, HELLO_CHECKER_B_G, HELLO_CHECKER_B_B};
+constexpr Colour kHelloGold{HELLO_GLYPHS_R, HELLO_GLYPHS_G, HELLO_GLYPHS_B};
+constexpr Colour kHud{200, 90, 30};        // the harness mod's hud panel at the top left, under the test panel
+constexpr Colour kModal{90, 200, 120};     // its modal over the test panel, which takes input
+constexpr Colour kTopModal{120, 60, 200};  // its modal under the notices
+constexpr Colour kLowHud{170, 40, 90};     // its hud panel under the example's panel
+constexpr Colour kCorner{30, 200, 220};    // its hud panel anchored at the bottom right
+constexpr Colour kGlyphPanel{60, 60, 150}; // its panel-layer panel with a glyph of GraceUI's atlas on it
+constexpr Colour kLate{240, 120, 200};     // the late mod's texture, uploaded after warm-up
+
+std::wstring hello_panel_path() { return folder_of_this_program() + L"hello-panel.dll"; }
+
+// The colour at (x, y) is `want`, within a tolerance; `why` says what was there if not.
+bool pixel_is(const Frame& frame, UINT x, UINT y, Colour want, const char* what, std::string& why, int tolerance = 3) {
+  if (x >= frame.width || y >= frame.height) {
+    why += std::string(why.empty() ? "" : "; ") + what + ": outside the frame";
+    return false;
+  }
+  const std::uint32_t pixel = frame.at(x, y);
+  const bool ok = close_to(pixel, want, tolerance);
+  char text[160];
+  std::snprintf(text, sizeof text, "%s%s (%u,%u) %s%s", why.empty() ? "" : "; ", what, x, y, describe(pixel).c_str(),
+                ok ? "" : " WRONG");
+  why += text;
+  return ok;
+}
+
+// Pixels within a rectangle that are near `want`.
+int count_near(const Frame& frame, UINT x0, UINT y0, UINT x1, UINT y1, Colour want, int tolerance) {
+  int count = 0;
+  for (UINT y = y0; y < y1 && y < frame.height; ++y) {
+    for (UINT x = x0; x < x1 && x < frame.width; ++x) {
+      count += close_to(frame.at(x, y), want, tolerance) ? 1 : 0;
+    }
+  }
+  return count;
+}
+
+// A mod of the harness's own: one solid quad a panel, drawn with its white texture's middle.
+struct HarnessMod {
+  const GraceUiApi1* table = nullptr;
+  GraceUiConsumer me = 0;
+  std::uint64_t white = 0;
+
+  GraceUiStatus panel(std::uint32_t layer, std::uint32_t anchor, float x, float y, float width, float height,
+                      std::uint32_t flags, std::uint64_t& id) const {
+    GraceUiPanelDesc desc{};
+    desc.size = sizeof desc;
+    desc.layer = layer;
+    desc.anchor = anchor;
+    desc.flags = flags;
+    desc.x = x;
+    desc.y = y;
+    desc.width = width;
+    desc.height = height;
+    return table->create_panel(me, &desc, &id);
+  }
+
+  GraceUiStatus quad(std::uint64_t panel, float width, float height, Colour colour, std::uint64_t texture = 0) const {
+    const std::uint32_t c = packed(colour);
+    const GraceUiDrawVert vertices[4] = {{0.0f, 0.0f, 0.5f, 0.5f, c},
+                                         {width, 0.0f, 0.5f, 0.5f, c},
+                                         {width, height, 0.5f, 0.5f, c},
+                                         {0.0f, height, 0.5f, 0.5f, c}};
+    const std::uint16_t indices[6] = {0, 1, 2, 0, 2, 3};
+    GraceUiDrawCommand command{};
+    command.clip_x1 = width;
+    command.clip_y1 = height;
+    command.texture = texture != 0 ? texture : white;
+    command.vertex_count = 4;
+    command.index_count = 6;
+    GraceUiDrawList list{};
+    list.size = sizeof list;
+    list.vertex_count = 4;
+    list.index_count = 6;
+    list.command_count = 1;
+    list.command_size = sizeof command;
+    list.vertices = vertices;
+    list.indices = indices;
+    list.commands = &command;
+    return table->submit(me, panel, &list);
+  }
+
+  GraceUiStatus texture(std::uint32_t width, std::uint32_t height, const void* pixels, std::uint64_t& id,
+                        std::uint32_t format = GRACEUI_TEXTURE_RGBA8, std::uint32_t row_bytes = 0) const {
+    GraceUiTextureDesc desc{};
+    desc.size = sizeof desc;
+    desc.format = format;
+    desc.width = width;
+    desc.height = height;
+    desc.row_bytes = row_bytes != 0 ? row_bytes : width * 4;
+    desc.pixels = pixels;
+    return table->register_texture(me, &desc, &id);
+  }
+
+  GraceUiStatus face(const std::vector<unsigned char>& data, std::uint32_t pixels, std::uint32_t& id) const {
+    GraceUiFaceDesc desc{};
+    desc.size = sizeof desc;
+    desc.pixel_height = pixels;
+    desc.data = data.data();
+    desc.data_length = data.size();
+    return table->register_face(me, &desc, &id);
+  }
+
+  GraceUiInputAnswer request(std::uint64_t panel, std::uint32_t kind, GraceUiStatus& status,
+                             std::uint32_t wants = GRACEUI_WANT_KEYBOARD | GRACEUI_WANT_MOUSE) const {
+    GraceUiInputRequest request{};
+    request.size = sizeof request;
+    request.kind = kind;
+    request.wants = wants;
+    request.panel = panel;
+    GraceUiInputAnswer answer{};
+    answer.size = sizeof answer;
+    status = table->request_input(me, &request, &answer);
+    return answer;
+  }
+
+  GraceUiStatus world(std::uint32_t flags) const {
+    GraceUiWorldState state{};
+    state.size = sizeof state;
+    state.flags = flags;
+    return table->set_world_state(me, &state);
+  }
+};
+
+std::vector<unsigned char> read_file(const std::wstring& path) {
+  std::vector<unsigned char> data;
+  const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                  FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return data;
+  }
+  LARGE_INTEGER size{};
+  DWORD read = 0;
+  if (GetFileSizeEx(file, &size) && size.QuadPart > 0 && size.QuadPart < (64 << 20)) {
+    data.resize(static_cast<std::size_t>(size.QuadPart));
+    if (!ReadFile(file, data.data(), static_cast<DWORD>(data.size()), &read, nullptr) || read != data.size()) {
+      data.clear();
+    }
+  }
+  CloseHandle(file);
+  return data;
+}
+
+const char* answer_name(std::uint32_t answer) {
+  switch (answer) {
+    case GRACEUI_INPUT_GRANTED: return "granted";
+    case GRACEUI_INPUT_REFUSED: return "refused";
+    case GRACEUI_INPUT_NOT_NOW: return "not now";
+    default: return "UNKNOWN";
+  }
+}
+
+int count_log_lines(const GraceUi& grace, const char* text) {
+  char line[200];
+  int count = 0;
+  for (std::uint32_t i = 0; grace.log_line(i, line, sizeof line) > 0; ++i) {
+    count += std::strstr(line, text) != nullptr ? 1 : 0;
+  }
+  return count;
+}
+
+void run_panels(const std::wstring& dll) {
+  Game game(false);
+  std::string why;
+
+  // 1. Before warm-up. hello-panel, loaded before GraceUI, finds it, connects and registers its face, its own Dear
+  // ImGui's atlas and its checker as textures, and its panel; the harness's mod does the same with two faces, a white
+  // texture and its panels. Nothing is presented until both are done, so warm-up comes after them (D80).
+  if (LoadLibraryW(hello_panel_path().c_str()) == nullptr) {
+    fatal("hello-panel.dll did not load");
+  }
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  bool example_ready = false;
+  for (int waited = 0; waited < 10000 && !example_ready; waited += 20) {
+    const GraceUiTestState state = grace.state();
+    example_ready = state.consumers >= 1 && state.faces >= 1 && state.textures >= 2 && state.panels_shown >= 1;
+    Sleep(20);
+  }
+  const Connected connected =
+      connect(table, request_for("harness-mod", GRACEUI_VERSION_PACK(0, 1, 0), "Harness mod",
+                                 "panels textures faces input world-state"));
+  HarnessMod mod{table, connected.answer.consumer, 0};
+  const std::uint32_t white_pixels[16] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                          0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                          0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
+  const GraceUiStatus white_status = mod.texture(4, 4, white_pixels, mod.white);
+
+  const std::vector<unsigned char> noto = read_file(folder_of_this_program() + L"fonts\\NotoSans-Regular.ttf");
+  std::vector<unsigned char> not_a_font(noto.begin(), noto.begin() + std::min<std::size_t>(noto.size(), 4096));
+  for (std::size_t i = 0; i < not_a_font.size(); i += 7) {
+    not_a_font[i] ^= 0x5Au;
+  }
+  std::uint32_t bad_face = 0;
+  const GraceUiStatus bad_font_status = mod.face(not_a_font, 18, bad_face);  // refused, and out of its budget again
+  const GraceUiStatus small_face_status = mod.face(noto, 2, bad_face);
+  std::uint32_t face_a = 0;
+  std::uint32_t face_b = 0;
+  std::uint32_t face_c = 0;
+  const GraceUiStatus face_a_status = mod.face(noto, 18, face_a);
+  const GraceUiStatus face_b_status = mod.face(noto, 24, face_b);
+  const GraceUiStatus face_c_status = mod.face(noto, 30, face_c);  // a third: over a mod's two (EST)
+  GraceUiGlyphTable early{};
+  early.size = sizeof early;
+  const GraceUiStatus early_glyphs = table->glyph_table(mod.me, 1, &early);
+  check(example_ready && connected.status == GRACEUI_OK && white_status == GRACEUI_OK && face_a_status == GRACEUI_OK &&
+            face_b_status == GRACEUI_OK && face_c_status == GRACEUI_FULL && bad_font_status == GRACEUI_REFUSED &&
+            small_face_status == GRACEUI_REFUSED && early_glyphs == GRACEUI_NOT_READY && face_a != face_b,
+        "before warm-up",
+        "hello-panel %s; the harness's mod: a texture %s, faces of 18 and 24 px %s and %s (ids %u, %u), a third %s, a "
+        "file that is not a font %s, a size of 2 px %s; glyph_table before warm-up: %s",
+        example_ready ? "connected and registered its face, two textures and its panel" : "DID NOT REGISTER",
+        status_name(white_status), status_name(face_a_status), status_name(face_b_status), face_a, face_b,
+        status_name(face_c_status), status_name(bad_font_status), status_name(small_face_status),
+        status_name(early_glyphs));
+
+  // Its panels: hud at the top left under the test panel; a modal over the test panel, which takes input; a modal under
+  // the notices; hud under the example's panel; hud at the bottom right; a panel-layer panel that takes input, with a
+  // glyph of GraceUI's atlas. Then two more, hidden: eight a mod, the ninth full.
+  std::uint64_t hud = 0, modal = 0, top_modal = 0, low_hud = 0, corner = 0, glyph_panel = 0, spare_a = 0, spare_b = 0,
+                ninth = 0, bad_layer = 0;
+  const bool made =
+      mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_TOP_LEFT, 8, 8, 60, 60, 0, hud) == GRACEUI_OK &&
+      mod.panel(GRACEUI_LAYER_MODAL, GRACEUI_ANCHOR_TOP_LEFT, 150, 60, 80, 40, GRACEUI_PANEL_TAKES_INPUT, modal) ==
+          GRACEUI_OK &&
+      mod.panel(GRACEUI_LAYER_MODAL, GRACEUI_ANCHOR_TOP_RIGHT, 0, 0, 330, 50, 0, top_modal) == GRACEUI_OK &&
+      mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_TOP_LEFT, 20, 200, 40, 60, 0, low_hud) == GRACEUI_OK &&
+      mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_BOTTOM_RIGHT, 10, 10, 50, 30, 0, corner) == GRACEUI_OK &&
+      mod.panel(GRACEUI_LAYER_PANEL, GRACEUI_ANCHOR_TOP_LEFT, 300, 150, 60, 40, GRACEUI_PANEL_TAKES_INPUT,
+                glyph_panel) == GRACEUI_OK &&
+      mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_CENTRE, 0, 0, 10, 10, 0, spare_a) == GRACEUI_OK &&
+      mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_CENTRE, 0, 0, 10, 10, 0, spare_b) == GRACEUI_OK;
+  const GraceUiStatus ninth_status = mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_CENTRE, 0, 0, 10, 10, 0, ninth);
+  const GraceUiStatus bad_layer_status = mod.panel(3, GRACEUI_ANCHOR_CENTRE, 0, 0, 10, 10, 0, bad_layer);
+  const std::uint32_t shown_before = grace.state().panels_shown;
+  mod.quad(hud, 60, 60, kHud);
+  mod.quad(modal, 80, 40, kModal);
+  mod.quad(top_modal, 330, 50, kTopModal);
+  mod.quad(low_hud, 40, 60, kLowHud);
+  mod.quad(corner, 50, 30, kCorner);
+  mod.quad(glyph_panel, 60, 40, kGlyphPanel);
+  std::uint64_t after_submit = 0;
+  const GraceUiStatus late_texture = mod.texture(4, 4, white_pixels, after_submit);
+  for (const std::uint64_t id : {hud, modal, top_modal, low_hud, corner, glyph_panel}) {
+    table->show_panel(mod.me, id);
+  }
+  const GraceUiTestState registered = grace.state();
+  check(made && ninth_status == GRACEUI_FULL && bad_layer_status == GRACEUI_REFUSED && shown_before == 1 &&
+            registered.panels == 9 && registered.panels_shown == 7 && late_texture == GRACEUI_TOO_LATE,
+        "panels made",
+        "eight panels of the harness's mod made (%s), the ninth %s, GraceUI's menu layer %s; hidden at first: %u shown "
+        "of %u (the example's own); then %u of %u; a texture after its first submit: %s",
+        made ? "yes" : "NO", status_name(ninth_status), status_name(bad_layer_status), shown_before,
+        registered.panels, registered.panels_shown, registered.panels, status_name(late_texture));
+
+  // 2. Warm-up: the atlas baked once with GraceUI's notices' face and the three faces of the mods; the four textures in
+  // the same upload; glyph tables for every face; faces refused from then on.
+  table = start_host(game, grace);
+  bool warm = false;
+  for (int i = 0; i < 120 && !warm; ++i) {
+    game.frame(kPanelsColour, PresentWith::present);
+    const GraceUiTestState state = grace.state();
+    warm = state.atlas_generation == 1 && state.textures_ready == 3;
+  }
+  const GraceUiTestState warmed = grace.state();
+  GraceUiGlyphTable notices_face{};
+  notices_face.size = sizeof notices_face;
+  const GraceUiStatus own_glyphs = table->glyph_table(mod.me, 1, &notices_face);
+  GraceUiGlyphTable mod_face{};
+  mod_face.size = sizeof mod_face;
+  const GraceUiStatus mod_glyphs = table->glyph_table(mod.me, face_b, &mod_face);
+  GraceUiGlyphTable none{};
+  none.size = sizeof none;
+  const GraceUiStatus no_glyphs = table->glyph_table(mod.me, 999, &none);
+  std::uint32_t too_late_face = 0;
+  const GraceUiStatus late_face = mod.face(noto, 18, too_late_face);
+  bool has_a = false;
+  bool sorted = notices_face.glyph_count > 0;
+  for (std::uint32_t i = 0; own_glyphs == GRACEUI_OK && i < notices_face.glyph_count; ++i) {
+    has_a = has_a || (notices_face.glyphs[i].code_point == 'A' && notices_face.glyphs[i].advance > 0.0f &&
+                      notices_face.glyphs[i].u1 > notices_face.glyphs[i].u0);
+    sorted = sorted && (i == 0 || notices_face.glyphs[i - 1].code_point < notices_face.glyphs[i].code_point);
+  }
+  check(warm && warmed.faces == 3 && warmed.faces_baked == 4 && warmed.notice_face_grace == 1 &&
+            warmed.texture_uploads == 1 && warmed.textures_uploaded == 3 && own_glyphs == GRACEUI_OK &&
+            notices_face.generation == 1 && notices_face.atlas == 1 && notices_face.glyph_count >= 300 && has_a &&
+            sorted && notices_face.pixel_height == 15.0f && mod_glyphs == GRACEUI_OK &&
+            mod_face.pixel_height == 24.0f && no_glyphs == GRACEUI_REFUSED && late_face == GRACEUI_TOO_LATE,
+        "atlas and faces",
+        "atlas generation %u at %ux%u; %u faces in it (the mods' %u, and GraceUI's notices' face from its fonts folder: "
+        "%s); one upload with the atlas (%u), %u textures uploaded; face 1: %s, %u glyphs, %.0f px, sorted %s, 'A' %s; "
+        "the harness's 24 px face: %s, %.0f px, %u glyphs; face 999: %s; a face after warm-up: %s",
+        warmed.atlas_generation, warmed.atlas_width, warmed.atlas_height, warmed.faces_baked, warmed.faces,
+        warmed.notice_face_grace ? "yes" : "NO", warmed.texture_uploads, warmed.textures_uploaded,
+        status_name(own_glyphs), notices_face.glyph_count, static_cast<double>(notices_face.pixel_height),
+        sorted ? "yes" : "NO", has_a ? "there" : "MISSING", status_name(mod_glyphs),
+        static_cast<double>(mod_face.pixel_height), mod_face.glyph_count, status_name(no_glyphs),
+        status_name(late_face));
+
+  // 3. A list with a glyph of GraceUI's atlas on the panel-layer panel: 'W' of face 1, white, on its ground.
+  const GraceUiGlyph* w = nullptr;
+  for (std::uint32_t i = 0; i < notices_face.glyph_count; ++i) {
+    w = notices_face.glyphs[i].code_point == 'W' ? &notices_face.glyphs[i] : w;
+  }
+  GraceUiStatus glyph_list = GRACEUI_FAULT;
+  GraceUiStatus stale_generation = GRACEUI_FAULT;
+  if (w != nullptr) {
+    const std::uint32_t ground = packed(kGlyphPanel);
+    const std::uint32_t ink = 0xFFFFFFFFu;
+    const float x = 20.0f, y = 8.0f;
+    const GraceUiDrawVert vertices[8] = {
+        {0, 0, 0.5f, 0.5f, ground}, {60, 0, 0.5f, 0.5f, ground}, {60, 40, 0.5f, 0.5f, ground}, {0, 40, 0.5f, 0.5f, ground},
+        {x + w->x0, y + w->y0, w->u0, w->v0, ink}, {x + w->x1, y + w->y0, w->u1, w->v0, ink},
+        {x + w->x1, y + w->y1, w->u1, w->v1, ink}, {x + w->x0, y + w->y1, w->u0, w->v1, ink}};
+    const std::uint16_t indices[12] = {0, 1, 2, 0, 2, 3, 0, 1, 2, 0, 2, 3};
+    GraceUiDrawCommand commands[2] = {};
+    for (GraceUiDrawCommand& c : commands) {
+      c.clip_x1 = 60;
+      c.clip_y1 = 40;
+      c.vertex_count = 4;
+      c.index_count = 6;
+    }
+    commands[0].texture = mod.white;
+    commands[1].texture = notices_face.atlas;
+    commands[1].vertex_offset = 4;  // the second command's indices are relative to its own vertices (D76)
+    commands[1].index_offset = 6;
+    GraceUiDrawList list{};
+    list.size = sizeof list;
+    list.atlas_generation = 2;  // an atlas GraceUI never baked
+    list.vertex_count = 8;
+    list.index_count = 12;
+    list.command_count = 2;
+    list.command_size = sizeof(GraceUiDrawCommand);
+    list.vertices = vertices;
+    list.indices = indices;
+    list.commands = commands;
+    stale_generation = table->submit(mod.me, glyph_panel, &list);
+    list.atlas_generation = notices_face.generation;
+    glyph_list = table->submit(mod.me, glyph_panel, &list);
+  }
+
+  // 4. The layers (D76), with GraceUI's own test panel on the menu's layer and a notice above everything.
+  grace.set_panel(1);
+  post(table, mod.me, "A notice above every layer.");
+  Frame frame;
+  bool drawn = false;
+  for (int i = 0; i < 60 && !drawn; ++i) {
+    frame = game.frame_and_read(kPanelsColour, PresentWith::present);
+    drawn = close_to(frame.at(HELLO_PANEL_X + 200, HELLO_PANEL_Y + 100), kHelloGround, 3) &&
+            close_to(frame.at(320, 160), kGlyphPanel, 3) &&
+            count_near(frame, 300, 150, 360, 190, Colour{255, 255, 255}, 40) > 0;
+  }
+  const UINT hx = HELLO_PANEL_X;
+  const UINT hy = HELLO_PANEL_Y;
+  std::string example_why;
+  bool example_ok = pixel_is(frame, hx + 200, hy + 100, kHelloGround, "its ground", example_why);
+  example_ok = pixel_is(frame, hx + HELLO_CHECKER_X + 4, hy + HELLO_CHECKER_Y + 4, kCheckerA, "its checker's first square",
+                        example_why) && example_ok;
+  example_ok = pixel_is(frame, hx + HELLO_CHECKER_X + 12, hy + HELLO_CHECKER_Y + 4, kCheckerB, "the second",
+                        example_why) && example_ok;
+  example_ok = pixel_is(frame, hx + HELLO_CHECKER_X + 12, hy + HELLO_CHECKER_Y + 12, kCheckerA, "the one below it",
+                        example_why) && example_ok;
+  const int own_ink = count_near(frame, hx + HELLO_TEXT_X, hy + HELLO_TEXT_Y, hx + 140, hy + HELLO_TEXT_Y + 16,
+                                 Colour{255, 255, 255}, 30);
+  const int shared_ink = count_near(frame, hx + HELLO_GLYPHS_X, hy + HELLO_GLYPHS_Y, hx + 235,
+                                    hy + HELLO_GLYPHS_Y + 22, kHelloGold, 40);
+  example_ok = example_ok && own_ink >= 20 && shared_ink >= 20;
+  check(drawn && example_ok, "example's panel",
+        "hello-panel's list, built by its own headless Dear ImGui and placed by its anchor: %s; its own font's ink "
+        "(its own atlas, its texture): %d pixels; its line from GraceUI's shared atlas: %d gold pixels",
+        example_why.c_str(), own_ink, shared_ink);
+
+  std::string layers_why;
+  bool layers = pixel_is(frame, 12, 12, kHud, "hud alone", layers_why);
+  layers = pixel_is(frame, 60, 30, kPanel, "the menu's layer over hud", layers_why) && layers;
+  layers = pixel_is(frame, 170, 70, kModal, "modal over the menu's layer", layers_why) && layers;
+  layers = pixel_is(frame, 200, 95, kModal, "modal alone", layers_why) && layers;
+  layers = pixel_is(frame, 25, 220, kLowHud, "hud alone", layers_why) && layers;
+  layers = pixel_is(frame, 50, 220, kHelloGround, "the panel layer over hud", layers_why) && layers;
+  layers = pixel_is(frame, 315, 5, kTopModal, "modal alone", layers_why) && layers;
+  const int left = notice_left(frame);
+  layers = pixel_is(frame, static_cast<UINT>(left) + 1, GRACEUI_TEST_NOTICE_MARGIN + 10,
+                    colour_of(GRACEUI_TEST_NOTICE_GOLD), "a notice's accent over modal", layers_why) && layers;
+  layers = pixel_is(frame, static_cast<UINT>(left) + 20, GRACEUI_TEST_NOTICE_MARGIN + 3, kNoticeGround,
+                    "its ground over modal", layers_why) && layers;
+  layers = pixel_is(frame, 605, 335, kCorner, "hud anchored bottom right", layers_why) && layers;
+  layers = pixel_is(frame, 310, 160, kGlyphPanel, "the glyph panel's ground", layers_why) && layers;
+  const int glyph_ink = count_near(frame, 300, 150, 360, 190, Colour{255, 255, 255}, 60);
+  check(drawn && layers && glyph_ink >= 10 && glyph_list == GRACEUI_OK && stale_generation == GRACEUI_REFUSED,
+        "layers",
+        "hud < panel < GraceUI's menu layer < modal < notices: %s; a 'W' of GraceUI's atlas on a panel: %d pixels of "
+        "white ink (the list %s; built against generation 2: %s)",
+        layers_why.c_str(), glyph_ink, status_name(glyph_list), status_name(stale_generation));
+
+  // 5. The display changes size: each panel follows its anchor.
+  game.resize(800, 450);
+  frame = game.frame_and_read(kPanelsColour, PresentWith::present);
+  for (int i = 0; i < 5 && !close_to(frame.at(765, 425), kCorner, 3); ++i) {
+    frame = game.frame_and_read(kPanelsColour, PresentWith::present);
+  }
+  std::string resize_why;
+  bool followed = pixel_is(frame, 765, 425, kCorner, "bottom-right at 800x450", resize_why);
+  followed = !close_to(frame.at(605, 335), kCorner, 3) && followed;
+  followed = pixel_is(frame, hx + 200, hy + 100, kHelloGround, "the example, top-left", resize_why) && followed;
+  game.resize(640, 360);
+  check(followed, "anchors", "after ResizeBuffers to 800x450: %s; nothing left where it was", resize_why.c_str());
+
+  // 6. The checker's refusals through submit (each a unit test too): the panel keeps its last list, and the mod's
+  // refusals are logged once.
+  const GraceUiTestState before_refusals = grace.state();
+  const auto submit_with = [&](auto&& edit) {
+    GraceUiDrawVert vertices[4] = {{0, 0, 0.5f, 0.5f, packed(kHud)}, {60, 0, 0.5f, 0.5f, packed(kHud)},
+                                   {60, 60, 0.5f, 0.5f, packed(kHud)}, {0, 60, 0.5f, 0.5f, packed(kHud)}};
+    std::uint16_t indices[6] = {0, 1, 2, 0, 2, 3};
+    GraceUiDrawCommand commands[65] = {};
+    for (GraceUiDrawCommand& c : commands) {
+      c.clip_x1 = 60;
+      c.clip_y1 = 60;
+      c.texture = mod.white;
+      c.vertex_count = 4;
+      c.index_count = 6;
+    }
+    GraceUiDrawList list{};
+    list.size = sizeof list;
+    list.vertex_count = 4;
+    list.index_count = 6;
+    list.command_count = 1;
+    list.command_size = sizeof(GraceUiDrawCommand);
+    list.vertices = vertices;
+    list.indices = indices;
+    list.commands = commands;
+    std::uint64_t panel = hud;
+    edit(list, vertices, indices, commands, panel);
+    return table->submit(mod.me, panel, &list);
+  };
+  using V = GraceUiDrawVert*;
+  using I = std::uint16_t*;
+  using C = GraceUiDrawCommand*;
+  const GraceUiStatus refusals[] = {
+      submit_with([](GraceUiDrawList&, V, I i, C, std::uint64_t&) { i[2] = 4; }),               // an index past 3
+      submit_with([](GraceUiDrawList&, V, I, C c, std::uint64_t&) { c[0].clip_x1 = 61; }),      // clip past the panel
+      submit_with([](GraceUiDrawList&, V, I, C c, std::uint64_t&) { c[0].texture = 0x12302; }), // nobody's texture
+      submit_with([](GraceUiDrawList&, V, I, C c, std::uint64_t&) { c[0].vertex_count = 5; }),  // past the vertices
+      submit_with([](GraceUiDrawList& l, V, I, C, std::uint64_t&) { l.command_count = 65; }),   // 65 commands
+      submit_with([](GraceUiDrawList& l, V, I, C, std::uint64_t&) { l.command_size = 16; }),    // a stride below 1.0's
+      submit_with([](GraceUiDrawList& l, V, I, C, std::uint64_t&) { l.vertices = nullptr; }),   // no vertices
+      submit_with([](GraceUiDrawList& l, V, I, C, std::uint64_t&) { l.vertex_count = 13108; }), // over 256 KiB
+      submit_with([](GraceUiDrawList&, V, I, C, std::uint64_t& p) { p = p + 256; }),            // another generation
+  };
+  const GraceUiTestState after_refusals = grace.state();
+  frame = game.frame_and_read(kPanelsColour, PresentWith::present);
+  std::string kept_why;
+  const bool kept = pixel_is(frame, 12, 12, kHud, "the hud panel's last list", kept_why);
+  bool all_refused = true;
+  std::string refused_text;
+  for (const GraceUiStatus status : refusals) {
+    all_refused = all_refused && status == GRACEUI_REFUSED;
+    refused_text += (refused_text.empty() ? "" : ",") + std::string(status_name(status));
+  }
+  const int logged = count_log_lines(grace, "a draw list of harness-mod was refused");
+  check(all_refused && kept && logged == 1 &&
+            after_refusals.lists_refused - before_refusals.lists_refused == 8 &&
+            after_refusals.lists_submitted == before_refusals.lists_submitted,
+        "draw list refusals",
+        "an index past its command's vertices, a clip past the panel, nobody's texture, a command's vertices past the "
+        "list's, 65 commands, a stride of 16, no vertices, 13,108 vertices, a stale panel id: %s; %llu counted by the "
+        "checker, %d log line for the mod; %s",
+        refused_text.c_str(),
+        static_cast<unsigned long long>(after_refusals.lists_refused - before_refusals.lists_refused), logged,
+        kept_why.c_str());
+
+  // 7. A late mod: its texture, registered after warm-up within its budget, is uploaded at the next frame, once, and
+  // drawn; its budget and its registration window hold.
+  const Connected late = connect(table, request_for("harness-late", GRACEUI_VERSION_PACK(0, 1, 0), "Harness late"));
+  HarnessMod late_mod{table, late.answer.consumer, 0};
+  const std::uint32_t late_pixels[4] = {packed(kLate), packed(kLate), packed(kLate), packed(kLate)};
+  std::uint64_t late_texture_id = 0;
+  std::uint64_t ignored = 0;
+  const GraceUiStatus late_first = late_mod.texture(2, 2, late_pixels, late_texture_id);
+  const GraceUiStatus late_bytes = late_mod.texture(2048, 1024, late_pixels, ignored);  // 8 MiB more: over its budget
+  const GraceUiStatus late_format = late_mod.texture(2, 2, late_pixels, ignored, 7);
+  const GraceUiStatus late_rows = late_mod.texture(2, 2, late_pixels, ignored, GRACEUI_TEXTURE_RGBA8, 4);
+  bool seven_more = true;
+  for (int i = 0; i < 7; ++i) {
+    seven_more = late_mod.texture(1, 1, late_pixels, ignored) == GRACEUI_OK && seven_more;
+  }
+  const GraceUiStatus late_ninth = late_mod.texture(1, 1, late_pixels, ignored);
+  std::uint64_t late_panel = 0;
+  late_mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_TOP_LEFT, 400, 280, 40, 30, 0, late_panel);
+  const GraceUiTestState before_late = grace.state();
+  // White vertices, so that the texture's own colour is what is drawn.
+  const GraceUiStatus late_submit = late_mod.quad(late_panel, 40, 30, Colour{255, 255, 255}, late_texture_id);
+  table->show_panel(late_mod.me, late_panel);
+  const GraceUiStatus late_after = late_mod.texture(1, 1, late_pixels, ignored);
+  bool late_drawn = false;
+  for (int i = 0; i < 30 && !late_drawn; ++i) {
+    frame = game.frame_and_read(kPanelsColour, PresentWith::present);
+    late_drawn = close_to(frame.at(420, 295), kLate, 3);
+  }
+  for (int i = 0; i < 5; ++i) {
+    game.frame(kPanelsColour, PresentWith::present);
+  }
+  const GraceUiTestState after_late = grace.state();
+  check(late_first == GRACEUI_OK && late_bytes == GRACEUI_FULL && late_format == GRACEUI_REFUSED &&
+            late_rows == GRACEUI_REFUSED && seven_more && late_ninth == GRACEUI_FULL && late_submit == GRACEUI_OK &&
+            late_after == GRACEUI_TOO_LATE && late_drawn &&
+            after_late.texture_uploads == before_late.texture_uploads + 1 &&
+            after_late.textures_uploaded == before_late.textures_uploaded + 8,
+        "late textures",
+        "a mod connected after warm-up: a 2x2 texture %s, 8 MiB more %s, an unknown format %s, rows shorter than its "
+        "width %s, seven more %s, a ninth %s; its first submit %s, a texture after it %s; uploaded in %u upload (the "
+        "upload counter), %u textures, and drawn: %s",
+        status_name(late_first), status_name(late_bytes), status_name(late_format), status_name(late_rows),
+        seven_more ? "ok" : "NOT ALL OK", status_name(late_ninth), status_name(late_submit), status_name(late_after),
+        after_late.texture_uploads - before_late.texture_uploads,
+        after_late.textures_uploaded - before_late.textures_uploaded, late_drawn ? "yes" : "NO");
+
+  // 8. Input through ABI 1 (D77): granted, refused naming the holder, not now with the reason; the close routine from
+  // hiding the panel, the player's exit by the menu key and by Escape held, and a release.
+  const HWND window = game.window();
+  GraceUiStatus status = GRACEUI_FAULT;
+  const GraceUiInputAnswer granted = mod.request(modal, GRACEUI_HOLDER_MODAL, status);
+  const GraceUiStatus granted_status = status;
+  const GraceUiTestInput holding = grace.input();
+  std::uint64_t late_input_panel = 0;
+  late_mod.panel(GRACEUI_LAYER_MODAL, GRACEUI_ANCHOR_TOP_LEFT, 500, 100, 20, 20, GRACEUI_PANEL_TAKES_INPUT,
+                 late_input_panel);
+  late_mod.quad(late_input_panel, 20, 20, Colour{255, 255, 255}, late_texture_id);
+  table->show_panel(late_mod.me, late_input_panel);
+  const GraceUiInputAnswer refused = late_mod.request(late_input_panel, GRACEUI_HOLDER_MODAL, status);
+  const GraceUiInputAnswer again = mod.request(modal, GRACEUI_HOLDER_MODAL, status);  // the holder asking again
+  GraceUiStatus wrong_kind = GRACEUI_FAULT;
+  mod.request(modal, GRACEUI_HOLDER_PANEL, wrong_kind);  // a modal's panel asked for as a panel
+  GraceUiStatus no_input_panel = GRACEUI_FAULT;
+  mod.request(hud, GRACEUI_HOLDER_PANEL, no_input_panel);  // a panel made without GRACEUI_PANEL_TAKES_INPUT
+  GraceUiStatus not_its_own = GRACEUI_FAULT;
+  late_mod.request(modal, GRACEUI_HOLDER_MODAL, not_its_own);
+  table->hide_panel(mod.me, modal);
+  const GraceUiTestInput hidden = grace.input();
+  const GraceUiInputAnswer hidden_answer = mod.request(modal, GRACEUI_HOLDER_MODAL, status);
+  table->show_panel(mod.me, modal);
+  frames(game, 2);
+  check(granted_status == GRACEUI_OK && granted.answer == GRACEUI_INPUT_GRANTED &&
+            holding.holder_kind == GRACEUI_TEST_KIND_MODAL && refused.answer == GRACEUI_INPUT_REFUSED &&
+            std::string_view(refused.holder) == "harness-mod" && refused.holder_kind == GRACEUI_HOLDER_MODAL &&
+            again.answer == GRACEUI_INPUT_GRANTED && wrong_kind == GRACEUI_REFUSED &&
+            no_input_panel == GRACEUI_REFUSED && not_its_own == GRACEUI_REFUSED && hidden.holder_owner == 0 &&
+            hidden.last_close_reason == GRACEUI_TEST_CLOSED_RELEASED && hidden_answer.answer == GRACEUI_INPUT_NOT_NOW &&
+            hidden_answer.why == GRACEUI_NOT_NOW_NOT_READY,
+        "request_input",
+        "the modal: %s (the holder a %s); another mod: %s, naming \"%s\" (kind %u); the holder again: %s; the wrong "
+        "kind %s; a panel that takes no input %s; another mod's panel %s; hiding the panel ended the holder (%s); a "
+        "hidden panel's request: %s (why %u)",
+        answer_name(granted.answer), holding.holder_kind == GRACEUI_TEST_KIND_MODAL ? "modal" : "NOT A MODAL",
+        answer_name(refused.answer), refused.holder, refused.holder_kind, answer_name(again.answer),
+        status_name(wrong_kind), status_name(no_input_panel), status_name(not_its_own),
+        reason_name(hidden.last_close_reason), answer_name(hidden_answer.answer), hidden_answer.why);
+
+  // The player's exit: the menu key's first press names the holder in GraceUI's own notice, the second within 2 s ends
+  // it; Escape held 1 s ends it too. Neither reaches the game.
+  g_seen = Seen{};
+  mod.request(glyph_panel, GRACEUI_HOLDER_PANEL, status);
+  post_key(window, VK_F5, kScanF5, true, false);
+  post_key(window, VK_F5, kScanF5, false, false);
+  frames(game, 2);
+  std::string controls;
+  for (const GraceUiTestNotice& notice : grace.notices()) {
+    if (notice.owner == 0 && std::strstr(notice.text, "has the controls") != nullptr) {
+      controls = notice.text;
+    }
+  }
+  const GraceUiTestInput warned = grace.input();
+  post_key(window, VK_F5, kScanF5, true, false);
+  post_key(window, VK_F5, kScanF5, false, false);
+  frames(game, 2);
+  const GraceUiTestInput exited = grace.input();
+  mod.request(glyph_panel, GRACEUI_HOLDER_PANEL, status);
+  post_key(window, VK_ESCAPE, kScanEscape, true, false);
+  const DWORD escape_start = GetTickCount();
+  while (GetTickCount() - escape_start < 1500 && grace.input().holder_owner != 0) {
+    post_key(window, VK_ESCAPE, kScanEscape, true, true);
+    game.frame(kPanelsColour, PresentWith::present);
+    Sleep(30);
+  }
+  const DWORD held_for = GetTickCount() - escape_start;
+  const GraceUiTestInput escaped = grace.input();
+  post_key(window, VK_ESCAPE, kScanEscape, false, false);
+  frames(game, 2);
+  const GraceUiInputAnswer released_answer = mod.request(glyph_panel, GRACEUI_HOLDER_PANEL, status);
+  const GraceUiStatus release_status = table->release_input(mod.me);
+  const GraceUiTestInput released = grace.input();
+  check(warned.holder_owner != 0 && controls == "Harness mod has the controls. Press F5 again to take them back." &&
+            exited.holder_owner == 0 && exited.last_close_reason == GRACEUI_TEST_CLOSED_PLAYER &&
+            escaped.holder_owner == 0 && escaped.last_close_reason == GRACEUI_TEST_CLOSED_PLAYER && held_for >= 950 &&
+            g_seen.key_down[VK_F5] == 0 && g_seen.key_down[VK_ESCAPE] == 0 &&
+            released_answer.answer == GRACEUI_INPUT_GRANTED && release_status == GRACEUI_OK &&
+            released.holder_owner == 0 && released.last_close_reason == GRACEUI_TEST_CLOSED_RELEASED,
+        "player's exit",
+        "a panel's holder: the first F5 shows \"%s\"; the second ends it (%s); again, Escape held %lu ms ends it (%s); "
+        "F5 and Escape reaching the game: %d, %d; a release ends the next (%s)",
+        controls.c_str(), reason_name(exited.last_close_reason), static_cast<unsigned long>(held_for),
+        reason_name(escaped.last_close_reason), g_seen.key_down[VK_F5], g_seen.key_down[VK_ESCAPE],
+        reason_name(released.last_close_reason));
+
+  // 9. World-state providers (D78): every claim combined; danger ends the holder and answers not now; a provider's
+  // claims go with it; an unknown flag is refused.
+  mod.request(modal, GRACEUI_HOLDER_MODAL, status);
+  const GraceUiStatus danger_status = mod.world(GRACEUI_WORLD_DANGER);
+  const GraceUiTestInput in_danger = grace.input();
+  const GraceUiInputAnswer danger_answer = mod.request(modal, GRACEUI_HOLDER_MODAL, status);
+  late_mod.world(GRACEUI_WORLD_GAME_MENU);
+  mod.world(0);
+  const GraceUiTestState two_providers = grace.state();
+  const GraceUiInputAnswer menu_answer = mod.request(modal, GRACEUI_HOLDER_MODAL, status);
+  const GraceUiStatus unknown_flag = mod.world(64);
+  table->disconnect(late_mod.me);  // its claims, panels and textures go with it
+  const GraceUiTestState one_provider = grace.state();
+  const GraceUiInputAnswer clear_answer = mod.request(modal, GRACEUI_HOLDER_MODAL, status);
+  table->release_input(mod.me);
+  check(danger_status == GRACEUI_OK && in_danger.holder_owner == 0 &&
+            in_danger.last_close_reason == GRACEUI_TEST_CLOSED_DANGER && danger_answer.answer == GRACEUI_INPUT_NOT_NOW &&
+            danger_answer.why == GRACEUI_NOT_NOW_DANGER && two_providers.providers == 2 &&
+            two_providers.world_flags == GRACEUI_WORLD_GAME_MENU && menu_answer.answer == GRACEUI_INPUT_NOT_NOW &&
+            menu_answer.why == GRACEUI_NOT_NOW_GAME_MENU && unknown_flag == GRACEUI_REFUSED &&
+            one_provider.providers == 1 && one_provider.world_flags == 0 && clear_answer.answer == GRACEUI_INPUT_GRANTED,
+        "providers",
+        "danger from one provider ended the holder (%s) and a request is not now (why %u); a game menu from another, "
+        "the first clear: %u providers, flags %u, a request not now (why %u); an unknown flag %s; the second gone: "
+        "%u provider, flags %u, a request %s",
+        reason_name(in_danger.last_close_reason), danger_answer.why, two_providers.providers,
+        two_providers.world_flags, menu_answer.why, status_name(unknown_flag), one_provider.providers,
+        one_provider.world_flags, answer_name(clear_answer.answer));
+
+  // 10. The triple buffers under the example's thread, which submits every 10 ms: over 300 frames drawn after warm-up,
+  // no allocation and no free on the present thread, and GraceUI's own work within 1 ms at p99, the GPU idle before
+  // each frame (frames as a game runs them are printed too).
+  grace.set_panel(0);
+  for (int i = 0; i < 60; ++i) {
+    game.frame(kPanelsColour, PresentWith::present);
+  }
+  grace.reset_counters();
+  GraceUiTestState before = grace.state();
+  for (int i = 0; i < 300; ++i) {
+    game.frame(kPanelsColour, PresentWith::present);
+  }
+  GraceUiTestState after = grace.state();
+  const Costs pipelined = frame_costs(grace);
+  note("as a game runs, over %u frames: GraceUI's own work median %.1f us, p99 %.1f us; %llu lists published meanwhile",
+       pipelined.count, pipelined.own.median_us, pipelined.own.p99_us,
+       static_cast<unsigned long long>(after.lists_submitted - before.lists_submitted));
+  const std::uint64_t pipelined_allocations = after.allocations + after.frees;
+  grace.reset_counters();
+  before = grace.state();
+  for (int i = 0; i < 300; ++i) {
+    game.frame(kPanelsColour, PresentWith::present);
+    game.wait_idle();
+  }
+  after = grace.state();
+  const Costs costs = frame_costs(grace);
+  const std::uint64_t panel_frames = after.panel_frames - before.panel_frames;
+  const std::uint64_t published = after.lists_submitted - before.lists_submitted;
+  check(pipelined_allocations == 0 && after.allocations == 0 && after.frees == 0 && panel_frames >= 290 &&
+            published >= 30 && costs.own.p99_us <= 1000.0,
+        "panel frames",
+        "over 300 frames with seven panels shown while the example published %llu lists from its thread: %llu frames "
+        "drew panels; allocations and frees on the present thread: %llu and %llu (and %llu over the 300 before); "
+        "GraceUI's own work median %.1f us, p99 %.1f us (budget: p99 1000 us, all panels together)",
+        static_cast<unsigned long long>(published), static_cast<unsigned long long>(panel_frames),
+        static_cast<unsigned long long>(after.allocations), static_cast<unsigned long long>(after.frees),
+        static_cast<unsigned long long>(pipelined_allocations), costs.own.median_us, costs.own.p99_us);
+
+  // 11. The harness's mod disconnects: its panels go from the frame, its textures are released after their last frame,
+  // and its id connects again with a fresh budget.
+  const GraceUiTestState before_gone = grace.state();
+  table->disconnect(mod.me);
+  bool released_all = false;
+  for (int i = 0; i < 30 && !released_all; ++i) {
+    frame = game.frame_and_read(kPanelsColour, PresentWith::present);
+    released_all = grace.state().textures_ready == 2;  // the example's two
+  }
+  const GraceUiTestState gone = grace.state();
+  std::string gone_why;
+  bool gone_ok = pixel_is(frame, 12, 12, kPanelsColour, "where its hud was", gone_why);
+  gone_ok = pixel_is(frame, 200, 95, kPanelsColour, "where its modal was", gone_why) && gone_ok;
+  gone_ok = pixel_is(frame, hx + 200, hy + 100, kHelloGround, "the example's, still", gone_why) && gone_ok;
+  const Connected again_mod = connect(table, request_for("harness-mod", GRACEUI_VERSION_PACK(0, 1, 0), "Harness mod"));
+  std::uint64_t fresh = 0;
+  const GraceUiStatus fresh_texture = HarnessMod{table, again_mod.answer.consumer, 0}.texture(4, 4, white_pixels, fresh);
+  check(gone_ok && released_all && gone.panels == 1 && before_gone.panels == 9 && gone.textures == 2 &&
+            again_mod.status == GRACEUI_OK && fresh_texture == GRACEUI_OK,
+        "disconnect",
+        "panels %u, then %u; textures ready %u, then %u (released once no frame could draw them); %s; connected again "
+        "with a new budget and window: a texture %s",
+        before_gone.panels, gone.panels, before_gone.textures_ready, gone.textures_ready, gone_why.c_str(),
+        status_name(fresh_texture));
   grace.print_log();
 }
 
@@ -2699,6 +3439,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"abi") {
     std::printf("-- scenario: ABI 1's table, connect, notices and the example mod\n");
     run_abi(dll);
+  } else if (scenario == L"panels") {
+    std::printf("-- scenario: panels, draw lists, textures, faces, input through ABI 1 and providers\n");
+    run_panels(dll);
   } else if (scenario == L"copies") {
     std::printf("-- scenario: two copies asked at once\n");
     run_copies(dll);
@@ -2725,7 +3468,7 @@ int wmain(int argc, wchar_t** argv) {
         std::snprintf(name, sizeof name, "%ls scenario", child_scenario);
         check(child == 0, name, "its process ended with %d", child);
       };
-      for (const wchar_t* child_scenario : {L"two-queues", L"input", L"input-ansi", L"abi", L"copies",
+      for (const wchar_t* child_scenario : {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies",
                                             L"found-by-scan", L"anti-cheat", L"anti-cheat-parent"}) {
         run(child_scenario, dll, this_program());
       }
