@@ -49,6 +49,9 @@ wine64 reg add 'HKCU\Software\Wine\Direct3D' /v renderer /t REG_SZ /d vulkan /f 
 xvfb-run -a -s "-screen 0 1280x720x24" wine64 build-cl-test/bin/grace-harness.exe
 ```
 
+On a new prefix, the very first run once failed with "no window" while Wine was still setting the prefix up; the
+next runs passed. Running `xvfb-run -a wine64 wineboot -u` once after making the prefix avoids it.
+
 Wine 9.0 with Mesa's lavapipe (`mesa-vulkan-drivers`) creates the Direct3D 12 device, queue and flip-model swap chain
 the harness needs. The harness prints one line per check, PASS or FAIL with what it saw, and exits with 0 only if all
 passed; the whole run takes a few seconds.
