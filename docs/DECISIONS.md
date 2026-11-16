@@ -122,6 +122,12 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 **Owner's words.** "agreed. but call it WIP."
 
+*Later (2026-11-16):* EldenNet's decision calls came into v1 (its O84 engine; roadmap S8.1.f), on a `decisions` slot
+that replaces the reserved `meta` slot, first for who speaks next at a shared place. So AI › Models' Decisions card is
+no longer a later-version feature: from 0.4 it is a card like the others, with no "WIP" tag (DESIGN §4.6.2, D62).
+Memories of scenes are in v1 too, one per witness (EldenNet MEM §2.3, §3.1), so only diaries and thoughts stay
+one-line notes (DESIGN §4.6.5). The four rail entries and their tag are unchanged.
+
 ## G8
 
 **Every named NPC's general profile shown from the start, and the Playthrough page** · *2026-11-07 · Decided by the owner; the recommendation was (b)*
@@ -375,6 +381,11 @@ with a tool, so it stays a developer's route for testing. Placements and areas n
 **Decision (2026-11-15).** (c), as the owner put it: the model adds lore notes to the map on its own, each from two or more of the player's memories tied to one place or person and citing them, through the lock filter (SP2), batched on a light slot under EldenNet's pacing; the player may edit or remove any, and a removed note is not proposed again from the same memories. A setting, **Lore notes by AI**, is on by default and turns it off (Settings › Map, D95).
 
 **Owner's words.** "Let AI add notes automatically, a setting on by default."
+
+*Later (2026-11-16):* EldenNet's O86 keeps spoilers by grounding alone, so the lock filter (SP2) that this decision
+cites is gone: a note is written from the player's memories, which hold only what each NPC could know, and SP2 as
+re-cut (DESIGN §4.8) shows only what the game showed or EldenNet wrote from the same grounded inputs. The rest of the
+decision stands.
 
 ## G24
 
