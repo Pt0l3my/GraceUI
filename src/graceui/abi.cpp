@@ -129,6 +129,14 @@ GRACEUI_API void GraceUI_Test_TurnOffRender(void) {
   }
 }
 
+GRACEUI_API uint64_t GraceUI_Test_GetPanelPublished(uint64_t panel) {
+  try {
+    return grace::host::test_panel_published(panel);
+  } catch (...) {
+    return 0;
+  }
+}
+
 GRACEUI_API void GraceUI_Test_SetAtlasLimit(uint32_t side) {
   try {
     grace::host::test_set_atlas_limit(side);

@@ -243,6 +243,9 @@ GRACEUI_API uint32_t GraceUI_Test_GetConsumer(uint32_t index, GraceUiTestConsume
 GRACEUI_API void GraceUI_Test_SetFirstRequestDelay(uint32_t ms);
 /* The render path turns itself off at its next frame, as a fault turns it off: every input then reaches the game. */
 GRACEUI_API void GraceUI_Test_TurnOffRender(void);
+/* Lists published to panel `panel` so far (by any submit that passed the checker), or 0 for no such panel: one panel's
+ * own count, which another mod's thread submitting meanwhile does not move. */
+GRACEUI_API uint64_t GraceUI_Test_GetPanelPublished(uint64_t panel);
 /* The shared atlas's largest texture, `side` pixels square, a power of two (0: Dear ImGui's own, 8192), so that a bake
  * runs out of room and the faces' fallback shows. Set before warm-up. */
 GRACEUI_API void GraceUI_Test_SetAtlasLimit(uint32_t side);

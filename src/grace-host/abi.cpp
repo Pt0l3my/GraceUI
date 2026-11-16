@@ -313,6 +313,17 @@ void test_turn_off_render() noexcept { draw::test_turn_off(); }
 
 void test_set_atlas_limit(std::uint32_t side) noexcept { atlas::test_set_limit(side); }
 
+std::uint64_t test_panel_published(std::uint64_t panel) noexcept {
+  grace::abi::Panels& panels = session::panels();
+  for (std::uint32_t i = 0; i < grace::abi::kMaxPanels; ++i) {
+    grace::abi::PanelView view;
+    if (panels.view(i, view) && view.id == panel) {
+      return panels.lists(i).published();
+    }
+  }
+  return 0;
+}
+
 void test_fill_state(GraceUiTestState& out) noexcept {
   out.host = static_cast<std::uint32_t>(state::host.load(std::memory_order_acquire));
   out.init_threads_started = state::init_threads_started.load(std::memory_order_relaxed);

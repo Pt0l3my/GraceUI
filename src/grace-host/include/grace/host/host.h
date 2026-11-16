@@ -110,6 +110,7 @@ bool test_copy_consumer(std::uint32_t index, GraceUiTestConsumer& out) noexcept;
 void test_set_first_request_delay(std::uint32_t ms) noexcept;
 void test_turn_off_render() noexcept;
 void test_set_atlas_limit(std::uint32_t side) noexcept;
+std::uint64_t test_panel_published(std::uint64_t panel) noexcept;
 #endif
 
 }  // namespace grace::host
