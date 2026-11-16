@@ -2106,12 +2106,17 @@ void run_abi(const std::wstring& dll) {
         example_seen ? "connected through graceui-sys" : "DID NOT CONNECT", consumers.size(),
         example_as_named ? "yes" : "NO", started.init_threads_started, example_text.c_str());
 
+  // The hooks are in, but the renderer warms up over the frames that follow (D116, D117): the notice is drawn once it is.
   Frame frame;
-  for (int i = 0; i < 3; ++i) {
+  bool ok = false;
+  int frames_until_seen = 0;
+  for (int i = 1; i <= 60 && !ok; ++i) {
     frame = game.frame_and_read(kAbiColour, PresentWith::present);
+    ok = notices_drawn(frame, kAbiColour, {GRACEUI_TONE_NORMAL}, false, why);
+    frames_until_seen = i;
   }
-  bool ok = notices_drawn(frame, kAbiColour, {GRACEUI_TONE_NORMAL}, false, why);
-  check(ok, "example's notice", "on the game's frame, with nothing else drawn: %s", why.c_str());
+  check(ok, "example's notice", "on the game's frame, in frame %d after the hooks, with nothing else drawn: %s",
+        frames_until_seen, why.c_str());
 
   // 2. The table: ABI 1 only, the size this header gives it, and the one cap GraceUI 0.1 provides.
   const std::uint32_t version = grace.version();
@@ -2577,13 +2582,22 @@ void run_anti_cheat(const std::wstring& dll) {
   // Notices only: the test panel is on, and only the notices are drawn, GraceUI's own first.
   grace.set_panel(1);
   Frame frame;
-  for (int i = 0; i < 5; ++i) {
-    frame = game.frame_and_read(kAntiCheatColour, PresentWith::present);
-  }
   std::string why;
-  const bool only = notices_drawn(frame, kAntiCheatColour,
-                                  {GRACEUI_TONE_WARNING, GRACEUI_TONE_NORMAL, GRACEUI_TONE_DANGER}, false, why);
-  check(only, "notices only", "the test panel on: %s", why.c_str());
+  bool only = false;
+  int frames_until_seen = 0;
+  for (int i = 1; i <= 60 && !only; ++i) {
+    frame = game.frame_and_read(kAntiCheatColour, PresentWith::present);
+    only = notices_drawn(frame, kAntiCheatColour, {GRACEUI_TONE_WARNING, GRACEUI_TONE_NORMAL, GRACEUI_TONE_DANGER},
+                         false, why);
+    frames_until_seen = i;
+  }
+  for (int i = 0; i < 5 && only; ++i) {  // and so it stays: the panel never comes
+    frame = game.frame_and_read(kAntiCheatColour, PresentWith::present);
+    only = notices_drawn(frame, kAntiCheatColour, {GRACEUI_TONE_WARNING, GRACEUI_TONE_NORMAL, GRACEUI_TONE_DANGER},
+                         false, why);
+  }
+  check(only, "notices only", "the test panel on, in frame %d and the five after it: %s", frames_until_seen,
+        why.c_str());
 
   // Pure pass-through: F5 and every other key reach the game, and no holder can take input.
   g_seen = Seen{};
