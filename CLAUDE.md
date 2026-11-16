@@ -13,9 +13,13 @@ put to the owner as G15–G20. **Decided the same day, as recommended:** G15, Gr
 MinHook, the Present hook and the input hooks move into `graceui.dll` with every rule of EldenNet's O25, and EldenNet
 draws through GraceUI), superseding G10, on Dear ImGui and MinHook since 2026-11-16 (EldenNet's O25 as changed); G16,
 other mods write page data and checked panels, no HTML in game; G17, GraceUI serves the browser view for every mod that
-opts in. G18–G20 are Open. **Folded on 2026-11-15** (EldenNet's roadmap S7.8.c): DESIGN.md now holds the design as
-G15–G17 decided it (proposal 0001's parts, adopted), the map's decisions G21–G27 (proposal 0002) and the D-entries they
-settle; the rules and invariants below follow it. What depends on G18–G20 stays as written until the owner answers.
+opts in. **Decided on 2026-11-16, as recommended:** G18, the framework opens to other modders after EldenNet v1.0, as
+GraceUI 1.1; G19, no SkyrimNet-derived material enters GraceUI; G20, EldenNet's pages and the spoiler and privacy rules
+that guard them live in EldenNet; and G29, `grace-serve` is also one library for hosts outside the game, EldenNet's
+launcher first. **Folded on 2026-11-15** (EldenNet's roadmap S7.8.c): DESIGN.md now holds the design as G15–G17
+decided it (proposal 0001's parts, adopted), the map's decisions G21–G27 (proposal 0002) and the D-entries they settle;
+**and on 2026-11-16** (S7.8.d, S7.12.e) G18–G20 and G29: EldenNet's pages, SP1–SP9 and EldenNet's privacy rules moved
+to EldenNet's `docs/design/pages.md` (PAGES), under DESIGN §4's numbers. The rules and invariants below follow it.
 
 - The design is [docs/DESIGN.md](docs/DESIGN.md); the evidence is in [docs/research/](docs/research/README.md); what
   EldenNet must change is in [docs/eldennet-changes.md](docs/eldennet-changes.md).
@@ -59,10 +63,13 @@ settle; the rules and invariants below follow it. What depends on G18–G20 stay
   texts, taglines or theme names. We may describe its look in our own words and build our own theme in its spirit.
 - **Fonts**: OFL faces only, each from its original publisher, shipped with its `OFL.txt` and credited in `NOTICE`.
   Never a font file taken out of SeverActions, Magelight or a game.
-- **SkyrimNet** (owner's decision, 2026-11-07, as in EldenNet's `CLAUDE.md`): its author, Min, gives us the engine
-  blueprint to work with and approves building on SkyrimNet, so its code, dashboard and styling may be used, copied and
-  adapted, credited as Min wishes and with every licence and notice file that comes with it. Never present GraceUI as
-  SkyrimNet itself or claim more endorsement than Min has given.
+- **SkyrimNet** (owner's decision, 2026-11-07, as in EldenNet's `CLAUDE.md`; narrowed for GraceUI by G19 (a),
+  2026-11-16): its author, Min, gives us the engine blueprint to work with and approves building on SkyrimNet, so its
+  code, dashboard and styling may be used, copied and adapted for EldenNet's own pages, which live in EldenNet (G20),
+  credited as Min wishes and with every licence and notice file that comes with it. GraceUI itself, a framework other
+  mods use, carries nothing SkyrimNet-derived: it keeps to its own code and the Grace theme, and `NOTICE` holds no
+  SkyrimNet entry (DESIGN §3.17). Never present GraceUI as SkyrimNet itself or claim more endorsement than Min has
+  given.
 - **FromSoftware**: never commit game files, text, params, fonts, icons, button glyphs, frames, textures, screenshots,
   the logo or the ring mark. Names of characters and places appear only at run time, from the player's own install,
   through EldenNet. Fixtures and examples use invented names and our own words.
@@ -85,20 +92,23 @@ settle; the rules and invariants below follow it. What depends on G18–G20 stay
   system DLLs only (Present, the window procedure, DInput and XInput), and it sees only what its spaces publish and
   its world-state providers report (EldenNet first, D78).
 - **v1 is dialogue only.** Acts and gestures appear only as "later version" seams.
-- **Spoiler layers apply to the UI** as they do to prompts: the spoiler rules SP1–SP9 (DESIGN §4.8) bind every page,
-  count, search result, title and URL, in both views.
-- **Privacy rules PV1–PV8** (DESIGN §4.9) bind every page, log and report: nothing personal, no keys, no chat or model
-  text outside the pages that show it, no paths, user names, SteamIDs or local addresses.
+- **Spoiler layers apply to the UI** as they do to prompts: EldenNet's spoiler rules SP1–SP9 (its PAGES §4.8, since G20
+  (a)) bind every page of EldenNet's, count, search result, title and URL, in both views; GraceUI's own form of them,
+  for every space, is invariants 1 and 2.
+- **Privacy rules PV1–PV8** bind every page, log and report: nothing personal, no keys, no chat or model text outside
+  the pages that show it, no paths, user names, SteamIDs or local addresses. PV3, PV6 and PV7 are GraceUI's framework
+  rules, for every space (DESIGN §4.9); PV1, PV2, PV4, PV5 and PV8 are EldenNet's, in its PAGES §4.9 since G20 (a).
 
 ## Invariants (each has a reason and a test; extend the list as the code grows)
 
-1. **Projections only.** A view shows only what its space published; for EldenNet's space, no view ever receives raw
-   content, flags, stages, prompts or unshown model text (spoilers; the spoiler goldens).
-2. **Absence is silent.** Nothing not reached is shown, counted, greyed or hinted at; the veiled look is only for a
-   perceived character whose name the game has not shown (SP5; the goldens). The one exception is the roster, by the
-   owner's decision (G5, G8): every NPC type, and every named NPC's and named boss's general profile, are listed from
-   the start (D67), holding only what a first meeting shows and reviewed for spoilers like shipped content; everything
-   about this playthrough follows the rule in full (the roster and Playthrough goldens).
+1. **Projections only.** A view shows only what its space published (spoilers and isolation; the demo space's goldens
+   and the server suite's two spaces). Its EldenNet form, for EldenNet's space, is in EldenNet's PAGES §3 since G20
+   (a): no view ever receives raw content, flags, stages, prompts or unshown model text (its spoiler goldens).
+2. **Absence is silent.** A view shows, counts, greys or hints at nothing its space has not published (spoilers; the
+   demo space's goldens). Its EldenNet form is in EldenNet's PAGES §3 since G20 (a): nothing not reached is shown, and
+   the veiled look is only for a perceived character whose name the game has not shown (SP5), with the one exception of
+   the roster, by the owner's decision (G5, G8), and everything about the playthrough under the rule in full (its
+   roster and Playthrough goldens).
 3. **One command path per space.** Every change goes through its space's one validating entry point (EldenNet's for
    EldenNet's pages), and GraceUI routes a command only to the space that owns the page; a view is untrusted input
    (security; the command tests).
@@ -107,7 +117,9 @@ settle; the rules and invariants below follow it. What depends on G18–G20 stay
    only) and the ticket, sends no CORS headers and a strict CSP, and serves only the files `graceui.toml` lists (DNS
    rebinding and CSRF; the server suite). It runs while any space asks for it, always for EldenNet's once its gate and
    safety steps pass (G4, D81), and never beside anti-cheat; other devices on the home network only when the player
-   switches that on, and each only after pairing with a code shown in game (G9).
+   switches that on, and each only after pairing with a code shown in game (G9). Outside the game the same library
+   serves under the same rules, in a host that links it (EldenNet's launcher first, G29 (a)), on loopback only, the
+   home network and pairing staying in the game at first (DESIGN §7.2 item 26).
 5. **Secrets are write-only** and never logged, echoed, stored in the browser or put in a report (privacy; the log
    and report scans).
 6. **No page requests anything outside its own origin**: no CDN, no remote font, no analytics (privacy; the CSP and a

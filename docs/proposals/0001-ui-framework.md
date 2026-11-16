@@ -1,14 +1,15 @@
 # Proposal 0001: GraceUI as a UI framework for any Elden Ring mod
 
-**Status: proposal, 2026-11-08 (EldenNet roadmap S7.8.a). G15–G17 decided by the owner the same day, as recommended;
-G18–G20 Open. Folded into DESIGN on 2026-11-15 (S7.8.c):** its §4, except §4.10, is adopted by reference (DESIGN §2.1),
-with D69–D81 and D83–D88 in DESIGN §13; D82 and §4.10 wait for G20, and what depends on G18 and G19 waits for their
-answers. Where this text and the design differ, the design holds (the menu key, for one, keeps the settings index's
-name, `hotkeys.menu`). It changed nothing by itself before the owner answered G15 to G20 (§8), and each answer's effect
-is stated with its question. What it settles itself is listed as proposed D-entries (D69 onwards, §4.16), each open to
-the owner. Evidence: [FW](../research/ui-frameworks.md) (shared UI hosts for game mods, with the Skyrizz session's
-report on Skyrim's three hosts), [ML](../research/magelight.md), [REN](../research/renderers.md). A bare § is a section
-of [DESIGN.md](../DESIGN.md); "§4.n of this proposal" is said in full.
+**Status: proposal, 2026-11-08 (EldenNet roadmap S7.8.a). G15–G17 decided by the owner the same day, as recommended, and
+G18–G20 on 2026-11-16, as recommended. Folded into DESIGN on 2026-11-15 (S7.8.c) and 2026-11-16 (S7.8.d):** its §4 is
+adopted by reference (DESIGN §2.1), with D69–D88 in DESIGN §13; since G20 (a), what §4.10 and §5 item 9 move lives in
+EldenNet's `docs/design/pages.md` (PAGES), and G18 (a)'s 1.1 row of §6 is DESIGN §10's. Where this text and the design
+differ, the design holds (the menu key, for one, keeps the settings index's name, `hotkeys.menu`). It changed nothing by
+itself before the owner answered G15 to G20 (§8), and each answer's effect is stated with its question. What it settles
+itself is listed as proposed D-entries (D69 onwards, §4.16), each open to the owner. Evidence:
+[FW](../research/ui-frameworks.md) (shared UI hosts for game mods, with the Skyrizz session's report on Skyrim's three
+hosts), [ML](../research/magelight.md), [REN](../research/renderers.md). A bare § is a section of
+[DESIGN.md](../DESIGN.md); "§4.n of this proposal" is said in full.
 
 ## 1. What the owner decided
 

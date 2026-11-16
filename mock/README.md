@@ -40,12 +40,13 @@ labels and model names (`chat-medium-it` and the like). OpenRouter and the four 
 EldenNet's design names them (its Cloud budget preset and its local probes). No game text, names, icons, fonts, images
 or button art are used. The state is early game: one region, two named NPCs met, two world lines that hold.
 
-The mock follows the spoiler and privacy rules (DESIGN §4.8, §4.9): only what the player has reached is shown or
-counted; absence is silent; the veiled look appears only for a perceived character whose name the game has not shown;
-every type, and every named NPC's and named boss's general profile, is listed from the start in first-meeting words
-(G5, G8, D67); story lines appear only on Playthrough, for the stage the player last saw; quest business shows a
-readiness word only. A provider's address appears on AI › Providers only; keys are write-only. Chat and model text
-appear only on Home's Lines and on Memories (Model calls shows no text in this mock).
+The mock follows the spoiler and privacy rules (EldenNet's PAGES §4.8 and §4.9 since G20; DESIGN §4.9 for PV3, PV6 and
+PV7): only what the player has reached is shown or counted; absence is silent; the veiled look appears only for a
+perceived character whose name the game has not shown; every type, and every named NPC's and named boss's general
+profile, is listed from the start in first-meeting words (G5, G8, D67); story lines appear only on Playthrough, for the
+stage the player last saw; quest business shows a readiness word only. A provider's address appears on AI › Providers
+only; keys are write-only. Chat and model text appear only on Home's Lines and on Memories (Model calls shows no text in
+this mock).
 
 ## Fonts
 
