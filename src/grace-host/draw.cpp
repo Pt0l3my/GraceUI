@@ -1,9 +1,12 @@
 // draw.cpp: the render path (D107; invariants 10 and 11). On the first Present of the bound swap chain once its present
 // queue is known: Dear ImGui's context, its Win32 backend for the swap chain's window and its DX12 backend for the
-// game's device and that queue, and the font atlas, baked and uploaded once (D117). Then, on every frame with anything
-// to draw, one command list draws Dear ImGui's draw data onto the current back buffer and is executed on the present
-// queue before the original Present. It never waits for the GPU: a frame slot still in use is skipped and counted
-// (D119). After warm-up it allocates nothing per frame.
+// game's device and that queue, and the font atlas, baked with every face registered so far and uploaded once (D117),
+// with every mod's texture registered so far. Then, on every frame with anything to draw, one command list draws the
+// frame onto the current back buffer, layer by layer (D76: the mods' hud and panel layers, GraceUI's own drawing, the
+// modal layer, the notices), and is executed on the present queue before the original Present. A texture a later mod
+// registers is uploaded at the frame after, on the same queue, and drawn once its copy's fence has passed. It never
+// waits for the GPU: a frame slot still in use is skipped and counted (D119). After warm-up it allocates nothing per
+// frame and frees nothing: each panel's newest draw list is drawn where it lies, in its triple buffer (D137).
 //
 // SAFETY: the raw pointers here follow three rules. (1) Every COM object this file creates or is handed with a
 // reference (the device, the queue, its own heaps, fence, allocators, lists and textures) is owned by one field and
@@ -11,21 +14,34 @@
 // a swap chain only with a live tag and calls unbind() once the tag says the swap chain has ended, and
 // mark_buffers_stale() before ResizeBuffers replaces the buffers, which render() takes before it touches one, so no
 // pointer into them is used after them. (3) Dear ImGui's objects (context, draw data, atlas texture) are used only
-// between their creation and the next call that may replace them, on this thread.
+// between their creation and the next call that may replace them, on this thread. The notices it draws are read from
+// the session's newest list (session.h), which no writer touches while this thread holds it. (4) A panel's draw list is
+// the reader's buffer of its triple buffer (drawlist.h), which no writer touches until this thread's next read of that
+// panel: this thread moves its vertices in place to where the panel lies, and lends its vertex and index arrays to an
+// ImDrawList of its own for the one RenderDrawData call that copies them, taking them back before it returns; the
+// vertices have Dear ImGui's ImDrawVert layout (the static_asserts below) and the indices its ImDrawIdx.
 #include "draw.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cfloat>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
 
 #include "counters.h"
 #include "draw_alloc.h"
+#include "draw_atlas.h"
+#include "grace/abi/panels.h"
+#include "grace/abi/registry.h"
 #include "imgui.h"
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
 #include "imgui_internal.h"  // ImFontAtlasBuildMain: the atlas baked once, before the first frame (D117)
 #include "input.h"
 #include "log.h"
+#include "session.h"
 
 #if defined(GRACEUI_TEST_EXPORTS)
 #include "graceui_test.h"
@@ -41,7 +57,58 @@ namespace {
 
 constexpr UINT kSlots = 4;  // frames GraceUI may have on the GPU at once (EST, D119), as many as the DX12 backend's
 constexpr UINT kMaxBuffers = DXGI_MAX_SWAP_CHAIN_BUFFERS;
-constexpr UINT kSrvDescriptors = 16;  // the atlas first; room for the textures S10.4.c registers
+// The shader-visible heap: the atlas, then one descriptor for each texture slot (1 + its slot), then the DX12 backend's.
+constexpr UINT kTextureDescriptors = grace::abi::kMaxTextures;
+constexpr UINT kSrvDescriptors = 1 + kTextureDescriptors + 16;
+
+// A panel's vertices and indices are drawn as they lie (SAFETY (4)): GraceUI's vertex is Dear ImGui's.
+static_assert(sizeof(GraceUiDrawVert) == sizeof(ImDrawVert) && offsetof(GraceUiDrawVert, x) == offsetof(ImDrawVert, pos) &&
+              offsetof(GraceUiDrawVert, u) == offsetof(ImDrawVert, uv) &&
+              offsetof(GraceUiDrawVert, colour) == offsetof(ImDrawVert, col));
+static_assert(std::is_same_v<ImDrawIdx, std::uint16_t>, "D76's u16 indices are Dear ImGui's default ImDrawIdx");
+
+// Notices (D134, §3.8): Grace's toasts at the top right, oldest first, above everything: a ground.2 card with a rule
+// border and 4 px corners, a 3 px accent in gold, ember or rot (ember and rot with their icon, D25), and ink.hi text in
+// Noto Sans 15 on 22 px lines (Dear ImGui's own font where GraceUI's fonts folder lacks it), at most 3 lines.
+constexpr float kNoticeMargin = 12.0f;
+constexpr float kNoticeWidth = 300.0f;
+constexpr float kNoticeAccent = 3.0f;
+constexpr float kNoticePadX = 12.0f;
+constexpr float kNoticePadY = 8.0f;
+constexpr float kNoticeGap = 6.0f;
+constexpr float kNoticeRadius = 4.0f;
+constexpr float kNoticeIcon = 12.0f;
+constexpr float kNoticeIconGap = 6.0f;
+constexpr int kNoticeLines = 3;
+constexpr std::uint32_t kNoticesDrawn = 5;
+
+constexpr ImU32 opaque(std::uint32_t rgb) noexcept {
+  return (0xFFu << IM_COL32_A_SHIFT) | (((rgb >> 16) & 0xFFu) << IM_COL32_R_SHIFT) |
+         (((rgb >> 8) & 0xFFu) << IM_COL32_G_SHIFT) | ((rgb & 0xFFu) << IM_COL32_B_SHIFT);
+}
+constexpr std::uint32_t kGround2 = 0x1D1A15;  // §3.2's ground.2, ink.hi and the three accents
+constexpr std::uint32_t kInkHigh = 0xE8E2D0;
+constexpr std::uint32_t kGold = 0xC9A65A;
+constexpr std::uint32_t kEmber = 0xDB9550;
+constexpr std::uint32_t kRot = 0xD9806F;
+constexpr std::uint32_t kRule = 0x352E1F;  // §3.2's rule: gold at 14% over ground.2
+constexpr ImU32 kAccents[] = {opaque(kGold), opaque(kEmber), opaque(kRot)};  // by GRACEUI_TONE_*
+
+#if defined(GRACEUI_TEST_EXPORTS)
+static_assert(kNoticeMargin == GRACEUI_TEST_NOTICE_MARGIN && kNoticeWidth == GRACEUI_TEST_NOTICE_WIDTH &&
+              kNoticeAccent == GRACEUI_TEST_NOTICE_ACCENT && kGround2 == GRACEUI_TEST_NOTICE_GROUND &&
+              kGold == GRACEUI_TEST_NOTICE_GOLD && kEmber == GRACEUI_TEST_NOTICE_EMBER &&
+              kRot == GRACEUI_TEST_NOTICE_ROT && kNoticePadY == GRACEUI_TEST_NOTICE_PAD_Y &&
+              atlas::kNoticeLineHeight == GRACEUI_TEST_NOTICE_LINE,
+              "graceui_test.h tells the harness where notices are drawn, and in what colours");
+#endif
+
+// The foreground draw list's room, reserved at warm-up for the most one frame draws: five notices of three lines (Dear
+// ImGui reserves four vertices and six indices for every byte of a text it draws, then gives back what it did not
+// use), the test panel and a holder's cursor.
+constexpr int kReservedVertices = 8192;
+constexpr int kReservedIndices = 12288;
+constexpr int kFrameLists = static_cast<int>(grace::abi::kMaxPanels) + 32;  // the frame's draw lists, all layers
 
 template <class T>
 void release(T*& object) noexcept {
@@ -62,6 +129,15 @@ struct BackBuffer {
   D3D12_CPU_DESCRIPTOR_HANDLE rtv;
 };
 
+// A mod's texture on the GPU, by its slot in the registry (registry.h): the registry holds its state, this its objects.
+struct GpuTexture {
+  ID3D12Resource* resource;
+  ID3D12Resource* upload;  // released once its copy's fence has passed
+  UINT64 copied_after;     // the fence value after its copy
+  UINT64 release_after;    // once its mod has gone: the fence value after the last frame that could draw it
+  bool releasing;
+};
+
 struct Renderer {
   // The bound swap chain, not owned (D118).
   IDXGISwapChain3* swap_chain;
@@ -79,6 +155,7 @@ struct Renderer {
   bool ready;           // our objects, the context and both backends exist, and the atlas's upload is queued
   bool format_pending;  // the swap chain's format changed: rebuild the DX12 backend once our frames are done
   bool off;
+  bool primed;          // warm-up's last frame, built and never submitted, has run (prime_frame)
 
   ID3D12DescriptorHeap* rtv_heap;
   ID3D12DescriptorHeap* srv_heap;
@@ -97,17 +174,24 @@ struct Renderer {
 
   ID3D12Resource* atlas;
   ID3D12Resource* atlas_upload;
-  ID3D12CommandAllocator* atlas_allocator;
-  ID3D12GraphicsCommandList* atlas_list;
+  ID3D12CommandAllocator* upload_allocator;  // the atlas's upload, then each later batch of textures
+  ID3D12GraphicsCommandList* upload_list;
+  UINT64 upload_fence;                       // the fence value after the last batch: the list is free once it passed
   UINT64 atlas_fence;
   bool atlas_ready;
   D3D12_GPU_DESCRIPTOR_HANDLE atlas_gpu;
+  GpuTexture textures[grace::abi::kMaxTextures];
 
   std::int64_t qpc_frequency;
   std::int64_t qpc_last;
 };
 
 constinit Renderer g{};
+
+// Warm-up's own: one ImDrawList for each panel slot, which lends itself a panel's newest list each frame, and the
+// frame's draw data, which orders every list by layer. Made once, never freed.
+constinit ImDrawList* g_panel_lists[grace::abi::kMaxPanels] = {};
+constinit ImDrawData* g_frame = nullptr;
 
 // Set by the resize detours, from any thread, before ResizeBuffers replaces the bound swap chain's buffers; the render
 // path takes it before it draws (mark_buffers_stale).
@@ -210,16 +294,197 @@ void transition(ID3D12GraphicsCommandList* list, ID3D12Resource* resource, D3D12
   list->ResourceBarrier(1, &barrier);
 }
 
+// ---- Mods' textures (D76, invariant 11): each uploaded once, on the present queue, in a batch the upload list records;
+// drawn once its copy's fence has passed; released, once its mod has gone, after the last frame that could draw it.
+
+D3D12_GPU_DESCRIPTOR_HANDLE texture_gpu(std::uint32_t slot) noexcept {
+  D3D12_GPU_DESCRIPTOR_HANDLE handle = g.srv_gpu_start;
+  handle.ptr += static_cast<UINT64>(1 + slot) * g.srv_increment;
+  return handle;
+}
+
+// One texture's objects and copy, recorded into the upload list; false if the device refused an object.
+bool record_texture(std::uint32_t slot, const grace::abi::TexturePixels& pixels) {
+  GpuTexture& gpu = g.textures[slot];
+  D3D12_HEAP_PROPERTIES device_heap{};
+  device_heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+  D3D12_RESOURCE_DESC desc{};
+  desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+  desc.Width = pixels.width;
+  desc.Height = pixels.height;
+  desc.DepthOrArraySize = 1;
+  desc.MipLevels = 1;
+  desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+  desc.SampleDesc.Count = 1;
+  desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+  if (FAILED(g.device->CreateCommittedResource(&device_heap, D3D12_HEAP_FLAG_NONE, &desc,
+                                               D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&gpu.resource)))) {
+    return false;
+  }
+  D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
+  UINT64 upload_bytes = 0;
+  g.device->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, nullptr, nullptr, &upload_bytes);
+  D3D12_HEAP_PROPERTIES upload_heap{};
+  upload_heap.Type = D3D12_HEAP_TYPE_UPLOAD;
+  D3D12_RESOURCE_DESC buffer_desc{};
+  buffer_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+  buffer_desc.Width = upload_bytes;
+  buffer_desc.Height = 1;
+  buffer_desc.DepthOrArraySize = 1;
+  buffer_desc.MipLevels = 1;
+  buffer_desc.Format = DXGI_FORMAT_UNKNOWN;
+  buffer_desc.SampleDesc.Count = 1;
+  buffer_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+  void* mapped = nullptr;
+  const D3D12_RANGE nothing_read{0, 0};
+  if (FAILED(g.device->CreateCommittedResource(&upload_heap, D3D12_HEAP_FLAG_NONE, &buffer_desc,
+                                               D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&gpu.upload))) ||
+      FAILED(gpu.upload->Map(0, &nothing_read, &mapped))) {
+    release(gpu.upload);
+    release(gpu.resource);
+    return false;
+  }
+  unsigned char* const rows = static_cast<unsigned char*>(mapped) + footprint.Offset;
+  const std::size_t row_bytes = static_cast<std::size_t>(pixels.width) * 4;
+  const unsigned char* const source_rows = pixels.pixels->data();
+  for (UINT y = 0; y < pixels.height; ++y) {
+    std::memcpy(rows + static_cast<std::size_t>(y) * footprint.Footprint.RowPitch, source_rows + y * row_bytes,
+                row_bytes);
+  }
+  const D3D12_RANGE written{0, static_cast<SIZE_T>(upload_bytes)};
+  gpu.upload->Unmap(0, &written);
+
+  D3D12_SHADER_RESOURCE_VIEW_DESC view{};
+  view.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+  view.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+  view.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+  view.Texture2D.MipLevels = 1;
+  D3D12_CPU_DESCRIPTOR_HANDLE cpu = g.srv_cpu_start;
+  cpu.ptr += static_cast<SIZE_T>(1 + slot) * g.srv_increment;
+  g.device->CreateShaderResourceView(gpu.resource, &view, cpu);
+
+  D3D12_TEXTURE_COPY_LOCATION target{};
+  target.pResource = gpu.resource;
+  target.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+  target.SubresourceIndex = 0;
+  D3D12_TEXTURE_COPY_LOCATION source{};
+  source.pResource = gpu.upload;
+  source.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+  source.PlacedFootprint = footprint;
+  g.upload_list->CopyTextureRegion(&target, 0, 0, 0, &source, nullptr);
+  transition(g.upload_list, gpu.resource, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+  return true;
+}
+
+// Every texture waiting, recorded into the upload list (reset by the caller); answers how many.
+std::uint32_t record_textures() {
+  grace::abi::Registry& registry = session::registry();
+  std::uint32_t recorded = 0;
+  for (std::uint32_t slot = 0; slot < grace::abi::kMaxTextures; ++slot) {
+    grace::abi::TexturePixels pixels;
+    if (!registry.claim(slot, pixels)) {
+      continue;
+    }
+    GpuTexture& gpu = g.textures[slot];
+    gpu = GpuTexture{};
+    const bool ok = record_texture(slot, pixels);
+    registry.uploading(slot);  // its pixels are copied (or will never be): a mod's thread may free them
+    if (!ok) {
+      log_line("a mod's texture of %ux%u could not be made on the GPU: it is not drawn", pixels.width, pixels.height);
+      registry.released(slot);
+      continue;
+    }
+    ++recorded;
+  }
+  return recorded;
+}
+
+// Closes the upload list and executes it on the present queue; every texture it copied is drawable once the fence
+// passes the value it signals.
+bool submit_upload() {
+  if (FAILED(g.upload_list->Close())) {
+    return false;
+  }
+  ID3D12CommandList* const lists[] = {g.upload_list};
+  g.queue->ExecuteCommandLists(1, lists);
+  if (FAILED(g.queue->Signal(g.fence, ++g.fence_last))) {
+    return false;
+  }
+  g.upload_fence = g.fence_last;
+  grace::abi::Registry& registry = session::registry();
+  for (std::uint32_t slot = 0; slot < grace::abi::kMaxTextures; ++slot) {
+    if (registry.state(slot) == grace::abi::TextureState::uploading && g.textures[slot].copied_after == 0 &&
+        g.textures[slot].resource != nullptr) {
+      g.textures[slot].copied_after = g.upload_fence;
+    }
+  }
+  state::texture_uploads.fetch_add(1, std::memory_order_relaxed);
+  return true;
+}
+
+// Once a frame, on the present thread: textures whose copy has passed become drawable, those of mods that have gone are
+// released once no frame can draw them, and textures registered since the last upload are uploaded in one batch, if
+// the upload list is free. Never waits.
+void update_textures() {
+  grace::abi::Registry& registry = session::registry();
+  bool waiting = false;
+  for (std::uint32_t slot = 0; slot < grace::abi::kMaxTextures; ++slot) {
+    GpuTexture& gpu = g.textures[slot];
+    const grace::abi::TextureState now = registry.state(slot);
+    if (now == grace::abi::TextureState::uploading && gpu.resource != nullptr && fence_passed(gpu.copied_after) &&
+        gpu.copied_after != 0) {
+      release(gpu.upload);
+      registry.ready(slot);
+      state::textures_uploaded.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (registry.retiring(slot) && gpu.resource != nullptr &&
+        (now == grace::abi::TextureState::uploading || now == grace::abi::TextureState::ready)) {
+      if (!gpu.releasing) {
+        gpu.releasing = true;  // no frame from now draws it (Registry::drawable): only those already submitted might
+        gpu.release_after = std::max(g.fence_last, gpu.copied_after);
+      } else if (fence_passed(gpu.release_after)) {
+        release(gpu.upload);
+        release(gpu.resource);
+        gpu = GpuTexture{};
+        registry.released(slot);
+      }
+    }
+    waiting = waiting || (now == grace::abi::TextureState::pending && !registry.retiring(slot));
+  }
+  if (!waiting || !fence_passed(g.upload_fence)) {
+    return;
+  }
+  if (FAILED(g.upload_allocator->Reset()) || FAILED(g.upload_list->Reset(g.upload_allocator, nullptr))) {
+    turn_off("the upload list could not be reset");
+    return;
+  }
+  const std::uint32_t recorded = record_textures();
+  if (!submit_upload()) {
+    turn_off("a texture's upload could not be submitted");
+    return;
+  }
+  log_line("%u textures of a mod's uploaded after warm-up", recorded);
+}
+
+// The GPU descriptor a draw command's texture id names: the atlas, or a mod's texture that is ready; 0 for none (the
+// command is not drawn, as for a texture still on its way).
+ImTextureID texture_of(std::uint64_t id) noexcept {
+  if (id == grace::abi::kAtlasTexture) {
+    return static_cast<ImTextureID>(g.atlas_gpu.ptr);
+  }
+  const std::uint32_t slot = session::registry().drawable(id);
+  if (slot >= grace::abi::kMaxTextures || g.textures[slot].resource == nullptr) {
+    return ImTextureID{0};
+  }
+  return static_cast<ImTextureID>(texture_gpu(slot).ptr);
+}
+
 // The atlas (D117): Dear ImGui bakes it once, here, and GraceUI uploads it itself, once, on the present queue, and
 // polls its fence on later frames: the DX12 backend's own texture path would wait for the GPU on this thread.
 bool start_atlas() {
   ImFontAtlas* atlas = ImGui::GetIO().Fonts;
-  // GraceUI 0.1 bakes Dear ImGui's own small font only; the Grace faces and those consumers register join the same
-  // bake before warm-up (S10.4.c, §3.16).
-  if (atlas->AddFontDefaultBitmap() == nullptr) {
-    return false;
-  }
-  ImFontAtlasBuildMain(atlas);
+  // GraceUI's notices' face and every face the mods registered before now, in one bake (§3.16, D80).
+  atlas::bake(atlas);
   ImTextureData* texture = atlas->TexData;
   if (texture == nullptr || texture->Pixels == nullptr || texture->Format != ImTextureFormat_RGBA32) {
     return false;
@@ -283,10 +548,10 @@ bool start_atlas() {
   view.Texture2D.MipLevels = 1;
   g.device->CreateShaderResourceView(g.atlas, &view, g.srv_cpu_start);
   g.atlas_gpu = g.srv_gpu_start;
-  g.srv_used = 1;
+  g.srv_used = 1 + kTextureDescriptors;
 
   // The copy runs on the present queue, so every later frame of ours, on the same queue, comes after it.
-  if (FAILED(g.atlas_allocator->Reset()) || FAILED(g.atlas_list->Reset(g.atlas_allocator, nullptr))) {
+  if (FAILED(g.upload_allocator->Reset()) || FAILED(g.upload_list->Reset(g.upload_allocator, nullptr))) {
     return false;
   }
   D3D12_TEXTURE_COPY_LOCATION target{};
@@ -297,17 +562,17 @@ bool start_atlas() {
   source.pResource = g.atlas_upload;
   source.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
   source.PlacedFootprint = footprint;
-  g.atlas_list->CopyTextureRegion(&target, 0, 0, 0, &source, nullptr);
-  transition(g.atlas_list, g.atlas, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-  if (FAILED(g.atlas_list->Close())) {
-    return false;
-  }
-  ID3D12CommandList* const lists[] = {g.atlas_list};
-  g.queue->ExecuteCommandLists(1, lists);
-  if (FAILED(g.queue->Signal(g.fence, ++g.fence_last))) {
+  g.upload_list->CopyTextureRegion(&target, 0, 0, 0, &source, nullptr);
+  transition(g.upload_list, g.atlas, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+  // Every mod's texture registered before warm-up joins the same copy (D76).
+  const std::uint32_t textures = record_textures();
+  if (!submit_upload()) {
     return false;
   }
   g.atlas_fence = g.fence_last;
+  if (textures != 0) {
+    log_line("%u textures of mods' joined the atlas's upload", textures);
+  }
   state::atlas_width.store(width, std::memory_order_relaxed);
   state::atlas_height.store(height, std::memory_order_relaxed);
   log_line("atlas baked at %ux%u; its one upload is queued", width, height);
@@ -326,8 +591,6 @@ bool finish_atlas() noexcept {
   texture->SetTexID(static_cast<ImTextureID>(g.atlas_gpu.ptr));
   texture->SetStatus(ImTextureStatus_OK);
   release(g.atlas_upload);
-  release(g.atlas_list);
-  release(g.atlas_allocator);
   g.atlas_ready = true;
   state::atlas_ready.store(true, std::memory_order_relaxed);
   return true;
@@ -364,10 +627,10 @@ bool build_renderer() {
     }
     slot.fence_value = 0;
   }
-  if (FAILED(g.device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g.atlas_allocator))) ||
-      FAILED(g.device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g.atlas_allocator, nullptr,
-                                         IID_PPV_ARGS(&g.atlas_list))) ||
-      FAILED(g.atlas_list->Close())) {
+  if (FAILED(g.device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g.upload_allocator))) ||
+      FAILED(g.device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g.upload_allocator, nullptr,
+                                         IID_PPV_ARGS(&g.upload_list))) ||
+      FAILED(g.upload_list->Close())) {
     return false;
   }
 
@@ -381,6 +644,10 @@ bool build_renderer() {
   io.LogFilename = nullptr;
   io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;  // the cursor is the input half's (§5.5)
   io.ConfigErrorRecoveryEnableTooltip = false;              // nothing of Dear ImGui's own is ever drawn on the game
+  // Dear ImGui frees a draw list unused for this long of its own time, and makes it again at its next use: on the
+  // present thread, during play, when a notice comes after a quiet spell. Never, then (D134; invariant 10).
+  io.ConfigMemoryCompactTimer = FLT_MAX;
+  input::reserve_imgui_queues();  // a holder's input then allocates nothing during play (invariant 10)
   if (!ImGui_ImplWin32_Init(g.window) || !init_dx12_backend() || !start_atlas()) {
     return false;
   }
@@ -452,25 +719,273 @@ void reread_swap_chain() noexcept {
   }
 }
 
-bool wants_to_draw() noexcept {
-  // GraceUI 0.1 draws nothing of its own; panels, notices and the menu join here with S10.4.c.
-  return state::test_panel.load(std::memory_order_relaxed);
+bool notice_showing(const grace::abi::NoticeList& notices, std::int64_t now_ms) noexcept {
+  for (std::uint32_t i = 0; i < notices.count; ++i) {
+    if (notices.items[i].live_at(now_ms)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// The test panel stands for GraceUI's own drawing: the notice-only mode draws nothing but notices (D88).
+bool test_panel_on() noexcept {
+  return state::test_panel.load(std::memory_order_relaxed) && !session::notice_only();
+}
+
+// Whether any panel is shown with a list to draw (its newest published one is checked when it is drawn).
+bool panels_showing() noexcept {
+  if (session::notice_only()) {
+    return false;
+  }
+  grace::abi::Panels& panels = session::panels();
+  for (std::uint32_t i = 0; i < grace::abi::kMaxPanels; ++i) {
+    grace::abi::PanelView view;
+    if (panels.view(i, view) && view.visible && panels.lists(i).published() != 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool wants_to_draw(const grace::abi::NoticeList& notices, std::int64_t now_ms) noexcept {
+  return test_panel_on() || input::wants_frames() || notice_showing(notices, now_ms) || panels_showing();
+}
+
+// ---- Notices (D134, §3.8).
+
+struct NoticeLine {
+  const char* begin;
+  const char* end;
+};
+
+// A notice's text in lines that fit `wrap` pixels, at most kNoticeLines; answers how many. Words wrap as Dear ImGui
+// wraps them; a line feed ends a line.
+int lay_out(ImFont* font, float size, float wrap, const char* text, const char* end, NoticeLine (&lines)[kNoticeLines]) {
+  int count = 0;
+  const char* at = text;
+  while (at < end && count < kNoticeLines) {
+    const char* feed = static_cast<const char*>(std::memchr(at, '\n', static_cast<std::size_t>(end - at)));
+    const char* stop = feed != nullptr ? feed : end;
+    const char* cut = font->CalcWordWrapPosition(size, at, stop, wrap);
+    if (cut <= at) {
+      cut = at + 1;  // not even one character fits: take one byte, then its continuation bytes
+      while (cut < stop && (static_cast<unsigned char>(*cut) & 0xC0u) == 0x80u) {
+        ++cut;
+      }
+    }
+    lines[count++] = NoticeLine{at, cut};
+    at = cut;
+    if (at < end && *at == '\n') {
+      ++at;
+    }
+    while (at < stop && *at == ' ') {
+      ++at;
+    }
+  }
+  return count;
+}
+
+// Ember's icon is a triangle, rot's a circle, each with a mark of exclamation in the ground's colour (D25).
+void draw_icon(ImDrawList* list, std::uint32_t tone, float x, float centre_y) {
+  const ImU32 colour = kAccents[tone];
+  const float half = kNoticeIcon * 0.5f;
+  if (tone == GRACEUI_TONE_WARNING) {
+    list->AddTriangleFilled(ImVec2(x + half, centre_y - half), ImVec2(x + kNoticeIcon, centre_y + half),
+                            ImVec2(x, centre_y + half), colour);
+  } else {
+    list->AddCircleFilled(ImVec2(x + half, centre_y), half, colour, 16);
+  }
+  const ImU32 mark = opaque(kGround2);
+  list->AddRectFilled(ImVec2(x + half - 1.0f, centre_y - half + 3.5f), ImVec2(x + half + 1.0f, centre_y + 1.5f), mark);
+  list->AddRectFilled(ImVec2(x + half - 1.0f, centre_y + 2.5f), ImVec2(x + half + 1.0f, centre_y + 4.5f), mark);
+}
+
+void draw_notices(const grace::abi::NoticeList& notices, std::int64_t now_ms) {
+  const float display_width = static_cast<float>(g.width);
+  const float width = std::min(kNoticeWidth, display_width - 2.0f * kNoticeMargin);
+  ImFont* font = atlas::notice_font();
+  if (width < 96.0f || font == nullptr) {
+    return;
+  }
+  ImDrawList* list = ImGui::GetForegroundDrawList();
+  const float size = font->LegacySize;
+  const float line_height = atlas::notice_face_is_grace() ? atlas::kNoticeLineHeight : size + 4.0f;
+  const float x1 = display_width - kNoticeMargin;
+  const float x0 = x1 - width;
+  float y = kNoticeMargin;
+  std::uint32_t drawn = 0;
+  for (std::uint32_t i = 0; i < notices.count && drawn < kNoticesDrawn && y < static_cast<float>(g.height); ++i) {
+    const grace::abi::Notice& notice = notices.items[i];
+    if (!notice.live_at(now_ms)) {
+      continue;
+    }
+    const std::uint32_t tone = notice.tone <= GRACEUI_TONE_DANGER ? notice.tone : GRACEUI_TONE_NORMAL;
+    const float icon = tone == GRACEUI_TONE_NORMAL ? 0.0f : kNoticeIcon + kNoticeIconGap;
+    const float text_x = x0 + kNoticeAccent + kNoticePadX + icon;
+    const float wrap = x1 - kNoticePadX - text_x;
+    NoticeLine lines[kNoticeLines];
+    const int count = lay_out(font, size, wrap, notice.text, notice.text + notice.text_length, lines);
+    const float y1 = y + 2.0f * kNoticePadY + static_cast<float>(std::max(count, 1)) * line_height;
+    list->AddRectFilled(ImVec2(x0, y), ImVec2(x1, y1), opaque(kGround2), kNoticeRadius);
+    list->AddRect(ImVec2(x0, y), ImVec2(x1, y1), opaque(kRule), kNoticeRadius, 1.0f);
+    list->AddRectFilled(ImVec2(x0, y), ImVec2(x0 + kNoticeAccent, y1), kAccents[tone], kNoticeRadius,
+                        ImDrawFlags_RoundLeft);  // over the border: the accent is the card's left edge
+    const float inset = (line_height - size) * 0.5f;
+    if (icon > 0.0f) {
+      draw_icon(list, tone, x0 + kNoticeAccent + kNoticePadX, y + kNoticePadY + line_height * 0.5f);
+    }
+    for (int line = 0; line < count; ++line) {
+      list->AddText(font, size, ImVec2(text_x, y + kNoticePadY + inset + static_cast<float>(line) * line_height),
+                    opaque(kInkHigh), lines[line].begin, lines[line].end);
+    }
+    y = y1 + kNoticeGap;
+    ++drawn;
+  }
 }
 
 void draw_test_panel() {
 #if defined(GRACEUI_TEST_EXPORTS)
+  if (!test_panel_on()) {
+    return;
+  }
   constexpr ImU32 panel = (255u << IM_COL32_A_SHIFT) | (unsigned{GRACEUI_TEST_PANEL_B} << IM_COL32_B_SHIFT) |
                           (unsigned{GRACEUI_TEST_PANEL_G} << IM_COL32_G_SHIFT) |
                           (unsigned{GRACEUI_TEST_PANEL_R} << IM_COL32_R_SHIFT);
   constexpr ImU32 white = 0xFFFFFFFFu;
-  ImDrawList* list = ImGui::GetForegroundDrawList();
+  // GraceUI's own drawing, on the menu's layer: above the mods' hud and panel layers, below their modals (D76).
+  ImDrawList* list = ImGui::GetBackgroundDrawList();
   list->AddRectFilled(ImVec2(float{GRACEUI_TEST_PANEL_X0}, float{GRACEUI_TEST_PANEL_Y0}),
                       ImVec2(float{GRACEUI_TEST_PANEL_X1}, float{GRACEUI_TEST_PANEL_Y1}), panel);
   list->AddText(ImVec2(float{GRACEUI_TEST_TEXT_X}, float{GRACEUI_TEST_TEXT_Y}), white, GRACEUI_TEST_TEXT);
 #endif
 }
 
-ImDrawData* build_frame() {
+// ---- Panels (D76): each shown panel's newest list, moved to where its anchor puts it and clipped to it.
+
+// The lists of one frame, by layer: hud, panel, modal.
+struct PanelLayers {
+  ImDrawList* lists[3][grace::abi::kMaxPanels];
+  int counts[3];
+};
+
+int layer_index(std::uint32_t layer) noexcept {
+  return layer == GRACEUI_LAYER_HUD ? 0 : layer == GRACEUI_LAYER_PANEL ? 1 : 2;
+}
+
+void gather_panels(PanelLayers& layers) noexcept {
+  layers.counts[0] = layers.counts[1] = layers.counts[2] = 0;
+  if (session::notice_only() || g_panel_lists[0] == nullptr) {
+    return;
+  }
+  const float display_width = static_cast<float>(g.width);
+  const float display_height = static_cast<float>(g.height);
+  grace::abi::Panels& panels = session::panels();
+  for (std::uint32_t i = 0; i < grace::abi::kMaxPanels; ++i) {
+    grace::abi::PanelView view;
+    if (!panels.view(i, view) || !view.visible) {
+      continue;
+    }
+    grace::abi::DrawListData& data = panels.lists(i).read();
+    if (data.serial == 0 || data.panel_generation != static_cast<std::uint32_t>(view.id >> 8) ||
+        data.commands.empty()) {
+      continue;  // nothing published yet, or a list of the slot's earlier panel
+    }
+    const grace::abi::Rect rect = grace::abi::place(view.desc, display_width, display_height);
+    if (data.placed_x != rect.x0 || data.placed_y != rect.y0) {
+      // Moved where the panel lies, once: the list stays this thread's until a newer one comes.
+      const float dx = rect.x0 - data.placed_x;
+      const float dy = rect.y0 - data.placed_y;
+      for (GraceUiDrawVert& vertex : data.vertices) {
+        vertex.x += dx;
+        vertex.y += dy;
+      }
+      data.placed_x = rect.x0;
+      data.placed_y = rect.y0;
+    }
+    const float bound_x0 = std::max(rect.x0, 0.0f);
+    const float bound_y0 = std::max(rect.y0, 0.0f);
+    const float bound_x1 = std::min(rect.x1, display_width);
+    const float bound_y1 = std::min(rect.y1, display_height);
+    ImDrawList* list = g_panel_lists[i];
+    list->CmdBuffer.resize(0);  // within the room reserved at warm-up: no allocation
+    for (const GraceUiDrawCommand& command : data.commands) {
+      const ImTextureID texture = texture_of(command.texture);
+      if (command.index_count == 0 || texture == ImTextureID{0}) {
+        continue;  // nothing to draw, or a texture not yet on the GPU
+      }
+      ImDrawCmd cmd;
+      cmd.ClipRect = ImVec4(std::max(command.clip_x0 + rect.x0, bound_x0), std::max(command.clip_y0 + rect.y0, bound_y0),
+                            std::min(command.clip_x1 + rect.x0, bound_x1), std::min(command.clip_y1 + rect.y0, bound_y1));
+      if (cmd.ClipRect.z <= cmd.ClipRect.x || cmd.ClipRect.w <= cmd.ClipRect.y) {
+        continue;
+      }
+      cmd.TexRef = ImTextureRef(texture);
+      cmd.VtxOffset = command.vertex_offset;  // the backend honours it (ImGuiBackendFlags_RendererHasVtxOffset)
+      cmd.IdxOffset = command.index_offset;
+      cmd.ElemCount = command.index_count;
+      list->CmdBuffer.push_back(cmd);
+    }
+    if (list->CmdBuffer.Size == 0) {
+      continue;
+    }
+    // SAFETY: rule (4) above: the list's arrays, lent for this frame's RenderDrawData only.
+    list->VtxBuffer.Data = reinterpret_cast<ImDrawVert*>(data.vertices.data());
+    list->VtxBuffer.Size = list->VtxBuffer.Capacity = static_cast<int>(data.vertices.size());
+    list->IdxBuffer.Data = data.indices.data();
+    list->IdxBuffer.Size = list->IdxBuffer.Capacity = static_cast<int>(data.indices.size());
+    const int layer = layer_index(view.desc.layer);
+    layers.lists[layer][layers.counts[layer]++] = list;
+  }
+}
+
+// Takes back every array lent to a panel's list (SAFETY (4)), so that no ImDrawList of GraceUI's points into a buffer.
+void take_back_panels() noexcept {
+  for (ImDrawList* list : g_panel_lists) {
+    if (list != nullptr) {
+      list->VtxBuffer.Data = nullptr;
+      list->VtxBuffer.Size = list->VtxBuffer.Capacity = 0;
+      list->IdxBuffer.Data = nullptr;
+      list->IdxBuffer.Size = list->IdxBuffer.Capacity = 0;
+    }
+  }
+}
+
+// Warm-up's last step (D134): one frame of Dear ImGui's, built and never submitted, which makes the foreground and
+// background draw lists that the notices and the test panel use and reserves their room, so that no notice allocates
+// on the present thread during play (invariant 10); and the panels' lists and the frame's draw data, with their room.
+void prime_frame() {
+  ImGuiIO& io = ImGui::GetIO();
+  io.DisplaySize = ImVec2(static_cast<float>(std::max(g.width, 1u)), static_cast<float>(std::max(g.height, 1u)));
+  io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
+  io.DeltaTime = 1.0f / 60.0f;
+  ImGui_ImplDX12_NewFrame();
+  ImGui::NewFrame();
+  for (ImDrawList* list : {ImGui::GetForegroundDrawList(), ImGui::GetBackgroundDrawList()}) {
+    list->VtxBuffer.reserve(kReservedVertices);
+    list->IdxBuffer.reserve(kReservedIndices);
+    list->CmdBuffer.reserve(16);
+  }
+  ImGui::Render();
+  for (ImDrawList*& list : g_panel_lists) {
+    list = IM_NEW(ImDrawList)(ImGui::GetDrawListSharedData());
+    list->CmdBuffer.reserve(static_cast<int>(grace::abi::kDrawCommandsMax));
+  }
+  g_frame = IM_NEW(ImDrawData)();
+  g_frame->CmdLists.reserve(kFrameLists);
+  g.qpc_last = qpc_now();
+  g.primed = true;
+}
+
+void add_list(ImDrawList* list) {
+  if (g_frame->CmdLists.Size < kFrameLists) {  // within the room reserved at warm-up
+    g_frame->CmdLists.push_back(list);
+    g_frame->TotalVtxCount += list->VtxBuffer.Size;
+    g_frame->TotalIdxCount += list->IdxBuffer.Size;
+  }
+}
+
+ImDrawData* build_frame(const grace::abi::NoticeList& notices, std::int64_t now_ms) {
   ImGuiIO& io = ImGui::GetIO();
   io.DisplaySize = ImVec2(static_cast<float>(g.width), static_cast<float>(g.height));
   io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
@@ -479,11 +994,48 @@ ImDrawData* build_frame() {
   io.DeltaTime = seconds > 1e-6 ? static_cast<float>(seconds) : 1e-6f;
   g.qpc_last = now;
   ImGui_ImplDX12_NewFrame();
-  input::before_imgui_frame();  // the window's input, while a holder has it (the input half; D77, D122)
+  input::before_imgui_frame(g.width, g.height);  // the holder's input, if a holder has it (D77, D125)
   ImGui::NewFrame();
+  input::after_new_frame();
   draw_test_panel();
+  draw_notices(notices, now_ms);  // the foreground list: above every layer but the holder's cursor (D76)
+  ImDrawList* const foreground = ImGui::GetForegroundDrawList();
   ImGui::Render();
-  return ImGui::GetDrawData();
+  const ImDrawData* own = ImGui::GetDrawData();
+
+  // The layers (D76): the mods' hud, then panel, then GraceUI's own drawing (the menu's layer), then the mods' modal,
+  // then the notices (and Dear ImGui's cursor for a holder). Within a layer, panels in the order of their slots.
+  PanelLayers layers;
+  gather_panels(layers);
+  g_frame->Clear();
+  g_frame->Valid = true;
+  g_frame->DisplayPos = ImVec2(0.0f, 0.0f);
+  g_frame->DisplaySize = io.DisplaySize;
+  g_frame->FramebufferScale = ImVec2(1.0f, 1.0f);
+  g_frame->OwnerViewport = own->OwnerViewport;
+  for (int layer = 0; layer < 2; ++layer) {
+    for (int i = 0; i < layers.counts[layer]; ++i) {
+      add_list(layers.lists[layer][i]);
+    }
+  }
+  bool foreground_drawn = false;
+  for (ImDrawList* list : own->CmdLists) {
+    if (list == foreground) {
+      foreground_drawn = true;
+    } else {
+      add_list(list);
+    }
+  }
+  for (int i = 0; i < layers.counts[2]; ++i) {
+    add_list(layers.lists[2][i]);
+  }
+  if (foreground_drawn) {
+    add_list(foreground);
+  }
+  if (layers.counts[0] + layers.counts[1] + layers.counts[2] > 0) {
+    state::panel_frames.fetch_add(1, std::memory_order_relaxed);
+  }
+  return g_frame;
 }
 
 void record_and_submit(Slot& slot, const BackBuffer& buffer, ImDrawData* data) {
@@ -601,10 +1153,17 @@ void render() {
   if (!finish_atlas()) {
     return;
   }
+  update_textures();  // a mod's texture: drawable once copied, released once its mod has gone, or uploaded now
   if (g.format_pending && !rebuild_for_format()) {
     return;
   }
-  if (!wants_to_draw() || g.width == 0 || g.height == 0) {
+  if (!g.primed) {
+    prime_frame();
+  }
+  input::rendered();  // the overlay is live: the input half's watchdog hears it (2 s without one ends a holder)
+  const std::int64_t now_ms = input::now_ms();
+  const grace::abi::NoticeList& notices = session::notices().read();
+  if (!wants_to_draw(notices, now_ms) || g.width == 0 || g.height == 0) {
     return;  // nothing to draw: the frame passes through untouched
   }
   Slot& slot = g.slots[g.draws % kSlots];
@@ -616,12 +1175,12 @@ void render() {
   if (buffer == nullptr) {
     return;
   }
-  ImDrawData* data = build_frame();
-  if (data == nullptr || data->TotalVtxCount == 0 || data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f) {
-    return;
+  ImDrawData* data = build_frame(notices, now_ms);
+  if (data != nullptr && data->TotalVtxCount != 0 && data->DisplaySize.x > 0.0f && data->DisplaySize.y > 0.0f) {
+    data->Textures = nullptr;  // D117: the backend's texture path never runs; the atlas is already on the GPU
+    record_and_submit(slot, *buffer, data);
   }
-  data->Textures = nullptr;  // D117: the backend's texture path never runs; the atlas is already on the GPU
-  record_and_submit(slot, *buffer, data);
+  take_back_panels();
 }
 
 void turn_off(const char* why) noexcept {
@@ -629,6 +1188,7 @@ void turn_off(const char* why) noexcept {
     g.off = true;
     state::render_off.store(true, std::memory_order_relaxed);
     log_line("the render path is off for this session: %s", why);
+    input::render_off();  // a holder's view can no longer be drawn: its input ends (D100)
   }
 }
 

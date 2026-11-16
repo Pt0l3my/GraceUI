@@ -29,7 +29,10 @@ namespace state {
 inline constinit std::atomic<HostState> host{HostState::not_asked};
 inline constinit std::atomic<std::uint32_t> init_threads_started{0};
 inline constinit std::atomic<std::uint32_t> hook_install_runs{0};
-inline constinit std::atomic<std::uint32_t> hooks_installed{0};
+inline constinit std::atomic<std::uint32_t> hooks_installed{0};  // every hook: the table's and the window procedure's
+inline constinit std::atomic<std::uint32_t> render_hooks{0};
+inline constinit std::atomic<std::uint32_t> dinput_hooks{0};
+inline constinit std::atomic<std::uint32_t> xinput_hooks{0};
 
 // Present and Present1 calls, outermost only; command lists executed between two presents are stamped with it.
 inline constinit std::atomic<std::uint64_t> presents{0};
@@ -49,8 +52,15 @@ inline constinit std::atomic<bool> render_off{false};
 inline constinit std::atomic<std::uint64_t> frames_drawn{0};
 inline constinit std::atomic<std::uint64_t> frames_skipped_busy{0};
 
-// The test panel (test builds turn it on; nothing else draws in GraceUI 0.1).
+// The test panel (test builds turn it on): GraceUI's own drawing, on the menu's layer (D76).
 inline constinit std::atomic<bool> test_panel{false};
+
+// Panels, draw lists and textures (S10.4.c), for the log and the test exports.
+inline constinit std::atomic<std::uint64_t> lists_submitted{0};  // published
+inline constinit std::atomic<std::uint64_t> lists_refused{0};
+inline constinit std::atomic<std::uint64_t> panel_frames{0};     // frames that drew at least one panel's list
+inline constinit std::atomic<std::uint32_t> texture_uploads{0};  // copies queued on the GPU (the upload counter)
+inline constinit std::atomic<std::uint32_t> textures_uploaded{0};
 
 }  // namespace state
 }  // namespace grace::host

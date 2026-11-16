@@ -1,10 +1,11 @@
 // abi.cpp: graceui.dll's exports (D73, invariant 15). No exception crosses any of them (D110): each answers through a
-// catch-all, and everything they call in grace-host is noexcept besides.
+// catch-all, and everything they call in grace-host is noexcept besides. ABI 1's table is abi_table.cpp's.
 //
-// SAFETY: the raw pointers from callers here are the test exports' arguments, checked for null and passed on with the
-// capacity the caller gives; nothing else crosses the boundary.
+// SAFETY: the raw pointers from callers here are the test exports' arguments, checked for null (and a struct's size
+// against ours) and passed on with the capacity the caller gives; nothing else crosses the boundary.
 #include "graceui.h"
 
+#include "abi_table.h"
 #include "grace/host/host.h"
 
 #if defined(GRACEUI_TEST_EXPORTS)
@@ -19,10 +20,10 @@ GRACEUI_API uint32_t GraceUI_Version(void) {
 
 GRACEUI_API const void* GraceUI_RequestApi(uint32_t major) {
   try {
-    (void)grace::host::request_start();
-    // ABI 1's table, GraceUiApi1, comes with roadmap item S10.4.b; until then every major is answered with null.
-    (void)major;
-    return nullptr;
+    // Every request, of any major, goes through the start (D71, D72): the first takes the mutex. Only the active copy
+    // serves a table, and only ABI 1's.
+    const grace::host::Copy copy = grace::host::request_start();
+    return copy == grace::host::Copy::active && major == GRACEUI_ABI_MAJOR ? graceui::table1() : nullptr;
   } catch (...) {
     return nullptr;
   }
@@ -67,6 +68,119 @@ GRACEUI_API uint32_t GraceUI_Test_GetFrameCosts(GraceUiTestFrameCost* out, uint3
 GRACEUI_API uint32_t GraceUI_Test_GetLogLine(uint32_t index, char* out, uint32_t capacity) {
   try {
     return out == nullptr ? 0 : grace::host::test_copy_log_line(index, out, capacity);
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_GetHookName(uint32_t index, char* out, uint32_t capacity) {
+  try {
+    return out == nullptr ? 0 : grace::host::test_copy_hook_name(index, out, capacity);
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_RequestInput(uint32_t owner, uint32_t kind, uint32_t wants, GraceUiTestAnswer* out) {
+  try {
+    if (out == nullptr) {
+      return 0;
+    }
+    grace::host::test_request_input(owner, kind, wants, *out);
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_ReleaseInput(uint32_t owner) {
+  try {
+    return grace::host::test_release_input(owner) ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API void GraceUI_Test_SetWorld(uint32_t flags) {
+  try {
+    grace::host::test_set_world(flags);
+  } catch (...) {
+  }
+}
+
+GRACEUI_API void GraceUI_Test_SetCaret(int32_t x, int32_t y, int32_t height) {
+  try {
+    grace::host::test_set_caret(x, y, height);
+  } catch (...) {
+  }
+}
+
+GRACEUI_API void GraceUI_Test_SetCodePage(uint32_t code_page) {
+  try {
+    grace::host::test_set_code_page(code_page);
+  } catch (...) {
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_GetInput(GraceUiTestInput* out) {
+  try {
+    if (out == nullptr || out->size < sizeof(GraceUiTestInput)) {
+      return 0;
+    }
+    grace::host::test_fill_input(*out);
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_GetChars(uint32_t* out, uint32_t capacity) {
+  try {
+    return out == nullptr ? 0 : grace::host::test_copy_chars(out, capacity);
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_GetInputCosts(uint32_t kind, uint32_t* out, uint32_t capacity) {
+  try {
+    return out == nullptr ? 0 : grace::host::test_copy_input_costs(kind, out, capacity);
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API void GraceUI_Test_SetAntiCheatNames(const wchar_t* module_prefix, const wchar_t* parent_name) {
+  try {
+    grace::host::test_set_anti_cheat_names(module_prefix, parent_name);
+  } catch (...) {
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_GetNotice(uint32_t index, GraceUiTestNotice* out) {
+  try {
+    if (out == nullptr || out->size < sizeof(GraceUiTestNotice)) {
+      return 0;
+    }
+    return grace::host::test_copy_notice(index, *out) ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API void GraceUI_Test_ClearNotices(void) {
+  try {
+    grace::host::test_clear_notices();
+  } catch (...) {
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_GetConsumer(uint32_t index, GraceUiTestConsumer* out) {
+  try {
+    if (out == nullptr || out->size < sizeof(GraceUiTestConsumer)) {
+      return 0;
+    }
+    return grace::host::test_copy_consumer(index, *out) ? 1 : 0;
   } catch (...) {
     return 0;
   }
