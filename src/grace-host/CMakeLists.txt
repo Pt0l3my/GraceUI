@@ -2,18 +2,21 @@
 # backends and MinHook (invariant 16). Its raw pointers, casts and hook code live only in its abi, hooks and draw files
 # (D110; tools/check_safety.py). The input half's rules are grace-input's, pure (D124); its hooks are hooks_input.cpp's.
 # The ABI's rules are grace-abi's, pure (D131): session.cpp holds the session's mods and notices with them, and
-# anticheat.cpp gathers what the anti-cheat check matches (D133).
+# anticheat.cpp gathers what the anti-cheat check matches (D133). From S10.4.c, surfaces.cpp holds the slots for
+# panels, draw lists, textures, faces, input and providers, and draw_atlas.cpp the shared atlas's faces and glyph tables.
 add_library(grace_host STATIC
   abi.cpp
   anticheat.cpp
   draw.cpp
   draw_alloc.cpp
+  draw_atlas.cpp
   hooks.cpp
   hooks_input.cpp
   hooks_vtable.c
   input.cpp
   log.cpp
-  session.cpp)
+  session.cpp
+  surfaces.cpp)
 target_include_directories(grace_host
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

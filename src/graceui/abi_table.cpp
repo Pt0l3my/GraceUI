@@ -4,14 +4,18 @@
 //
 // SAFETY: the raw pointers from callers here are the slots' arguments: a struct a mod passes, read only after its first
 // four bytes, its size, have been read, and only as far as that size (and this header's) reaches; a string, read only
-// for the length the mod gives and only after that length has been checked against the string's bound; and a struct
-// GraceUI fills, written only as far as the size the mod set in it. Nothing is kept that points into a mod's memory.
+// for the length the mod gives and only after that length has been checked against the string's bound; an array a
+// struct names (a texture's pixels, a face's data and ranges, a draw list's vertices, indices and commands), read only
+// for the counts the struct gives, after grace-host has checked them against their bounds, straight into GraceUI's own
+// store; and a struct GraceUI fills, written only as far as the size the mod set in it. Nothing is kept that points
+// into a mod's memory.
 #include "abi_table.h"
 
 #include <cstdint>
 #include <cstring>
 #include <string_view>
 
+#include "grace/abi/drawlist.h"
 #include "grace/host/host.h"
 #include "graceui.h"
 
@@ -26,6 +30,7 @@ constexpr std::uint32_t kConnectAnswer10 = 32;
 constexpr std::uint32_t kNotice10 = 32;
 static_assert(sizeof(GraceUiConnectRequest) >= kConnectRequest10 && sizeof(GraceUiConnectAnswer) >= kConnectAnswer10 &&
               sizeof(GraceUiNotice) >= kNotice10);
+static_assert(sizeof(GraceUiDrawCommand) == grace::abi::kDrawCommandSize10, "a command as ABI 1.0 first gave it");
 
 // A mod's struct, read as D73 says: the smaller of its size and ours, the rest zero; false if `in` is null or its size
 // is below `first`.
@@ -169,7 +174,244 @@ GraceUiStatus notice(GraceUiConsumer consumer, const GraceUiNotice* notice_in) n
   }
 }
 
-// ---- The slots the next increments build: not connected, inactive, or not yet.
+// ---- S10.4.c's slots: textures, faces and glyphs, panels and draw lists, input and the world-state providers.
+
+// A handle that names no mod answers so before anything about its arguments; otherwise a struct that cannot be read is
+// refused, with one log line for the slot.
+GraceUiStatus refused_argument(GraceUiConsumer consumer, const char* slot, const char* why) noexcept {
+  const GraceUiStatus status = grace::host::abi1::not_yet(consumer);
+  if (status == GRACEUI_NOT_CONNECTED || status == GRACEUI_INACTIVE) {
+    return status;
+  }
+  grace::host::abi1::refused(slot, why);
+  return GRACEUI_REFUSED;
+}
+
+constexpr std::uint32_t kTexture10 = 32;
+constexpr std::uint32_t kFace10 = 40;
+constexpr std::uint32_t kGlyphTable10 = 48;
+constexpr std::uint32_t kPanel10 = 32;
+constexpr std::uint32_t kDrawList10 = 48;
+constexpr std::uint32_t kInputRequest10 = 24;
+constexpr std::uint32_t kInputAnswer10 = 56;
+constexpr std::uint32_t kWorldState10 = 8;
+
+GraceUiStatus register_texture(GraceUiConsumer consumer, const GraceUiTextureDesc* texture,
+                               std::uint64_t* texture_id) noexcept {
+  try {
+    GraceUiTextureDesc in{};
+    if (texture_id == nullptr || !read_in(texture, kTexture10, in) || in.format != GRACEUI_TEXTURE_RGBA8 ||
+        in.reserved != 0 || in.pixels == nullptr || in.width == 0 || in.height == 0 ||
+        std::uint64_t{in.row_bytes} < std::uint64_t{in.width} * 4) {
+      return refused_argument(consumer, "register_texture",
+                              "a texture that is null, below its first size, not RGBA8, or rows shorter than its width");
+    }
+    std::uint64_t id = 0;
+    const GraceUiStatus status = grace::host::abi1::register_texture(
+        consumer, in.width, in.height,
+        [](const void* context, unsigned char* out) {
+          // SAFETY: `context` is the GraceUiTextureDesc copied above; the mod's pixels hold `height` rows of
+          // `row_bytes` each, of which the first `width * 4` bytes are read; `out` has `width * height * 4` bytes.
+          const auto& desc = *static_cast<const GraceUiTextureDesc*>(context);
+          const auto* rows = static_cast<const unsigned char*>(desc.pixels);
+          const std::size_t row = std::size_t{desc.width} * 4;
+          for (std::uint32_t y = 0; y < desc.height; ++y) {
+            std::memcpy(out + y * row, rows + std::size_t{y} * desc.row_bytes, row);
+          }
+        },
+        &in, id);
+    if (status == GRACEUI_OK) {
+      *texture_id = id;  // SAFETY: checked not null above
+    }
+    return status;
+  } catch (...) {
+    grace::host::abi1::fault("register_texture");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus register_face(GraceUiConsumer consumer, const GraceUiFaceDesc* face, std::uint32_t* face_id) noexcept {
+  try {
+    GraceUiFaceDesc in{};
+    if (face_id == nullptr || !read_in(face, kFace10, in) || in.data == nullptr ||
+        (in.ranges == nullptr && in.range_count != 0)) {
+      return refused_argument(consumer, "register_face", "a face that is null, below its first size, or without data");
+    }
+    std::uint32_t id = 0;
+    const GraceUiStatus status = grace::host::abi1::register_face(
+        consumer, static_cast<float>(in.pixel_height), in.data_length, in.ranges == nullptr ? 0 : in.range_count,
+        [](const void* context, unsigned char* data, std::uint32_t* ranges) {
+          // SAFETY: `context` is the GraceUiFaceDesc copied above, whose length and range count GraceUI bounded before
+          // it made room: the mod's data holds `data_length` bytes and its ranges `range_count` pairs.
+          const auto& desc = *static_cast<const GraceUiFaceDesc*>(context);
+          std::memcpy(data, desc.data, static_cast<std::size_t>(desc.data_length));
+          if (ranges != nullptr) {
+            std::memcpy(ranges, desc.ranges, static_cast<std::size_t>(desc.range_count) * 2 * sizeof(std::uint32_t));
+          }
+        },
+        &in, id);
+    if (status == GRACEUI_OK) {
+      *face_id = id;  // SAFETY: checked not null above
+    }
+    return status;
+  } catch (...) {
+    grace::host::abi1::fault("register_face");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus glyph_table(GraceUiConsumer consumer, std::uint32_t face_id, GraceUiGlyphTable* table) noexcept {
+  try {
+    if (!can_write(table, kGlyphTable10)) {
+      return refused_argument(consumer, "glyph_table", "an answer that is null or below its first size");
+    }
+    GraceUiGlyphTable result{};
+    const GraceUiStatus status = grace::host::abi1::glyph_table(consumer, face_id, result);
+    if (status == GRACEUI_OK) {
+      write_out(table, result);
+    }
+    return status;
+  } catch (...) {
+    grace::host::abi1::fault("glyph_table");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus create_panel(GraceUiConsumer consumer, const GraceUiPanelDesc* panel, std::uint64_t* panel_id) noexcept {
+  try {
+    GraceUiPanelDesc in{};
+    if (panel_id == nullptr || !read_in(panel, kPanel10, in)) {
+      return refused_argument(consumer, "create_panel", "a panel that is null or below its first size");
+    }
+    grace::abi::PanelDesc desc;
+    desc.layer = in.layer;
+    desc.anchor = in.anchor;
+    desc.flags = in.flags;
+    desc.x = in.x;
+    desc.y = in.y;
+    desc.width = in.width;
+    desc.height = in.height;
+    std::uint64_t id = 0;
+    const GraceUiStatus status = grace::host::abi1::create_panel(consumer, desc, id);
+    if (status == GRACEUI_OK) {
+      *panel_id = id;  // SAFETY: checked not null above
+    }
+    return status;
+  } catch (...) {
+    grace::host::abi1::fault("create_panel");
+    return GRACEUI_FAULT;
+  }
+}
+
+// What submit's copy reads: the list's header, copied, and the mod's stride.
+struct ListSource {
+  GraceUiDrawList list;
+};
+
+GraceUiStatus submit(GraceUiConsumer consumer, std::uint64_t panel_id, const GraceUiDrawList* list) noexcept {
+  try {
+    ListSource source{};
+    if (!read_in(list, kDrawList10, source.list)) {
+      return refused_argument(consumer, "submit", "a draw list that is null or below its first size");
+    }
+    const GraceUiDrawList& in = source.list;
+    grace::host::abi1::ListShape shape;
+    shape.vertex_count = in.vertex_count;
+    shape.index_count = in.index_count;
+    shape.command_count = in.command_count;
+    shape.command_size = in.command_size;
+    shape.atlas_generation = in.atlas_generation;
+    shape.arrays = (in.vertex_count == 0 || in.vertices != nullptr) && (in.index_count == 0 || in.indices != nullptr) &&
+                   (in.command_count == 0 || in.commands != nullptr);
+    return grace::host::abi1::submit(
+        consumer, panel_id, shape,
+        [](const void* context, grace::abi::DrawListData& out) {
+          // SAFETY: `context` is the ListSource above. GraceUI checked the counts against their bounds and the arrays
+          // against null, and sized `out`'s vectors to the counts, before this runs: the mod's arrays hold that many
+          // vertices and indices, and that many commands of `command_size` bytes each, of which the first
+          // min(command_size, sizeof(GraceUiDrawCommand)) are read, the rest of each of GraceUI's left zero.
+          const GraceUiDrawList& from = static_cast<const ListSource*>(context)->list;
+          if (!out.vertices.empty()) {
+            std::memcpy(out.vertices.data(), from.vertices, out.vertices.size() * sizeof(GraceUiDrawVert));
+          }
+          if (!out.indices.empty()) {
+            std::memcpy(out.indices.data(), from.indices, out.indices.size() * sizeof(std::uint16_t));
+          }
+          const auto* commands = static_cast<const unsigned char*>(static_cast<const void*>(from.commands));
+          const std::size_t read = from.command_size < sizeof(GraceUiDrawCommand) ? from.command_size
+                                                                                  : sizeof(GraceUiDrawCommand);
+          for (std::size_t i = 0; i < out.commands.size(); ++i) {
+            out.commands[i] = GraceUiDrawCommand{};
+            std::memcpy(&out.commands[i], commands + i * from.command_size, read);
+          }
+        },
+        &source);
+  } catch (...) {
+    grace::host::abi1::fault("submit");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus show_panel(GraceUiConsumer consumer, std::uint64_t panel_id) noexcept {
+  try {
+    return grace::host::abi1::show_panel(consumer, panel_id, true);
+  } catch (...) {
+    grace::host::abi1::fault("show_panel");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus hide_panel(GraceUiConsumer consumer, std::uint64_t panel_id) noexcept {
+  try {
+    return grace::host::abi1::show_panel(consumer, panel_id, false);
+  } catch (...) {
+    grace::host::abi1::fault("hide_panel");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus request_input(GraceUiConsumer consumer, const GraceUiInputRequest* request,
+                            GraceUiInputAnswer* answer) noexcept {
+  try {
+    GraceUiInputRequest in{};
+    if (!can_write(answer, kInputAnswer10) || !read_in(request, kInputRequest10, in)) {
+      return refused_argument(consumer, "request_input", "a request or answer that is null or below its first size");
+    }
+    GraceUiInputAnswer result{};
+    const GraceUiStatus status = grace::host::abi1::request_input(consumer, in.kind, in.wants, in.panel, result);
+    if (status == GRACEUI_OK) {
+      write_out(answer, result);
+    }
+    return status;
+  } catch (...) {
+    grace::host::abi1::fault("request_input");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus release_input(GraceUiConsumer consumer) noexcept {
+  try {
+    return grace::host::abi1::release_input(consumer);
+  } catch (...) {
+    grace::host::abi1::fault("release_input");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus set_world_state(GraceUiConsumer consumer, const GraceUiWorldState* state) noexcept {
+  try {
+    GraceUiWorldState in{};
+    if (!read_in(state, kWorldState10, in)) {
+      return refused_argument(consumer, "set_world_state", "a state that is null or below its first size");
+    }
+    return grace::host::abi1::set_world_state(consumer, in.flags);
+  } catch (...) {
+    grace::host::abi1::fault("set_world_state");
+    return GRACEUI_FAULT;
+  }
+}
+
+// ---- The slots later increments build: not connected, inactive, or not yet.
 
 GraceUiStatus not_yet(GraceUiConsumer consumer, const char* slot) noexcept {
   try {
@@ -184,33 +426,8 @@ GraceUiStatus register_pages(GraceUiConsumer consumer, const void*) noexcept { r
 GraceUiStatus publish(GraceUiConsumer consumer, const void*) noexcept { return not_yet(consumer, "publish"); }
 GraceUiStatus poll(GraceUiConsumer consumer, const void*) noexcept { return not_yet(consumer, "poll"); }
 GraceUiStatus answer(GraceUiConsumer consumer, const void*) noexcept { return not_yet(consumer, "answer"); }
-
-GraceUiStatus register_texture(GraceUiConsumer consumer, const GraceUiTextureDesc*, std::uint64_t*) noexcept {
-  return not_yet(consumer, "register_texture");
-}
-GraceUiStatus register_face(GraceUiConsumer consumer, const GraceUiFaceDesc*, std::uint32_t*) noexcept {
-  return not_yet(consumer, "register_face");
-}
-GraceUiStatus glyph_table(GraceUiConsumer consumer, std::uint32_t, GraceUiGlyphTable*) noexcept {
-  return not_yet(consumer, "glyph_table");
-}
-GraceUiStatus create_panel(GraceUiConsumer consumer, const GraceUiPanelDesc*, std::uint64_t*) noexcept {
-  return not_yet(consumer, "create_panel");
-}
-GraceUiStatus submit(GraceUiConsumer consumer, std::uint64_t, const GraceUiDrawList*) noexcept {
-  return not_yet(consumer, "submit");
-}
-GraceUiStatus show_panel(GraceUiConsumer consumer, std::uint64_t) noexcept { return not_yet(consumer, "show_panel"); }
-GraceUiStatus hide_panel(GraceUiConsumer consumer, std::uint64_t) noexcept { return not_yet(consumer, "hide_panel"); }
-GraceUiStatus request_input(GraceUiConsumer consumer, const GraceUiInputRequest*, GraceUiInputAnswer*) noexcept {
-  return not_yet(consumer, "request_input");
-}
-GraceUiStatus release_input(GraceUiConsumer consumer) noexcept { return not_yet(consumer, "release_input"); }
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, const GraceUiHotkeyDesc*, std::uint32_t*) noexcept {
   return not_yet(consumer, "register_hotkey");
-}
-GraceUiStatus set_world_state(GraceUiConsumer consumer, const GraceUiWorldState*) noexcept {
-  return not_yet(consumer, "set_world_state");
 }
 GraceUiStatus log(GraceUiConsumer consumer, std::uint32_t, const char*, std::uint64_t) noexcept {
   return not_yet(consumer, "log");

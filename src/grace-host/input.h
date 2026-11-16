@@ -56,7 +56,10 @@ bool caret_in_client(std::int32_t& x, std::int32_t& y, std::int32_t& height) noe
 // ---- The holder's side (S10.4.b's ABI; GraceUI 0.1 reaches it through test exports). Any thread.
 grace::input::Request request(std::uint16_t owner, grace::input::Kind kind, std::uint8_t wants) noexcept;
 bool release(std::uint16_t owner) noexcept;
-void set_world(bool danger, bool loading, bool game_menu) noexcept;  // a world-state provider's claims (D78)
+void set_world(bool danger, bool loading, bool game_menu) noexcept;  // the providers' claims, combined (D78)
+// The one close routine for holder `generation` only (a later holder is left alone), with `why`; answers whether it
+// ended one.
+bool close_holder(grace::input::Closed why, std::uint32_t generation) noexcept;
 void set_caret(std::int32_t x, std::int32_t y, std::int32_t height) noexcept;  // in back-buffer pixels
 
 // ---- The close routine's Win32 side, after any close: the cursor's confinement put back, one log line.

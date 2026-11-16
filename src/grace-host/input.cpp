@@ -9,6 +9,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"  // ImGuiContext's input queues: emptied between holders and reserved at warm-up
 #include "log.h"
+#include "session.h"
 #include "state.h"
 
 // Dear ImGui's Win32 backend maps a key message to an ImGuiKey with this function, which it leaves non-static for
@@ -378,6 +379,12 @@ void set_world(bool danger, bool loading, bool game_menu) noexcept {
   }
 }
 
+bool close_holder(grace::input::Closed why, std::uint32_t generation) noexcept {
+  const Holder ended = g_capture.close(why, now_ms(), generation);
+  closed(ended);
+  return ended.holds();
+}
+
 void set_caret(std::int32_t x, std::int32_t y, std::int32_t height) noexcept {
   g_caret_x.store(x, std::memory_order_relaxed);
   g_caret_y.store(y, std::memory_order_relaxed);
@@ -413,10 +420,12 @@ bool off() noexcept { return g_off.load(std::memory_order_acquire); }
 
 void note_menu_key(grace::input::MenuKey what) noexcept {
   switch (what) {
-    case grace::input::MenuKey::notice:
-      log_line("%s has the controls: press the menu key again within 2 s to take them back",
-               kind_name(g_capture.holder().kind));
+    case grace::input::MenuKey::notice: {
+      const Holder holder = g_capture.holder();
+      log_line("%s has the controls: press the menu key again within 2 s to take them back", kind_name(holder.kind));
+      session::controls_notice(holder.kind == Kind::menu ? 0u : holder.owner);
       return;
+    }
     case grace::input::MenuKey::open_menu:
       // The menu comes with S10.4.c; the key is masked from the game all the same (§5.1).
       return;

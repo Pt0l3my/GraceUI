@@ -22,6 +22,7 @@
 
 #include "anticheat.h"
 #include "counters.h"
+#include "draw_atlas.h"
 #include "grace/abi/spin.h"
 #include "hooks.h"
 #include "input.h"
@@ -75,6 +76,15 @@ Copy first_request() noexcept {
   // The mutex's handle stays open for the life of the process: it is never closed.
   log_line("GraceUI %u.%u.%u starting (ABI 1.%u, a preview)", GRACEUI_BUILD_MAJOR, GRACEUI_BUILD_MINOR,
            GRACEUI_BUILD_PATCH, GRACEUI_ABI1_MINOR);
+  // The panels, the textures and faces, and the providers' claims, made here before any table is returned, so that the
+  // present thread never makes them (invariant 10).
+  try {
+    session::allocate();
+  } catch (...) {
+    state::host.store(HostState::failed, std::memory_order_release);
+    log_line("GraceUI's stores could not be made: the host stays idle");
+    return Copy::active;
+  }
   // D88, D133: the anti-cheat check, before any table is returned and before anything is hooked.
   if (const anticheat::Clause clause = anticheat::check(); clause != anticheat::Clause::none) {
     session::enter_notice_only(clause);
@@ -279,6 +289,21 @@ void test_fill_state(GraceUiTestState& out) noexcept {
   out.consumers = session::consumers().count();
   out.notices = session::notices().live(input::now_ms());
   out.copies_named = g_named_count.load(std::memory_order_acquire);
+  out.panels = session::panels().count();
+  out.panels_shown = session::panels().visible();
+  out.lists_submitted = state::lists_submitted.load(std::memory_order_relaxed);
+  out.lists_refused = state::lists_refused.load(std::memory_order_relaxed);
+  out.panel_frames = state::panel_frames.load(std::memory_order_relaxed);
+  out.textures = session::registry().textures();
+  out.textures_ready = session::registry().textures_ready();
+  out.texture_uploads = state::texture_uploads.load(std::memory_order_relaxed);
+  out.textures_uploaded = state::textures_uploaded.load(std::memory_order_relaxed);
+  out.faces = session::registry().faces();
+  out.faces_baked = atlas::faces_baked();
+  out.atlas_generation = atlas::generation();
+  out.notice_face_grace = atlas::notice_face_is_grace() ? 1u : 0u;
+  out.world_flags = session::world().combined();
+  out.providers = session::world().providers();
 }
 
 void test_reset_counters() noexcept {

@@ -74,6 +74,22 @@ typedef struct GraceUiTestState {
   uint32_t notices;               /* notices showing, GraceUI's own among them */
   uint32_t copies_named;          /* other copies of GraceUI this one has named in a notice (D72) */
   uint32_t reserved;
+  /* S10.4.c: panels, draw lists, textures, faces and providers. */
+  uint32_t panels;                /* panels made, in all */
+  uint32_t panels_shown;
+  uint64_t lists_submitted;       /* draw lists that passed the checker and were published */
+  uint64_t lists_refused;
+  uint64_t panel_frames;          /* frames that drew at least one panel's list */
+  uint32_t textures;              /* mods' textures registered and not yet gone */
+  uint32_t textures_ready;        /* ... on the GPU */
+  uint32_t texture_uploads;       /* upload batches queued on the GPU: warm-up's (with the atlas) first */
+  uint32_t textures_uploaded;     /* mods' textures whose copy has completed */
+  uint32_t faces;                 /* mods' faces registered before warm-up */
+  uint32_t faces_baked;           /* faces in the atlas, GraceUI's own among them */
+  uint32_t atlas_generation;      /* 0 before warm-up */
+  uint32_t notice_face_grace;     /* 1 if notices are drawn in GraceUI's own face (fonts\NotoSans-Regular.ttf) */
+  uint32_t world_flags;           /* every provider's claims, combined (GRACEUI_WORLD_*) */
+  uint32_t providers;             /* world-state providers */
 } GraceUiTestState;
 
 /* What the anti-cheat check found (D133). */
@@ -227,6 +243,11 @@ GRACEUI_API uint32_t GraceUI_Test_GetConsumer(uint32_t index, GraceUiTestConsume
 #define GRACEUI_TEST_NOTICE_GOLD 0xC9A65A
 #define GRACEUI_TEST_NOTICE_EMBER 0xDB9550
 #define GRACEUI_TEST_NOTICE_ROT 0xD9806F
+/* S10.4.c's look (§3.8): each box this much above and below its text, whose lines are this tall in GraceUI's own face
+ * (Noto Sans 15 on 22 px lines), or in Dear ImGui's own font where GraceUI's fonts folder lacks it. */
+#define GRACEUI_TEST_NOTICE_PAD_Y 8
+#define GRACEUI_TEST_NOTICE_LINE 22
+#define GRACEUI_TEST_NOTICE_LINE_FALLBACK 17
 
 #ifdef __cplusplus
 }

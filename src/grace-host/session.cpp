@@ -24,10 +24,29 @@ constinit std::atomic<anticheat::Clause> g_anti_cheat{anticheat::Clause::none};
 
 constexpr std::uint32_t kVersion = GRACEUI_VERSION_PACK(GRACEUI_BUILD_MAJOR, GRACEUI_BUILD_MINOR, GRACEUI_BUILD_PATCH);
 
+// S10.4.c's stores, made once (allocate). A function-local pointer: made at its first use, never destroyed.
+struct Stores {
+  grace::abi::Panels panels;
+  grace::abi::Registry registry;
+  grace::abi::World world;
+};
+
+Stores& stores() {
+  static Stores* const made = new Stores();
+  return *made;
+}
+
+constinit std::atomic<std::uint64_t> g_input_panel{0};
+constinit std::atomic<std::uint32_t> g_input_generation{0};
+
 }  // namespace
 
 grace::abi::Consumers& consumers() noexcept { return g_consumers; }
 grace::abi::Notices& notices() noexcept { return g_notices; }
+grace::abi::Panels& panels() noexcept { return stores().panels; }
+grace::abi::Registry& registry() noexcept { return stores().registry; }
+grace::abi::World& world() noexcept { return stores().world; }
+void allocate() { (void)stores(); }
 
 void enter_notice_only(anticheat::Clause clause) noexcept {
   g_anti_cheat.store(clause, std::memory_order_relaxed);
@@ -90,6 +109,50 @@ void own_notice(std::uint32_t key, std::uint32_t tone, const char* format, ...) 
   }
 }
 
+void own_notice_text(std::uint32_t key, std::uint32_t tone, std::uint32_t duration_ms, std::string_view text) noexcept {
+  grace::abi::NoticeIn in;
+  in.owner = 0;
+  in.key = key;
+  in.tone = tone;
+  in.duration_ms = duration_ms;
+  in.text = text;
+  if (g_notices.post(in, input::now_ms()) == grace::abi::Posted::full) {
+    log_line("one of GraceUI's own notices was not shown: too many are showing");
+  }
+}
+
+void controls_notice(std::uint32_t owner) noexcept {
+  // Made by hand, without formatting: the window procedure's filter calls this, which allocates nothing.
+  char text[grace::abi::kNoticeTextBytes];
+  std::size_t length = 0;
+  const auto append = [&](std::string_view part) {
+    for (const char c : part) {
+      if (length < sizeof text) {
+        text[length++] = c;
+      }
+    }
+  };
+  grace::abi::ConsumerInfo info;
+  if (owner != 0 && g_consumers.info_of(owner, info)) {
+    append(info.name);
+  } else {
+    append(owner == 0 ? "GraceUI's menu" : "A mod's panel");
+  }
+  append(" has the controls. Press F5 again to take them back.");
+  own_notice_text(kOwnKeyControls, GRACEUI_TONE_NORMAL, kControlsNoticeMs, std::string_view(text, length));
+}
+
+void set_input_panel(std::uint32_t generation, std::uint64_t panel) noexcept {
+  g_input_panel.store(panel, std::memory_order_relaxed);
+  g_input_generation.store(generation, std::memory_order_release);
+}
+
+bool input_panel(std::uint32_t& generation, std::uint64_t& panel) noexcept {
+  generation = g_input_generation.load(std::memory_order_acquire);
+  panel = g_input_panel.load(std::memory_order_relaxed);
+  return generation != 0 && panel != 0;
+}
+
 }  // namespace session
 
 namespace abi1 {
@@ -147,7 +210,10 @@ bool log_connect_failure() noexcept {
 
 }  // namespace
 
-bool has_cap(std::string_view name) noexcept { return name == GRACEUI_CAP_NOTICES; }
+bool has_cap(std::string_view name) noexcept {
+  return name == GRACEUI_CAP_NOTICES || name == GRACEUI_CAP_PANELS || name == GRACEUI_CAP_TEXTURES ||
+         name == GRACEUI_CAP_FACES || name == GRACEUI_CAP_INPUT || name == GRACEUI_CAP_WORLD_STATE;
+}
 
 grace::abi::ConnectResult connect(const grace::abi::ConnectRequest& request) noexcept {
   const grace::abi::ConnectResult result =
@@ -199,6 +265,7 @@ GraceUiStatus disconnect(GraceUiConsumer consumer) noexcept {
   const GraceUiStatus status = session::consumers().disconnect(consumer, owner);
   if (status == GRACEUI_OK) {
     session::notices().withdraw_owner(owner, input::now_ms());
+    forget(consumer, owner);
     log_line("%s disconnected", known ? info.id : "a mod");
   }
   return status;

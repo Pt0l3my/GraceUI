@@ -22,6 +22,7 @@
 #include "MinHook.h"
 #include "counters.h"
 #include "draw.h"
+#include "draw_atlas.h"
 #include "hooks_input.h"
 #include "hooks_vtable.h"
 #include "input.h"
@@ -764,6 +765,7 @@ void install(const grace_host_fn (&render)[kRenderHooks], const hooks_input::Tar
 void run_init() noexcept {
   // The anti-cheat check ran in the first request, before this thread started (D133); in its notice-only mode the
   // hooks go in all the same, input off from the start (D88).
+  atlas::load_own_fonts();  // GraceUI's notices' face, read here so that warm-up reads no file (§3.16)
   const HWND window = wait_for_game_window();
   if (window == nullptr) {
     give_up("no window of this process appeared within 120 s");

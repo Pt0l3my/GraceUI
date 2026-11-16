@@ -7,6 +7,8 @@
 #include <string_view>
 
 #include "grace/abi/consumers.h"
+#include "grace/abi/drawlist.h"
+#include "grace/abi/panels.h"
 #include "graceui.h"
 
 #if defined(GRACEUI_TEST_EXPORTS)
@@ -34,6 +36,49 @@ GraceUiStatus notice(GraceUiConsumer consumer, std::uint32_t tone, std::uint32_t
                      std::string_view text) noexcept;
 // What a slot answers that this GraceUI does not provide yet: not connected, inactive, or not yet.
 GraceUiStatus not_yet(GraceUiConsumer consumer) noexcept;
+
+// ---- S10.4.c's slots (surfaces.cpp). Each answers not_connected for a handle that names no mod, then inactive while
+// the session is (the notice-only mode included), before anything else. The DLL's abi files copy what a mod hands in;
+// where the copy must go straight into GraceUI's store (pixels, a font, a draw list), they pass a function of theirs
+// that makes it, called once GraceUI has made room, with the context they give.
+
+// A texture of `width` x `height` RGBA8 pixels; `copy` writes its rows, packed, into the `width * height * 4` bytes it
+// is given.
+using CopyPixels = void (*)(const void* context, unsigned char* out);
+GraceUiStatus register_texture(GraceUiConsumer consumer, std::uint32_t width, std::uint32_t height, CopyPixels copy,
+                               const void* context, std::uint64_t& id) noexcept;
+
+// A face of `pixel_height`: `copy` writes its font file (`data_length` bytes) and its ranges (`range_count` pairs, none
+// for GraceUI's default) into what it is given.
+using CopyFace = void (*)(const void* context, unsigned char* data, std::uint32_t* ranges);
+GraceUiStatus register_face(GraceUiConsumer consumer, float pixel_height, std::uint64_t data_length,
+                            std::uint64_t range_count, CopyFace copy, const void* context, std::uint32_t& id) noexcept;
+
+GraceUiStatus glyph_table(GraceUiConsumer consumer, std::uint32_t face_id, GraceUiGlyphTable& out) noexcept;
+
+GraceUiStatus create_panel(GraceUiConsumer consumer, const grace::abi::PanelDesc& desc, std::uint64_t& id) noexcept;
+GraceUiStatus show_panel(GraceUiConsumer consumer, std::uint64_t panel, bool visible) noexcept;
+
+// A draw list's counts as the mod gives them, checked against the bounds before anything is copied.
+struct ListShape {
+  std::uint32_t vertex_count = 0;
+  std::uint32_t index_count = 0;
+  std::uint32_t command_count = 0;
+  std::uint32_t command_size = 0;  // the mod's stride
+  std::uint32_t atlas_generation = 0;
+  bool arrays = false;             // every array a count names is there (not null)
+};
+// `copy` fills the vectors, already sized to the shape's counts, with the mod's vertices, indices and commands.
+using CopyList = void (*)(const void* context, grace::abi::DrawListData& out);
+GraceUiStatus submit(GraceUiConsumer consumer, std::uint64_t panel, const ListShape& shape, CopyList copy,
+                     const void* context) noexcept;
+
+GraceUiStatus request_input(GraceUiConsumer consumer, std::uint32_t kind, std::uint32_t wants, std::uint64_t panel,
+                            GraceUiInputAnswer& out) noexcept;
+GraceUiStatus release_input(GraceUiConsumer consumer) noexcept;
+GraceUiStatus set_world_state(GraceUiConsumer consumer, std::uint32_t flags) noexcept;
+// A mod disconnected: its panels, textures, claims and input go with it.
+void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept;
 // A connect refused before it reached the rules (a string longer than its bound, a struct below its first size): its log
 // line, as the rules' own refusals have theirs, up to a bound in a session.
 void connect_refused(std::uint32_t reason) noexcept;

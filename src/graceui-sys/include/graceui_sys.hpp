@@ -81,6 +81,56 @@ class Api {
     return table_->notice(consumer, &in);
   }
 
+  // ---- Textures, faces and glyphs (D76, D80): textures until the mod's first submit, faces before warm-up.
+  GraceUiStatus register_texture(GraceUiConsumer consumer, const GraceUiTextureDesc& texture,
+                                 std::uint64_t& id) const noexcept {
+    return GRACEUI_API1_COVERS(table_, register_texture) ? table_->register_texture(consumer, &texture, &id)
+                                                         : GRACEUI_NOT_YET;
+  }
+  GraceUiStatus register_face(GraceUiConsumer consumer, const GraceUiFaceDesc& face, std::uint32_t& id) const noexcept {
+    return GRACEUI_API1_COVERS(table_, register_face) ? table_->register_face(consumer, &face, &id) : GRACEUI_NOT_YET;
+  }
+  // GRACEUI_NOT_READY until the overlay's warm-up has baked the shared atlas: ask again later.
+  GraceUiStatus glyph_table(GraceUiConsumer consumer, std::uint32_t face, GraceUiGlyphTable& table) const noexcept {
+    table = GraceUiGlyphTable{};
+    table.size = sizeof table;
+    return GRACEUI_API1_COVERS(table_, glyph_table) ? table_->glyph_table(consumer, face, &table) : GRACEUI_NOT_YET;
+  }
+
+  // ---- Panels and draw lists (D76).
+  GraceUiStatus create_panel(GraceUiConsumer consumer, const GraceUiPanelDesc& panel,
+                             std::uint64_t& id) const noexcept {
+    return GRACEUI_API1_COVERS(table_, create_panel) ? table_->create_panel(consumer, &panel, &id) : GRACEUI_NOT_YET;
+  }
+  GraceUiStatus submit(GraceUiConsumer consumer, std::uint64_t panel, const GraceUiDrawList& list) const noexcept {
+    return GRACEUI_API1_COVERS(table_, submit) ? table_->submit(consumer, panel, &list) : GRACEUI_NOT_YET;
+  }
+  GraceUiStatus show_panel(GraceUiConsumer consumer, std::uint64_t panel) const noexcept {
+    return GRACEUI_API1_COVERS(table_, show_panel) ? table_->show_panel(consumer, panel) : GRACEUI_NOT_YET;
+  }
+  GraceUiStatus hide_panel(GraceUiConsumer consumer, std::uint64_t panel) const noexcept {
+    return GRACEUI_API1_COVERS(table_, hide_panel) ? table_->hide_panel(consumer, panel) : GRACEUI_NOT_YET;
+  }
+
+  // ---- Input (D77) and the world-state providers (D78).
+  GraceUiStatus request_input(GraceUiConsumer consumer, const GraceUiInputRequest& request,
+                              GraceUiInputAnswer& answer) const noexcept {
+    answer = GraceUiInputAnswer{};
+    answer.size = sizeof answer;
+    return GRACEUI_API1_COVERS(table_, request_input) ? table_->request_input(consumer, &request, &answer)
+                                                      : GRACEUI_NOT_YET;
+  }
+  GraceUiStatus release_input(GraceUiConsumer consumer) const noexcept {
+    return GRACEUI_API1_COVERS(table_, release_input) ? table_->release_input(consumer) : GRACEUI_NOT_YET;
+  }
+  GraceUiStatus set_world_state(GraceUiConsumer consumer, std::uint32_t flags) const noexcept {
+    GraceUiWorldState state{};
+    state.size = sizeof state;
+    state.flags = flags;
+    return GRACEUI_API1_COVERS(table_, set_world_state) ? table_->set_world_state(consumer, &state)
+                                                        : GRACEUI_NOT_YET;
+  }
+
  private:
   const GraceUiApi1* table_ = nullptr;
 };
