@@ -43,6 +43,8 @@ depends on G18–G20 stays as written until the owner answers.
 - Never commit or upload anything personal about the owner: real name, account names, machine names, contact details,
   API keys, local endpoint addresses or IPs. The owner's own local commands go in chat only.
 - Commit identities are noreply addresses only; use the environment's default git identity.
+- No `Claude-Session` link in commit messages or pull requests (owner, 2026-11-16): it points to a private
+  transcript and tells readers nothing. The `Co-Authored-By` trailer stays.
 - No model identifiers of the assistant in files, apart from the commit trailer.
 
 ## Licences and third-party material
