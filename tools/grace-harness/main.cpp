@@ -648,6 +648,7 @@ class Game {
   UINT width() const { return width_; }
   UINT height() const { return height_; }
   HWND window() const { return window_; }
+  ID3D12Device* device() const { return device_; }
 
  private:
   static constexpr UINT64 kReadbackBytes = 1024ull * 1024 * 4;
@@ -3440,6 +3441,52 @@ void run_slow_first(const std::wstring& dll) {
         after == first_answer.load() && after != nullptr ? "the same table" : "otherwise");
 }
 
+// The game moves to a new device (a device removed and made again, or another adapter): GraceUI lets go of the old
+// one and of everything it made on it (the review's L3), so that nothing of GraceUI's keeps it alive, and its render
+// path stays off for the session. The old device's references are counted by the game, which keeps one.
+void run_device_change(const std::wstring& dll) {
+  Game first(false);
+  ID3D12Device* const old_device = first.device();
+  old_device->AddRef();  // the game's own, so that the count can be read after the rest is gone
+  first.destroy_swap_chain();
+  const ULONG without_chain = references(old_device);
+  first.create_swap_chain();
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(first, grace);
+  grace.set_panel(1);
+  for (int i = 0; i < 200 && grace.state().atlas_ready == 0; ++i) {
+    first.frame(kRecreated, PresentWith::present);
+    Sleep(10);
+  }
+  for (int i = 0; i < 5; ++i) {
+    first.frame(kRecreated, PresentWith::present);
+  }
+  const GraceUiTestState drawing = grace.state();
+  const ULONG while_drawing = references(old_device);
+  first.destroy_swap_chain();  // the game's first swap chain ends ...
+  Game second(false);          // ... and it goes on with a device of its own on another window
+  for (int i = 0; i < 20; ++i) {
+    second.frame(kSecondCopy, PresentWith::present);
+    Sleep(10);
+  }
+  const ULONG after = references(old_device);
+  const GraceUiTestState state = grace.state();
+  const bool logged = grace.logged("device changed") && grace.logged("let go of the game's Direct3D 12 device");
+  check(drawing.frames_drawn > 0 && while_drawing > without_chain && after == without_chain && state.render_off == 1 &&
+            logged,
+        "device change",
+        "the old device's references besides the swap chain's: %lu before GraceUI, %lu while it drew (%llu frames), "
+        "%lu once the game moved to another device; the render path off: %s; %s",
+        static_cast<unsigned long>(without_chain), static_cast<unsigned long>(while_drawing),
+        static_cast<unsigned long long>(drawing.frames_drawn), static_cast<unsigned long>(after),
+        state.render_off == 1 ? "yes" : "NO", logged ? "logged" : "NOT LOGGED");
+  grace.print_log();
+  old_device->Release();
+}
+
 // A second copy whose name relative to the game's folder is longer than a notice gives it (two folders of 60
 // characters of three bytes each in UTF-8, as a Linux file system under Wine takes a name of 255 bytes at most): it is
 // named all the same, by the end of its name, from a character's start.
@@ -3781,6 +3828,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"slow-first") {
     std::printf("-- scenario: a request while the first is still running\n");
     run_slow_first(dll);
+  } else if (scenario == L"device-change") {
+    std::printf("-- scenario: the game moves to a new device\n");
+    run_device_change(dll);
   } else if (scenario == L"long-name") {
     std::printf("-- scenario: a second copy with a long name\n");
     run_long_name(dll);
@@ -3797,7 +3847,7 @@ int wmain(int argc, wchar_t** argv) {
       };
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
-            L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name"}) {
+            L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change"}) {
         run(child_scenario, dll, this_program());
       }
       // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in

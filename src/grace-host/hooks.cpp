@@ -856,6 +856,10 @@ void move_filter() noexcept {
   if (state::host.load(std::memory_order_acquire) != HostState::hooked) {
     return;  // the install is not done (a Present may come between the hooks' enabling and the filter): left for later
   }
+  if (state::render_off.load(std::memory_order_acquire)) {
+    g_window_wanted.store(nullptr, std::memory_order_release);
+    return;  // nothing is drawn, and input is off: no window needs the filter now
+  }
   const HWND wanted = g_window_wanted.exchange(nullptr, std::memory_order_acq_rel);
   if (wanted == nullptr || (wanted == input::window() && input::window_filtered()) || !IsWindow(wanted) ||
       !window_of_this_process(wanted)) {
