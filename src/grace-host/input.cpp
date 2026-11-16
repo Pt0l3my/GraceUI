@@ -318,7 +318,12 @@ void push_event(HolderEvent event) noexcept {
 }
 
 void set_window(HWND target, bool unicode) noexcept {
-  g_window.store(target, std::memory_order_release);
+  const HWND before = g_window.exchange(target, std::memory_order_acq_rel);
+  if (before != nullptr && before != target) {
+    // The filter moved to the bound swap chain's window (M2): a holder's input came from the other one.
+    closed(g_capture.close(grace::input::Closed::focus_lost, now_ms()));
+    log_line("the window procedure's filter moved to the bound swap chain's window");
+  }
   RECT client{};
   if (GetClientRect(target, &client)) {
     set_client_size(client.right - client.left, client.bottom - client.top);
@@ -465,7 +470,6 @@ bool wants_frames() noexcept { return g_capture.holder().phase == Phase::active;
 
 void rendered() noexcept { g_capture.rendered(now_ms()); }
 
-void render_off() noexcept { closed(g_capture.settle(&read_conditions, nullptr, now_ms())); }  // state::render_off is set
 
 void reserve_imgui_queues() noexcept {
   ImGuiContext& context = *ImGui::GetCurrentContext();

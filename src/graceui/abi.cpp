@@ -115,6 +115,27 @@ GRACEUI_API void GraceUI_Test_SetCaret(int32_t x, int32_t y, int32_t height) {
   }
 }
 
+GRACEUI_API void GraceUI_Test_SetFirstRequestDelay(uint32_t ms) {
+  try {
+    grace::host::test_set_first_request_delay(ms);
+  } catch (...) {
+  }
+}
+
+GRACEUI_API void GraceUI_Test_TurnOffRender(void) {
+  try {
+    grace::host::test_turn_off_render();
+  } catch (...) {
+  }
+}
+
+GRACEUI_API void GraceUI_Test_SetAtlasLimit(uint32_t side) {
+  try {
+    grace::host::test_set_atlas_limit(side);
+  } catch (...) {
+  }
+}
+
 GRACEUI_API void GraceUI_Test_SetCodePage(uint32_t code_page) {
   try {
     grace::host::test_set_code_page(code_page);

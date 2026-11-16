@@ -79,7 +79,6 @@ void note_menu_key(grace::input::MenuKey what) noexcept;  // "‹Mod› has the 
 // ---- The present thread (draw.cpp).
 bool wants_frames() noexcept;  // a holder has input: its frames run, its cursor drawn
 void rendered() noexcept;      // the overlay drew, or had nothing to draw: the watchdog's heartbeat
-void render_off() noexcept;    // the render path turned itself off: any holder ends (fault)
 void reserve_imgui_queues() noexcept;  // at warm-up, so that a holder's input allocates nothing during play
 // Just before Dear ImGui's NewFrame: the holder's input, the pad included, in back-buffer pixels; or nothing.
 void before_imgui_frame(std::uint32_t width, std::uint32_t height) noexcept;

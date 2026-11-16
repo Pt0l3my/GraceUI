@@ -46,7 +46,16 @@ void mark_buffers_stale() noexcept;
 // anything is to be drawn, and otherwise leaves the frame untouched.
 void render();
 
-// Turns the render path off for this session, with one log line; the game's frames pass through untouched from then.
+// Turns the render path off for this session, with one log line; the game's frames pass through untouched from then,
+// and so does every input, the menu key included (L4).
 void turn_off(const char* why) noexcept;
+
+// GraceUI's own thread, when woken: bakes the shared atlas if warm-up has asked for it (D117, D139 as amended).
+void serve_bake() noexcept;
+
+#if defined(GRACEUI_TEST_EXPORTS)
+// The render path turns itself off at the next frame, as a fault would turn it off (the harness's last checks).
+void test_turn_off() noexcept;
+#endif
 
 }  // namespace grace::host::draw

@@ -8,6 +8,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "hooks.h"
+
 namespace grace::host {
 namespace {
 
@@ -22,6 +24,7 @@ struct Line {
 
 constinit Line g_lines[kLines]{};
 constinit std::atomic<std::uint64_t> g_next{0};
+constinit std::uint64_t g_drained = 0;  // GraceUI's own thread's: the next line to pass to the debugger
 
 }  // namespace
 
@@ -42,11 +45,38 @@ void log_line(const char* format, ...) noexcept {
   std::atomic_thread_fence(std::memory_order_release);
   line.text = text;
   line.number.store(number + 1, std::memory_order_release);
+  hooks::wake();  // GraceUI's own thread passes it to the debugger (log_drain)
+}
 
-  // The debugger's copy, with a line end.
-  const std::size_t length = std::strlen(text.data());
-  text[length] = '\n';
-  OutputDebugStringA(text.data());
+void log_drain() noexcept {
+  const std::uint64_t next = g_next.load(std::memory_order_acquire);
+  std::uint64_t from = g_drained;
+  if (next > kLines && from < next - kLines) {
+    char skipped[64];
+    std::snprintf(skipped, sizeof skipped, "%s%llu lines were not passed to the debugger\n", kPrefix,
+                  static_cast<unsigned long long>(next - kLines - from));
+    OutputDebugStringA(skipped);
+    from = next - kLines;
+  }
+  for (; from < next; ++from) {
+    const Line& line = g_lines[from % kLines];
+    if (line.number.load(std::memory_order_acquire) != from + 1) {
+      break;  // still being written: the next wake-up passes it on
+    }
+    LogText text = line.text;
+    std::atomic_thread_fence(std::memory_order_acquire);
+    if (line.number.load(std::memory_order_relaxed) != from + 1) {
+      continue;  // rewritten while it was copied: lost to the ring
+    }
+    text.back() = '\0';
+    const std::size_t length = std::strlen(text.data());
+    if (length + 1 < text.size()) {
+      text[length] = '\n';
+      text[length + 1] = '\0';
+    }
+    OutputDebugStringA(text.data());
+  }
+  g_drained = from;
 }
 
 bool log_copy_line(std::uint32_t index, LogText& out) noexcept {

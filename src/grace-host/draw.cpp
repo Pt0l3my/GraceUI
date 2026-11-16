@@ -1,7 +1,8 @@
 // draw.cpp: the render path (D107; invariants 10 and 11). On the first Present of the bound swap chain once its present
-// queue is known: Dear ImGui's context, its Win32 backend for the swap chain's window and its DX12 backend for the
-// game's device and that queue, and the font atlas, baked with every face registered so far and uploaded once (D117),
-// with every mod's texture registered so far. Then, on every frame with anything to draw, one command list draws the
+// queue is known, warm-up asks GraceUI's own thread for Dear ImGui's context and the font atlas, baked with every face
+// registered so far (D117, D139 as amended), and draws nothing until it is done; then this thread makes Dear ImGui's
+// Win32 backend for the swap chain's window and its DX12 backend for the game's device and that queue, and uploads the
+// atlas once, with every mod's texture registered so far. Then, on every frame with anything to draw, one command list draws the
 // frame onto the current back buffer, layer by layer (D76: the mods' hud and panel layers, GraceUI's own drawing, the
 // modal layer, the notices), and is executed on the present queue before the original Present. A texture a later mod
 // registers is uploaded at the frame after, on the same queue, and drawn once its copy's fence has passed. It never
@@ -14,7 +15,9 @@
 // a swap chain only with a live tag and calls unbind() once the tag says the swap chain has ended, and
 // mark_buffers_stale() before ResizeBuffers replaces the buffers, which render() takes before it touches one, so no
 // pointer into them is used after them. (3) Dear ImGui's objects (context, draw data, atlas texture) are used only
-// between their creation and the next call that may replace them, on this thread. The notices it draws are read from
+// between their creation and the next call that may replace them, on this thread; the context and the atlas, and the
+// atlas's texture and upload buffer, are made by GraceUI's own thread before it stores `done` (g_bake), which this
+// thread loads before it touches any of them, and GraceUI's thread never touches them again. The notices it draws are read from
 // the session's newest list (session.h), which no writer touches while this thread holds it. (4) A panel's draw list is
 // the reader's buffer of its triple buffer (drawlist.h), which no writer touches until this thread's next read of that
 // panel: this thread moves its vertices in place to where the panel lies, and lends its vertex and index arrays to an
@@ -39,6 +42,7 @@
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
 #include "imgui_internal.h"  // ImFontAtlasBuildMain: the atlas baked once, before the first frame (D117)
+#include "hooks.h"
 #include "input.h"
 #include "log.h"
 #include "session.h"
@@ -156,6 +160,8 @@ struct Renderer {
   bool format_pending;  // the swap chain's format changed: rebuild the DX12 backend once our frames are done
   bool off;
   bool primed;          // warm-up's last frame, built and never submitted, has run (prime_frame)
+  bool dx12_live;       // the DX12 backend is initialised on the device (released at the teardown, L3)
+  bool teardown;        // the device was removed or changed: everything made on it is let go once no frame needs it
 
   ID3D12DescriptorHeap* rtv_heap;
   ID3D12DescriptorHeap* srv_heap;
@@ -211,27 +217,26 @@ void forget_back_buffers() noexcept {
   }
 }
 
+// A present queue that is replaced is kept until GraceUI's last work on it has passed, and nothing of GraceUI's goes to
+// the new queue meanwhile (render() waits, L11): one fence serves every queue (D119), and Signal sets its value rather
+// than raising it, so work on two queues at once could make it read a later value before an earlier one.
 void retire_queue() noexcept {
   if (g.queue == nullptr) {
     return;
   }
   if (g.retired_queue != nullptr) {
-    if (fence_passed(g.retired_after)) {
-      release(g.retired_queue);
-    } else {
-      // Two queues retired before the first's work was done: keep the newer, and leave the older's one reference.
-      log_line("a retired present queue still had work on the GPU; its reference is left");
-      g.retired_queue = nullptr;
-    }
+    release(g.queue);  // nothing of GraceUI's ran on it: render() has not drawn since the older one was retired
+  } else {
+    g.retired_queue = g.queue;
+    g.retired_after = g.fence_last;
+    g.queue = nullptr;
   }
-  g.retired_queue = g.queue;
-  g.retired_after = g.fence_last;
-  g.queue = nullptr;
   state::queue_method.store(QueueMethod::none, std::memory_order_relaxed);
 }
 
 void release_retired_queue_when_done() noexcept {
-  if (g.retired_queue != nullptr && fence_passed(g.retired_after)) {
+  // Before the renderer exists (no fence) nothing of GraceUI's ran on any queue.
+  if (g.retired_queue != nullptr && (g.fence == nullptr || fence_passed(g.retired_after))) {
     release(g.retired_queue);
   }
 }
@@ -271,6 +276,7 @@ bool init_dx12_backend() {
   if (!ImGui_ImplDX12_Init(&info)) {
     return false;
   }
+  g.dx12_live = true;
   // D117: the static atlas. Without this flag Dear ImGui bakes every glyph range at the build below and locks the atlas
   // during every frame (no new glyph, no new size: the nearest bake is scaled), so no texture changes during play.
   ImGui::GetIO().BackendFlags &= ~ImGuiBackendFlags_RendererHasTextures;
@@ -479,19 +485,54 @@ ImTextureID texture_of(std::uint64_t id) noexcept {
   return static_cast<ImTextureID>(texture_gpu(slot).ptr);
 }
 
-// The atlas (D117): Dear ImGui bakes it once, here, and GraceUI uploads it itself, once, on the present queue, and
-// polls its fence on later frames: the DX12 backend's own texture path would wait for the GPU on this thread.
-bool start_atlas() {
-  ImFontAtlas* atlas = ImGui::GetIO().Fonts;
-  // GraceUI's notices' face and every face the mods registered before now, in one bake (§3.16, D80).
-  atlas::bake(atlas);
-  ImTextureData* texture = atlas->TexData;
-  if (texture == nullptr || texture->Pixels == nullptr || texture->Format != ImTextureFormat_RGBA32) {
-    return false;
-  }
-  const UINT width = static_cast<UINT>(texture->Width);
-  const UINT height = static_cast<UINT>(texture->Height);
+// ---- The shared atlas (D117, D139 as amended on 2026-11-16): baked on GraceUI's own thread, never on the present thread
+// (a large face's bake took hundreds of milliseconds there, M3). At warm-up the present thread seals the mods' faces
+// and asks; GraceUI's thread makes Dear ImGui's context, bakes every face it can (fewer, on a fresh atlas, if Dear ImGui
+// runs out of room after all), makes the atlas's texture and its upload buffer on the game's device and fills it, and
+// frees the CPU copy; the present thread then records the one copy on the present queue and polls its fence.
 
+enum class Bake : std::uint32_t { none = 0, asked = 1, baking = 2, done = 3, failed = 4 };
+constinit std::atomic<Bake> g_bake{Bake::none};
+
+// What GraceUI's thread makes for the present thread: written before `done` is stored, read after it is loaded.
+struct BakedAtlas {
+  ID3D12Device* device;  // borrowed: the present thread's reference, never released while a bake runs (try_teardown)
+  ID3D12Resource* texture;
+  ID3D12Resource* upload;  // the atlas's pixels, row by row as the copy reads them
+  D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint;
+  UINT width;
+  UINT height;
+};
+constinit BakedAtlas g_baked{};
+
+// A context of Dear ImGui's, configured as GraceUI's (D122, D134), current from now on.
+void make_context() {
+  ImGuiContext* context = ImGui::CreateContext();
+  ImGui::SetCurrentContext(context);
+  ImGuiIO& io = ImGui::GetIO();
+  io.IniFilename = nullptr;  // Dear ImGui writes no file (D84: GraceUI writes only under its user folder)
+  io.LogFilename = nullptr;
+  io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;  // the cursor is the input half's (§5.5)
+  io.ConfigErrorRecoveryEnableTooltip = false;              // nothing of Dear ImGui's own is ever drawn on the game
+  // Dear ImGui frees a draw list unused for this long of its own time, and makes it again at its next use: on the
+  // present thread, during play, when a notice comes after a quiet spell. Never, then (D134; invariant 10).
+  io.ConfigMemoryCompactTimer = FLT_MAX;
+  input::reserve_imgui_queues();  // a holder's input then allocates nothing during play (invariant 10)
+}
+
+// A context whose bake failed is left as it is: Dear ImGui's state after a failed assertion is not trusted to be torn
+// down. Only its atlas's pixels, the bulk of it, are freed.
+void abandon_context() noexcept {
+  for (ImTextureData* texture : ImGui::GetIO().Fonts->TexList) {
+    texture->DestroyPixels();
+  }
+}
+
+// The atlas's texture and its filled upload buffer, on the game's device (whose object creation any thread may call).
+bool make_gpu_atlas(const ImTextureData& texture) {
+  const UINT width = static_cast<UINT>(texture.Width);
+  const UINT height = static_cast<UINT>(texture.Height);
+  ID3D12Device* const device = g_baked.device;
   D3D12_HEAP_PROPERTIES device_heap{};
   device_heap.Type = D3D12_HEAP_TYPE_DEFAULT;
   D3D12_RESOURCE_DESC desc{};
@@ -503,14 +544,12 @@ bool start_atlas() {
   desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
   desc.SampleDesc.Count = 1;
   desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-  if (FAILED(g.device->CreateCommittedResource(&device_heap, D3D12_HEAP_FLAG_NONE, &desc,
-                                               D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&g.atlas)))) {
+  if (FAILED(device->CreateCommittedResource(&device_heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST,
+                                             nullptr, IID_PPV_ARGS(&g_baked.texture)))) {
     return false;
   }
-
-  D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
   UINT64 upload_bytes = 0;
-  g.device->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, nullptr, nullptr, &upload_bytes);
+  device->GetCopyableFootprints(&desc, 0, 1, 0, &g_baked.footprint, nullptr, nullptr, &upload_bytes);
   D3D12_HEAP_PROPERTIES upload_heap{};
   upload_heap.Type = D3D12_HEAP_TYPE_UPLOAD;
   D3D12_RESOURCE_DESC buffer_desc{};
@@ -522,24 +561,78 @@ bool start_atlas() {
   buffer_desc.Format = DXGI_FORMAT_UNKNOWN;
   buffer_desc.SampleDesc.Count = 1;
   buffer_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-  if (FAILED(g.device->CreateCommittedResource(&upload_heap, D3D12_HEAP_FLAG_NONE, &buffer_desc,
-                                               D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                                               IID_PPV_ARGS(&g.atlas_upload)))) {
+  if (FAILED(device->CreateCommittedResource(&upload_heap, D3D12_HEAP_FLAG_NONE, &buffer_desc,
+                                             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                             IID_PPV_ARGS(&g_baked.upload)))) {
     return false;
   }
   void* mapped = nullptr;
   const D3D12_RANGE nothing_read{0, 0};
-  if (FAILED(g.atlas_upload->Map(0, &nothing_read, &mapped))) {
+  if (FAILED(g_baked.upload->Map(0, &nothing_read, &mapped))) {
     return false;
   }
-  unsigned char* const rows = static_cast<unsigned char*>(mapped) + footprint.Offset;
-  const unsigned char* const pixels = texture->Pixels;
+  unsigned char* const rows = static_cast<unsigned char*>(mapped) + g_baked.footprint.Offset;
+  const unsigned char* const pixels = texture.Pixels;
   const std::size_t row_bytes = static_cast<std::size_t>(width) * 4;
   for (UINT y = 0; y < height; ++y) {
-    std::memcpy(rows + static_cast<std::size_t>(y) * footprint.Footprint.RowPitch, pixels + y * row_bytes, row_bytes);
+    std::memcpy(rows + static_cast<std::size_t>(y) * g_baked.footprint.Footprint.RowPitch, pixels + y * row_bytes,
+                row_bytes);
   }
   const D3D12_RANGE written{0, static_cast<SIZE_T>(upload_bytes)};
-  g.atlas_upload->Unmap(0, &written);
+  g_baked.upload->Unmap(0, &written);
+  g_baked.width = width;
+  g_baked.height = height;
+  return true;
+}
+
+// GraceUI's thread: the context, the bake (every face, then half the mods', then none of theirs, should Dear ImGui run
+// out of room although each face was counted against the atlas's room), and the atlas's GPU objects.
+bool bake_atlas() {
+#if defined(GRACEUI_TEST_EXPORTS)
+  ImGui::SetAllocatorFunctions(&draw_alloc::imgui_alloc, &draw_alloc::imgui_free, nullptr);
+#endif
+  IMGUI_CHECKVERSION();
+  make_context();
+  std::uint32_t mod_faces = session::registry().faces();
+  for (;;) {
+    try {
+      atlas::bake(ImGui::GetIO().Fonts, mod_faces);
+      break;
+    } catch (const ImGuiAssertion& failed) {
+      log_line("the shared atlas could not be baked with %u of the mods' faces (a Dear ImGui assertion at line %d: "
+               "%.60s)",
+               mod_faces, failed.line, failed.expression);
+      if (mod_faces == 0) {
+        return false;
+      }
+      abandon_context();
+      make_context();
+      mod_faces /= 2;
+    }
+  }
+  ImFontAtlas* fonts = ImGui::GetIO().Fonts;
+  const ImTextureData* texture = fonts->TexData;
+  if (texture == nullptr || texture->Pixels == nullptr || texture->Format != ImTextureFormat_RGBA32 ||
+      !make_gpu_atlas(*texture)) {
+    log_line("the shared atlas could not be made on the game's device");
+    return false;
+  }
+  // The pixels are in the upload buffer: the CPU copy is freed here rather than kept for the session (Dear ImGui's
+  // own call for an atlas a renderer without its texture path has uploaded).
+  fonts->ClearTexData();
+  return true;
+}
+
+// The atlas (D117): GraceUI uploads it itself, once, on the present queue, and polls its fence on later frames: the
+// DX12 backend's own texture path would wait for the GPU on this thread. Its texture and its filled upload buffer come
+// from GraceUI's thread (bake_atlas); this records the copy.
+bool start_atlas() {
+  g.atlas = g_baked.texture;
+  g.atlas_upload = g_baked.upload;
+  g_baked.texture = nullptr;
+  g_baked.upload = nullptr;
+  const UINT width = g_baked.width;
+  const UINT height = g_baked.height;
 
   D3D12_SHADER_RESOURCE_VIEW_DESC view{};
   view.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -561,7 +654,7 @@ bool start_atlas() {
   D3D12_TEXTURE_COPY_LOCATION source{};
   source.pResource = g.atlas_upload;
   source.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-  source.PlacedFootprint = footprint;
+  source.PlacedFootprint = g_baked.footprint;
   g.upload_list->CopyTextureRegion(&target, 0, 0, 0, &source, nullptr);
   transition(g.upload_list, g.atlas, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
   // Every mod's texture registered before warm-up joins the same copy (D76).
@@ -634,20 +727,7 @@ bool build_renderer() {
     return false;
   }
 
-#if defined(GRACEUI_TEST_EXPORTS)
-  ImGui::SetAllocatorFunctions(&draw_alloc::imgui_alloc, &draw_alloc::imgui_free, nullptr);
-#endif
-  IMGUI_CHECKVERSION();
-  ImGui::CreateContext();
-  ImGuiIO& io = ImGui::GetIO();
-  io.IniFilename = nullptr;  // Dear ImGui writes no file (D84: GraceUI writes only under its user folder)
-  io.LogFilename = nullptr;
-  io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;  // the cursor is the input half's (§5.5)
-  io.ConfigErrorRecoveryEnableTooltip = false;              // nothing of Dear ImGui's own is ever drawn on the game
-  // Dear ImGui frees a draw list unused for this long of its own time, and makes it again at its next use: on the
-  // present thread, during play, when a notice comes after a quiet spell. Never, then (D134; invariant 10).
-  io.ConfigMemoryCompactTimer = FLT_MAX;
-  input::reserve_imgui_queues();  // a holder's input then allocates nothing during play (invariant 10)
+  // Dear ImGui's context and the baked atlas are GraceUI's thread's (bake_atlas), made before this runs.
   if (!ImGui_ImplWin32_Init(g.window) || !init_dx12_backend() || !start_atlas()) {
     return false;
   }
@@ -667,6 +747,7 @@ bool rebuild_for_format() {
     return false;
   }
   ImGui_ImplDX12_Shutdown();
+  g.dx12_live = false;
   if (!init_dx12_backend()) {
     turn_off("the DX12 backend could not be rebuilt for the swap chain's new format");
     return false;
@@ -1071,13 +1152,114 @@ void record_and_submit(Slot& slot, const BackBuffer& buffer, ImDrawData* data) {
   state::frames_drawn.fetch_add(1, std::memory_order_relaxed);
 }
 
+// Warm-up (D117, D139 as amended): the faces sealed and the bake asked of GraceUI's thread; nothing drawn until it is
+// done; then the renderer built on this thread, which records the atlas's one upload. Answers whether it is ready.
+bool warm_up() {
+  switch (g_bake.load(std::memory_order_acquire)) {
+    case Bake::none:
+      session::registry().seal_faces();  // from now on register_face answers too late (D80)
+      g_baked.device = g.device;
+      g_bake.store(Bake::asked, std::memory_order_release);
+      hooks::wake();
+      return false;
+    case Bake::asked:
+    case Bake::baking: return false;
+    case Bake::failed:
+      turn_off("the shared atlas could not be baked");
+      return false;
+    case Bake::done: break;
+  }
+  if (!build_renderer()) {
+    turn_off("the renderer could not be built on the game's device");
+    return false;
+  }
+  return true;
+}
+
+// ---- Letting go of the game's device (L3). Direct3D 12 hands out one device per adapter while any reference to it
+// lives, so a reference of GraceUI's would hand a game that recreates its device after a removal the removed one again,
+// and would keep a replaced device's memory for the session. Once the device is removed or changed, GraceUI releases
+// everything it made on it and the device itself, as soon as no frame of its own can still be on the GPU (at once for
+// a removed device), never waiting; the render path stays off for the session (a later version rebuilds on the new one).
+
+void release_device_objects() {
+  if (g.dx12_live) {
+    g.dx12_live = false;
+    ImGui_ImplDX12_Shutdown();  // releases the backend's own objects; it waits for nothing
+  }
+  for (Slot& slot : g.slots) {
+    release(slot.list);
+    release(slot.allocator);
+  }
+  release(g.upload_list);
+  release(g.upload_allocator);
+  release(g.atlas_upload);
+  release(g.atlas);
+  release(g_baked.upload);
+  release(g_baked.texture);
+  for (GpuTexture& texture : g.textures) {
+    release(texture.upload);
+    release(texture.resource);
+  }
+  release(g.rtv_heap);
+  release(g.srv_heap);
+  release(g.fence);
+  release(g.retired_queue);
+  release(g.queue);
+  forget_back_buffers();
+  g.swap_chain = nullptr;
+  release(g.device);
+  g_baked.device = nullptr;
+  state::queue_method.store(QueueMethod::none, std::memory_order_relaxed);
+}
+
+void try_teardown() noexcept {
+  if (g.device == nullptr) {
+    g.teardown = false;
+    return;
+  }
+  Bake asked = Bake::asked;
+  g_bake.compare_exchange_strong(asked, Bake::failed, std::memory_order_acq_rel);  // not begun: it never will be
+  if (g_bake.load(std::memory_order_acquire) == Bake::baking) {
+    return;  // GraceUI's thread is making the atlas on this device: the next frame looks again
+  }
+  const bool removed = g.device->GetDeviceRemovedReason() != S_OK;
+  if (!removed && g.fence != nullptr && !fence_passed(g.fence_last)) {
+    return;  // GraceUI's last frames are still on the GPU
+  }
+  try {
+    release_device_objects();
+  } catch (...) {
+    log_line("letting go of the game's device failed (an exception): GraceUI holds it still");
+    g.teardown = false;
+    return;
+  }
+  g.teardown = false;
+  log_line("GraceUI let go of the game's Direct3D 12 device and everything it made on it");
+}
+
+void begin_teardown(const char* why) noexcept {
+  turn_off(why);
+  g.teardown = true;
+  try_teardown();
+}
+
+#if defined(GRACEUI_TEST_EXPORTS)
+constinit std::atomic<bool> g_test_turn_off{false};
+#endif
+
 }  // namespace
 
 void bind(IDXGISwapChain3* swap_chain, ID3D12Device* device, const DXGI_SWAP_CHAIN_DESC1& desc, HWND window) {
+  if (g.off) {
+    device->Release();  // the render path is off for the session: nothing is made on any device again
+    return;
+  }
   if (g.device != nullptr && g.device != device) {
-    // GraceUI 0.1 keeps the device of the first swap chain it binds; a later version rebuilds on a new one.
+    // GraceUI 0.1 draws on the device of the first swap chain it binds; a later version rebuilds on a new one. The old
+    // device and everything made on it are let go (L3).
     device->Release();
-    turn_off("the game's Direct3D 12 device changed");
+    begin_teardown("the game's Direct3D 12 device changed");
     return;
   }
   if (g.device == nullptr) {
@@ -1136,7 +1318,19 @@ void set_queue(ID3D12CommandQueue* queue, QueueMethod method) noexcept {
 void mark_buffers_stale() noexcept { g_buffers_stale.store(true, std::memory_order_release); }
 
 void render() {
+#if defined(GRACEUI_TEST_EXPORTS)
+  if (g_test_turn_off.exchange(false, std::memory_order_acq_rel)) {
+    turn_off("a test asked for it");
+  }
+#endif
+  if (g.teardown) {
+    try_teardown();
+  }
   if (g.off || g.swap_chain == nullptr) {
+    return;
+  }
+  if (g.device->GetDeviceRemovedReason() != S_OK) {
+    begin_teardown("the game's Direct3D 12 device was removed");
     return;
   }
   if (g_buffers_stale.exchange(false, std::memory_order_acquire)) {
@@ -1145,11 +1339,14 @@ void render() {
   if (g.queue == nullptr) {
     return;
   }
-  if (!g.ready && !build_renderer()) {
-    turn_off("the renderer could not be built on the game's device");
+  release_retired_queue_when_done();
+  if (g.retired_queue != nullptr) {
+    state::frames_skipped_busy.fetch_add(1, std::memory_order_relaxed);
+    return;  // nothing on the new present queue until GraceUI's work on the old one has passed (L11)
+  }
+  if (!g.ready && !warm_up()) {
     return;
   }
-  release_retired_queue_when_done();
   if (!finish_atlas()) {
     return;
   }
@@ -1160,16 +1357,18 @@ void render() {
   if (!g.primed) {
     prime_frame();
   }
-  input::rendered();  // the overlay is live: the input half's watchdog hears it (2 s without one ends a holder)
   const std::int64_t now_ms = input::now_ms();
   const grace::abi::NoticeList& notices = session::notices().read();
   if (!wants_to_draw(notices, now_ms) || g.width == 0 || g.height == 0) {
-    return;  // nothing to draw: the frame passes through untouched
+    input::rendered();  // the overlay is live with nothing to draw: the input half's watchdog hears it
+    return;             // the frame passes through untouched
   }
   Slot& slot = g.slots[g.draws % kSlots];
   if (!fence_passed(slot.fence_value)) {
+    // The GPU still has this slot's last frame: skip this one rather than wait (invariant 10). No heartbeat for the
+    // watchdog: a holder whose view cannot be drawn for 2 s ends (no_render, L5).
     state::frames_skipped_busy.fetch_add(1, std::memory_order_relaxed);
-    return;  // the GPU still has this slot's last frame: skip this one rather than wait (invariant 10)
+    return;
   }
   const BackBuffer* buffer = back_buffer(g.swap_chain->GetCurrentBackBufferIndex());
   if (buffer == nullptr) {
@@ -1181,16 +1380,42 @@ void render() {
     record_and_submit(slot, *buffer, data);
   }
   take_back_panels();
+  if (!g.off) {
+    input::rendered();  // drawn: the input half's watchdog hears it (2 s without one ends a holder)
+  }
 }
 
 void turn_off(const char* why) noexcept {
   if (!g.off) {
     g.off = true;
-    state::render_off.store(true, std::memory_order_relaxed);
+    state::render_off.store(true, std::memory_order_release);
     log_line("the render path is off for this session: %s", why);
-    input::render_off();  // a holder's view can no longer be drawn: its input ends (D100)
+    // A holder's view can no longer be drawn: its input ends (D100); and with no menu to open, every input passes to
+    // the game from now on, the menu key included (L4).
+    input::turn_off("the render path is off");
   }
 }
+
+void serve_bake() noexcept {
+  Bake asked = Bake::asked;
+  if (!g_bake.compare_exchange_strong(asked, Bake::baking, std::memory_order_acq_rel)) {
+    return;
+  }
+  bool baked = false;
+  try {
+    baked = bake_atlas();
+  } catch (const ImGuiAssertion& failed) {
+    log_line("the shared atlas could not be baked: a Dear ImGui assertion at line %d: %.80s", failed.line,
+             failed.expression);
+  } catch (...) {
+    log_line("the shared atlas could not be baked: an exception");
+  }
+  g_bake.store(baked ? Bake::done : Bake::failed, std::memory_order_release);
+}
+
+#if defined(GRACEUI_TEST_EXPORTS)
+void test_turn_off() noexcept { g_test_turn_off.store(true, std::memory_order_release); }
+#endif
 
 }  // namespace draw
 }  // namespace grace::host

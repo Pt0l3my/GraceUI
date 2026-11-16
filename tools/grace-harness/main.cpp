@@ -722,6 +722,9 @@ struct GraceUi {
   decltype(&GraceUI_Test_GetInput) get_input = nullptr;
   decltype(&GraceUI_Test_GetChars) get_chars = nullptr;
   decltype(&GraceUI_Test_GetInputCosts) input_costs = nullptr;
+  decltype(&GraceUI_Test_SetFirstRequestDelay) set_first_request_delay = nullptr;
+  decltype(&GraceUI_Test_TurnOffRender) turn_off_render = nullptr;
+  decltype(&GraceUI_Test_SetAtlasLimit) set_atlas_limit = nullptr;
 
   bool load(const std::wstring& path) {
     module = LoadLibraryW(path.c_str());
@@ -755,7 +758,12 @@ struct GraceUi {
     get_notice = function_of<decltype(get_notice)>(module, "GraceUI_Test_GetNotice");
     clear_notices = function_of<decltype(clear_notices)>(module, "GraceUI_Test_ClearNotices");
     get_consumer = function_of<decltype(get_consumer)>(module, "GraceUI_Test_GetConsumer");
-    return version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
+    set_first_request_delay =
+        function_of<decltype(set_first_request_delay)>(module, "GraceUI_Test_SetFirstRequestDelay");
+    turn_off_render = function_of<decltype(turn_off_render)>(module, "GraceUI_Test_TurnOffRender");
+    set_atlas_limit = function_of<decltype(set_atlas_limit)>(module, "GraceUI_Test_SetAtlasLimit");
+    return set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
+           version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
            request_input != nullptr && release_input != nullptr && set_world != nullptr && set_caret != nullptr &&
            set_code_page != nullptr && get_input != nullptr && get_chars != nullptr && input_costs != nullptr &&
@@ -1867,6 +1875,33 @@ void run_input(const std::wstring& dll) {
         "the render path and input still on after every check; %llu presents, %llu frames drawn, %llu fed by a holder",
         static_cast<unsigned long long>(state.presents), static_cast<unsigned long long>(state.frames_drawn),
         static_cast<unsigned long long>(grace.input().frames_fed));
+
+  // Last, as it is for the session: the render path turned off, as a fault turns it off (the review's L4). Nothing can
+  // open a menu now, so input goes off with it: F5 reaches the game again, through DirectInput and as messages, and a
+  // request is not now.
+  take(grace, game, 7, kPanelKind);
+  grace.turn_off_render();
+  frames(game, 3);
+  cursor_into(window);
+  reads.keys();
+  g_seen = Seen{};
+  inject_key(VK_F5, kScanF5, true);
+  settle();
+  const bool f5_read = (reads.keys()[DIK_F5] & 0x80) != 0;
+  inject_key(VK_F5, kScanF5, false);
+  settle();
+  reads.keys();
+  const GraceUiTestAnswer after_off = grace.request(1, kPanelKind, GRACEUI_TEST_WANT_ALL);
+  const GraceUiTestState off_state = grace.state();
+  const GraceUiTestInput off_input = grace.input();
+  check(off_state.render_off == 1 && off_input.input_off == 1 && off_input.holder_owner == 0 &&
+            off_input.last_close_reason == GRACEUI_TEST_CLOSED_FAULT && f5_read && g_seen.key_down[VK_F5] >= 1 &&
+            after_off.answer == GRACEUI_TEST_NOT_NOW,
+        "render off",
+        "the render path off (%u), input off with it (%u), its holder ended (%s); F5 read by DirectInput: %s, its "
+        "messages reaching the game: %d; a request %s",
+        off_state.render_off, off_input.input_off, reason_name(off_input.last_close_reason), f5_read ? "yes" : "no",
+        g_seen.key_down[VK_F5], after_off.answer == GRACEUI_TEST_NOT_NOW ? "not now" : "answered otherwise");
   grace.print_log();
 }
 
@@ -1903,13 +1938,20 @@ void run_input_ansi(const std::wstring& dll) {
   SendMessageA(window, WM_IME_CHAR, 0x82A2, 1);  // い, whole, as an IME sends it (the lead byte high)
   SendMessageA(window, WM_UNICHAR, 0x1F600, 0);
   frames(game, 4);
+  // UTF-8 as the ANSI code page (Windows' "use Unicode UTF-8" setting, the review's L13): each character's bytes in
+  // messages of their own, joined: é in two, € in three, U+1F642 in four, and a sequence cut short by an 'x'.
+  grace.set_code_page(65001);
+  for (const unsigned byte : {0xC3u, 0xA9u, 0xE2u, 0x82u, 0xACu, 0xF0u, 0x9Fu, 0x99u, 0x82u, 0xE2u, 0x82u, 0x78u}) {
+    PostMessageA(window, WM_CHAR, byte, 1);
+  }
+  frames(game, 4);
   grace.set_code_page(0);
   const std::vector<std::uint32_t> got = chars_of(grace);
-  const std::vector<std::uint32_t> want = {'a', 0xE9, 0x3042, 0x3044, 0x1F600};
+  const std::vector<std::uint32_t> want = {'a', 0xE9, 0x3042, 0x3044, 0x1F600, 0xE9, 0x20AC, 0x1F642, 0xFFFD, 'x'};
   input = grace.input();
   check(ansi && granted && got == want && g_seen.chars == 0, "ANSI characters",
-        "an ANSI window, filtered as one (%s); Dear ImGui received %s (wanted %s); character messages reaching the "
-        "game: %d",
+        "an ANSI window, filtered as one (%s); in Windows-1252, Shift-JIS and UTF-8, Dear ImGui received %s (wanted "
+        "%s); character messages reaching the game: %d",
         ansi ? "yes" : "NO", code_points(got).c_str(), code_points(want).c_str(), g_seen.chars);
   grace.release_input(1);
   grace.print_log();
@@ -2550,12 +2592,15 @@ struct HarnessMod {
     return table->register_texture(me, &desc, &id);
   }
 
-  GraceUiStatus face(const std::vector<unsigned char>& data, std::uint32_t pixels, std::uint32_t& id) const {
+  GraceUiStatus face(const std::vector<unsigned char>& data, std::uint32_t pixels, std::uint32_t& id,
+                     const std::vector<std::uint32_t>& ranges = {}) const {
     GraceUiFaceDesc desc{};
     desc.size = sizeof desc;
     desc.pixel_height = pixels;
     desc.data = data.data();
     desc.data_length = data.size();
+    desc.ranges = ranges.empty() ? nullptr : ranges.data();
+    desc.range_count = ranges.size() / 2;
     return table->register_face(me, &desc, &id);
   }
 
@@ -2658,6 +2703,9 @@ void run_panels(const std::wstring& dll) {
   std::uint32_t bad_face = 0;
   const GraceUiStatus bad_font_status = mod.face(not_a_font, 18, bad_face);  // refused, and out of its budget again
   const GraceUiStatus small_face_status = mod.face(noto, 2, bad_face);
+  // Every glyph the font has in the Basic Multilingual Plane at 128 px: over the shared atlas's room (the review's M3),
+  // full, and out of the mod's count again.
+  const GraceUiStatus huge_face_status = mod.face(noto, 128, bad_face, {0x20, 0xD7FF, 0xE000, 0xFFFF});
   std::uint32_t face_a = 0;
   std::uint32_t face_b = 0;
   std::uint32_t face_c = 0;
@@ -2669,14 +2717,16 @@ void run_panels(const std::wstring& dll) {
   const GraceUiStatus early_glyphs = table->glyph_table(mod.me, 1, &early);
   check(example_ready && connected.status == GRACEUI_OK && white_status == GRACEUI_OK && face_a_status == GRACEUI_OK &&
             face_b_status == GRACEUI_OK && face_c_status == GRACEUI_FULL && bad_font_status == GRACEUI_REFUSED &&
-            small_face_status == GRACEUI_REFUSED && early_glyphs == GRACEUI_NOT_READY && face_a != face_b,
+            small_face_status == GRACEUI_REFUSED && huge_face_status == GRACEUI_FULL &&
+            early_glyphs == GRACEUI_NOT_READY && face_a != face_b,
         "before warm-up",
         "hello-panel %s; the harness's mod: a texture %s, faces of 18 and 24 px %s and %s (ids %u, %u), a third %s, a "
-        "file that is not a font %s, a size of 2 px %s; glyph_table before warm-up: %s",
+        "file that is not a font %s, a size of 2 px %s, the font's whole BMP at 128 px (over the atlas's room) %s; "
+        "glyph_table before warm-up: %s",
         example_ready ? "connected and registered its face, two textures and its panel" : "DID NOT REGISTER",
         status_name(white_status), status_name(face_a_status), status_name(face_b_status), face_a, face_b,
         status_name(face_c_status), status_name(bad_font_status), status_name(small_face_status),
-        status_name(early_glyphs));
+        status_name(huge_face_status), status_name(early_glyphs));
 
   // Its panels: hud at the top left under the test panel; a modal over the test panel, which takes input; a modal under
   // the notices; hud under the example's panel; hud at the bottom right; a panel-layer panel that takes input, with a
@@ -2911,6 +2961,7 @@ void run_panels(const std::wstring& dll) {
       submit_with([](GraceUiDrawList&, V, I, C c, std::uint64_t&) { c[0].vertex_count = 5; }),  // past the vertices
       submit_with([](GraceUiDrawList& l, V, I, C, std::uint64_t&) { l.command_count = 65; }),   // 65 commands
       submit_with([](GraceUiDrawList& l, V, I, C, std::uint64_t&) { l.command_size = 16; }),    // a stride below 1.0's
+      submit_with([](GraceUiDrawList& l, V, I, C, std::uint64_t&) { l.command_size = 0x7FFFFFFF; }),  // no stride (L6)
       submit_with([](GraceUiDrawList& l, V, I, C, std::uint64_t&) { l.vertices = nullptr; }),   // no vertices
       submit_with([](GraceUiDrawList& l, V, I, C, std::uint64_t&) { l.vertex_count = 13108; }), // over 256 KiB
       submit_with([](GraceUiDrawList&, V, I, C, std::uint64_t& p) { p = p + 256; }),            // another generation
@@ -2927,11 +2978,12 @@ void run_panels(const std::wstring& dll) {
   }
   const int logged = count_log_lines(grace, "a draw list of harness-mod was refused");
   check(all_refused && kept && logged == 1 &&
-            after_refusals.lists_refused - before_refusals.lists_refused == 8 &&
+            after_refusals.lists_refused - before_refusals.lists_refused == 9 &&
             after_refusals.lists_submitted == before_refusals.lists_submitted,
         "draw list refusals",
         "an index past its command's vertices, a clip past the panel, nobody's texture, a command's vertices past the "
-        "list's, 65 commands, a stride of 16, no vertices, 13,108 vertices, a stale panel id: %s; %llu counted by the "
+        "list's, 65 commands, a stride of 16, a stride of 2 GiB, no vertices, 13,108 vertices, a stale panel id: %s; "
+        "%llu counted by the "
         "checker, %d log line for the mod; %s",
         refused_text.c_str(),
         static_cast<unsigned long long>(after_refusals.lists_refused - before_refusals.lists_refused), logged,
@@ -3247,6 +3299,182 @@ void run_panels(const std::wstring& dll) {
   grace.print_log();
 }
 
+// ---- The host review's fixes (2026-11-16): the window filter following the swap chain's window (M2), the faces'
+// fallback when a bake runs out of room (M3), the first request's bounded wait (L9) and a long copy's name (L12).
+
+int g_decoy_f5 = 0;  // F5's key-downs that reached the decoy's own procedure
+
+LRESULT CALLBACK decoy_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+  if (message == WM_KEYDOWN && wparam == VK_F5) {
+    ++g_decoy_f5;
+  }
+  return DefWindowProcW(window, message, wparam, lparam);
+}
+
+// A loader's window (invented), larger than the game's and made before it, is the one GraceUI's init thread finds first
+// (the largest visible window of the process, D120); once the game's swap chain is bound on its own window, the filter
+// moves there, and the decoy's filter passes everything on.
+void run_decoy_window(const std::wstring& dll) {
+  WNDCLASSEXW decoy_class{};
+  decoy_class.cbSize = sizeof decoy_class;
+  decoy_class.lpfnWndProc = &decoy_procedure;
+  decoy_class.hInstance = GetModuleHandleW(nullptr);
+  decoy_class.lpszClassName = L"GraceHarnessDecoy";
+  RegisterClassExW(&decoy_class);
+  const HWND decoy = CreateWindowExW(0, L"GraceHarnessDecoy", L"A loader's window", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0,
+                                     0, 1000, 640, nullptr, nullptr, decoy_class.hInstance, nullptr);
+  if (decoy == nullptr) {
+    fatal("no decoy window");
+  }
+  pump_messages();
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  grace.set_panel(1);
+  for (int i = 0; i < 100 && grace.input().window != reinterpret_cast<std::uintptr_t>(game.window()); ++i) {
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+  }
+  frames(game, 10);
+  const GraceUiTestInput input = grace.input();
+  const bool moved = input.window == reinterpret_cast<std::uintptr_t>(game.window()) && input.windows_filtered == 2 &&
+                     grace.logged("filter moved to the bound swap chain's window");
+  g_seen = Seen{};
+  g_decoy_f5 = 0;
+  post_key(decoy, VK_F5, kScanF5, true, false);
+  post_key(decoy, VK_F5, kScanF5, false, false);
+  post_key(game.window(), VK_F5, kScanF5, true, false);
+  post_key(game.window(), VK_F5, kScanF5, false, false);
+  frames(game, 3);
+  const GraceUiTestAnswer granted = grace.request(1, GRACEUI_TEST_KIND_PANEL, GRACEUI_TEST_WANT_KEYBOARD);
+  grace.release_input(1);
+  check(moved && g_decoy_f5 == 1 && g_seen.key_down[VK_F5] == 0 && granted.answer == GRACEUI_TEST_GRANTED,
+        "window followed",
+        "the decoy found first, then the filter moved to the bound swap chain's window: %s (%u windows filtered); F5 "
+        "reaching the decoy's procedure: %d, the game's: %d; a request %s",
+        moved ? "yes" : "NO", input.windows_filtered, g_decoy_f5, g_seen.key_down[VK_F5],
+        granted.answer == GRACEUI_TEST_GRANTED ? "granted" : "not granted");
+  grace.print_log();
+}
+
+// The shared atlas held to 1024 pixels square (a test build's limit): a mod's 96 px face, though within the atlas's
+// room as it is counted, no longer fits, so the bake on GraceUI's own thread fails, and is made again with the faces
+// before it: the render path stays on for every mod, and the face left out is refused its glyph table.
+void run_atlas_full(const std::wstring& dll) {
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  grace.set_atlas_limit(1024);
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  // The faces before anything is presented, so before warm-up.
+  const Connected connected = connect(table, request_for("harness-mod", GRACEUI_VERSION_PACK(0, 1, 0), "Harness mod"));
+  const HarnessMod mod{table, connected.answer.consumer, 0};
+  const std::vector<unsigned char> noto = read_file(folder_of_this_program() + L"fonts\\NotoSans-Regular.ttf");
+  std::uint32_t small_face = 0;
+  std::uint32_t large_face = 0;
+  const GraceUiStatus small_status = mod.face(noto, 18, small_face);
+  const GraceUiStatus large_status = mod.face(noto, 96, large_face);
+  GraceUiTestState state{};
+  for (int i = 0; i < 1000; ++i) {  // 20 s
+    game.frame(kPanelsColour, PresentWith::present);
+    state = grace.state();
+    if ((state.renderer_ready != 0 && state.atlas_ready != 0) || state.render_off != 0 ||
+        state.host == GRACEUI_TEST_HOST_FAILED) {
+      break;
+    }
+    Sleep(20);
+  }
+  GraceUiGlyphTable small_table{};
+  small_table.size = sizeof small_table;
+  GraceUiGlyphTable large_table{};
+  large_table.size = sizeof large_table;
+  const GraceUiStatus small_glyphs = table->glyph_table(mod.me, small_face, &small_table);
+  const GraceUiStatus large_glyphs = table->glyph_table(mod.me, large_face, &large_table);
+  const bool logged = grace.logged("could not be baked with 2 of the mods' faces") &&
+                      grace.logged("leaves out the mods' faces from face");
+  check(small_status == GRACEUI_OK && large_status == GRACEUI_OK && state.render_off == 0 &&
+            state.atlas_ready == 1 && state.atlas_generation == 1 && state.faces_baked == 2 &&
+            state.atlas_width <= 1024 && state.atlas_height <= 1024 && small_glyphs == GRACEUI_OK &&
+            large_glyphs == GRACEUI_REFUSED && logged,
+        "atlas fallback",
+        "faces of 18 and 96 px registered (%s, %s); with the atlas held to 1024 px the first bake failed and the second "
+        "left the 96 px face out (%s): render path on %s, atlas ready %u at %ux%u, generation %u, %u faces baked; glyph "
+        "tables: the 18 px face %s, the 96 px face %s",
+        status_name(small_status), status_name(large_status), logged ? "logged" : "NOT LOGGED",
+        state.render_off == 0 ? "yes" : "NO", state.atlas_ready, state.atlas_width, state.atlas_height,
+        state.atlas_generation, state.faces_baked, status_name(small_glyphs), status_name(large_glyphs));
+  grace.print_log();
+}
+
+// The first request slowed by 3 s (a test build's delay): a request made meanwhile on another thread waits 2 s at most,
+// then answers null; the first answers its table, and so does the next request.
+void run_slow_first(const std::wstring& dll) {
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  grace.set_first_request_delay(3000);
+  std::atomic<const void*> first_answer{nullptr};
+  std::thread first([&] { first_answer.store(grace.request_api(1)); });
+  Sleep(300);
+  const ULONGLONG start = GetTickCount64();
+  const void* meanwhile = grace.request_api(1);
+  const ULONGLONG waited = GetTickCount64() - start;
+  first.join();
+  const void* after = grace.request_api(1);
+  const bool logged = grace.logged("answered null after 2 s");
+  check(meanwhile == nullptr && waited >= 1900 && waited < 2900 && first_answer.load() != nullptr &&
+            after == first_answer.load() && logged,
+        "first request's wait",
+        "a request made while the first was running answered %s after %llu ms (%s); the first answered %s; the next %s",
+        meanwhile == nullptr ? "null" : "a table", static_cast<unsigned long long>(waited),
+        logged ? "logged" : "NOT LOGGED", first_answer.load() != nullptr ? "its table" : "null",
+        after == first_answer.load() && after != nullptr ? "the same table" : "otherwise");
+}
+
+// A second copy whose name relative to the game's folder is longer than a notice gives it (two folders of 60
+// characters of three bytes each in UTF-8, as a Linux file system under Wine takes a name of 255 bytes at most): it is
+// named all the same, by the end of its name, from a character's start.
+void run_long_name(const std::wstring& dll) {
+  const std::wstring outer = folder_of_this_program() + std::wstring(60, L'\u3042');
+  const std::wstring folder = outer + L"\\" + std::wstring(60, L'\u3042');
+  CreateDirectoryW(outer.c_str(), nullptr);
+  CreateDirectoryW(folder.c_str(), nullptr);
+  const std::wstring copy = folder + L"\\graceui.dll";
+  if (!CopyFileW(dll.c_str(), copy.c_str(), FALSE)) {
+    check(false, "long name",
+          "the copy's folder could not be made (error %lu): under Wine, run the harness in a UTF-8 locale "
+          "(LC_ALL=C.UTF-8), or Wine cannot name a folder in Unicode",
+          static_cast<unsigned long>(GetLastError()));
+    return;
+  }
+  GraceUi active;
+  GraceUi idle;
+  if (!active.load(dll) || !idle.load(copy) || active.module == idle.module) {
+    fatal("the two copies of graceui.dll did not load as two modules");
+  }
+  const void* table = active.request_api(1);
+  const void* idle_table = idle.request_api(1);
+  (void)active.request_api(1);
+  const std::vector<GraceUiTestNotice> notices = active.notices();
+  std::string text = notices.empty() ? std::string() : std::string(notices[0].text, notices[0].text_length);
+  const std::size_t name = text.find(": ...");
+  const std::string ending = "\u3042\\graceui.dll";
+  const bool named = notices.size() == 1 && name != std::string::npos &&
+                     text.size() >= ending.size() && text.compare(text.size() - ending.size(), ending.size(), ending) == 0;
+  check(table != nullptr && idle_table == nullptr && named, "long name",
+        "a copy %zu bytes deep in UTF-8 named in one notice, by its end after \"...\": %s (%zu bytes of text)",
+        std::string("\\graceui.dll").size() + 361, named ? "yes" : "NO", text.size());
+}
+
 // Two copies of GraceUI from two folders, each asked for ABI 1's table at the same moment from a thread of its own:
 // exactly one answers (D72), and it names the other, once.
 void run_copies(const std::wstring& dll) {
@@ -3544,6 +3772,18 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"anti-cheat-parent") {
     std::printf("-- scenario: an anti-cheat hit by the parent clause\n");
     run_anti_cheat_parent(dll);
+  } else if (scenario == L"decoy-window") {
+    std::printf("-- scenario: a larger window found first, then the swap chain's\n");
+    run_decoy_window(dll);
+  } else if (scenario == L"atlas-full") {
+    std::printf("-- scenario: the shared atlas runs out of room\n");
+    run_atlas_full(dll);
+  } else if (scenario == L"slow-first") {
+    std::printf("-- scenario: a request while the first is still running\n");
+    run_slow_first(dll);
+  } else if (scenario == L"long-name") {
+    std::printf("-- scenario: a second copy with a long name\n");
+    run_long_name(dll);
   } else {
     std::printf("-- scenario: one direct queue\n");
     run_main(dll);
@@ -3555,8 +3795,9 @@ int wmain(int argc, wchar_t** argv) {
         std::snprintf(name, sizeof name, "%ls scenario", child_scenario);
         check(child == 0, name, "its process ended with %d", child);
       };
-      for (const wchar_t* child_scenario : {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies",
-                                            L"found-by-scan", L"anti-cheat", L"anti-cheat-parent"}) {
+      for (const wchar_t* child_scenario :
+           {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
+            L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name"}) {
         run(child_scenario, dll, this_program());
       }
       // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in

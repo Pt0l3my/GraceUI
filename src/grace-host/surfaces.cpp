@@ -154,6 +154,16 @@ GraceUiStatus register_face(GraceUiConsumer consumer, float pixel_height, std::u
     if (range_count != 0) {
       ranges.back() = 0;  // Dear ImGui's form: the pairs, then 0
     }
+    // Its room in the shared atlas: the glyphs its font has in its ranges, at its size (D139 as amended): the bake can
+    // then never ask Dear ImGui for more than its largest texture holds.
+    const std::uint64_t glyphs =
+        grace::abi::mapped_code_points(data.data(), data.size(), range_count == 0 ? nullptr : ranges.data());
+    if (registry.reserve_area(slot, grace::abi::face_area(glyphs, pixel_height), eldennet) !=
+        grace::abi::Registered::ok) {
+      registry.abort_face(slot);
+      refused("register_face", "a face larger than the room left in the shared atlas (its glyphs at its size)");
+      return GRACEUI_FULL;
+    }
   } catch (...) {
     registry.abort_face(slot);
     fault("register_face");
@@ -236,8 +246,7 @@ GraceUiStatus submit(GraceUiConsumer consumer, std::uint64_t panel, const ListSh
   registry.close_window(consumer);  // the mod's first submit ends its registration window (D76)
   registry.sweep();
   // The bounds, before anything is copied.
-  if (shape.vertex_count > grace::abi::kDrawVerticesMax || shape.index_count > grace::abi::kDrawIndicesMax ||
-      shape.command_count > grace::abi::kDrawCommandsMax || shape.command_size < grace::abi::kDrawCommandSize10) {
+  if (!grace::abi::list_shape_fits(shape.vertex_count, shape.index_count, shape.command_count, shape.command_size)) {
     log_list_refusal(consumer, owner, grace::abi::refusal_name(grace::abi::Refusal::too_large));
     return GRACEUI_REFUSED;
   }

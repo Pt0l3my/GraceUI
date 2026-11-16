@@ -18,13 +18,17 @@
 #include <atomic>
 #include <cstdio>
 #include <cwchar>
+#include <string_view>
 #include <vector>
 
 #include "anticheat.h"
 #include "counters.h"
+#include "draw.h"
 #include "draw_atlas.h"
 #include "grace/abi/spin.h"
+#include "grace/abi/text.h"
 #include "hooks.h"
+#include "hooks_input.h"
 #include "input.h"
 #include "log.h"
 #include "session.h"
@@ -36,6 +40,17 @@ namespace {
 // The first request's guard: 0 never asked, 1 the first request is running, 2 it is done.
 constinit std::atomic<int> g_asked{0};
 constinit std::atomic<Copy> g_copy{Copy::none};
+
+// How long a request made while the first is still running waits for it (EST, L9): a caller that holds the loader lock
+// (a mod asking from its DllMain, which D70 forbids) would otherwise spin for ever while the first request waits for
+// that lock in GetModuleHandleExW, and the game would hang at start. Past it the request answers null, as a request
+// that cannot be served does; the mod may ask again.
+constexpr ULONGLONG kFirstRequestWaitMs = 2000;
+constinit std::atomic<bool> g_wait_logged{false};
+
+#if defined(GRACEUI_TEST_EXPORTS)
+constinit std::atomic<std::uint32_t> g_test_first_delay{0};  // the first request takes this much longer (L9's check)
+#endif
 
 // Pins graceui.dll: from now on FreeLibrary never unloads it (D107, §2.9), so the init thread and the detours always
 // have their code.
@@ -55,6 +70,11 @@ HMODULE this_module() noexcept {
 }
 
 Copy first_request() noexcept {
+#if defined(GRACEUI_TEST_EXPORTS)
+  if (const std::uint32_t delay = g_test_first_delay.load(std::memory_order_relaxed); delay != 0) {
+    Sleep(delay);
+  }
+#endif
   // D72: one per process, named after it. A copy that finds the mutex already made idles from its first call.
   wchar_t name[64];
   std::swprintf(name, sizeof name / sizeof name[0], L"Local\\GraceUI.Host.%lu",
@@ -95,6 +115,9 @@ Copy first_request() noexcept {
     return Copy::active;  // its table is served: connect answers inactive (the host failed)
   }
   state::host.store(HostState::started, std::memory_order_release);
+  if (!hooks::prepare_wake()) {
+    log_line("GraceUI's own thread's wake-up could not be made: it looks for work every 50 ms instead");
+  }
   const HANDLE thread = CreateThread(nullptr, 0, &hooks::init_thread_main, nullptr, 0, nullptr);
   if (thread == nullptr) {
     state::host.store(HostState::failed, std::memory_order_release);
@@ -176,11 +199,21 @@ bool relative_name(HMODULE module, char* out, int capacity) {
     name_length -= start;
     outside = " (outside the game's folder)";
   }
-  const int written = WideCharToMultiByte(CP_UTF8, 0, name, name_length, out, capacity - 64, nullptr, nullptr);
-  if (written <= 0) {
+  // In UTF-8, whole if it fits; otherwise its end, from a character's start, after "..." (L12): a copy deep in a mod
+  // manager's folders is named all the same, by the part that tells most, its folder and file.
+  const int needed = WideCharToMultiByte(CP_UTF8, 0, name, name_length, nullptr, 0, nullptr, nullptr);
+  if (needed <= 0 || capacity <= 64 + 4) {
     return false;
   }
-  std::snprintf(out + written, 64, "%s", outside);
+  std::vector<char> utf8(static_cast<std::size_t>(needed));
+  if (WideCharToMultiByte(CP_UTF8, 0, name, name_length, utf8.data(), needed, nullptr, nullptr) != needed) {
+    return false;
+  }
+  const std::size_t room = static_cast<std::size_t>(capacity) - 64 - 4;  // the words after it, and "..." before it
+  const std::string_view whole(utf8.data(), utf8.size());
+  const std::size_t start = grace::abi::utf8_tail_start(whole, room);
+  std::snprintf(out, static_cast<std::size_t>(capacity), "%s%.*s%s", start != 0 ? "..." : "",
+                static_cast<int>(whole.size() - start), whole.data() + start, outside);
   return true;
 }
 
@@ -238,8 +271,17 @@ void tell_active_copy() noexcept {
 Copy request_start() noexcept {
   int expected = 0;
   if (!g_asked.compare_exchange_strong(expected, 1, std::memory_order_acq_rel)) {
-    // The first request may still be running on another thread: wait for it (a mod's thread; never DllMain, D70).
+    // The first request may still be running on another thread: wait for it (a mod's thread; never DllMain, D70),
+    // for a bounded time.
+    const ULONGLONG since = GetTickCount64();
     while (g_asked.load(std::memory_order_acquire) != 2) {
+      if (GetTickCount64() - since > kFirstRequestWaitMs) {
+        if (!g_wait_logged.exchange(true, std::memory_order_relaxed)) {
+          log_line("a request came while the first was still running and was answered null after 2 s (is a mod "
+                   "asking from its DllMain?)");
+        }
+        return Copy::none;
+      }
       SwitchToThread();
     }
     const Copy copy = g_copy.load(std::memory_order_acquire);
@@ -262,6 +304,14 @@ Copy request_start() noexcept {
 #if defined(GRACEUI_TEST_EXPORTS)
 
 void test_set_panel(bool on) noexcept { state::test_panel.store(on, std::memory_order_relaxed); }
+
+void test_set_first_request_delay(std::uint32_t ms) noexcept {
+  g_test_first_delay.store(ms, std::memory_order_relaxed);
+}
+
+void test_turn_off_render() noexcept { draw::test_turn_off(); }
+
+void test_set_atlas_limit(std::uint32_t side) noexcept { atlas::test_set_limit(side); }
 
 void test_fill_state(GraceUiTestState& out) noexcept {
   out.host = static_cast<std::uint32_t>(state::host.load(std::memory_order_acquire));
@@ -431,6 +481,9 @@ void test_fill_input(GraceUiTestInput& out) noexcept {
   out.imgui_mouse_x = counters::imgui_mouse_x.load(std::memory_order_relaxed);
   out.imgui_mouse_y = counters::imgui_mouse_y.load(std::memory_order_relaxed);
   out.frames_fed = counters::frames_fed.load(std::memory_order_relaxed);
+  // SAFETY: a window handle is a value, given to the harness as a number to compare with its own windows'.
+  out.window = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(input::window()));
+  out.windows_filtered = static_cast<std::uint32_t>(hooks_input::windows_filtered());
 }
 
 std::uint32_t test_copy_chars(std::uint32_t* out, std::uint32_t capacity) noexcept {

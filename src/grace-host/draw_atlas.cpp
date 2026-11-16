@@ -149,9 +149,25 @@ void load_own_fonts() noexcept {
   }
 }
 
-void bake(ImFontAtlas* fonts) {
-  grace::abi::Registry& registry = session::registry();
-  registry.seal_faces();  // from now on register_face answers too late (D80)
+#if defined(GRACEUI_TEST_EXPORTS)
+namespace {
+constinit std::atomic<std::uint32_t> g_test_limit{0};
+}  // namespace
+void test_set_limit(std::uint32_t side) noexcept { g_test_limit.store(side, std::memory_order_relaxed); }
+#endif
+
+void bake(ImFontAtlas* fonts, std::uint32_t mod_faces) {
+  grace::abi::Registry& registry = session::registry();  // sealed by the present thread before this runs (D80)
+  // A fresh start: an earlier attempt that failed left nothing GraceUI keeps.
+  g_table_count = 0;
+  g_notice_font = nullptr;
+  g_notice_grace = false;
+#if defined(GRACEUI_TEST_EXPORTS)
+  if (const std::uint32_t side = g_test_limit.load(std::memory_order_relaxed); side != 0) {
+    fonts->TexMaxWidth = static_cast<int>(side);
+    fonts->TexMaxHeight = static_cast<int>(side);
+  }
+#endif
 
   // GraceUI's own face first: Dear ImGui's default font is the first added.
   if (g_notice_loaded.load(std::memory_order_acquire)) {
@@ -174,7 +190,8 @@ void bake(ImFontAtlas* fonts) {
   const bool asserts = io.ConfigErrorRecoveryEnableAssert;
   io.ConfigErrorRecoveryEnableAssert = false;
   grace::abi::FaceData face;
-  for (std::uint32_t i = 0; registry.face(i, face) && mod_count < grace::abi::kMaxFaces; ++i) {
+  std::uint32_t i = 0;
+  for (; i < mod_faces && registry.face(i, face) && mod_count < grace::abi::kMaxFaces; ++i) {
     const ImFontConfig config = face_config();
     const std::uint32_t* ranges = face.ranges->empty() ? grace::abi::default_ranges() : face.ranges->data();
     // SAFETY: as above; the registry keeps the face's data and ranges for the session once its table is sealed.
@@ -190,6 +207,9 @@ void bake(ImFontAtlas* fonts) {
     ++mod_count;
   }
   io.ConfigErrorRecoveryEnableAssert = asserts;
+  if (registry.face(i, face)) {
+    log_line("the shared atlas leaves out the mods' faces from face %u on: they did not fit in one bake", face.id);
+  }
 
   ImFontAtlasBuildMain(fonts);  // static mode (D117): every glyph of every range baked now, at each face's own size
   add_table(g_notice_font, kNoticeFace);

@@ -22,10 +22,12 @@ inline constexpr std::uint32_t kNoticeFace = 1;  // its face id
 // relative name.
 void load_own_fonts() noexcept;
 
-// Warm-up, on the present thread (once): seals the mods' faces (no face is taken after this), adds GraceUI's own and
-// every mod's committed face to `fonts`, bakes the atlas and builds each face's glyph table, then raises the atlas's
-// generation to 1. A mod's face that Dear ImGui cannot load is left out, with one log line. May throw (D121).
-void bake(ImFontAtlas* fonts);
+// Warm-up, on GraceUI's own thread once the present thread has sealed the mods' faces (D139 as amended): adds GraceUI's
+// own face and the first `mod_faces` of the mods' committed faces, in registration order, to `fonts`, bakes the atlas
+// and builds each face's glyph table, then raises the atlas's generation to 1. A mod's face that Dear ImGui cannot load
+// is left out, with one log line, and so is every face past `mod_faces`. May throw (D121): the caller then tries again
+// with fewer faces on a fresh atlas, and this starts its tables afresh.
+void bake(ImFontAtlas* fonts, std::uint32_t mod_faces);
 
 // The atlas's generation: 0 before the bake, then 1 for the session (GraceUI 0.1 never rebuilds it).
 std::uint32_t generation() noexcept;
@@ -38,5 +40,11 @@ bool glyph_table(std::uint32_t face_id, GraceUiGlyphTable& out) noexcept;
 ImFont* notice_font() noexcept;
 bool notice_face_is_grace() noexcept;
 std::uint32_t faces_baked() noexcept;  // GraceUI's and the mods' faces in the atlas
+
+#if defined(GRACEUI_TEST_EXPORTS)
+// A test build's limit on the atlas's texture, a power of two (0: Dear ImGui's own, 8192), so that a bake can be made to
+// run out of room and the faces' fallback be seen.
+void test_set_limit(std::uint32_t side) noexcept;
+#endif
 
 }  // namespace grace::host::atlas

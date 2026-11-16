@@ -107,6 +107,9 @@ void test_set_anti_cheat_names(const wchar_t* module_prefix, const wchar_t* pare
 bool test_copy_notice(std::uint32_t index, GraceUiTestNotice& out) noexcept;
 void test_clear_notices() noexcept;
 bool test_copy_consumer(std::uint32_t index, GraceUiTestConsumer& out) noexcept;
+void test_set_first_request_delay(std::uint32_t ms) noexcept;
+void test_turn_off_render() noexcept;
+void test_set_atlas_limit(std::uint32_t side) noexcept;
 #endif
 
 }  // namespace grace::host
