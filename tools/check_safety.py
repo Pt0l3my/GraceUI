@@ -11,10 +11,11 @@ The source checks, over src/ (our own code; third-party code is fetched into the
      abi files (D110), each with a "// SAFETY:" comment on its statement or in the three lines before it; a C file's
      pointer casts only in those files too.
   2. Each of those files that holds raw pointers from callers, casts or hook code carries a SAFETY comment.
-  3. MinHook is included and called only in grace-host's hooks files, and Dear ImGui's backends only in grace-host
-     (invariant 16); only grace-host's CMakeLists.txt links MinHook or Dear ImGui (the module graph).
+  3. MinHook is included and called only in grace-host's hooks files, and so is any other way of hooking a window
+     (SetWindowLongPtr, SetWindowsHookEx), and Dear ImGui's backends only in grace-host (invariant 16); only
+     grace-host's CMakeLists.txt links MinHook or Dear ImGui (the module graph).
   4. Only the DLL's abi files export anything.
-  5. hooks.cpp's hook table names only functions of D102's published list.
+  5. hooks.cpp's hook table names only functions of D102's published list, and is the only place MinHook makes a hook.
   6. No project that EldenNet's O47 and O48 exclude is named in a build file (D106).
   7. The pure modules (grace-input) include no Windows header, no Dear ImGui and no MinHook, and link nothing (G15 (a),
      D124): their unit tests build on Linux, which proves the first, and this check names the line.
@@ -134,6 +135,9 @@ def check_sources():
                 needs_safety = True
                 if not HOOK_FILES.match(rel):
                     fail(rel, number, "MinHook outside grace-host's hooks files (invariant 16)")
+            if re.search(r"\b(SetWindowLongPtr[AW]?|SetWindowLong[AW]?|SetClassLongPtr[AW]?|SetWindowsHookEx[AW]?)\s*\(",
+                         code) and not HOOK_FILES.match(rel):
+                fail(rel, number, "a window hooked outside grace-host's hooks files (invariant 16)")
             if re.search(r'#\s*include\s*[<"]imgui_impl_', include) and not GRACE_HOST_FILES.match(rel):
                 fail(rel, number, "a Dear ImGui backend outside grace-host (invariant 16)")
             if re.search(r"__declspec\s*\(\s*dllexport\s*\)|\bGRACEUI_API\b\s+[A-Za-z_].*\(", code):
@@ -180,7 +184,7 @@ def check_pure_modules():
 def check_hook_table():
     hooks = SRC / "grace-host" / "hooks.cpp"
     text = hooks.read_text(encoding="utf-8")
-    table = re.search(r"kHookNames\[kHookCount\]\s*=\s*\{(.*?)\};", text, re.S)
+    table = re.search(r"kHookNames\[[^\]]*\]\s*=\s*\{(.*?)\};", text, re.S)
     if table is None:
         fail("src/grace-host/hooks.cpp", 1, "the hook table (kHookNames) is missing")
         return

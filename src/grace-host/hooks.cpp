@@ -1,8 +1,10 @@
-// hooks.cpp: GraceUI's hooks (D102), the one place that creates any (invariant 16). The init thread (D71) waits for a
+// hooks.cpp: GraceUI's hooks (D102), the one place that installs any (invariant 16). The init thread (D71) waits for a
 // window of the game's, reads the render half's five targets from the vtables of a short-lived device, queue and swap
-// chain of its own (hooks_vtable.c), installs them with MinHook once, and exits; they are never removed (D107). Then
-// the detours: Present and Present1 drive the render path (draw.cpp), ResizeBuffers and ResizeBuffers1 keep it off the
-// buffers they replace, and ExecuteCommandLists notes which queues execute, to find the present queue (D116).
+// chain of its own (hooks_vtable.c) and the input half's from the DirectInput and XInput DLLs already loaded
+// (hooks_input.cpp), installs them all with MinHook from one table, at once, then filters the game's window procedure
+// (D125), and exits; nothing is ever removed (D107). Then the render half's detours: Present and Present1 drive the
+// render path (draw.cpp), ResizeBuffers and ResizeBuffers1 keep it off the buffers they replace, and ExecuteCommandLists
+// notes which queues execute, to find the present queue (D116). The input half's are hooks_input.cpp's.
 //
 // SAFETY: every function here that the game reaches is a detour: noexcept, with its own work in a catch-all, and the
 // original called with the arguments it was given, exactly once. The pointers the game hands the detours are used only
@@ -20,20 +22,50 @@
 #include "MinHook.h"
 #include "counters.h"
 #include "draw.h"
+#include "hooks_input.h"
 #include "hooks_vtable.h"
+#include "input.h"
 #include "log.h"
 #include "state.h"
 
 namespace grace::host::hooks {
 namespace {
 
-// ---- The render half's hooks: D102's published list, the first five. The input half adds the game's window procedure,
-// DirectInput's GetDeviceState and XInput's XInputGetState to this table, and nowhere else.
-// Their order is hooks_vtable.h's (GRACE_HOST_HOOK_*), which the tables in install() follow.
-constexpr int kHookCount = GRACE_HOST_RENDER_HOOKS;
-constexpr const char* kHookNames[kHookCount] = {"IDXGISwapChain::Present", "IDXGISwapChain1::Present1",
-                                                "IDXGISwapChain::ResizeBuffers", "IDXGISwapChain3::ResizeBuffers1",
-                                                "ID3D12CommandQueue::ExecuteCommandLists"};
+// ---- The one table (D102, D120): every hook GraceUI installs is an entry of it, named from D102's published list
+// (tools/check_safety.py reads these names): the render half's five, whose order is hooks_vtable.h's
+// (GRACE_HOST_HOOK_*), then the input half's. The window procedure's is a filter, not a MinHook hook (D125), made once
+// after the others are enabled.
+enum class HookName : int {
+  present = 0,
+  present1 = 1,
+  resize_buffers = 2,
+  resize_buffers1 = 3,
+  execute_command_lists = 4,
+  window_procedure = 5,
+  get_device_state = 6,
+  xinput_get_state = 7,
+};
+constexpr const char* kHookNames[] = {"IDXGISwapChain::Present", "IDXGISwapChain1::Present1",
+                                      "IDXGISwapChain::ResizeBuffers", "IDXGISwapChain3::ResizeBuffers1",
+                                      "ID3D12CommandQueue::ExecuteCommandLists", "the game's window procedure",
+                                      "IDirectInputDevice8::GetDeviceState", "XInputGetState"};
+
+constexpr int kRenderHooks = GRACE_HOST_RENDER_HOOKS;
+constexpr int kMaxHooks = kRenderHooks + hooks_input::kDirectInputTargets + hooks_input::kXInputDlls;
+
+struct Hook {
+  HookName name;
+  void* target;
+  void* detour;
+  void** original;
+  const char* module;  // where it was found, for the log: an XInput DLL's name, or null
+};
+
+const char* name_of(HookName name) noexcept { return kHookNames[static_cast<int>(name)]; }
+
+// What install() made, in order, the window procedure's filter last: for the log and the test exports.
+constinit Hook g_installed[kMaxHooks + 1] = {};
+constinit std::atomic<int> g_installed_count{0};
 
 using PresentFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
 using Present1Fn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain1*, UINT, UINT, const DXGI_PRESENT_PARAMETERS*);
@@ -414,6 +446,7 @@ bool before_present(IDXGISwapChain* chain) {
     find_present_queue(chain);
   }
   draw::render();
+  input::tick();  // the player's exit and the watchdog, once a frame as well as on every input
   return true;
 }
 
@@ -625,17 +658,52 @@ HWND wait_for_game_window() noexcept {
   return nullptr;
 }
 
-void install(const grace_host_fn (&targets)[kHookCount]) noexcept {
+void install(const grace_host_fn (&render)[kRenderHooks], const hooks_input::Targets& input_targets,
+             HWND window) noexcept {
   if (state::hook_install_runs.fetch_add(1, std::memory_order_acq_rel) != 0) {
     return;  // once per process: D72's mutex lets one copy here, and this guard lets it here once
   }
-  for (int i = 0; i < kHookCount; ++i) {
-    if (targets[i] == nullptr) {
+  // SAFETY: each detour has its target's exact signature; MinHook stores each trampoline in the matching original, a
+  // function-pointer variable of the right type.
+  const Hook render_hooks[kRenderHooks] = {
+      {HookName::present, nullptr, reinterpret_cast<void*>(&present_detour), reinterpret_cast<void**>(&g_present),
+       nullptr},
+      {HookName::present1, nullptr, reinterpret_cast<void*>(&present1_detour), reinterpret_cast<void**>(&g_present1),
+       nullptr},
+      {HookName::resize_buffers, nullptr, reinterpret_cast<void*>(&resize_buffers_detour),
+       reinterpret_cast<void**>(&g_resize_buffers), nullptr},
+      {HookName::resize_buffers1, nullptr, reinterpret_cast<void*>(&resize_buffers1_detour),
+       reinterpret_cast<void**>(&g_resize_buffers1), nullptr},
+      {HookName::execute_command_lists, nullptr, reinterpret_cast<void*>(&execute_command_lists_detour),
+       reinterpret_cast<void**>(&g_execute_command_lists), nullptr}};
+  Hook table[kMaxHooks] = {};
+  int count = 0;
+  for (int i = 0; i < kRenderHooks; ++i) {
+    if (render[i] == nullptr) {
       give_up("a hook target was not found");
       return;
     }
+    table[count] = render_hooks[i];
+    // SAFETY: the target is a function of the runtime's, read from a vtable by hooks_vtable.c.
+    table[count++].target = reinterpret_cast<void*>(render[i]);
+  }
+  for (int slot = 0; slot < hooks_input::kDirectInputTargets; ++slot) {
+    if (input_targets.get_device_state[slot] != nullptr) {
+      table[count++] = Hook{HookName::get_device_state, input_targets.get_device_state[slot],
+                            hooks_input::get_device_state_detour(slot), hooks_input::get_device_state_original(slot),
+                            nullptr};
+    }
+  }
+  for (int slot = 0; slot < hooks_input::kXInputDlls; ++slot) {
+    if (input_targets.xinput_get_state[slot] != nullptr) {
+      table[count++] = Hook{HookName::xinput_get_state, input_targets.xinput_get_state[slot],
+                            hooks_input::xinput_detour(slot), hooks_input::xinput_original(slot),
+                            hooks_input::kXInputNamesNarrow[slot]};
+    }
+  }
+  for (int i = 0; i < count; ++i) {
     for (int j = 0; j < i; ++j) {
-      if (targets[i] == targets[j]) {
+      if (table[i].target == table[j].target) {
         give_up("two hook targets share one address");
         return;
       }
@@ -645,30 +713,17 @@ void install(const grace_host_fn (&targets)[kHookCount]) noexcept {
     give_up("MinHook could not start");
     return;
   }
-  // SAFETY: each detour has its target's exact signature; MinHook stores each trampoline in the matching original.
-  void* const detours[kHookCount] = {
-      reinterpret_cast<void*>(&present_detour), reinterpret_cast<void*>(&present1_detour),
-      reinterpret_cast<void*>(&resize_buffers_detour), reinterpret_cast<void*>(&resize_buffers1_detour),
-      reinterpret_cast<void*>(&execute_command_lists_detour)};
-  // SAFETY: MinHook writes a function address into each of these function-pointer variables, of the right type.
-  void** const originals[kHookCount] = {
-      reinterpret_cast<void**>(&g_present), reinterpret_cast<void**>(&g_present1),
-      reinterpret_cast<void**>(&g_resize_buffers), reinterpret_cast<void**>(&g_resize_buffers1),
-      reinterpret_cast<void**>(&g_execute_command_lists)};
   int created = 0;
-  for (; created < kHookCount; ++created) {
-    // SAFETY: the target is a function of the runtime's, read from a vtable by hooks_vtable.c.
-    void* const target = reinterpret_cast<void*>(targets[created]);
-    if (MH_CreateHook(target, detours[created], originals[created]) != MH_OK) {
-      log_line("MinHook refused %s", kHookNames[created]);
+  for (; created < count; ++created) {
+    if (MH_CreateHook(table[created].target, table[created].detour, table[created].original) != MH_OK) {
+      log_line("MinHook refused %s", name_of(table[created].name));
       break;
     }
   }
-  if (created != kHookCount) {
+  if (created != count) {
     // None is enabled yet: removing the ones created unhooks nothing.
     for (int i = 0; i < created; ++i) {
-      // SAFETY: as above.
-      MH_RemoveHook(reinterpret_cast<void*>(targets[i]));
+      MH_RemoveHook(table[i].target);
     }
     give_up("not every hook could be created");
     return;
@@ -678,23 +733,49 @@ void install(const grace_host_fn (&targets)[kHookCount]) noexcept {
     give_up("MinHook could not enable the hooks");
     return;
   }
-  state::hooks_installed.store(kHookCount, std::memory_order_relaxed);
+  std::uint32_t dinput_hooks = 0;
+  std::uint32_t xinput_hooks = 0;
+  for (int i = 0; i < count; ++i) {
+    g_installed[i] = table[i];
+    dinput_hooks += table[i].name == HookName::get_device_state ? 1u : 0u;
+    xinput_hooks += table[i].name == HookName::xinput_get_state ? 1u : 0u;
+  }
+  // The filter on the game's window procedure, once (D125). Without it the render half still runs, but no holder can
+  // have input (the input half answers not_now).
+  const bool filtered = hooks_input::filter_window(window);
+  if (filtered) {
+    g_installed[count++] = Hook{HookName::window_procedure, nullptr, nullptr, nullptr, nullptr};
+  }
+  g_installed_count.store(count, std::memory_order_release);
+  state::render_hooks.store(kRenderHooks, std::memory_order_relaxed);
+  state::dinput_hooks.store(dinput_hooks, std::memory_order_relaxed);
+  state::xinput_hooks.store(xinput_hooks, std::memory_order_relaxed);
+  state::hooks_installed.store(static_cast<std::uint32_t>(count), std::memory_order_relaxed);
   state::host.store(HostState::hooked, std::memory_order_release);
-  log_line("%d hooks installed: Present, Present1, ResizeBuffers, ResizeBuffers1, ExecuteCommandLists", kHookCount);
+  log_line("%d hooks installed: the render half's %d, GetDeviceState %u, XInputGetState %u, the window procedure %u",
+           count, kRenderHooks, dinput_hooks, xinput_hooks, filtered ? 1u : 0u);
+  for (int i = 0; i < count; ++i) {
+    if (g_installed[i].module != nullptr) {
+      log_line("XInputGetState hooked in %s", g_installed[i].module);
+    }
+  }
 }
 
 void run_init() noexcept {
   // S10.4.b adds the anti-cheat check here, before anything else (D88); until then nothing is checked.
-  if (wait_for_game_window() == nullptr) {
+  const HWND window = wait_for_game_window();
+  if (window == nullptr) {
     give_up("no window of this process appeared within 120 s");
     return;
   }
-  grace_host_fn targets[kHookCount] = {};
-  if (!grace_host_read_hook_targets(targets)) {
+  grace_host_fn render[kRenderHooks] = {};
+  if (!grace_host_read_hook_targets(render)) {
     give_up("the hook targets could not be read from a Direct3D 12 swap chain of GraceUI's own");
     return;
   }
-  install(targets);
+  hooks_input::Targets input_targets;
+  hooks_input::find_targets(input_targets);
+  install(render, input_targets, window);
 }
 
 }  // namespace
@@ -707,5 +788,16 @@ DWORD WINAPI init_thread_main(LPVOID) noexcept {
   }
   return 0;
 }
+
+#if defined(GRACEUI_TEST_EXPORTS)
+bool installed_hook(std::uint32_t index, const char*& name, const char*& module) noexcept {
+  if (index >= static_cast<std::uint32_t>(g_installed_count.load(std::memory_order_acquire))) {
+    return false;
+  }
+  name = name_of(g_installed[index].name);
+  module = g_installed[index].module;
+  return true;
+}
+#endif
 
 }  // namespace grace::host::hooks

@@ -381,6 +381,7 @@ bool build_renderer() {
   io.LogFilename = nullptr;
   io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;  // the cursor is the input half's (§5.5)
   io.ConfigErrorRecoveryEnableTooltip = false;              // nothing of Dear ImGui's own is ever drawn on the game
+  input::reserve_imgui_queues();  // a holder's input then allocates nothing during play (invariant 10)
   if (!ImGui_ImplWin32_Init(g.window) || !init_dx12_backend() || !start_atlas()) {
     return false;
   }
@@ -453,8 +454,8 @@ void reread_swap_chain() noexcept {
 }
 
 bool wants_to_draw() noexcept {
-  // GraceUI 0.1 draws nothing of its own; panels, notices and the menu join here with S10.4.c.
-  return state::test_panel.load(std::memory_order_relaxed);
+  // GraceUI 0.1 draws nothing of its own but a holder's cursor; panels, notices and the menu join here with S10.4.c.
+  return state::test_panel.load(std::memory_order_relaxed) || input::wants_frames();
 }
 
 void draw_test_panel() {
@@ -479,8 +480,9 @@ ImDrawData* build_frame() {
   io.DeltaTime = seconds > 1e-6 ? static_cast<float>(seconds) : 1e-6f;
   g.qpc_last = now;
   ImGui_ImplDX12_NewFrame();
-  input::before_imgui_frame();  // the window's input, while a holder has it (the input half; D77, D122)
+  input::before_imgui_frame(g.width, g.height);  // the holder's input, if a holder has it (D77, D125)
   ImGui::NewFrame();
+  input::after_new_frame();
   draw_test_panel();
   ImGui::Render();
   return ImGui::GetDrawData();
@@ -604,6 +606,7 @@ void render() {
   if (g.format_pending && !rebuild_for_format()) {
     return;
   }
+  input::rendered();  // the overlay is live: the input half's watchdog hears it (2 s without one ends a holder)
   if (!wants_to_draw() || g.width == 0 || g.height == 0) {
     return;  // nothing to draw: the frame passes through untouched
   }
@@ -629,6 +632,7 @@ void turn_off(const char* why) noexcept {
     g.off = true;
     state::render_off.store(true, std::memory_order_relaxed);
     log_line("the render path is off for this session: %s", why);
+    input::render_off();  // a holder's view can no longer be drawn: its input ends (D100)
   }
 }
 

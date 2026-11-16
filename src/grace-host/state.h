@@ -29,7 +29,10 @@ namespace state {
 inline constinit std::atomic<HostState> host{HostState::not_asked};
 inline constinit std::atomic<std::uint32_t> init_threads_started{0};
 inline constinit std::atomic<std::uint32_t> hook_install_runs{0};
-inline constinit std::atomic<std::uint32_t> hooks_installed{0};
+inline constinit std::atomic<std::uint32_t> hooks_installed{0};  // every hook: the table's and the window procedure's
+inline constinit std::atomic<std::uint32_t> render_hooks{0};
+inline constinit std::atomic<std::uint32_t> dinput_hooks{0};
+inline constinit std::atomic<std::uint32_t> xinput_hooks{0};
 
 // Present and Present1 calls, outermost only; command lists executed between two presents are stamped with it.
 inline constinit std::atomic<std::uint64_t> presents{0};

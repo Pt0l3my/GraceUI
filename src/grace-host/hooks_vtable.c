@@ -1,17 +1,20 @@
-/* hooks_vtable.c: the addresses of the functions GraceUI's render half hooks (D102), read from the vtables of a
- * short-lived device, queue and swap chain, created by the init thread on a hidden window of its own and released before
- * any hook exists. Written in C so that each entry is read by its name from the SDK's C interfaces (lpVtbl->Present)
- * rather than by an index. Every swap chain and queue of the process shares these functions with the ones made here:
- * the device is the adapter's one device, the game's own if it has made it (Direct3D 12 hands out one per adapter).
+/* hooks_vtable.c: the addresses of the COM functions GraceUI hooks (D102), read from the vtables of short-lived objects
+ * of its own, all released before any hook exists: for the render half a device, queue and swap chain on a hidden
+ * window; for the input half a DirectInput keyboard and mouse. Written in C so that each entry is read by its name from
+ * the SDK's C interfaces (lpVtbl->Present) rather than by an index. Every swap chain and queue of the process shares
+ * these functions with the ones made here: the device is the adapter's one device, the game's own if it has made it
+ * (Direct3D 12 hands out one per adapter); and every DirectInput device of a kind shares its class's vtable.
  *
- * SAFETY: every interface pointer here is created and released in this function, on this thread; the casts turn the
+ * SAFETY: every interface pointer here is created and released in its function, on this thread; the casts turn the
  * vtables' entries, which are functions, into the one function type the caller stores until it hands them to MinHook,
- * which never calls them through that type.
+ * which never calls them through that type, and DirectInput8Create back from that type into its own.
  */
 #define COBJMACROS
+#define DIRECTINPUT_VERSION 0x0800
 #include <windows.h>
-#include <initguid.h> /* the D3D12 and DXGI interface ids are defined here, so nothing links dxguid */
+#include <initguid.h> /* the D3D12, DXGI and DirectInput ids are defined here, so nothing links dxguid */
 #include <d3d12.h>
+#include <dinput.h>
 #include <dxgi1_4.h>
 
 #include "hooks_vtable.h"
@@ -100,5 +103,47 @@ done:
     DestroyWindow(window);
   }
   UnregisterClassW(kWindowClass, module);
+  return found;
+}
+
+typedef HRESULT(WINAPI* direct_input8_create_fn)(HINSTANCE, DWORD, REFIID, LPVOID*, LPUNKNOWN);
+
+int grace_host_read_dinput_targets(grace_host_fn create, grace_host_fn targets[GRACE_HOST_DINPUT_TARGETS]) {
+  HINSTANCE module = (HINSTANCE)&__ImageBase; /* SAFETY: the linker's symbol for this module's base */
+  direct_input8_create_fn create_input = (direct_input8_create_fn)create; /* SAFETY: DirectInput8Create, by name */
+  IDirectInput8W* input = NULL;
+  IDirectInputDevice8W* keyboard = NULL;
+  IDirectInputDevice8W* mouse = NULL;
+  int found = 0;
+
+  targets[0] = NULL;
+  targets[1] = NULL;
+  if (create_input == NULL ||
+      FAILED(create_input(module, DIRECTINPUT_VERSION, &IID_IDirectInput8W, (void**)&input, NULL))) {
+    goto done;
+  }
+  if (FAILED(IDirectInput8_CreateDevice(input, &GUID_SysKeyboard, &keyboard, NULL))) {
+    goto done;
+  }
+  /* SAFETY: each entry is a function of the implementation's; stored as a function pointer of one type, never called. */
+  targets[0] = (grace_host_fn)keyboard->lpVtbl->GetDeviceState;
+  found = 1;
+  if (SUCCEEDED(IDirectInput8_CreateDevice(input, &GUID_SysMouse, &mouse, NULL))) {
+    grace_host_fn mouse_target = (grace_host_fn)mouse->lpVtbl->GetDeviceState;
+    if (mouse_target != targets[0]) {
+      targets[1] = mouse_target;
+    }
+  }
+
+done:
+  if (mouse != NULL) {
+    IDirectInputDevice8_Release(mouse);
+  }
+  if (keyboard != NULL) {
+    IDirectInputDevice8_Release(keyboard);
+  }
+  if (input != NULL) {
+    IDirectInput8_Release(input);
+  }
   return found;
 }

@@ -17,6 +17,10 @@
 // the only pad reader (§5.4, D107).
 #define IMGUI_IMPL_WIN32_DISABLE_GAMEPAD
 
+// Characters are whole code points: the input half pairs a Unicode window's surrogates before Dear ImGui sees them
+// (§5.6), and with 16-bit characters Dear ImGui would turn every one beyond U+FFFF into U+FFFD (D126).
+#define IMGUI_USE_WCHAR32
+
 // A failed assertion in Dear ImGui throws, and the detour that ran it catches the exception: the render path turns
 // itself off for the session with one log line (D100, D110, D121), rather than abort() in the game's process or carry
 // on with broken state. No file name is passed: it would be a build machine's path.

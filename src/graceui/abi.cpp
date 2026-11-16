@@ -72,6 +72,83 @@ GRACEUI_API uint32_t GraceUI_Test_GetLogLine(uint32_t index, char* out, uint32_t
   }
 }
 
+GRACEUI_API uint32_t GraceUI_Test_GetHookName(uint32_t index, char* out, uint32_t capacity) {
+  try {
+    return out == nullptr ? 0 : grace::host::test_copy_hook_name(index, out, capacity);
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_RequestInput(uint32_t owner, uint32_t kind, uint32_t wants, GraceUiTestAnswer* out) {
+  try {
+    if (out == nullptr) {
+      return 0;
+    }
+    grace::host::test_request_input(owner, kind, wants, *out);
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_ReleaseInput(uint32_t owner) {
+  try {
+    return grace::host::test_release_input(owner) ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API void GraceUI_Test_SetWorld(uint32_t flags) {
+  try {
+    grace::host::test_set_world(flags);
+  } catch (...) {
+  }
+}
+
+GRACEUI_API void GraceUI_Test_SetCaret(int32_t x, int32_t y, int32_t height) {
+  try {
+    grace::host::test_set_caret(x, y, height);
+  } catch (...) {
+  }
+}
+
+GRACEUI_API void GraceUI_Test_SetCodePage(uint32_t code_page) {
+  try {
+    grace::host::test_set_code_page(code_page);
+  } catch (...) {
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_GetInput(GraceUiTestInput* out) {
+  try {
+    if (out == nullptr || out->size < sizeof(GraceUiTestInput)) {
+      return 0;
+    }
+    grace::host::test_fill_input(*out);
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_GetChars(uint32_t* out, uint32_t capacity) {
+  try {
+    return out == nullptr ? 0 : grace::host::test_copy_chars(out, capacity);
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_GetInputCosts(uint32_t kind, uint32_t* out, uint32_t capacity) {
+  try {
+    return out == nullptr ? 0 : grace::host::test_copy_input_costs(kind, out, capacity);
+  } catch (...) {
+    return 0;
+  }
+}
+
 #endif  // GRACEUI_TEST_EXPORTS
 
 }  // extern "C"
