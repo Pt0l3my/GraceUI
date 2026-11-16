@@ -89,7 +89,7 @@ target_include_directories(gu_imgui SYSTEM PUBLIC
   ${GU_IMGUI_DIR} ${GU_IMGUI_DIR}/backends ${CMAKE_SOURCE_DIR}/src/grace-host/imgui)
 target_compile_definitions(gu_imgui PUBLIC "IMGUI_USER_CONFIG=\"grace_imconfig.h\"")
 target_compile_options(gu_imgui PRIVATE ${_gu_third_party_flags})
-target_link_libraries(gu_imgui PUBLIC d3d12 dxgi d3dcompiler)
+target_link_libraries(gu_imgui PUBLIC d3d12 dxgi d3dcompiler dwmapi gdi32)  # what its backends call (MSVC names them by pragma)
 
 # MinHook, x64 only.
 add_library(gu_minhook STATIC
