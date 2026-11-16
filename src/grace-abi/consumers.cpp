@@ -48,7 +48,7 @@ ConnectResult Consumers::connect(const ConnectRequest& request, std::uint32_t gr
   for (std::uint32_t i = 0; i < kMaxConsumers; ++i) {
     const Slot& slot = slots_[i];
     if (!slot.connected) {
-      free = free == kMaxConsumers ? i : free;
+      free = free == kMaxConsumers && !slot.leaving ? i : free;
       continue;
     }
     if (request.id == std::string_view(slot.info.id)) {
@@ -94,8 +94,16 @@ GraceUiStatus Consumers::disconnect(GraceUiConsumer handle, std::uint32_t& owner
     return GRACEUI_NOT_CONNECTED;
   }
   slot.connected = false;
+  slot.leaving = true;
   owner = static_cast<std::uint32_t>(number);
   return GRACEUI_OK;
+}
+
+void Consumers::left(std::uint32_t owner) noexcept {
+  const SpinGuard guard(lock_);
+  if (owner != 0 && owner <= kMaxConsumers) {
+    slots_[owner - 1].leaving = false;
+  }
 }
 
 std::uint32_t Consumers::owner_of(GraceUiConsumer handle) const noexcept {

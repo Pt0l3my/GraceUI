@@ -2,7 +2,9 @@
 // window of the game's, reads the render half's five targets from the vtables of a short-lived device, queue and swap
 // chain of its own (hooks_vtable.c) and the input half's from the DirectInput and XInput DLLs already loaded
 // (hooks_input.cpp), installs them all with MinHook from one table, at once, then filters the game's window procedure
-// (D125), and exits; nothing is ever removed (D107). Then the render half's detours: Present and Present1 drive the
+// (D125); nothing is ever removed (D107). It then stays as GraceUI's own thread, asleep until woken: it bakes the
+// shared atlas (draw.cpp), moves the filter to the bound swap chain's window when that is another, and passes the log
+// to the debugger, none of which a game thread may wait on. Then the render half's detours: Present and Present1 drive the
 // render path (draw.cpp), ResizeBuffers and ResizeBuffers1 keep it off the buffers they replace, and ExecuteCommandLists
 // notes which queues execute, to find the present queue (D116). The input half's are hooks_input.cpp's.
 //
@@ -18,6 +20,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cwchar>
 
 #include "MinHook.h"
 #include "counters.h"
@@ -280,8 +283,13 @@ ID3D12CommandQueue* take_queue(std::atomic<ID3D12CommandQueue*>& slot, std::atom
   return slot.exchange(nullptr, std::memory_order_acq_rel);
 }
 
-// The only direct queue of `device` seen executing, provided it executed since the previous Present and at least one
-// whole frame has been watched; with a reference of ours. Two or more: none, for this way never guesses.
+// Presents within which a queue counts as one the game still uses (EST): a queue the game released, or replaced on a
+// resize, falls out of D116's fourth way once it has not executed for this long, rather than standing for the session.
+constexpr std::uint64_t kQueueSeenPresents = 120;
+
+// The only direct queue of `device` seen executing lately, provided it executed since the previous Present and at
+// least one whole frame has been watched: an identity only, never dereferenced, for no reference of ours keeps it (it
+// may have been released since its last call). Two or more: none, for this way never guesses.
 ID3D12CommandQueue* only_direct_queue(ID3D12Device* device) noexcept {
   const std::uint64_t now = state::presents.load(std::memory_order_relaxed);
   if (now < 3) {
@@ -291,12 +299,14 @@ ID3D12CommandQueue* only_direct_queue(ID3D12Device* device) noexcept {
   int count = 0;
   bool recent = false;
   for (const SeenQueue& seen : g_seen) {
-    if (seen.kind.load(std::memory_order_acquire) != kDirect || seen.device.load(std::memory_order_relaxed) != device) {
+    const std::uint64_t last = seen.last_present.load(std::memory_order_relaxed);
+    if (seen.kind.load(std::memory_order_acquire) != kDirect || seen.device.load(std::memory_order_relaxed) != device ||
+        last + kQueueSeenPresents < now) {
       continue;
     }
     ++count;
     found = seen.queue.load(std::memory_order_relaxed);
-    recent = seen.last_present.load(std::memory_order_relaxed) + 1 >= now;
+    recent = last + 1 >= now;
   }
   static constinit bool told = false;
   if (count > 1 && !told) {
@@ -305,11 +315,21 @@ ID3D12CommandQueue* only_direct_queue(ID3D12Device* device) noexcept {
              "(ResizeBuffers1)",
              count);
   }
-  if (count != 1 || !recent) {
+  return count == 1 && recent ? found : nullptr;
+}
+
+// D116's fourth way, made sound (L7): way 4 names a candidate by identity; the ExecuteCommandLists detour takes a
+// reference to it inside the candidate's own call, when it certainly lives, and the next Present takes that.
+constinit std::atomic<ID3D12CommandQueue*> g_candidate{nullptr};
+constinit std::atomic<ID3D12CommandQueue*> g_confirmed{nullptr};
+
+ID3D12CommandQueue* take_confirmed(ID3D12CommandQueue* candidate) noexcept {
+  ID3D12CommandQueue* queue = g_confirmed.exchange(nullptr, std::memory_order_acq_rel);
+  if (queue != nullptr && queue != candidate) {
+    queue->Release();
     return nullptr;
   }
-  found->AddRef();  // it executed within the last frame, on the game's word: it lives
-  return found;
+  return queue;
 }
 
 void offer_queue(ID3D12CommandQueue* queue, ID3D12Device* device, QueueMethod method) noexcept {
@@ -348,10 +368,22 @@ void find_present_queue(IDXGISwapChain* chain) noexcept {
       return;
     }
   }
-  // 4. The device's only direct queue seen executing.
-  if ((queue = only_direct_queue(device)) != nullptr) {
+  // 4. The device's only direct queue seen executing, once a call of its own has given GraceUI a reference.
+  ID3D12CommandQueue* const candidate = only_direct_queue(device);
+  g_candidate.store(candidate, std::memory_order_release);
+  if (candidate != nullptr && (queue = take_confirmed(candidate)) != nullptr) {
     offer_queue(queue, device, QueueMethod::only_direct);
   }
+}
+
+// The queues held for D116's ways, let go once nothing will be drawn (L3).
+void drop_held_queues() noexcept {
+  for (std::atomic<ID3D12CommandQueue*>* slot : {&g_named_queue, &g_present_queue, &g_confirmed}) {
+    if (ID3D12CommandQueue* held = slot->exchange(nullptr, std::memory_order_acq_rel)) {
+      held->Release();
+    }
+  }
+  g_candidate.store(nullptr, std::memory_order_release);
 }
 
 // ---- Classifying a swap chain at its first Present.
@@ -363,11 +395,29 @@ bool window_of_this_process(HWND window) noexcept {
   return process == GetCurrentProcessId();
 }
 
+// The bound swap chain's window (its top-level window) is the game's, whatever the init thread guessed when it looked
+// first (D120: a console, a splash or a loader window may have come first, M2): when it is not the window filtered,
+// GraceUI's thread moves the filter there. Present thread; never waits.
+constinit std::atomic<HWND> g_window_wanted{nullptr};
+
+void want_window(HWND window) noexcept {
+  const HWND root = GetAncestor(window, GA_ROOT);
+  const HWND top = root != nullptr ? root : window;
+  if (top != input::window() || !input::window_filtered()) {
+    g_window_wanted.store(top, std::memory_order_release);
+    wake();
+  }
+}
+
 SwapChainTag* pass_through(SwapChainTag* tag, IDXGISwapChain* chain, const char* why) noexcept {
   state::passed_through.fetch_add(1, std::memory_order_relaxed);
   log_line("a swap chain passes through untouched: %s", why);
   return tag->attach(chain, TagKind::passed) ? tag : nullptr;
 }
+
+// Once the host has failed (give_up), the hooks that are live anyway pass everything through (L1): MinHook enables its
+// hooks one by one and stops at the first that fails, leaving the earlier ones enabled, and GraceUI never unhooks.
+bool host_failed() noexcept { return state::host.load(std::memory_order_acquire) == HostState::failed; }
 
 // Log lines that would otherwise repeat on every frame, each written once.
 constinit bool g_told_second_chain = false;
@@ -417,6 +467,7 @@ SwapChainTag* classify(IDXGISwapChain* chain) {
   }
   g_bound_tag = tag;
   draw::bind(chain3, device, desc, window);
+  want_window(window);
   return tag;
 }
 
@@ -447,6 +498,9 @@ bool before_present(IDXGISwapChain* chain) {
     find_present_queue(chain);
   }
   draw::render();
+  if (state::render_off.load(std::memory_order_relaxed)) {
+    drop_held_queues();  // L3: no reference of GraceUI's keeps a queue, or its device, alive once nothing is drawn
+  }
   input::tick();  // the player's exit and the watchdog, once a frame as well as on every input
   return true;
 }
@@ -455,6 +509,9 @@ bool guarded_before_present(IDXGISwapChain* chain, UINT flags) noexcept {
   state::presents.fetch_add(1, std::memory_order_relaxed);
   if ((flags & DXGI_PRESENT_TEST) != 0) {
     return false;  // a test present shows nothing, so nothing is drawn
+  }
+  if (host_failed()) {
+    return false;  // MinHook enabled some hooks before one failed (L1): they pass every call through, untouched
   }
   const counters::CountingScope counting;
   const Busy busy;
@@ -562,8 +619,8 @@ HRESULT STDMETHODCALLTYPE resize_buffers_detour(IDXGISwapChain* chain, UINT coun
 // D116's second way: the queues the game names for the swap chain's buffers. One queue for every buffer is a present
 // queue GraceUI can draw on; queues that differ (several adapters' nodes) are not taken.
 void note_named_queues(IDXGISwapChain3* chain, UINT count, IUnknown* const* queues) noexcept {
-  if (queues == nullptr || queues[0] == nullptr) {
-    return;
+  if (queues == nullptr || queues[0] == nullptr || host_failed() || state::render_off.load(std::memory_order_relaxed)) {
+    return;  // nothing will be drawn: no queue is held (L1, L3)
   }
   if (count == 0) {
     DXGI_SWAP_CHAIN_DESC1 desc{};
@@ -598,10 +655,19 @@ void STDMETHODCALLTYPE execute_command_lists_detour(ID3D12CommandQueue* queue, U
   {
     const counters::CountingScope counting;
     note_queue(queue);
-    IDXGISwapChain* const presenting = t_original_present;
-    if (presenting != nullptr && state::queue_method.load(std::memory_order_relaxed) == QueueMethod::none &&
-        queue->GetDesc().Type == D3D12_COMMAND_LIST_TYPE_DIRECT) {
-      hold_queue(g_present_queue, g_present_chain, queue, presenting);
+    if (state::queue_method.load(std::memory_order_relaxed) == QueueMethod::none && !host_failed() &&
+        !state::render_off.load(std::memory_order_relaxed)) {
+      IDXGISwapChain* const presenting = t_original_present;
+      if (presenting != nullptr && queue->GetDesc().Type == D3D12_COMMAND_LIST_TYPE_DIRECT) {
+        hold_queue(g_present_queue, g_present_chain, queue, presenting);
+      }
+      if (queue == g_candidate.load(std::memory_order_acquire)) {
+        // Inside its own call the candidate lives: the reference taken here is sound (L7).
+        queue->AddRef();
+        if (ID3D12CommandQueue* older = g_confirmed.exchange(queue, std::memory_order_acq_rel)) {
+          older->Release();
+        }
+      }
     }
   }
   g_execute_command_lists(queue, count, lists);
@@ -612,6 +678,9 @@ void STDMETHODCALLTYPE execute_command_lists_detour(ID3D12CommandQueue* queue, U
 void give_up(const char* why) noexcept {
   state::host.store(HostState::failed, std::memory_order_release);
   log_line("the host stays idle: %s", why);
+  // Any hook already live passes everything through (L1), and the input half lets every key reach the game, the menu
+  // key included (L4): nothing could open a menu now.
+  input::turn_off("the host stays idle");
 }
 
 struct WindowSearch {
@@ -620,12 +689,24 @@ struct WindowSearch {
   LONG best_area;
 };
 
+// A console's window: conhost names the console's client as its window's owning process, so a mod loader's console
+// would otherwise pass for the game's (M2); a pseudo-console's is hidden, and checked all the same.
+bool console_window(HWND window) noexcept {
+  if (window == GetConsoleWindow()) {
+    return true;
+  }
+  wchar_t name[32] = {};
+  const int length = GetClassNameW(window, name, static_cast<int>(sizeof name / sizeof name[0]));
+  return length > 0 && (std::wcscmp(name, L"ConsoleWindowClass") == 0 || std::wcscmp(name, L"PseudoConsoleWindow") == 0);
+}
+
 BOOL CALLBACK consider_window(HWND window, LPARAM context) {
   // SAFETY: `context` is the WindowSearch that find_game_window passes to EnumWindows, alive for the whole call.
   WindowSearch* search = reinterpret_cast<WindowSearch*>(context);
   DWORD process = 0;
   GetWindowThreadProcessId(window, &process);
-  if (process != search->process || !IsWindowVisible(window) || GetWindow(window, GW_OWNER) != nullptr) {
+  if (process != search->process || !IsWindowVisible(window) || GetWindow(window, GW_OWNER) != nullptr ||
+      console_window(window)) {
     return TRUE;
   }
   RECT client{};
@@ -654,6 +735,7 @@ HWND wait_for_game_window() noexcept {
     if (const HWND window = find_game_window()) {
       return window;
     }
+    log_drain();
     Sleep(100);
   }
   return nullptr;
@@ -687,6 +769,9 @@ void install(const grace_host_fn (&render)[kRenderHooks], const hooks_input::Tar
     table[count] = render_hooks[i];
     // SAFETY: the target is a function of the runtime's, read from a vtable by hooks_vtable.c.
     table[count++].target = reinterpret_cast<void*>(render[i]);
+    // Its module stays loaded for the session (L8), as the input half's do: ExecuteCommandLists lives in the runtime's
+    // core DLL, which d3d12.dll loads itself and could otherwise unload and load again elsewhere.
+    hooks_input::pin_module_of(table[count - 1].target);
   }
   for (int slot = 0; slot < hooks_input::kDirectInputTargets; ++slot) {
     if (input_targets.get_device_state[slot] != nullptr) {
@@ -762,6 +847,51 @@ void install(const grace_host_fn (&render)[kRenderHooks], const hooks_input::Tar
   }
 }
 
+// ---- GraceUI's own thread, after the init (D120 as amended).
+
+constinit HANDLE g_wake = nullptr;  // an auto-reset event, made before the thread starts; never closed
+
+// The window filter follows the bound swap chain's window (M2), if that is not the one filtered.
+void move_filter() noexcept {
+  if (state::host.load(std::memory_order_acquire) != HostState::hooked) {
+    return;  // the install is not done (a Present may come between the hooks' enabling and the filter): left for later
+  }
+  if (state::render_off.load(std::memory_order_acquire)) {
+    g_window_wanted.store(nullptr, std::memory_order_release);
+    return;  // nothing is drawn, and input is off: no window needs the filter now
+  }
+  const HWND wanted = g_window_wanted.exchange(nullptr, std::memory_order_acq_rel);
+  if (wanted == nullptr || (wanted == input::window() && input::window_filtered()) || !IsWindow(wanted) ||
+      !window_of_this_process(wanted)) {
+    return;
+  }
+  const bool first = !input::window_filtered();
+  if (!hooks_input::filter_window(wanted) || !first) {
+    return;
+  }
+  // The first filter could not be made (a console's window, M2): this one is the window procedure's hook.
+  const int count = g_installed_count.load(std::memory_order_acquire);
+  if (count < kMaxHooks + 1) {
+    g_installed[count] = Hook{HookName::window_procedure, nullptr, nullptr, nullptr, nullptr};
+    g_installed_count.store(count + 1, std::memory_order_release);
+    state::hooks_installed.fetch_add(1, std::memory_order_relaxed);
+  }
+}
+
+[[noreturn]] void serve() noexcept {
+  for (;;) {
+    if (g_wake != nullptr) {
+      WaitForSingleObject(g_wake, INFINITE);
+    } else {
+      Sleep(50);
+    }
+    log_drain();
+    draw::serve_bake();
+    move_filter();
+    log_drain();
+  }
+}
+
 void run_init() noexcept {
   // The anti-cheat check ran in the first request, before this thread started (D133); in its notice-only mode the
   // hooks go in all the same, input off from the start (D88).
@@ -789,7 +919,18 @@ DWORD WINAPI init_thread_main(LPVOID) noexcept {
   } catch (...) {
     give_up("an exception in the init thread");
   }
-  return 0;
+  serve();  // whatever the init's outcome: the log still reaches the debugger
+}
+
+bool prepare_wake() noexcept {
+  g_wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+  return g_wake != nullptr;
+}
+
+void wake() noexcept {
+  if (g_wake != nullptr) {
+    SetEvent(g_wake);
+  }
 }
 
 #if defined(GRACEUI_TEST_EXPORTS)

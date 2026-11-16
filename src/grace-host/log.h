@@ -1,6 +1,8 @@
-// GraceUI's log, for now in memory: the newest lines in a fixed ring, each also sent to OutputDebugString. A line holds
-// no path, no user or machine name and no game text (PV3); the file under GraceUI\user\ comes with GraceUI's settings.
-// Any thread may write a line: it never allocates and never waits (invariant 10 holds on the present thread).
+// GraceUI's log, for now in memory: the newest lines in a fixed ring, each also sent to OutputDebugString by GraceUI's
+// own thread (log_drain), never by the thread that wrote it: with a listener attached OutputDebugString waits for it
+// (up to 10 s), and with a debugger it is a round trip to the debugger (L2). A line holds no path, no user or machine
+// name and no game text (PV3); the file under GraceUI\user\ comes with GraceUI's settings. Any thread may write a line:
+// it never allocates and never waits (invariant 10 holds on the present thread).
 #pragma once
 
 #include <array>
@@ -23,5 +25,9 @@ void log_line(const char* format, ...) noexcept GRACE_PRINTF_LIKE;
 // Copies line `index` (0 the oldest still kept) into `out`, NUL-terminated; answers false past the newest, or if the
 // line is being rewritten at that moment.
 bool log_copy_line(std::uint32_t index, LogText& out) noexcept;
+
+// GraceUI's own thread only: sends the lines written since its last call to OutputDebugString, oldest first; lines
+// the ring has already overwritten are skipped, with a line saying how many.
+void log_drain() noexcept;
 
 }  // namespace grace::host

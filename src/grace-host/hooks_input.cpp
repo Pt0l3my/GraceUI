@@ -67,11 +67,17 @@ void record([[maybe_unused]] std::uint32_t kind, [[maybe_unused]] std::int64_t s
 
 // ---- The window procedure's filter (D125).
 
-constinit std::atomic<LONG_PTR> g_previous{0};  // the procedure the game's messages go on to
+// Per window filtered (kWindowFilters): the window, and the procedure its messages go on to. Only the newest is active
+// (input::window()); one the filter has left passes every message on, untouched. GraceUI's thread writes a slot before
+// SetWindowLongPtr makes its filter reachable, and never again.
+constinit std::atomic<HWND> g_filtered[kWindowFilters] = {};
+constinit std::atomic<LONG_PTR> g_previous[kWindowFilters] = {};
+constinit std::atomic<int> g_filter_count{0};
 
 // The window thread's: a character's halves and bytes, joined for the holder they arrive for.
 constinit grace::input::Utf16Pairer g_pairer;
 constinit grace::input::DbcsJoiner g_joiner;
+constinit grace::input::Utf8Joiner g_utf8;  // an ANSI window whose code page is UTF-8 (L13)
 constinit std::uint32_t g_char_generation = 0;
 
 struct Outcome {
@@ -108,6 +114,7 @@ void follow_characters(std::uint32_t generation) noexcept {
     char32_t dropped[2];
     g_pairer.flush(dropped);  // a half left from the last holder is not this one's
     g_joiner.reset();
+    g_utf8.reset();
     g_char_generation = generation;
   }
 }
@@ -119,6 +126,11 @@ void push_utf16(std::uint16_t unit, std::uint32_t generation) noexcept {
 
 void push_byte(std::uint8_t byte, std::uint32_t generation) noexcept {
   const UINT page = input::code_page();
+  if (page == CP_UTF8) {
+    char32_t points[2];
+    push_code_points(points, g_utf8.push(byte, points), generation);
+    return;
+  }
   std::uint8_t bytes[2];
   const int count = g_joiner.push(byte, IsDBCSLeadByteEx(page, byte) != FALSE, bytes);
   if (count == 0) {
@@ -215,6 +227,7 @@ void lost_focus(std::int64_t now) noexcept {
   char32_t dropped[2];
   g_pairer.flush(dropped);
   g_joiner.reset();
+  g_utf8.reset();
 }
 
 void handled(const Decision& decision) noexcept {
@@ -387,16 +400,19 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
     case WM_INPUTLANGCHANGE:
       input::set_keyboard_code_page(keyboard_code_page(window));
       g_joiner.reset();
+      g_utf8.reset();
       return out;
     default:
       return out;
   }
 }
 
-template <bool kUnicode>
+template <bool kUnicode, int kSlot>
 LRESULT CALLBACK window_filter(HWND window, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
   Outcome outcome;
-  if (!input::off()) {
+  // A window the filter has left (the bound swap chain's window turned out to be another, M2) passes untouched; so
+  // does every window once input is off.
+  if (!input::off() && window == input::window()) {
     const std::int64_t start = ticks();
     {
       const counters::CountingScope counting;
@@ -417,7 +433,7 @@ LRESULT CALLBACK window_filter(HWND window, UINT message, WPARAM wparam, LPARAM 
     case Route::game: break;
   }
   // SAFETY: the value SetWindowLongPtr answered at install: the game's procedure, or a handle only CallWindowProc reads.
-  const auto previous = reinterpret_cast<WNDPROC>(g_previous.load(std::memory_order_acquire));
+  const auto previous = reinterpret_cast<WNDPROC>(g_previous[kSlot].load(std::memory_order_acquire));
   return kUnicode ? CallWindowProcW(previous, window, message, wparam, lparam)
                   : CallWindowProcA(previous, window, message, wparam, lparam);
 }
@@ -546,7 +562,20 @@ DWORD WINAPI pad_detour(DWORD user, XINPUT_STATE* state) noexcept {
   return result;
 }
 
-// Pins the module that holds `address`, so that it is never unloaded under a hook.
+// The filters, by slot and character set: SetWindowLongPtr takes one of these.
+template <bool kUnicode>
+LONG_PTR filter_for(int slot) noexcept {
+  // SAFETY: each filter has WNDPROC's exact signature; the window keeps it for the life of the process (D107).
+  const LONG_PTR filters[kWindowFilters] = {reinterpret_cast<LONG_PTR>(&window_filter<kUnicode, 0>),
+                                            reinterpret_cast<LONG_PTR>(&window_filter<kUnicode, 1>),
+                                            reinterpret_cast<LONG_PTR>(&window_filter<kUnicode, 2>),
+                                            reinterpret_cast<LONG_PTR>(&window_filter<kUnicode, 3>)};
+  return filters[slot];
+}
+static_assert(kWindowFilters == 4, "filter_for lists one filter per slot");
+
+}  // namespace
+
 void pin_module_of(void* address) noexcept {
   HMODULE module = nullptr;
   // SAFETY: the address of a function in a loaded module, read by GetModuleHandleExW only to find the module.
@@ -554,7 +583,7 @@ void pin_module_of(void* address) noexcept {
                      reinterpret_cast<LPCWSTR>(address), &module);
 }
 
-}  // namespace
+int windows_filtered() noexcept { return g_filter_count.load(std::memory_order_acquire); }
 
 void find_targets(Targets& out) noexcept {
   out = Targets{};
@@ -620,23 +649,38 @@ void** xinput_original(int slot) noexcept {
 
 bool filter_window(HWND window) noexcept {
   const bool unicode = IsWindowUnicode(window) != FALSE;
+  const int count = g_filter_count.load(std::memory_order_acquire);
+  for (int slot = 0; slot < count; ++slot) {
+    if (g_filtered[slot].load(std::memory_order_acquire) == window) {
+      // Filtered before: its filter becomes the active one again; a second subclass would route its messages twice.
+      input::set_keyboard_code_page(keyboard_code_page(window));
+      input::set_window(window, unicode);
+      return true;
+    }
+  }
+  if (count >= kWindowFilters) {
+    log_line("the game's window changed more often than GraceUI follows (%d windows): input stays on the last",
+             kWindowFilters);
+    return false;
+  }
   input::set_keyboard_code_page(keyboard_code_page(window));
   // The procedure the filter passes to is known before the filter can run; SetWindowLongPtr answers it again, and the
   // two differ only if the window's procedure changed in between.
-  g_previous.store(unicode ? GetWindowLongPtrW(window, GWLP_WNDPROC) : GetWindowLongPtrA(window, GWLP_WNDPROC),
-                   std::memory_order_release);
-  // SAFETY: each filter has WNDPROC's exact signature; the window keeps it for the life of the process (D107).
-  const LONG_PTR filter = unicode ? reinterpret_cast<LONG_PTR>(&window_filter<true>)
-                                  : reinterpret_cast<LONG_PTR>(&window_filter<false>);
+  g_filtered[count].store(window, std::memory_order_release);
+  g_previous[count].store(unicode ? GetWindowLongPtrW(window, GWLP_WNDPROC) : GetWindowLongPtrA(window, GWLP_WNDPROC),
+                          std::memory_order_release);
+  const LONG_PTR filter = unicode ? filter_for<true>(count) : filter_for<false>(count);
   SetLastError(0);
   const LONG_PTR previous = unicode ? SetWindowLongPtrW(window, GWLP_WNDPROC, filter)
                                     : SetWindowLongPtrA(window, GWLP_WNDPROC, filter);
   if (previous == 0 && GetLastError() != 0) {
     log_line("the game's window procedure could not be filtered (error %lu): no holder can have input",
              static_cast<unsigned long>(GetLastError()));
+    g_filtered[count].store(nullptr, std::memory_order_release);
     return false;
   }
-  g_previous.store(previous, std::memory_order_release);
+  g_previous[count].store(previous, std::memory_order_release);
+  g_filter_count.store(count + 1, std::memory_order_release);
   input::set_window(window, unicode);
   return true;
 }

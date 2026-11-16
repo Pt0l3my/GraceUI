@@ -63,9 +63,10 @@ void log_list_refusal(GraceUiConsumer consumer, std::uint32_t owner, const char*
 
 constinit std::atomic<bool> g_anti_cheat_reported{false};
 
+// After the World changed: the input half reads the newest combined claims itself (never `flags`, which another
+// provider's call may already have replaced), so whichever provider settles last decides (D143, invariant 9).
 void apply_world(std::uint32_t flags) noexcept {
-  input::set_world((flags & GRACEUI_WORLD_DANGER) != 0, (flags & GRACEUI_WORLD_LOADING) != 0,
-                   (flags & GRACEUI_WORLD_GAME_MENU) != 0);
+  input::world_changed();
   if ((flags & GRACEUI_WORLD_ANTI_CHEAT) != 0 && !g_anti_cheat_reported.exchange(true, std::memory_order_relaxed)) {
     // D78, D81: the browser view closes for the session; GraceUI 0.1 serves none yet.
     log_line("a world-state provider reports an anti-cheat: the browser view stays closed this session");
@@ -153,6 +154,16 @@ GraceUiStatus register_face(GraceUiConsumer consumer, float pixel_height, std::u
     if (range_count != 0) {
       ranges.back() = 0;  // Dear ImGui's form: the pairs, then 0
     }
+    // Its room in the shared atlas: the glyphs its font has in its ranges, at its size (D139 as amended): the bake can
+    // then never ask Dear ImGui for more than its largest texture holds.
+    const std::uint64_t glyphs =
+        grace::abi::mapped_code_points(data.data(), data.size(), range_count == 0 ? nullptr : ranges.data());
+    if (registry.reserve_area(slot, grace::abi::face_area(glyphs, pixel_height), eldennet) !=
+        grace::abi::Registered::ok) {
+      registry.abort_face(slot);
+      refused("register_face", "a face larger than the room left in the shared atlas (its glyphs at its size)");
+      return GRACEUI_FULL;
+    }
   } catch (...) {
     registry.abort_face(slot);
     fault("register_face");
@@ -207,10 +218,12 @@ GraceUiStatus show_panel(GraceUiConsumer consumer, std::uint64_t panel, bool vis
     refused(visible ? "show_panel" : "hide_panel", "a panel that is not the mod's");
     return GRACEUI_REFUSED;
   }
+  // A hidden view holds no input (D77). Hidden above under the panels' lock, its holder read below: request_input
+  // publishes the holder's panel and then asks under the same lock whether it is shown, so one of the two ends it.
   std::uint32_t generation = 0;
   std::uint64_t holding = 0;
   if (!visible && session::input_panel(generation, holding) && holding == panel) {
-    input::close_holder(grace::input::Closed::released, generation);  // a hidden view holds no input (D77)
+    input::close_holder(grace::input::Closed::released, generation);
   }
   return GRACEUI_OK;
 }
@@ -233,8 +246,7 @@ GraceUiStatus submit(GraceUiConsumer consumer, std::uint64_t panel, const ListSh
   registry.close_window(consumer);  // the mod's first submit ends its registration window (D76)
   registry.sweep();
   // The bounds, before anything is copied.
-  if (shape.vertex_count > grace::abi::kDrawVerticesMax || shape.index_count > grace::abi::kDrawIndicesMax ||
-      shape.command_count > grace::abi::kDrawCommandsMax || shape.command_size < grace::abi::kDrawCommandSize10) {
+  if (!grace::abi::list_shape_fits(shape.vertex_count, shape.index_count, shape.command_count, shape.command_size)) {
     log_list_refusal(consumer, owner, grace::abi::refusal_name(grace::abi::Refusal::too_large));
     return GRACEUI_REFUSED;
   }
@@ -311,6 +323,13 @@ GraceUiStatus request_input(GraceUiConsumer consumer, std::uint32_t kind, std::u
   switch (answer.answer) {
     case grace::input::Answer::granted:
       session::set_input_panel(answer.holder.generation, panel);
+      // The panel may have been hidden or removed (its mod's other thread, or its disconnect) between the check above
+      // and the grant, and that thread then found no holder of it to end: asked again here, under the panels' lock.
+      if (!panels.shown(consumer, panel)) {
+        input::close_holder(grace::input::Closed::released, answer.holder.generation);
+        out.answer = GRACEUI_INPUT_NOT_NOW;
+        out.why = GRACEUI_NOT_NOW_NOT_READY;
+      }
       break;
     case grace::input::Answer::refused: {
       out.holder_kind = static_cast<std::uint32_t>(answer.holder.kind);
@@ -358,11 +377,13 @@ GraceUiStatus set_world_state(GraceUiConsumer consumer, std::uint32_t flags) noe
 }
 
 void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept {
+  // The panels first, under their lock, then the holder: a request_input of the mod's on another thread either sees
+  // its panel gone after its grant (and ends its own holder) or was granted before this reads the holder.
+  session::panels().remove_owner(consumer);
   const grace::input::Holder holder = input::capture().holder();
   if (holder.holds() && holder.owner == owner && holder.kind != grace::input::Kind::menu) {
     input::close_holder(grace::input::Closed::released, holder.generation);
   }
-  session::panels().remove_owner(consumer);
   session::registry().retire_owner(consumer);
   apply_world(session::world().remove(consumer));
 }

@@ -56,7 +56,9 @@ bool caret_in_client(std::int32_t& x, std::int32_t& y, std::int32_t& height) noe
 // ---- The holder's side (S10.4.b's ABI; GraceUI 0.1 reaches it through test exports). Any thread.
 grace::input::Request request(std::uint16_t owner, grace::input::Kind kind, std::uint8_t wants) noexcept;
 bool release(std::uint16_t owner) noexcept;
-void set_world(bool danger, bool loading, bool game_menu) noexcept;  // the providers' claims, combined (D78)
+// The providers' claims changed (D78): the session's World holds them, combined, and was written first. Danger or
+// loading ends the holder (invariant 9); request() reads the claims afresh, before and after its grant.
+void world_changed() noexcept;
 // The one close routine for holder `generation` only (a later holder is left alone), with `why`; answers whether it
 // ended one.
 bool close_holder(grace::input::Closed why, std::uint32_t generation) noexcept;
@@ -77,13 +79,13 @@ void note_menu_key(grace::input::MenuKey what) noexcept;  // "‹Mod› has the 
 // ---- The present thread (draw.cpp).
 bool wants_frames() noexcept;  // a holder has input: its frames run, its cursor drawn
 void rendered() noexcept;      // the overlay drew, or had nothing to draw: the watchdog's heartbeat
-void render_off() noexcept;    // the render path turned itself off: any holder ends (fault)
 void reserve_imgui_queues() noexcept;  // at warm-up, so that a holder's input allocates nothing during play
 // Just before Dear ImGui's NewFrame: the holder's input, the pad included, in back-buffer pixels; or nothing.
 void before_imgui_frame(std::uint32_t width, std::uint32_t height) noexcept;
 void after_new_frame() noexcept;  // test builds: what Dear ImGui received
 
 #if defined(GRACEUI_TEST_EXPORTS)
+void test_set_world(std::uint32_t flags) noexcept;  // a test build's own claims (GRACEUI_WORLD_*), or-ed with the mods'
 void test_set_code_page(std::uint32_t code_page) noexcept;  // 0: the keyboard layout's again
 std::uint32_t test_events_dropped() noexcept;
 #endif

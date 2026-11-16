@@ -72,6 +72,10 @@ class Panels {
   PanelResult set_visible(GraceUiConsumer owner, std::uint64_t id, bool visible) noexcept;
   // The panel's description and its slot, if `owner` made it.
   PanelResult find(GraceUiConsumer owner, std::uint64_t id, PanelDesc& desc, std::uint32_t& index) const noexcept;
+  // Whether the panel is `owner`'s and shown, read under the lock that set_visible() and remove_owner() write under: a
+  // thread that granted input to the panel and then asks this, and a thread that hid or removed the panel and then
+  // looks for its holder, cannot both miss each other.
+  bool shown(GraceUiConsumer owner, std::uint64_t id) const noexcept;
   // Every panel of `owner` is hidden and gone (its mod disconnected); answers how many.
   std::uint32_t remove_owner(GraceUiConsumer owner) noexcept;
   // The panel's draw lists; the writer takes writer_lock() and checks the panel is still `id`'s before it publishes.

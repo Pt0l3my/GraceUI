@@ -50,24 +50,24 @@ bool read_in(const T* in, std::uint32_t first, T& out) noexcept {
   return true;
 }
 
-// A struct GraceUI fills: the smaller of the mod's size and ours, its own size field left as the mod set it; false if
-// `out` is null or its size is below `first`.
+// A struct GraceUI fills: the smaller of the mod's size and ours, its own size field left as the mod set it. Its size is
+// read once, here, and what is written goes by that reading: a mod's other thread that changes the field meanwhile
+// changes nothing GraceUI does (L6). False if `out` is null or its size is below `first`.
 template <class T>
-bool can_write(const T* out, std::uint32_t first) noexcept {
-  if (out == nullptr) {
+bool can_write(const T* out, std::uint32_t first, std::uint32_t& size) noexcept {
+  static_assert(sizeof(std::uint32_t) <= sizeof(T));
+  if (out == nullptr || first < sizeof size) {
     return false;
   }
-  std::uint32_t size = 0;
   std::memcpy(&size, out, sizeof size);  // SAFETY: as above
   return size >= first;
 }
 
+// `size` is can_write's reading, at least `first`, which is at least the size field's own four bytes.
 template <class T>
-void write_out(T* out, const T& value) noexcept {
-  std::uint32_t size = 0;
-  std::memcpy(&size, out, sizeof size);
+void write_out(T* out, std::uint32_t size, const T& value) noexcept {
   const std::size_t bytes = size < sizeof(T) ? size : sizeof(T);
-  // SAFETY: can_write checked `out` and its size; the size field itself is not overwritten.
+  // SAFETY: can_write checked `out` and read `size`; the size field itself is not overwritten.
   std::memcpy(reinterpret_cast<unsigned char*>(out) + sizeof size,
               reinterpret_cast<const unsigned char*>(&value) + sizeof size, bytes - sizeof size);
 }
@@ -101,7 +101,8 @@ std::uint32_t has_cap(const char* name, std::uint64_t name_length) noexcept {
 
 GraceUiStatus connect(const GraceUiConnectRequest* request, GraceUiConnectAnswer* answer) noexcept {
   try {
-    if (!can_write(answer, kConnectAnswer10)) {
+    std::uint32_t answer_size = 0;
+    if (!can_write(answer, kConnectAnswer10, answer_size)) {
       grace::host::abi1::refused("connect", "an answer that is null or below its first size");
       return GRACEUI_REFUSED;
     }
@@ -136,7 +137,7 @@ GraceUiStatus connect(const GraceUiConnectRequest* request, GraceUiConnectAnswer
       result.consumer = connected.handle;
       result.floor = connected.status == GRACEUI_TOO_OLD ? in.floor : 0;
     }
-    write_out(answer, result);
+    write_out(answer, answer_size, result);
     return result.status;
   } catch (...) {
     grace::host::abi1::fault("connect");
@@ -262,13 +263,14 @@ GraceUiStatus register_face(GraceUiConsumer consumer, const GraceUiFaceDesc* fac
 
 GraceUiStatus glyph_table(GraceUiConsumer consumer, std::uint32_t face_id, GraceUiGlyphTable* table) noexcept {
   try {
-    if (!can_write(table, kGlyphTable10)) {
+    std::uint32_t table_size = 0;
+    if (!can_write(table, kGlyphTable10, table_size)) {
       return refused_argument(consumer, "glyph_table", "an answer that is null or below its first size");
     }
     GraceUiGlyphTable result{};
     const GraceUiStatus status = grace::host::abi1::glyph_table(consumer, face_id, result);
     if (status == GRACEUI_OK) {
-      write_out(table, result);
+      write_out(table, table_size, result);
     }
     return status;
   } catch (...) {
@@ -374,13 +376,14 @@ GraceUiStatus request_input(GraceUiConsumer consumer, const GraceUiInputRequest*
                             GraceUiInputAnswer* answer) noexcept {
   try {
     GraceUiInputRequest in{};
-    if (!can_write(answer, kInputAnswer10) || !read_in(request, kInputRequest10, in)) {
+    std::uint32_t answer_size = 0;
+    if (!can_write(answer, kInputAnswer10, answer_size) || !read_in(request, kInputRequest10, in)) {
       return refused_argument(consumer, "request_input", "a request or answer that is null or below its first size");
     }
     GraceUiInputAnswer result{};
     const GraceUiStatus status = grace::host::abi1::request_input(consumer, in.kind, in.wants, in.panel, result);
     if (status == GRACEUI_OK) {
-      write_out(answer, result);
+      write_out(answer, answer_size, result);
     }
     return status;
   } catch (...) {

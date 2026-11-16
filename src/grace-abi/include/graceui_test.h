@@ -175,6 +175,9 @@ typedef struct GraceUiTestInput {
   int32_t imgui_mouse_x;       /* Dear ImGui's mouse position after the last frame, in back-buffer pixels */
   int32_t imgui_mouse_y;
   uint64_t frames_fed;         /* frames whose input came from a holder */
+  uint64_t window;             /* the window whose filter is active, as a number (0 for none) */
+  uint32_t windows_filtered;   /* windows given a filter so far: the first found, then the bound swap chain's */
+  uint32_t reserved;
 } GraceUiTestInput;
 
 /* request_input (D77): fills *out; answers 1, or 0 if `out` is null. */
@@ -232,6 +235,20 @@ typedef struct GraceUiTestConsumer {
 /* Fills *out with connected mod `index`, in the order of their slots (out->size set by the caller); answers 1, or 0
  * past the last or if the size is too small. */
 GRACEUI_API uint32_t GraceUI_Test_GetConsumer(uint32_t index, GraceUiTestConsumer* out);
+
+/* ---- The host review's fixes (2026-11-16). */
+
+/* The first GraceUI_RequestApi of this copy takes `ms` longer, so that a request made meanwhile shows its bounded wait
+ * (2 s, then null). Set before the first request. */
+GRACEUI_API void GraceUI_Test_SetFirstRequestDelay(uint32_t ms);
+/* The render path turns itself off at its next frame, as a fault turns it off: every input then reaches the game. */
+GRACEUI_API void GraceUI_Test_TurnOffRender(void);
+/* Lists published to panel `panel` so far (by any submit that passed the checker), or 0 for no such panel: one panel's
+ * own count, which another mod's thread submitting meanwhile does not move. */
+GRACEUI_API uint64_t GraceUI_Test_GetPanelPublished(uint64_t panel);
+/* The shared atlas's largest texture, `side` pixels square, a power of two (0: Dear ImGui's own, 8192), so that a bake
+ * runs out of room and the faces' fallback shows. Set before warm-up. */
+GRACEUI_API void GraceUI_Test_SetAtlasLimit(uint32_t side);
 
 /* Where GraceUI 0.1 draws notices (D134), in the swap chain's pixels: boxes of this width at the top right, this far
  * from the edges, the newest last, each a ground.2 box with an accent of this width at its left in gold, ember or rot

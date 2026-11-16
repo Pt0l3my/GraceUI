@@ -32,7 +32,15 @@ void** get_device_state_original(int slot) noexcept;
 void* xinput_detour(int slot) noexcept;
 void** xinput_original(int slot) noexcept;
 
-// The filter on the game's window procedure (D125): installed once, never removed. Answers whether it is in place.
+// The filter on the game's window procedure (D125): installed once on each window it is given, never removed, and
+// active on one at a time, the newest (input::window()); a filter on a window it has left passes every message on.
+// GraceUI's own thread only. Answers whether `window` is now the one filtered.
 bool filter_window(HWND window) noexcept;
+// Windows filtered so far (at most kWindowFilters, EST): the first found, then any bound swap chain's that differed.
+inline constexpr int kWindowFilters = 4;
+int windows_filtered() noexcept;
+
+// Pins the module that holds `address`, so that it is never unloaded under a hook (GraceUI never unhooks, D107).
+void pin_module_of(void* address) noexcept;
 
 }  // namespace grace::host::hooks_input

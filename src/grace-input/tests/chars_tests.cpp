@@ -144,3 +144,45 @@ TEST_CASE("key sets") {
   shared.and_with(other);
   CHECK(shared.load() == other);
 }
+
+namespace {
+
+Points join_utf8(std::initializer_list<std::uint8_t> bytes, grace::input::Utf8Joiner* keep = nullptr) {
+  grace::input::Utf8Joiner own;
+  grace::input::Utf8Joiner& joiner = keep != nullptr ? *keep : own;
+  Points out;
+  char32_t got[2];
+  for (const std::uint8_t byte : bytes) {
+    const int count = joiner.push(byte, got);
+    out.insert(out.end(), got, got + count);
+  }
+  return out;
+}
+
+}  // namespace
+
+TEST_CASE("an ANSI window in UTF-8: its bytes joined into code points (the review's L13)") {
+  CHECK(join_utf8({0x41, 0x7A}) == Points{U'A', U'z'});
+  CHECK(join_utf8({0xC3, 0xA9}) == Points{U'é'});              // e with an acute accent
+  CHECK(join_utf8({0xE2, 0x82, 0xAC}) == Points{U'€'});        // the euro sign
+  CHECK(join_utf8({0xE3, 0x81, 0x82}) == Points{U'あ'});        // hiragana a
+  CHECK(join_utf8({0xF0, 0x9F, 0x98, 0x80}) == Points{U'\U0001F600'});  // beyond the BMP, whole
+  grace::input::Utf8Joiner joiner;
+  CHECK(join_utf8({0xE2, 0x82}, &joiner).empty());
+  CHECK(joiner.waiting());
+  joiner.reset();
+  CHECK_FALSE(joiner.waiting());
+  CHECK(join_utf8({0x42}, &joiner) == Points{U'B'});
+}
+
+TEST_CASE("UTF-8 that is not: cut short, stray, overlong, a surrogate, past U+10FFFF") {
+  CHECK(join_utf8({0xE2, 0x82, 0x41}) == Points{kReplacement, U'A'});  // cut short: then the byte counts on its own
+  CHECK(join_utf8({0xC3, 0xC3, 0xA9}) == Points{kReplacement, U'é'});
+  CHECK(join_utf8({0x80}) == Points{kReplacement});                     // a stray continuation byte
+  CHECK(join_utf8({0xC0, 0x80}) == Points{kReplacement, kReplacement});  // C0 never leads; its follower is stray
+  CHECK(join_utf8({0xE0, 0x80, 0x80}) == Points{kReplacement});        // overlong
+  CHECK(join_utf8({0xED, 0xA0, 0x80}) == Points{kReplacement});        // a surrogate
+  CHECK(join_utf8({0xF4, 0x90, 0x80, 0x80}) == Points{kReplacement});  // past U+10FFFF
+  CHECK(join_utf8({0xF5}) == Points{kReplacement});
+  CHECK(join_utf8({0x00}).empty());
+}

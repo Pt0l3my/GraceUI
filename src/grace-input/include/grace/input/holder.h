@@ -68,7 +68,12 @@ struct Conditions {
   bool danger = false;
   bool loading = false;
   bool game_menu = false;
+  bool off = false;  // input or the overlay is off for the session: never ready again (a holder found then ends: fault)
 };
+
+// The conditions as they are now, read from the words other threads write (the providers' combined claims, the
+// overlay's state). Called with the context the caller gave; never waits.
+using ReadConditions = Conditions (*)(const void* context) noexcept;
 
 // What a fresh press of the menu key did.
 enum class MenuKey : std::uint8_t {
@@ -103,6 +108,21 @@ class Capture {
   // The holder asking again for the same kind is told it holds input (granted, unchanged).
   Request request(std::uint16_t owner, Kind kind, std::uint8_t wants, const Conditions& conditions,
                   std::int64_t now_ms) noexcept;
+
+  // The same, with the conditions read by `read`: once before the grant, and again after it behind a full fence. A
+  // condition that ends a holder (danger, loading, input or the overlay off) found the second time ends the new holder
+  // at once, and the answer is not_now with that reason, its `holder` the holder this ended (phase none if a writer's
+  // settle() ended it first). With settle() on the writers' side, a writer that changed a condition and then looked
+  // for a holder to end, and a request that read the condition before the change and then granted, cannot both miss
+  // each other (the store-buffer pattern, both sides fenced), so no holder outlives a danger claim (invariant 9).
+  Request request(std::uint16_t owner, Kind kind, std::uint8_t wants, ReadConditions read, const void* context,
+                  std::int64_t now_ms) noexcept;
+
+  // A writer's side, after it changed what `read` answers: a full fence, then the conditions read now; input or the
+  // overlay off ends the holder (fault), danger or loading ends it with its reason. Answers the holder it ended, as
+  // close() does. Each call reads the newest conditions, so the last writer's settle() decides, whatever order the
+  // writers' changes and their settle() calls interleave in.
+  Holder settle(ReadConditions read, const void* context, std::int64_t now_ms) noexcept;
 
   // The holder's own release: the close routine with `released`, if `owner` holds input. Answers whether it did.
   bool release(std::uint16_t owner, std::int64_t now_ms) noexcept;

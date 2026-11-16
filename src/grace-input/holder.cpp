@@ -45,7 +45,7 @@ Request Capture::request(std::uint16_t owner, Kind kind, std::uint8_t wants, con
       }
       return {Answer::refused, NotNow::none, current};
     }
-    if (!conditions.ready) {
+    if (!conditions.ready || conditions.off) {
       return {Answer::not_now, NotNow::not_ready, {}};
     }
     if (conditions.danger) {
@@ -70,6 +70,45 @@ Request Capture::request(std::uint16_t owner, Kind kind, std::uint8_t wants, con
       return {Answer::granted, NotNow::none, next};
     }
   }
+}
+
+namespace {
+
+// What ends a holder among the conditions, if anything: input or the overlay off first, then danger, then loading.
+Closed ending(const Conditions& conditions) noexcept {
+  if (conditions.off) {
+    return Closed::fault;
+  }
+  if (conditions.danger) {
+    return Closed::danger;
+  }
+  return conditions.loading ? Closed::loading : Closed::none;
+}
+
+}  // namespace
+
+Request Capture::request(std::uint16_t owner, Kind kind, std::uint8_t wants, ReadConditions read, const void* context,
+                         std::int64_t now_ms) noexcept {
+  const Request answer = request(owner, kind, wants, read(context), now_ms);
+  if (answer.answer != Answer::granted) {
+    return answer;
+  }
+  // The grant's compare-and-swap is above this fence, the second read below it; a writer stores, fences, then reads
+  // the holder (settle). Of two such threads at least one sees the other's write.
+  std::atomic_thread_fence(std::memory_order_seq_cst);
+  const Closed why = ending(read(context));
+  if (why == Closed::none) {
+    return answer;
+  }
+  Request ended{Answer::not_now, NotNow::not_ready, close(why, now_ms, answer.holder.generation)};
+  ended.why = why == Closed::danger ? NotNow::danger : why == Closed::loading ? NotNow::loading : NotNow::not_ready;
+  return ended;
+}
+
+Holder Capture::settle(ReadConditions read, const void* context, std::int64_t now_ms) noexcept {
+  std::atomic_thread_fence(std::memory_order_seq_cst);  // the writer's change above, the holder's read below
+  const Closed why = ending(read(context));
+  return why == Closed::none ? Holder{} : close(why, now_ms);
 }
 
 bool Capture::release(std::uint16_t owner, std::int64_t now_ms) noexcept {

@@ -101,3 +101,21 @@ TEST_CASE("a notice's text is 1 to 512 bytes of UTF-8, line feeds allowed") {
   CHECK_FALSE(valid_notice_text("tab\t"));
   CHECK_FALSE(valid_notice_text("\xED\xA0\x80"));
 }
+
+TEST_CASE("a name too long for its room keeps its end, from a character's start (the review's L12)") {
+  using grace::abi::utf8_tail_start;
+  CHECK(utf8_tail_start("second-copy\\graceui.dll", 64) == 0);  // it fits: whole
+  const std::string_view ascii = "abcdefghij";
+  CHECK(utf8_tail_start(ascii, 4) == 6);  // "ghij"
+  // "x" then three of U+3042 (three bytes each) then "\\graceui.dll": a cut inside a character moves past it.
+  const std::string_view mixed = "x\xE3\x81\x82\xE3\x81\x82\xE3\x81\x82\\graceui.dll";
+  const std::size_t tail = 12;  // "\\graceui.dll"
+  CHECK(utf8_tail_start(mixed, tail) == mixed.size() - tail);
+  CHECK(utf8_tail_start(mixed, tail + 1) == mixed.size() - tail);      // one byte of U+3042: not kept
+  CHECK(utf8_tail_start(mixed, tail + 2) == mixed.size() - tail);      // two of its three: not kept
+  CHECK(utf8_tail_start(mixed, tail + 3) == mixed.size() - tail - 3);  // the whole character
+  std::size_t at = utf8_tail_start(mixed, tail + 5);
+  CHECK(grace::abi::valid_utf8(mixed.substr(at)));
+  CHECK(utf8_tail_start("", 0) == 0);
+  CHECK(utf8_tail_start("\xE3\x81\x82", 2) == 3);  // nothing whole fits: empty
+}
