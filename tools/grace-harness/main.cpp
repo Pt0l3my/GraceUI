@@ -8,7 +8,10 @@
 //
 // With no scenario it runs "main", then itself again in a new process for each of the others: "two-queues" needs a
 // process in which the host has not found a present queue yet, "input" one whose XInput DLLs are loaded before GraceUI
-// starts, and "input-ansi" one whose game window is an ANSI window.
+// starts, and "input-ansi" one whose game window is an ANSI window; "abi" (ABI 1's table, connect and notices, and the
+// example mod finding GraceUI by name), "copies" (two copies asked at once), "found-by-scan" and "found-by-path" (the
+// example finding a renamed copy, and GraceUI's own folder), "anti-cheat" and "anti-cheat-parent" (a simulated hit by
+// each clause) each need a process whose first GraceUI_RequestApi is theirs.
 #define DIRECTINPUT_VERSION 0x0800
 #include <windows.h>
 
@@ -32,6 +35,7 @@
 #include <thread>
 #include <vector>
 
+#include "graceui_sys.hpp"
 #include "graceui_test.h"
 
 namespace {
@@ -1908,6 +1912,731 @@ void run_input_ansi(const std::wstring& dll) {
   grace.print_log();
 }
 
+// ---- S10.4.b: ABI 1's table, connect and notices; the example mod; two copies; the anti-cheat check (D131 to D136).
+
+constexpr Colour kAbiColour{24, 48, 72};
+constexpr Colour kAntiCheatColour{64, 24, 48};
+
+// A connect request as a mod fills it.
+GraceUiConnectRequest request_for(const char* id, std::uint32_t floor = GRACEUI_VERSION_PACK(0, 1, 0),
+                                  const char* name = "An invented mod", const char* caps = "notices") {
+  GraceUiConnectRequest request{};
+  request.size = sizeof request;
+  request.abi_minor = GRACEUI_ABI1_MINOR;
+  request.version = GRACEUI_VERSION_PACK(2, 3, 4);
+  request.floor = floor;
+  request.id = id;
+  request.id_length = std::strlen(id);
+  request.name = name;
+  request.name_length = std::strlen(name);
+  request.caps = caps;
+  request.caps_length = std::strlen(caps);
+  return request;
+}
+
+struct Connected {
+  GraceUiStatus status = GRACEUI_FAULT;
+  GraceUiConnectAnswer answer{};
+};
+
+Connected connect(const GraceUiApi1* table, const GraceUiConnectRequest& request) {
+  Connected out;
+  out.answer.size = sizeof out.answer;
+  out.status = table->connect(&request, &out.answer);
+  return out;
+}
+
+GraceUiStatus post(const GraceUiApi1* table, GraceUiConsumer consumer, const char* text,
+                   std::uint32_t tone = GRACEUI_TONE_NORMAL, std::uint32_t key = 0, std::uint32_t duration_ms = 0) {
+  GraceUiNotice notice{};
+  notice.size = sizeof notice;
+  notice.tone = tone;
+  notice.key = key;
+  notice.duration_ms = duration_ms;
+  notice.text = text;
+  notice.text_length = std::strlen(text);
+  return table->notice(consumer, &notice);
+}
+
+const char* status_name(GraceUiStatus status) {
+  switch (status) {
+    case GRACEUI_OK: return "ok";
+    case GRACEUI_TOO_OLD: return "too_old";
+    case GRACEUI_DUPLICATE_ID: return "duplicate_id";
+    case GRACEUI_INACTIVE: return "inactive";
+    case GRACEUI_REFUSED: return "refused";
+    case GRACEUI_NOT_CONNECTED: return "not_connected";
+    case GRACEUI_NOT_YET: return "not_yet";
+    case GRACEUI_FULL: return "full";
+    case GRACEUI_FAULT: return "fault";
+    default: return "UNKNOWN";
+  }
+}
+
+// What every slot that GraceUI 0.1 declares but does not provide answers for `consumer`, in the table's order.
+std::vector<GraceUiStatus> unbuilt_answers(const GraceUiApi1* table, GraceUiConsumer consumer) {
+  std::uint64_t id64 = 0;
+  std::uint32_t id32 = 0;
+  GraceUiTextureDesc texture{};
+  texture.size = sizeof texture;
+  GraceUiFaceDesc face{};
+  face.size = sizeof face;
+  GraceUiGlyphTable glyphs{};
+  glyphs.size = sizeof glyphs;
+  GraceUiPanelDesc panel{};
+  panel.size = sizeof panel;
+  GraceUiDrawList list{};
+  list.size = sizeof list;
+  GraceUiInputRequest input{};
+  input.size = sizeof input;
+  GraceUiInputAnswer input_answer{};
+  input_answer.size = sizeof input_answer;
+  GraceUiHotkeyDesc hotkey{};
+  hotkey.size = sizeof hotkey;
+  GraceUiWorldState world{};
+  world.size = sizeof world;
+  return {table->register_pages(consumer, nullptr),
+          table->publish(consumer, nullptr),
+          table->poll(consumer, nullptr),
+          table->answer(consumer, nullptr),
+          table->register_texture(consumer, &texture, &id64),
+          table->register_face(consumer, &face, &id32),
+          table->glyph_table(consumer, 1, &glyphs),
+          table->create_panel(consumer, &panel, &id64),
+          table->submit(consumer, 1, &list),
+          table->show_panel(consumer, 1),
+          table->hide_panel(consumer, 1),
+          table->request_input(consumer, &input, &input_answer),
+          table->release_input(consumer),
+          table->register_hotkey(consumer, &hotkey, &id32),
+          table->set_world_state(consumer, &world),
+          table->log(consumer, GRACEUI_LOG_INFO, "invented", 8)};
+}
+
+// "16 slots: not_yet", or each slot's answer where they differ.
+std::string answers_text(const std::vector<GraceUiStatus>& answers) {
+  bool same = true;
+  for (const GraceUiStatus answer : answers) {
+    same = same && answer == answers.front();
+  }
+  if (same && !answers.empty()) {
+    return std::to_string(answers.size()) + " slots: " + status_name(answers.front());
+  }
+  std::string text;
+  for (const GraceUiStatus answer : answers) {
+    text += (text.empty() ? "" : ",") + std::string(status_name(answer));
+  }
+  return text;
+}
+
+bool all_answer(const std::vector<GraceUiStatus>& answers, GraceUiStatus want) {
+  return !answers.empty() && std::all_of(answers.begin(), answers.end(), [&](GraceUiStatus s) { return s == want; });
+}
+
+// Presents frames (every 20 ms) until `done` holds, for at most `ms`; answers whether it held.
+template <class Done>
+bool present_until(Game* game, Colour clear, int ms, Done done) {
+  for (int waited = 0; waited <= ms; waited += 20) {
+    if (done()) {
+      return true;
+    }
+    if (game != nullptr) {
+      game->frame(clear, PresentWith::present);
+    }
+    Sleep(20);
+  }
+  return done();
+}
+
+// The example mod's connection and notice as GraceUI holds them: its id, and the notice's text ("" if none).
+bool example_connected(const GraceUi& grace, std::string& notice_text, std::uint32_t& owner) {
+  for (const GraceUiTestConsumer& consumer : grace.consumers()) {
+    if (std::string_view(consumer.id) != "hello-notice") {
+      continue;
+    }
+    owner = consumer.owner;
+    for (const GraceUiTestNotice& notice : grace.notices()) {
+      if (notice.owner == consumer.owner) {
+        notice_text = notice.text;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// The look at which the example found GraceUI, from its notice ("... at look N."); 0 if it does not say.
+unsigned look_of(const std::string& text) {
+  const std::size_t at = text.rfind("at look ");
+  return at == std::string::npos ? 0u : static_cast<unsigned>(std::strtoul(text.c_str() + at + 8, nullptr, 10));
+}
+
+std::wstring example_path() { return folder_of_this_program() + L"hello-notice.dll"; }
+
+void run_abi(const std::wstring& dll) {
+  Game game(false);
+  std::string why;
+
+  // 1. The example mod, loaded before GraceUI: its own thread looks for GraceUI every 250 ms (graceui-sys), finds it by
+  // name once it is loaded, and its request is the first, so it starts the host.
+  if (LoadLibraryW(example_path().c_str()) == nullptr) {
+    fatal("hello-notice.dll did not load");
+  }
+  present_until(&game, kAbiColour, 800, [] { return false; });  // three of its looks, or more, find nothing
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  std::string example_text;
+  std::uint32_t example_owner = 0;
+  const bool example_seen =
+      present_until(&game, kAbiColour, 10000, [&] { return example_connected(grace, example_text, example_owner); });
+  const GraceUiTestState started = grace.state();
+  const GraceUiApi1* table = start_host(game, grace);
+  const std::vector<GraceUiTestConsumer> consumers = grace.consumers();
+  const bool example_as_named = consumers.size() == 1 && std::string_view(consumers[0].name) == "Hello notice" &&
+                                consumers[0].version == GRACEUI_VERSION_PACK(1, 0, 0) &&
+                                consumers[0].floor == GRACEUI_VERSION_PACK(0, 1, 0) &&
+                                std::string_view(consumers[0].caps) == "notices";
+  check(example_seen && example_as_named && started.init_threads_started == 1 &&
+            example_text.find("GraceUI 0.1.0, found by name") != std::string::npos && look_of(example_text) >= 2,
+        "example mod",
+        "hello-notice.dll, loaded before GraceUI, %s (%zu mod connected, as it names itself: %s), and its request "
+        "started the host (%u init thread before ours); its notice: \"%s\"",
+        example_seen ? "connected through graceui-sys" : "DID NOT CONNECT", consumers.size(),
+        example_as_named ? "yes" : "NO", started.init_threads_started, example_text.c_str());
+
+  Frame frame;
+  for (int i = 0; i < 3; ++i) {
+    frame = game.frame_and_read(kAbiColour, PresentWith::present);
+  }
+  bool ok = notices_drawn(frame, kAbiColour, {GRACEUI_TONE_NORMAL}, false, why);
+  check(ok, "example's notice", "on the game's frame, with nothing else drawn: %s", why.c_str());
+
+  // 2. The table: ABI 1 only, the size this header gives it, and the one cap GraceUI 0.1 provides.
+  const std::uint32_t version = grace.version();
+  const bool only_major_1 = grace.request_api(0) == nullptr && grace.request_api(2) == nullptr &&
+                            grace.request_api(0xFFFFFFFFu) == nullptr && grace.table() == table;
+  const graceui::Api api(table);
+  const bool caps_ok = api.has_cap(GRACEUI_CAP_NOTICES) && !api.has_cap("panels") && !api.has_cap("") &&
+                       !api.has_cap("Notices") && table->has_cap(nullptr, 0) == 0 && table->has_cap(nullptr, 7) == 0;
+  bool slots_present = true;
+  for (std::size_t offset = offsetof(GraceUiApi1, has_cap); offset < sizeof(GraceUiApi1); offset += sizeof(void*)) {
+    void* slot = nullptr;
+    std::memcpy(&slot, reinterpret_cast<const unsigned char*>(table) + offset, sizeof slot);
+    slots_present = slots_present && slot != nullptr;
+  }
+  check(table->size == sizeof(GraceUiApi1) && table->abi_minor == GRACEUI_ABI1_MINOR &&
+            table->graceui_version == version && table->reserved == 0 && only_major_1 && caps_ok && slots_present &&
+            GRACEUI_API1_COVERS(table, log),
+        "table",
+        "%u bytes (this header's %zu), ABI 1.%u, GraceUI %u.%u.%u; every one of the 20 slots %s; majors 0, 2 and "
+        "0xFFFFFFFF %s; has_cap: notices yes, panels, \"\", \"Notices\" and a null name %s",
+        table->size, sizeof(GraceUiApi1), table->abi_minor, GRACEUI_VERSION_MAJOR(table->graceui_version),
+        GRACEUI_VERSION_MINOR(table->graceui_version), GRACEUI_VERSION_PATCH(table->graceui_version),
+        slots_present ? "set" : "NOT SET", only_major_1 ? "answered null" : "ANSWERED A TABLE",
+        caps_ok ? "no" : "NOT AS EXPECTED");
+
+  // 3. connect's answers, across versions and ids: ok, duplicate_id, too_old naming both versions, refused naming why.
+  struct Case {
+    const char* what;
+    GraceUiConnectRequest request;
+    GraceUiStatus status;
+    std::uint32_t reason;
+  };
+  const std::string long_id(33, 'a');
+  const std::string long_name(65, 'n');
+  const std::vector<Case> cases = {
+      {"a new id", request_for("abi-alpha"), GRACEUI_OK, 0},
+      {"the same id again", request_for("abi-alpha"), GRACEUI_DUPLICATE_ID, 0},
+      {"the example's id", request_for("hello-notice"), GRACEUI_DUPLICATE_ID, 0},
+      {"floor 0 (any)", request_for("abi-any", 0), GRACEUI_OK, 0},
+      {"floor 0.0.1", request_for("abi-older", GRACEUI_VERSION_PACK(0, 0, 1)), GRACEUI_OK, 0},
+      {"floor 0.1.0", request_for("abi-same"), GRACEUI_OK, 0},
+      {"floor 0.1.1", request_for("abi-patch", GRACEUI_VERSION_PACK(0, 1, 1)), GRACEUI_TOO_OLD, 0},
+      {"floor 0.2.0", request_for("abi-minor", GRACEUI_VERSION_PACK(0, 2, 0)), GRACEUI_TOO_OLD, 0},
+      {"floor 1.0.0", request_for("abi-major", GRACEUI_VERSION_PACK(1, 0, 0)), GRACEUI_TOO_OLD, 0},
+      {"id \"ab\"", request_for("ab"), GRACEUI_REFUSED, GRACEUI_REFUSED_ID},
+      {"id \"Abi-Upper\"", request_for("Abi-Upper"), GRACEUI_REFUSED, GRACEUI_REFUSED_ID},
+      {"an id of 33 bytes", request_for(long_id.c_str()), GRACEUI_REFUSED, GRACEUI_REFUSED_ID},
+      {"id \"abi_under\"", request_for("abi_under"), GRACEUI_REFUSED, GRACEUI_REFUSED_ID},
+      {"an empty name", request_for("abi-name", 0, ""), GRACEUI_REFUSED, GRACEUI_REFUSED_NAME},
+      {"a name not UTF-8", request_for("abi-name", 0, "bad \xC3"), GRACEUI_REFUSED, GRACEUI_REFUSED_NAME},
+      {"a name of 65 bytes", request_for("abi-name", 0, long_name.c_str()), GRACEUI_REFUSED, GRACEUI_REFUSED_NAME},
+      {"caps with two spaces", request_for("abi-caps", 0, "Invented", "notices  panels"), GRACEUI_REFUSED,
+       GRACEUI_REFUSED_CAPS},
+  };
+  std::string wrong;
+  std::vector<GraceUiConsumer> handles;
+  GraceUiConnectAnswer too_old{};
+  for (const Case& c : cases) {
+    const Connected got = connect(table, c.request);
+    const bool handle_ok = (got.status == GRACEUI_OK) == (got.answer.consumer != 0);
+    if (got.status != c.status || got.answer.status != c.status || got.answer.reason != c.reason || !handle_ok ||
+        got.answer.graceui_version != version || got.answer.abi_minor != GRACEUI_ABI1_MINOR) {
+      wrong += std::string(wrong.empty() ? "" : "; ") + c.what + " answered " + status_name(got.status) + " (reason " +
+               std::to_string(got.answer.reason) + ")";
+    }
+    if (got.status == GRACEUI_OK) {
+      handles.push_back(got.answer.consumer);
+    }
+    if (c.status == GRACEUI_TOO_OLD && c.request.floor == GRACEUI_VERSION_PACK(0, 2, 0)) {
+      too_old = got.answer;
+    }
+  }
+  // The arguments themselves: a null request, one below its first size, and an answer GraceUI cannot write.
+  GraceUiConnectRequest undersized = request_for("abi-small");
+  undersized.size = 60;
+  Connected null_request;
+  null_request.answer.size = sizeof null_request.answer;
+  null_request.status = table->connect(nullptr, &null_request.answer);
+  const Connected small_request = connect(table, undersized);
+  const GraceUiConnectRequest unanswered = request_for("abi-unanswered");
+  const GraceUiStatus null_answer = table->connect(&unanswered, nullptr);
+  GraceUiConnectAnswer short_answer{};
+  short_answer.size = 16;
+  short_answer.reason = 0xABCDu;
+  const GraceUiStatus short_status = table->connect(&unanswered, &short_answer);
+  const bool arguments_ok = null_request.status == GRACEUI_REFUSED &&
+                            null_request.answer.reason == GRACEUI_REFUSED_ARGUMENT &&
+                            small_request.status == GRACEUI_REFUSED &&
+                            small_request.answer.reason == GRACEUI_REFUSED_ARGUMENT && null_answer == GRACEUI_REFUSED &&
+                            short_status == GRACEUI_REFUSED && short_answer.reason == 0xABCDu;
+  std::string too_old_notice;
+  for (const GraceUiTestNotice& notice : grace.notices()) {
+    if (notice.owner == 0 && std::strstr(notice.text, "needs GraceUI 0.2.0 or newer; this is GraceUI 0.1.0")) {
+      too_old_notice = notice.text;
+    }
+  }
+  check(wrong.empty() && arguments_ok && too_old.graceui_version == version &&
+            too_old.floor == GRACEUI_VERSION_PACK(0, 2, 0) &&
+            too_old_notice.rfind("An invented mod needs", 0) == 0 &&
+            grace.logged("abi-minor needs GraceUI 0.2.0 or newer; this is GraceUI 0.1.0"),
+        "connect answers",
+        "%zu requests answered as they should%s%s; a null request, one of 60 bytes, a null answer and one of 16 bytes "
+        "%s; too_old named GraceUI %u.%u.%u and the floor %u.%u.%u, GraceUI's notice \"%s\" and its log line %s",
+        cases.size(), wrong.empty() ? "" : ", but: ", wrong.c_str(), arguments_ok ? "refused, writing nothing they "
+        "should not" : "NOT AS EXPECTED", GRACEUI_VERSION_MAJOR(too_old.graceui_version),
+        GRACEUI_VERSION_MINOR(too_old.graceui_version), GRACEUI_VERSION_PATCH(too_old.graceui_version),
+        GRACEUI_VERSION_MAJOR(too_old.floor), GRACEUI_VERSION_MINOR(too_old.floor),
+        GRACEUI_VERSION_PATCH(too_old.floor), too_old_notice.c_str(),
+        grace.logged("abi-minor needs GraceUI 0.2.0") ? "written" : "MISSING");
+  for (const GraceUiConsumer handle : handles) {
+    table->disconnect(handle);
+  }
+  grace.clear_notices();
+
+  // 4. Struct sizes, each way round (D73): a newer mod's larger request and answer, read and written as far as this
+  // GraceUI knows them and no further.
+  struct NewerRequest {
+    GraceUiConnectRequest base;
+    unsigned char later[16];
+  };
+  struct NewerAnswer {
+    GraceUiConnectAnswer base;
+    unsigned char later[16];
+  };
+  NewerRequest newer{};
+  newer.base = request_for("abi-newer");
+  newer.base.size = sizeof newer;
+  std::memset(newer.later, 0xAB, sizeof newer.later);
+  NewerAnswer bigger{};
+  bigger.base.size = sizeof bigger;
+  std::memset(bigger.later, 0xCD, sizeof bigger.later);
+  const GraceUiStatus newer_status = table->connect(&newer.base, &bigger.base);
+  const bool later_untouched =
+      std::all_of(std::begin(bigger.later), std::end(bigger.later), [](unsigned char b) { return b == 0xCD; });
+  check(newer_status == GRACEUI_OK && bigger.base.status == GRACEUI_OK && bigger.base.consumer != 0 &&
+            bigger.base.size == sizeof bigger && later_untouched,
+        "struct sizes",
+        "a request of %zu bytes (this header's 64, then 16 a later one adds) answered %s; an answer of %zu bytes was "
+        "written to its 32 bytes and %s past them",
+        sizeof newer, status_name(newer_status), sizeof bigger, later_untouched ? "not" : "ALSO");
+  table->disconnect(bigger.base.consumer);
+
+  // 5. Two mods connecting in either order: each is connected with its own handle, and each one's notice shows.
+  std::string orders;
+  bool orders_ok = true;
+  for (const bool alpha_first : {true, false}) {
+    const char* first_id = alpha_first ? "abi-alpha" : "abi-beta";
+    const char* second_id = alpha_first ? "abi-beta" : "abi-alpha";
+    const Connected first = connect(table, request_for(first_id));
+    const Connected second = connect(table, request_for(second_id));
+    const GraceUiStatus first_notice = post(table, first.answer.consumer, "The first mod's notice.", GRACEUI_TONE_DANGER);
+    const GraceUiStatus second_notice =
+        post(table, second.answer.consumer, "The second mod's notice.", GRACEUI_TONE_WARNING);
+    for (int i = 0; i < 3; ++i) {
+      frame = game.frame_and_read(kAbiColour, PresentWith::present);
+    }
+    std::string drawn;
+    const bool both_drawn = notices_drawn(frame, kAbiColour, {GRACEUI_TONE_DANGER, GRACEUI_TONE_WARNING}, false, drawn);
+    const GraceUiStatus first_gone = table->disconnect(first.answer.consumer);
+    const GraceUiStatus second_gone = table->disconnect(second.answer.consumer);
+    for (int i = 0; i < 3; ++i) {
+      frame = game.frame_and_read(kAbiColour, PresentWith::present);
+    }
+    const bool withdrawn = notice_boxes(frame).empty();
+    const bool order_ok = first.status == GRACEUI_OK && second.status == GRACEUI_OK &&
+                          first.answer.consumer != second.answer.consumer && first_notice == GRACEUI_OK &&
+                          second_notice == GRACEUI_OK && both_drawn && first_gone == GRACEUI_OK &&
+                          second_gone == GRACEUI_OK && withdrawn;
+    orders_ok = orders_ok && order_ok;
+    orders += std::string(orders.empty() ? "" : "; ") + first_id + " then " + second_id + ": " +
+              status_name(first.status) + ", " + status_name(second.status) + ", " + drawn +
+              (withdrawn ? ", gone once both disconnected" : ", NOT GONE after the disconnects");
+  }
+  check(orders_ok, "two consumers", "%s", orders.c_str());
+
+  // 6. A handle after its disconnect names nobody; the id is free again, under a new handle.
+  const Connected gone = connect(table, request_for("abi-gone"));
+  const GraceUiStatus disconnected = table->disconnect(gone.answer.consumer);
+  const GraceUiStatus twice = table->disconnect(gone.answer.consumer);
+  const GraceUiStatus stale_notice = post(table, gone.answer.consumer, "Too late.");
+  const std::vector<GraceUiStatus> stale_slots = unbuilt_answers(table, gone.answer.consumer);
+  const Connected back = connect(table, request_for("abi-gone"));
+  const GraceUiStatus still_stale = post(table, gone.answer.consumer, "Still too late.");
+  check(gone.status == GRACEUI_OK && disconnected == GRACEUI_OK && twice == GRACEUI_NOT_CONNECTED &&
+            stale_notice == GRACEUI_NOT_CONNECTED && all_answer(stale_slots, GRACEUI_NOT_CONNECTED) &&
+            back.status == GRACEUI_OK && back.answer.consumer != gone.answer.consumer &&
+            still_stale == GRACEUI_NOT_CONNECTED,
+        "disconnect",
+        "disconnected (%s), then again: %s; the old handle's notice: %s, its other slots: %s; the id again: %s, "
+        "under %s handle, and the old one still %s",
+        status_name(disconnected), status_name(twice), status_name(stale_notice), answers_text(stale_slots).c_str(),
+        status_name(back.status), back.answer.consumer != gone.answer.consumer ? "a new" : "THE SAME",
+        status_name(still_stale));
+  table->disconnect(back.answer.consumer);
+
+  // 7. The slots the next increments build: "not yet" to a connected mod, "not connected" to anyone else.
+  const Connected waiting = connect(table, request_for("abi-waiting"));
+  const std::vector<GraceUiStatus> unbuilt = unbuilt_answers(table, waiting.answer.consumer);
+  const std::vector<GraceUiStatus> nobody = unbuilt_answers(table, 0);
+  check(all_answer(unbuilt, GRACEUI_NOT_YET) && all_answer(nobody, GRACEUI_NOT_CONNECTED) && unbuilt.size() == 16,
+        "not yet", "a connected mod: %s; a handle of 0: %s", answers_text(unbuilt).c_str(),
+        answers_text(nobody).c_str());
+
+  // 8. Notices: replaced in place by key, withdrawn by an empty text, timed, bounded, and refused when they should be.
+  const GraceUiConsumer mod = waiting.answer.consumer;
+  std::string steps;
+  bool notices_ok = true;
+  const auto step = [&](const char* what, bool passed) {
+    notices_ok = notices_ok && passed;
+    steps += std::string(steps.empty() ? "" : "; ") + what + (passed ? "" : " FAILED");
+  };
+  step("shown", post(table, mod, "Kept, by key 3.", GRACEUI_TONE_NORMAL, 3) == GRACEUI_OK && grace.notices().size() == 1);
+  step("replaced in place", post(table, mod, "Kept, changed.", GRACEUI_TONE_DANGER, 3) == GRACEUI_OK &&
+                                grace.notices().size() == 1 &&
+                                std::string_view(grace.notices()[0].text) == "Kept, changed." &&
+                                grace.notices()[0].tone == GRACEUI_TONE_DANGER);
+  for (int i = 0; i < 3; ++i) {
+    frame = game.frame_and_read(kAbiColour, PresentWith::present);
+  }
+  step("drawn in rot", notices_drawn(frame, kAbiColour, {GRACEUI_TONE_DANGER}, false, why));
+  GraceUiNotice withdraw{};
+  withdraw.size = sizeof withdraw;
+  withdraw.key = 3;
+  step("withdrawn", table->notice(mod, &withdraw) == GRACEUI_OK && grace.notices().empty());
+  step("timed, shown", post(table, mod, "Brief.", GRACEUI_TONE_WARNING, 0, 400) == GRACEUI_OK &&
+                           grace.notices().size() == 1 && grace.notices()[0].timed == 1);
+  Sleep(600);
+  for (int i = 0; i < 3; ++i) {
+    frame = game.frame_and_read(kAbiColour, PresentWith::present);
+  }
+  step("timed, gone after its time", grace.notices().empty() && notice_boxes(frame).empty());
+  bool four = true;
+  for (int i = 0; i < 4; ++i) {
+    four = four && post(table, mod, "One of four.") == GRACEUI_OK;
+  }
+  step("four a mod", four);
+  step("a fifth: full", post(table, mod, "The fifth.") == GRACEUI_FULL);
+  const std::string too_long(GRACEUI_NOTICE_TEXT_MAX + 1, 'x');
+  GraceUiNotice bad{};
+  bad.size = sizeof bad;
+  bad.text = too_long.c_str();
+  bad.text_length = too_long.size();
+  const GraceUiStatus long_status = table->notice(mod, &bad);
+  bad.text = nullptr;
+  bad.text_length = 5;
+  const GraceUiStatus null_text = table->notice(mod, &bad);
+  bad.size = 16;
+  bad.text = "short";
+  const GraceUiStatus small_notice = table->notice(mod, &bad);
+  step("refused: not UTF-8, 513 bytes, empty without a key, an unknown tone, a null text, a notice of 16 bytes, none",
+       table->notice(mod, nullptr) == GRACEUI_REFUSED && post(table, mod, "bad \xC3", 0, 9) == GRACEUI_REFUSED &&
+           long_status == GRACEUI_REFUSED && post(table, mod, "", GRACEUI_TONE_NORMAL, 0) == GRACEUI_REFUSED &&
+           post(table, mod, "toned", 7, 9) == GRACEUI_REFUSED && null_text == GRACEUI_REFUSED &&
+           small_notice == GRACEUI_REFUSED);
+  step("a handle of 0: not connected", post(table, 0, "Nobody's.") == GRACEUI_NOT_CONNECTED);
+  table->disconnect(mod);
+  step("its notices go with it", grace.notices().empty());
+  const std::string many_lines(500, 'w');
+  const Connected wordy = connect(table, request_for("abi-wordy"));
+  post(table, wordy.answer.consumer, (many_lines.substr(0, 60) + " " + many_lines.substr(0, 400)).c_str());
+  for (int i = 0; i < 3; ++i) {
+    frame = game.frame_and_read(kAbiColour, PresentWith::present);
+  }
+  const std::vector<NoticeBox> wordy_boxes = notice_boxes(frame);
+  step("a long text: three lines at most", wordy_boxes.size() == 1 && wordy_boxes[0].bottom - wordy_boxes[0].top <= 56 &&
+                                               wordy_boxes[0].bottom - wordy_boxes[0].top >= 40);
+  table->disconnect(wordy.answer.consumer);
+  check(notices_ok, "notices", "%s", steps.c_str());
+
+  // 9. No allocation and no free on the present thread as notices come, change and go during play, after warm-up; and
+  // what a frame of three notices costs GraceUI, the GPU idle before each frame.
+  const Connected busy = connect(table, request_for("abi-busy"));
+  for (int i = 0; i < 60; ++i) {
+    game.frame(kAbiColour, PresentWith::present);  // nothing showing: nothing drawn
+  }
+  grace.reset_counters();
+  GraceUiTestState before = grace.state();
+  const std::string long_text = "A notice that runs on for three lines or more, so that the box holds as much text as "
+                                "it ever shows, and the frame draws as many glyphs as a notice ever draws, which is "
+                                "the most room the foreground list reserved at warm-up must hold for it.";
+  for (int round = 0; round < 6; ++round) {
+    post(table, busy.answer.consumer, long_text.c_str(), static_cast<std::uint32_t>(round % 3), 1);
+    post(table, busy.answer.consumer, round % 2 == 0 ? "Short." : "A little longer, this one.", GRACEUI_TONE_NORMAL, 2);
+    post(table, busy.answer.consumer, "Brief, and gone soon.", GRACEUI_TONE_WARNING, 3, 150);
+    for (int i = 0; i < 50; ++i) {
+      game.frame(kAbiColour, PresentWith::present);
+      game.wait_idle();
+    }
+  }
+  GraceUiTestState after = grace.state();
+  const Costs costs = frame_costs(grace);
+  check(after.allocations == 0 && after.frees == 0 && after.frames_drawn - before.frames_drawn >= 200 &&
+            costs.own.p99_us <= 1000.0,
+        "notice allocations",
+        "over %llu frames drawn as notices came, changed and went: %llu allocations and %llu frees on the present "
+        "thread; GraceUI's own work median %.1f us, p99 %.1f us (budget: p99 1000 us)",
+        static_cast<unsigned long long>(after.frames_drawn - before.frames_drawn),
+        static_cast<unsigned long long>(after.allocations), static_cast<unsigned long long>(after.frees),
+        costs.own.median_us, costs.own.p99_us);
+  table->disconnect(busy.answer.consumer);
+  grace.print_log();
+}
+
+// Two copies of GraceUI from two folders, each asked for ABI 1's table at the same moment from a thread of its own:
+// exactly one answers (D72), and it names the other, once.
+void run_copies(const std::wstring& dll) {
+  const std::wstring folder = folder_of_this_program() + L"copies";
+  CreateDirectoryW(folder.c_str(), nullptr);
+  const std::wstring copy = folder + L"\\graceui.dll";
+  CopyFileW(dll.c_str(), copy.c_str(), FALSE);
+  GraceUi first;
+  GraceUi second;
+  if (!first.load(dll) || !second.load(copy) || first.module == second.module) {
+    fatal("the two copies of graceui.dll did not load as two modules");
+  }
+  std::atomic<int> ready{0};
+  std::atomic<bool> go{false};
+  const void* tables[2] = {};
+  const auto ask = [&](const GraceUi& grace, const void*& out) {
+    ready.fetch_add(1);
+    while (!go.load()) {
+      std::this_thread::yield();
+    }
+    out = grace.request_api(1);
+  };
+  std::thread a([&] { ask(first, tables[0]); });
+  std::thread b([&] { ask(second, tables[1]); });
+  while (ready.load() < 2) {
+    std::this_thread::yield();
+  }
+  go.store(true);
+  a.join();
+  b.join();
+  const bool one = (tables[0] != nullptr) != (tables[1] != nullptr);
+  const GraceUi& active = tables[0] != nullptr ? first : second;
+  const GraceUi& idle = tables[0] != nullptr ? second : first;
+  const char* idle_name = tables[0] != nullptr ? "copies\\graceui.dll" : "graceui.dll";
+  // Asked again, each answers as before, and nobody is named twice.
+  const void* active_again = active.request_api(1);
+  const void* idle_again = idle.request_api(1);
+  const GraceUiTestState active_state = active.state();
+  const GraceUiTestState idle_state = idle.state();
+  const std::vector<GraceUiTestNotice> notices = active.notices();
+  const bool named = notices.size() == 1 && notices[0].owner == 0 &&
+                     std::string_view(notices[0].text).find(std::string(": ") + idle_name) != std::string_view::npos;
+  check(one && active_again == tables[tables[0] != nullptr ? 0 : 1] && idle_again == nullptr &&
+            idle_state.host == GRACEUI_TEST_HOST_IDLE_COPY && idle_state.init_threads_started == 0 &&
+            active_state.init_threads_started == 1 && active_state.copies_named == 1 && named,
+        "two copies at once",
+        "asked at once from two threads, %s answered a table (%s), the other idles (state %u, %u init threads); the "
+        "active one named %u copy in %zu notice, once: \"%s\"",
+        one ? "exactly one" : "NOT EXACTLY ONE", tables[0] != nullptr ? "the first folder's" : "the second folder's",
+        idle_state.host, idle_state.init_threads_started, active_state.copies_named, notices.size(),
+        notices.empty() ? "" : notices[0].text);
+  active.print_log();
+}
+
+// The example finds a copy of GraceUI under another file name by its scan of the loaded modules (D70).
+void run_found_by_scan(const std::wstring& dll) {
+  const std::wstring folder = folder_of_this_program() + L"renamed";
+  CreateDirectoryW(folder.c_str(), nullptr);
+  const std::wstring renamed = folder + L"\\grace-renamed.dll";
+  CopyFileW(dll.c_str(), renamed.c_str(), FALSE);
+  GraceUi grace;
+  if (!grace.load(renamed)) {
+    fatal("the renamed copy of graceui.dll did not load");
+  }
+  if (LoadLibraryW(example_path().c_str()) == nullptr) {
+    fatal("hello-notice.dll did not load");
+  }
+  std::string text;
+  std::uint32_t owner = 0;
+  const bool seen = present_until(nullptr, kAbiColour, 10000, [&] { return example_connected(grace, text, owner); });
+  check(seen && GetModuleHandleW(L"graceui.dll") == nullptr &&
+            text.find("found by a scan of the loaded modules at look 1") != std::string::npos &&
+            grace.state().init_threads_started == 1,
+        "found by scan",
+        "with no module named graceui.dll, the example %s through a copy named grace-renamed.dll; its notice: \"%s\"",
+        seen ? "connected" : "DID NOT CONNECT", text.c_str());
+  grace.print_log();
+}
+
+// The example loads GraceUI from GraceUI\graceui.dll in the folder of the game's executable (D70). This process runs
+// from a folder of its own, which the main process made: the harness, the example and that copy.
+void run_found_by_path() {
+  if (LoadLibraryW(example_path().c_str()) == nullptr) {
+    fatal("hello-notice.dll did not load");
+  }
+  HMODULE loaded = nullptr;
+  present_until(nullptr, kAbiColour, 10000, [&] { return (loaded = GetModuleHandleW(L"graceui.dll")) != nullptr; });
+  GraceUi grace;
+  if (loaded == nullptr || !grace.attach(loaded)) {
+    fatal("the example did not load GraceUI from its folder");
+  }
+  std::string text;
+  std::uint32_t owner = 0;
+  const bool seen = present_until(nullptr, kAbiColour, 10000, [&] { return example_connected(grace, text, owner); });
+  wchar_t path[MAX_PATH];
+  const DWORD length = GetModuleFileNameW(loaded, path, MAX_PATH);
+  const std::wstring expected = folder_of_this_program() + L"GraceUI\\graceui.dll";
+  const bool from_folder = length != 0 && CompareStringOrdinal(path, static_cast<int>(length), expected.c_str(),
+                                                               static_cast<int>(expected.size()), TRUE) == CSTR_EQUAL;
+  check(seen && from_folder && text.find("found in its own folder at look 1") != std::string::npos,
+        "found by path",
+        "with no copy loaded, the example loaded GraceUI\\graceui.dll from the game's folder (%s) and %s; its notice: "
+        "\"%s\"",
+        from_folder ? "yes" : "NO", seen ? "connected" : "DID NOT CONNECT", text.c_str());
+  grace.print_log();
+}
+
+// A simulated anti-cheat hit by the module clause (D88, D133): a module of the harness's own, whose name the test build
+// is told to look for, is loaded before GraceUI's first request.
+void run_anti_cheat(const std::wstring& dll) {
+  Game game(false);
+  const HWND window = game.window();
+  cursor_into(window);
+  pump_messages();
+  GameInput reads;
+  reads.open(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  grace.set_anti_cheat_names(L"grace-harness-shield", nullptr);
+  if (LoadLibraryW((folder_of_this_program() + L"grace-harness-shield.dll").c_str()) == nullptr ||
+      LoadLibraryW(example_path().c_str()) == nullptr) {
+    fatal("grace-harness-shield.dll or hello-notice.dll did not load");
+  }
+  const GraceUiApi1* table = start_host(game, grace);
+  std::string example_text;
+  std::uint32_t example_owner = 0;
+  const bool example_seen = present_until(&game, kAntiCheatColour, 10000,
+                                          [&] { return example_connected(grace, example_text, example_owner); });
+  GraceUiTestState state = grace.state();
+  GraceUiTestInput input = grace.input();
+  std::string hooks_why;
+  const bool hooks_ok = hooks_as_expected(grace, 0, hooks_why);
+  const std::vector<GraceUiTestNotice> notices = grace.notices();
+  const bool own_notice = !notices.empty() && notices[0].owner == 0 && notices[0].tone == GRACEUI_TONE_WARNING &&
+                          std::strstr(notices[0].text, "Anti-cheat is running") != nullptr;
+  check(state.notice_only == 1 && state.anti_cheat == GRACEUI_TEST_ANTI_CHEAT_MODULE && hooks_ok &&
+            input.input_off == 1 && own_notice && grace.logged("GraceUI shows notices only this session"),
+        "anti-cheat hit",
+        "a module named as the check was told: notice-only %u, by the %s clause; input off %u; the hooks as usual: %s; "
+        "GraceUI's own notice: \"%s\"",
+        state.notice_only, state.anti_cheat == GRACEUI_TEST_ANTI_CHEAT_MODULE ? "module" : "WRONG", input.input_off,
+        hooks_why.c_str(), notices.empty() ? "" : notices[0].text);
+
+  // connect answers inactive (anti-cheat) with a handle; notice works; nothing else does.
+  const Connected banner = connect(table, request_for("abi-banner"));
+  const GraceUiStatus banner_notice =
+      post(table, banner.answer.consumer, "An invented banner: notices still show.", GRACEUI_TONE_DANGER, 1);
+  const std::vector<GraceUiStatus> others = unbuilt_answers(table, banner.answer.consumer);
+  check(banner.status == GRACEUI_INACTIVE && banner.answer.reason == GRACEUI_INACTIVE_ANTI_CHEAT &&
+            banner.answer.consumer != 0 && banner_notice == GRACEUI_OK && all_answer(others, GRACEUI_INACTIVE) &&
+            example_seen && graceui::Api(table).has_cap(GRACEUI_CAP_NOTICES),
+        "inactive (anti-cheat)",
+        "connect answered %s (reason %u) with %s handle; notice: %s; the other slots: %s; the example connected and "
+        "posted \"%s\"",
+        status_name(banner.status), banner.answer.reason, banner.answer.consumer != 0 ? "a" : "NO",
+        status_name(banner_notice), answers_text(others).c_str(), example_text.c_str());
+
+  // Notices only: the test panel is on, and only the notices are drawn, GraceUI's own first.
+  grace.set_panel(1);
+  Frame frame;
+  for (int i = 0; i < 5; ++i) {
+    frame = game.frame_and_read(kAntiCheatColour, PresentWith::present);
+  }
+  std::string why;
+  const bool only = notices_drawn(frame, kAntiCheatColour,
+                                  {GRACEUI_TONE_WARNING, GRACEUI_TONE_NORMAL, GRACEUI_TONE_DANGER}, false, why);
+  check(only, "notices only", "the test panel on: %s", why.c_str());
+
+  // Pure pass-through: F5 and every other key reach the game, and no holder can take input.
+  g_seen = Seen{};
+  cursor_into(window);
+  inject_key(VK_F5, kScanF5, true);
+  inject_key('A', kScanA, true);
+  settle();
+  const std::array<std::uint8_t, 256> keys = reads.keys();
+  const bool both_read = (keys[DIK_F5] & 0x80) != 0 && (keys[DIK_A] & 0x80) != 0;
+  inject_key('A', kScanA, false);
+  inject_key(VK_F5, kScanF5, false);
+  settle();
+  const GraceUiTestAnswer refused = grace.request(1, kPanelKind, GRACEUI_TEST_WANT_ALL);
+  frames(game, 3);
+  input = grace.input();
+  check(both_read && g_seen.key_down[VK_F5] == 1 && g_seen.key_down['A'] == 1 &&
+            refused.answer == GRACEUI_TEST_NOT_NOW && refused.why == GRACEUI_TEST_NOT_NOW_NOT_READY &&
+            input.holder_owner == 0,
+        "pure pass-through",
+        "DirectInput read F5 and A %s; the window got F5 %d and A %d times; a holder's request answered %u (why %u), "
+        "and nobody holds input",
+        both_read ? "down" : "NOT DOWN", g_seen.key_down[VK_F5], g_seen.key_down['A'], refused.answer, refused.why);
+  state = grace.state();
+  check(state.render_off == 0 && state.frames_drawn > 0, "notice-only render path",
+        "on after every check; %llu frames drawn", static_cast<unsigned long long>(state.frames_drawn));
+  grace.print_log();
+}
+
+// A simulated anti-cheat hit by the parent clause: this process's parent is the harness's main process, whose image
+// name the test build is told to look for.
+void run_anti_cheat_parent(const std::wstring& dll) {
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  grace.set_anti_cheat_names(nullptr, L"grace-harness.exe");
+  const GraceUiApi1* table = grace.table();
+  const GraceUiTestState state = grace.state();
+  const Connected banner = table != nullptr ? connect(table, request_for("abi-banner")) : Connected{};
+  const GraceUiStatus noticed =
+      table != nullptr ? post(table, banner.answer.consumer, "Notices still show.", GRACEUI_TONE_DANGER, 1)
+                       : GRACEUI_FAULT;
+  check(table != nullptr && state.notice_only == 1 && state.anti_cheat == GRACEUI_TEST_ANTI_CHEAT_PARENT &&
+            banner.status == GRACEUI_INACTIVE && banner.answer.reason == GRACEUI_INACTIVE_ANTI_CHEAT &&
+            noticed == GRACEUI_OK,
+        "anti-cheat parent",
+        "started by a process named as the check was told: notice-only %u, by the %s clause; connect answered %s "
+        "(reason %u); notice: %s",
+        state.notice_only, state.anti_cheat == GRACEUI_TEST_ANTI_CHEAT_PARENT ? "parent" : "WRONG",
+        status_name(banner.status), banner.answer.reason, status_name(noticed));
+  grace.print_log();
+}
+
 std::wstring this_program() {
   wchar_t program[MAX_PATH];
   const DWORD length = GetModuleFileNameW(nullptr, program, MAX_PATH);
@@ -1953,6 +2682,24 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"input-ansi") {
     std::printf("-- scenario: the input half on an ANSI window\n");
     run_input_ansi(dll);
+  } else if (scenario == L"abi") {
+    std::printf("-- scenario: ABI 1's table, connect, notices and the example mod\n");
+    run_abi(dll);
+  } else if (scenario == L"copies") {
+    std::printf("-- scenario: two copies asked at once\n");
+    run_copies(dll);
+  } else if (scenario == L"found-by-scan") {
+    std::printf("-- scenario: the example finds a renamed copy\n");
+    run_found_by_scan(dll);
+  } else if (scenario == L"found-by-path") {
+    std::printf("-- scenario: the example loads GraceUI from the game's folder\n");
+    run_found_by_path();
+  } else if (scenario == L"anti-cheat") {
+    std::printf("-- scenario: an anti-cheat hit by the module clause\n");
+    run_anti_cheat(dll);
+  } else if (scenario == L"anti-cheat-parent") {
+    std::printf("-- scenario: an anti-cheat hit by the parent clause\n");
+    run_anti_cheat_parent(dll);
   } else {
     std::printf("-- scenario: one direct queue\n");
     run_main(dll);
@@ -1964,8 +2711,24 @@ int wmain(int argc, wchar_t** argv) {
         std::snprintf(name, sizeof name, "%ls scenario", child_scenario);
         check(child == 0, name, "its process ended with %d", child);
       };
-      for (const wchar_t* child_scenario : {L"two-queues", L"input", L"input-ansi"}) {
+      for (const wchar_t* child_scenario : {L"two-queues", L"input", L"input-ansi", L"abi", L"copies",
+                                            L"found-by-scan", L"anti-cheat", L"anti-cheat-parent"}) {
         run(child_scenario, dll, this_program());
+      }
+      // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in
+      // GraceUI\graceui.dll, which nothing else loads.
+      const std::wstring folder = folder_of_this_program() + L"by-path";
+      CreateDirectoryW(folder.c_str(), nullptr);
+      CreateDirectoryW((folder + L"\\GraceUI").c_str(), nullptr);
+      const std::wstring program = folder + L"\\grace-harness.exe";
+      const std::wstring copy = folder + L"\\GraceUI\\graceui.dll";
+      if (!CopyFileW(this_program().c_str(), program.c_str(), FALSE) ||
+          !CopyFileW(example_path().c_str(), (folder + L"\\hello-notice.dll").c_str(), FALSE) ||
+          !CopyFileW(dll.c_str(), copy.c_str(), FALSE)) {
+        check(false, "found-by-path scenario", "its folder could not be made (error %lu)",
+              static_cast<unsigned long>(GetLastError()));
+      } else {
+        run(L"found-by-path", copy, program);
       }
     }
   }
