@@ -4,7 +4,7 @@
 // them, and drives the input half through injected input, posted messages and the test exports. Every check prints PASS
 // or FAIL with what it saw, and the exit code is 0 only if all passed. BUILD.md runs it under Wine on Xvfb.
 //
-//   grace-harness.exe [--dll <path to graceui.dll>] [--scenario main|two-queues|input|input-ansi]
+//   grace-harness.exe [--dll <path to graceui.dll>] [--scenario <name>]
 //
 // With no scenario it runs "main", then itself again in a new process for each of the others: "two-queues" needs a
 // process in which the host has not found a present queue yet, "input" one whose XInput DLLs are loaded before GraceUI
@@ -20,12 +20,16 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <string>
+#include <string_view>
+#include <thread>
 #include <vector>
 
 #include "graceui_test.h"
@@ -151,9 +155,111 @@ bool untouched(const Frame& frame, Colour clear, std::string& why) {
   return true;
 }
 
-// The test panel is there, and nothing else: every pixel outside its rectangle is the clear colour; inside it, the
-// panel's colour fills most of it and the text's white ink is where the text is.
-bool panel_drawn(const Frame& frame, Colour clear, std::string& why) {
+// ---- Notices on a frame (D134): boxes of a known width at the top right, each with its accent at its left.
+
+constexpr Colour colour_of(std::uint32_t rgb) {
+  return Colour{static_cast<std::uint8_t>(rgb >> 16), static_cast<std::uint8_t>(rgb >> 8),
+                static_cast<std::uint8_t>(rgb)};
+}
+constexpr Colour kNoticeGround = colour_of(GRACEUI_TEST_NOTICE_GROUND);
+constexpr Colour kNoticeAccents[] = {colour_of(GRACEUI_TEST_NOTICE_GOLD), colour_of(GRACEUI_TEST_NOTICE_EMBER),
+                                     colour_of(GRACEUI_TEST_NOTICE_ROT)};
+constexpr const char* kToneNames[] = {"gold", "ember", "rot"};
+
+int notice_left(const Frame& frame) {
+  return static_cast<int>(frame.width) - GRACEUI_TEST_NOTICE_MARGIN - GRACEUI_TEST_NOTICE_WIDTH;
+}
+
+bool in_notice_column(const Frame& frame, UINT x) {
+  return static_cast<int>(x) >= notice_left(frame) && x < frame.width - GRACEUI_TEST_NOTICE_MARGIN;
+}
+
+struct NoticeBox {
+  UINT top = 0;
+  UINT bottom = 0;
+  int tone = 0;  // GRACEUI_TONE_*: which accent
+  bool ground = false;
+  int ink = 0;  // ink.hi pixels of its text
+};
+
+// The notice boxes on a frame, top to bottom: runs of an accent's colour down the accent's column.
+std::vector<NoticeBox> notice_boxes(const Frame& frame) {
+  std::vector<NoticeBox> boxes;
+  const int left = notice_left(frame);
+  if (left < 0) {
+    return boxes;
+  }
+  const UINT x = static_cast<UINT>(left) + 1;
+  int open = -1;
+  UINT top = 0;
+  for (UINT y = GRACEUI_TEST_NOTICE_MARGIN; y <= frame.height; ++y) {
+    int tone = -1;
+    for (int i = 0; y < frame.height && i < 3 && tone < 0; ++i) {
+      tone = close_to(frame.at(x, y), kNoticeAccents[i], 3) ? i : -1;
+    }
+    if (tone == open) {
+      continue;
+    }
+    if (open >= 0) {
+      NoticeBox box;
+      box.top = top;
+      box.bottom = y;
+      box.tone = open;
+      box.ground = close_to(frame.at(static_cast<UINT>(left) + 20, top + 2), kNoticeGround, 3);
+      for (UINT row = top + 8; row + 8 < y; ++row) {
+        for (UINT column = static_cast<UINT>(left) + 11; column + 8 < frame.width - GRACEUI_TEST_NOTICE_MARGIN;
+             ++column) {
+          const std::uint32_t pixel = frame.at(column, row);
+          box.ink += channel(pixel, 0) >= 200 && channel(pixel, 8) >= 190 && channel(pixel, 16) >= 170 ? 1 : 0;
+        }
+      }
+      boxes.push_back(box);
+    }
+    open = tone;
+    top = y;
+  }
+  return boxes;
+}
+
+std::string boxes_text(const std::vector<NoticeBox>& boxes) {
+  std::string text = std::to_string(boxes.size()) + (boxes.size() == 1 ? " notice drawn" : " notices drawn");
+  for (const NoticeBox& box : boxes) {
+    char one[96];
+    std::snprintf(one, sizeof one, "%s %s, rows %u to %u, %s, %d pixels of ink", text.back() == 'n' ? ":" : ";",
+                  kToneNames[box.tone], box.top, box.bottom, box.ground ? "on ground.2" : "NOT ON GROUND.2", box.ink);
+    text += one;
+  }
+  return text;
+}
+
+// The notices drawn are `tones`, top to bottom, each a whole box with its text; and outside the notices' column every
+// pixel is the clear colour, but for the test panel's if `panel` (checked by panel_drawn).
+bool notices_drawn(const Frame& frame, Colour clear, const std::vector<int>& tones, bool panel, std::string& why) {
+  const std::vector<NoticeBox> boxes = notice_boxes(frame);
+  why = boxes_text(boxes);
+  bool ok = boxes.size() == tones.size();
+  for (std::size_t i = 0; ok && i < boxes.size(); ++i) {
+    ok = boxes[i].tone == tones[i] && boxes[i].ground && boxes[i].ink >= 20;
+  }
+  const std::uint32_t want = packed(clear);
+  for (UINT y = 0; ok && y < frame.height; ++y) {
+    for (UINT x = 0; ok && x < frame.width; ++x) {
+      if (!in_notice_column(frame, x) && !(panel && in_panel(x, y)) && frame.at(x, y) != want) {
+        char text[120];
+        std::snprintf(text, sizeof text, "; pixel (%u,%u) outside the notices is %s", x, y,
+                      describe(frame.at(x, y)).c_str());
+        why += text;
+        ok = false;
+      }
+    }
+  }
+  return ok;
+}
+
+// The test panel is there, and nothing else: every pixel outside its rectangle is the clear colour (but in the notices'
+// column, if `notices` allows them); inside it, the panel's colour fills most of it and the text's white ink is where
+// the text is.
+bool panel_drawn(const Frame& frame, Colour clear, std::string& why, bool notices = false) {
   const std::uint32_t want = packed(clear);
   int panel_pixels = 0;
   int ink_pixels = 0;
@@ -161,6 +267,9 @@ bool panel_drawn(const Frame& frame, Colour clear, std::string& why) {
   for (UINT y = 0; y < frame.height; ++y) {
     for (UINT x = 0; x < frame.width; ++x) {
       const std::uint32_t pixel = frame.at(x, y);
+      if (notices && in_notice_column(frame, x)) {
+        continue;
+      }
       if (!in_panel(x, y)) {
         if (pixel != want) {
           char text[140];
@@ -588,6 +697,10 @@ struct GraceUi {
   HMODULE module = nullptr;
   decltype(&GraceUI_Version) version = nullptr;
   decltype(&GraceUI_RequestApi) request_api = nullptr;
+  decltype(&GraceUI_Test_SetAntiCheatNames) set_anti_cheat_names = nullptr;
+  decltype(&GraceUI_Test_GetNotice) get_notice = nullptr;
+  decltype(&GraceUI_Test_ClearNotices) clear_notices = nullptr;
+  decltype(&GraceUI_Test_GetConsumer) get_consumer = nullptr;
   decltype(&GraceUI_Test_SetPanel) set_panel = nullptr;
   decltype(&GraceUI_Test_GetState) get_state = nullptr;
   decltype(&GraceUI_Test_ResetCounters) reset_counters = nullptr;
@@ -605,9 +718,16 @@ struct GraceUi {
 
   bool load(const std::wstring& path) {
     module = LoadLibraryW(path.c_str());
-    if (module == nullptr) {
-      return false;
-    }
+    return module != nullptr && bind();
+  }
+
+  // A copy that something else loaded (a mod, through graceui-sys).
+  bool attach(HMODULE loaded) {
+    module = loaded;
+    return module != nullptr && bind();
+  }
+
+  bool bind() {
     version = function_of<decltype(version)>(module, "GraceUI_Version");
     request_api = function_of<decltype(request_api)>(module, "GraceUI_RequestApi");
     set_panel = function_of<decltype(set_panel)>(module, "GraceUI_Test_SetPanel");
@@ -624,10 +744,54 @@ struct GraceUi {
     get_input = function_of<decltype(get_input)>(module, "GraceUI_Test_GetInput");
     get_chars = function_of<decltype(get_chars)>(module, "GraceUI_Test_GetChars");
     input_costs = function_of<decltype(input_costs)>(module, "GraceUI_Test_GetInputCosts");
+    set_anti_cheat_names = function_of<decltype(set_anti_cheat_names)>(module, "GraceUI_Test_SetAntiCheatNames");
+    get_notice = function_of<decltype(get_notice)>(module, "GraceUI_Test_GetNotice");
+    clear_notices = function_of<decltype(clear_notices)>(module, "GraceUI_Test_ClearNotices");
+    get_consumer = function_of<decltype(get_consumer)>(module, "GraceUI_Test_GetConsumer");
     return version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
            request_input != nullptr && release_input != nullptr && set_world != nullptr && set_caret != nullptr &&
-           set_code_page != nullptr && get_input != nullptr && get_chars != nullptr && input_costs != nullptr;
+           set_code_page != nullptr && get_input != nullptr && get_chars != nullptr && input_costs != nullptr &&
+           set_anti_cheat_names != nullptr && get_notice != nullptr && clear_notices != nullptr &&
+           get_consumer != nullptr;
+  }
+
+  // ABI 1's table, as a mod asks for it.
+  const GraceUiApi1* table() const { return static_cast<const GraceUiApi1*>(request_api(GRACEUI_ABI_MAJOR)); }
+
+  std::vector<GraceUiTestNotice> notices() const {
+    std::vector<GraceUiTestNotice> out;
+    for (std::uint32_t i = 0;; ++i) {
+      GraceUiTestNotice notice{};
+      notice.size = sizeof notice;
+      if (get_notice(i, &notice) == 0) {
+        return out;
+      }
+      out.push_back(notice);
+    }
+  }
+
+  std::vector<GraceUiTestConsumer> consumers() const {
+    std::vector<GraceUiTestConsumer> out;
+    for (std::uint32_t i = 0;; ++i) {
+      GraceUiTestConsumer consumer{};
+      consumer.size = sizeof consumer;
+      if (get_consumer(i, &consumer) == 0) {
+        return out;
+      }
+      out.push_back(consumer);
+    }
+  }
+
+  // Whether GraceUI's log holds a line that contains `text`.
+  bool logged(const char* text) const {
+    char line[200];
+    for (std::uint32_t i = 0; log_line(i, line, sizeof line) > 0; ++i) {
+      if (std::strstr(line, text) != nullptr) {
+        return true;
+      }
+    }
+    return false;
   }
 
   GraceUiTestState state() const {
@@ -733,15 +897,17 @@ std::wstring folder_of_this_program() {
   return folder.substr(0, folder.find_last_of(L"\\/") + 1);
 }
 
-// Starts graceui.dll's host as a mod would, and waits (presenting) until its hooks are installed.
-void start_host(Game& game, const GraceUi& grace) {
-  if (grace.request_api(1) != nullptr) {
-    fatal("GraceUI_RequestApi(1) answered a table: GraceUI 0.1 has none yet");
+// Starts graceui.dll's host as a mod would, and waits (presenting) until its hooks are installed; answers ABI 1's table.
+const GraceUiApi1* start_host(Game& game, const GraceUi& grace) {
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    grace.print_log();
+    fatal("GraceUI_RequestApi(1) answered null: no table");
   }
   for (int i = 0; i < 1500; ++i) {  // 30 s
     const GraceUiTestState state = grace.state();
     if (state.host == GRACEUI_TEST_HOST_HOOKED) {
-      return;
+      return table;
     }
     if (state.host == GRACEUI_TEST_HOST_FAILED || state.host == GRACEUI_TEST_HOST_IDLE_COPY) {
       grace.print_log();
@@ -825,14 +991,21 @@ void run_main(const std::wstring& dll) {
         "GraceUI_Version answers %u.%u.%u", GRACEUI_VERSION_MAJOR(version), GRACEUI_VERSION_MINOR(version),
         GRACEUI_VERSION_PATCH(version));
 
-  start_host(game, grace);
+  const GraceUiApi1* table = start_host(game, grace);
   GraceUiTestState state = grace.state();
   std::string hooks_why;
   ok = hooks_as_expected(grace, 0, hooks_why);
   const std::uint32_t hooks = state.hooks_installed;
-  check(ok && state.init_threads_started == 1, "start",
-        "GraceUI_RequestApi(1) answered null and started %u init thread, which installed %s",
-        state.init_threads_started, hooks_why.c_str());
+  check(ok && state.init_threads_started == 1 && table->size == sizeof(GraceUiApi1) &&
+            table->abi_minor == GRACEUI_ABI1_MINOR && table->graceui_version == version && state.notice_only == 0 &&
+            state.anti_cheat == GRACEUI_TEST_ANTI_CHEAT_NONE,
+        "start",
+        "GraceUI_RequestApi(1) answered ABI 1's table (%u bytes, ABI 1.%u, GraceUI %u.%u.%u); the anti-cheat check "
+        "found %s; %u init thread started, which installed %s",
+        table->size, table->abi_minor, GRACEUI_VERSION_MAJOR(table->graceui_version),
+        GRACEUI_VERSION_MINOR(table->graceui_version), GRACEUI_VERSION_PATCH(table->graceui_version),
+        state.anti_cheat == GRACEUI_TEST_ANTI_CHEAT_NONE ? "nothing" : "A HIT", state.init_threads_started,
+        hooks_why.c_str());
 
   // 1. Nothing to draw: every frame passes through untouched, and the host still binds and warms up.
   Frame frame;
@@ -904,29 +1077,31 @@ void run_main(const std::wstring& dll) {
         counts_text(references_resized).c_str(), counts_text(references_now).c_str(),
         method_name(state.queue_method));
 
-  // 7. A second GraceUI_RequestApi starts nothing.
-  const void* table = grace.request_api(1);
+  // 7. A second GraceUI_RequestApi starts nothing, and answers the same table.
+  const GraceUiApi1* table_again = grace.table();
   state = grace.state();
-  check(table == nullptr && state.init_threads_started == 1 && state.hook_install_runs == 1 &&
+  check(table_again == table && state.init_threads_started == 1 && state.hook_install_runs == 1 &&
             state.hooks_installed == hooks,
         "second request", "answered %s; init threads %u, install runs %u, hooks %u",
-        table == nullptr ? "null" : "a table", state.init_threads_started, state.hook_install_runs,
+        table_again == table ? "the same table" : "ANOTHER TABLE", state.init_threads_started, state.hook_install_runs,
         state.hooks_installed);
 
   // 8. The same DLL loaded again is the same module: nothing new.
   const HMODULE again = LoadLibraryW(dll.c_str());
-  const void* table_again = grace.request_api(1);
+  const GraceUiApi1* table_loaded_again = grace.table();
   state = grace.state();
-  check(again == grace.module && table_again == nullptr && state.init_threads_started == 1 &&
+  check(again == grace.module && table_loaded_again == table && state.init_threads_started == 1 &&
             state.hook_install_runs == 1 && state.hooks_installed == hooks,
-        "second load", "LoadLibrary of the same file gave %s module; init threads %u, install runs %u, hooks %u",
-        again == grace.module ? "the same" : "another", state.init_threads_started, state.hook_install_runs,
-        state.hooks_installed);
+        "second load",
+        "LoadLibrary of the same file gave %s module and %s; init threads %u, install runs %u, hooks %u",
+        again == grace.module ? "the same" : "another", table_loaded_again == table ? "the same table" : "ANOTHER",
+        state.init_threads_started, state.hook_install_runs, state.hooks_installed);
   if (again != nullptr) {
     FreeLibrary(again);
   }
 
-  // 9. A second copy of GraceUI from another folder idles (D72, invariant 18), and the first still draws once.
+  // 9. A second copy of GraceUI from another folder idles (D72, invariant 18); the active one names it once, by its
+  // name relative to the game's folder, in a notice it draws, and draws on.
   const std::wstring copy_folder = folder_of_this_program() + L"second-copy";
   CreateDirectoryW(copy_folder.c_str(), nullptr);
   const std::wstring copy = copy_folder + L"\\graceui.dll";
@@ -935,21 +1110,31 @@ void run_main(const std::wstring& dll) {
     fatal("the second copy of graceui.dll did not load");
   }
   const void* second_table = second.request_api(1);
+  const void* second_again = second.request_api(1);
   const GraceUiTestState second_state = second.state();
   for (int i = 0; i < 5; ++i) {
     frame = game.frame_and_read(kSecondCopy, PresentWith::present);
   }
-  ok = panel_drawn(frame, kSecondCopy, why);
+  ok = panel_drawn(frame, kSecondCopy, why, true);
+  std::string notice_why;
+  const bool notice_shown = notices_drawn(frame, kSecondCopy, {GRACEUI_TONE_WARNING}, true, notice_why);
+  const std::vector<GraceUiTestNotice> named = grace.notices();
+  const bool named_once = named.size() == 1 && named[0].owner == 0 &&
+                          std::strstr(named[0].text, "second-copy\\graceui.dll") != nullptr &&
+                          std::strstr(named[0].text, ":\\") == nullptr;
   state = grace.state();
-  check(second.module != grace.module && second_table == nullptr &&
+  check(second.module != grace.module && second_table == nullptr && second_again == nullptr &&
             second_state.host == GRACEUI_TEST_HOST_IDLE_COPY && second_state.init_threads_started == 0 &&
-            second_state.hooks_installed == 0 && state.hooks_installed == hooks && state.hook_install_runs == 1 && ok,
+            second_state.hooks_installed == 0 && state.hooks_installed == hooks && state.hook_install_runs == 1 && ok &&
+            named_once && state.copies_named == 1 && notice_shown,
         "second copy",
-        "another module (%s) answered null, idles (state %u) with %u init threads and %u hooks; the first keeps its %u "
-        "hooks; %s",
+        "another module (%s) answered null twice, idles (state %u) with %u init threads and %u hooks; the first keeps "
+        "its %u hooks and %s; it named %u copy in %zu notice: \"%s\"; %s",
         second.module != grace.module ? "yes" : "no", second_state.host, second_state.init_threads_started,
-        second_state.hooks_installed, state.hooks_installed, why.c_str());
+        second_state.hooks_installed, state.hooks_installed, why.c_str(), state.copies_named, named.size(),
+        named.empty() ? "" : named[0].text, notice_why.c_str());
   second.print_log();
+  grace.clear_notices();  // the frames read from here on hold the test panel alone
 
   // 10. The detour's own cost per frame and its allocations after warm-up, with the panel drawn on every frame. First
   // as a game runs its frames, without waiting for the GPU between them (reported); then with the GPU idle before
@@ -1723,14 +1908,20 @@ void run_input_ansi(const std::wstring& dll) {
   grace.print_log();
 }
 
-int run_child(const std::wstring& dll, const wchar_t* scenario) {
+std::wstring this_program() {
   wchar_t program[MAX_PATH];
-  GetModuleFileNameW(nullptr, program, MAX_PATH);
-  std::wstring command = L"\"" + std::wstring(program) + L"\" --dll \"" + dll + L"\" --scenario " + scenario;
+  const DWORD length = GetModuleFileNameW(nullptr, program, MAX_PATH);
+  return std::wstring(program, length);
+}
+
+// Runs `program` (this one, unless named) for one scenario, in a process of its own; answers its exit code.
+int run_child(const std::wstring& dll, const wchar_t* scenario, std::wstring program = this_program()) {
+  std::wstring command = L"\"" + program + L"\" --dll \"" + dll + L"\" --scenario " + scenario;
   STARTUPINFOW startup{};
   startup.cb = sizeof startup;
   PROCESS_INFORMATION process{};
-  if (!CreateProcessW(program, command.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &startup, &process)) {
+  if (!CreateProcessW(program.c_str(), command.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &startup,
+                      &process)) {
     return -1;
   }
   WaitForSingleObject(process.hProcess, 300000);
@@ -1766,12 +1957,15 @@ int wmain(int argc, wchar_t** argv) {
     std::printf("-- scenario: one direct queue\n");
     run_main(dll);
     if (scenario.empty()) {
-      for (const wchar_t* child_scenario : {L"two-queues", L"input", L"input-ansi"}) {
+      const auto run = [&](const wchar_t* child_scenario, const std::wstring& child_dll, const std::wstring& program) {
         std::fflush(stdout);
-        const int child = run_child(dll, child_scenario);
+        const int child = run_child(child_dll, child_scenario, program);
         char name[64];
         std::snprintf(name, sizeof name, "%ls scenario", child_scenario);
         check(child == 0, name, "its process ended with %d", child);
+      };
+      for (const wchar_t* child_scenario : {L"two-queues", L"input", L"input-ansi"}) {
+        run(child_scenario, dll, this_program());
       }
     }
   }

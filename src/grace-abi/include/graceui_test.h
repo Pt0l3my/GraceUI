@@ -68,7 +68,16 @@ typedef struct GraceUiTestState {
   uint64_t frames_skipped_busy;   /* frames not drawn because their slot was still in use by the GPU (never waited) */
   uint64_t allocations;           /* on the present thread, inside the detours, since the last reset */
   uint64_t frees;
+  uint32_t notice_only;           /* 1 if the anti-cheat check put the session in the notice-only mode (D88) */
+  uint32_t anti_cheat;            /* GRACEUI_TEST_ANTI_CHEAT_*: which clause found it */
+  uint32_t consumers;             /* mods connected */
+  uint32_t notices;               /* notices showing, GraceUI's own among them */
+  uint32_t copies_named;          /* other copies of GraceUI this one has named in a notice (D72) */
+  uint32_t reserved;
 } GraceUiTestState;
+
+/* What the anti-cheat check found (D133). */
+enum { GRACEUI_TEST_ANTI_CHEAT_NONE = 0, GRACEUI_TEST_ANTI_CHEAT_MODULE = 1, GRACEUI_TEST_ANTI_CHEAT_PARENT = 2 };
 
 /* Turns the test panel on (1) or off (0). */
 GRACEUI_API void GraceUI_Test_SetPanel(uint32_t on);
@@ -169,6 +178,55 @@ GRACEUI_API uint32_t GraceUI_Test_GetChars(uint32_t* out, uint32_t capacity);
 /* Copies up to `capacity` of the newest input costs of one kind (GRACEUI_TEST_COST_*), in nanoseconds: the filter's
  * own work on one message, or a detour's on one read, the original's time left out. Answers how many. */
 GRACEUI_API uint32_t GraceUI_Test_GetInputCosts(uint32_t kind, uint32_t* out, uint32_t capacity);
+
+/* ---- S10.4.b: the anti-cheat check, the mods connected and the notices (D131 to D135). */
+
+/* The anti-cheat check compares these names instead of the real ones (an anti-cheat's module prefix, its launcher's
+ * image name), so that a test simulates a hit with no anti-cheat software present. Before the first
+ * GraceUI_RequestApi only; null keeps the real name. */
+GRACEUI_API void GraceUI_Test_SetAntiCheatNames(const wchar_t* module_prefix, const wchar_t* parent_name);
+
+typedef struct GraceUiTestNotice {
+  uint32_t size;          /* set by the caller to sizeof(GraceUiTestNotice) */
+  uint32_t owner;         /* 0: GraceUI's own; else the mod's number (GraceUiTestConsumer.owner) */
+  uint32_t key;
+  uint32_t tone;          /* GRACEUI_TONE_* */
+  uint32_t timed;         /* 1 if it shows for a time, 0 until replaced or withdrawn */
+  uint32_t text_length;
+  char text[GRACEUI_NOTICE_TEXT_MAX + 1];  /* NUL-terminated */
+} GraceUiTestNotice;
+
+/* Fills *out with notice `index` of those showing, oldest first (out->size set by the caller); answers 1, or 0 past
+ * the last or if the size is too small. */
+GRACEUI_API uint32_t GraceUI_Test_GetNotice(uint32_t index, GraceUiTestNotice* out);
+/* Withdraws every notice, GraceUI's own included. */
+GRACEUI_API void GraceUI_Test_ClearNotices(void);
+
+typedef struct GraceUiTestConsumer {
+  uint32_t size;          /* set by the caller to sizeof(GraceUiTestConsumer) */
+  uint32_t owner;         /* the mod's number, 1 to GRACEUI_MODS_MAX */
+  uint32_t version;
+  uint32_t floor;
+  uint32_t abi_minor;
+  char id[GRACEUI_ID_MAX + 1];
+  char name[GRACEUI_NAME_MAX + 1];
+  char caps[GRACEUI_CAPS_MAX + 1];
+} GraceUiTestConsumer;
+
+/* Fills *out with connected mod `index`, in the order of their slots (out->size set by the caller); answers 1, or 0
+ * past the last or if the size is too small. */
+GRACEUI_API uint32_t GraceUI_Test_GetConsumer(uint32_t index, GraceUiTestConsumer* out);
+
+/* Where GraceUI 0.1 draws notices (D134), in the swap chain's pixels: boxes of this width at the top right, this far
+ * from the edges, the newest last, each a ground.2 box with an accent of this width at its left in gold, ember or rot
+ * and text in ink.hi, at most three lines. */
+#define GRACEUI_TEST_NOTICE_MARGIN 12
+#define GRACEUI_TEST_NOTICE_WIDTH 300
+#define GRACEUI_TEST_NOTICE_ACCENT 3
+#define GRACEUI_TEST_NOTICE_GROUND 0x1D1A15 /* ground.2, as 0xRRGGBB */
+#define GRACEUI_TEST_NOTICE_GOLD 0xC9A65A
+#define GRACEUI_TEST_NOTICE_EMBER 0xDB9550
+#define GRACEUI_TEST_NOTICE_ROT 0xD9806F
 
 #ifdef __cplusplus
 }

@@ -762,7 +762,8 @@ void install(const grace_host_fn (&render)[kRenderHooks], const hooks_input::Tar
 }
 
 void run_init() noexcept {
-  // S10.4.b adds the anti-cheat check here, before anything else (D88); until then nothing is checked.
+  // The anti-cheat check ran in the first request, before this thread started (D133); in its notice-only mode the
+  // hooks go in all the same, input off from the start (D88).
   const HWND window = wait_for_game_window();
   if (window == nullptr) {
     give_up("no window of this process appeared within 120 s");

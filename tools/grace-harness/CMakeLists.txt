@@ -1,6 +1,6 @@
 # grace-harness: a Direct3D 12 window program that loads a test build of graceui.dll and checks it without a game (§2.2,
-# D85): the render half, and the input half through DirectInput, XInput and the window's messages. It links no hook
-# library and no Dear ImGui: it is the game here, nothing more. BUILD.md says how to run it under Wine.
+# D85): the render half, the input half through DirectInput, XInput and the window's messages, and the second copy. It
+# links no hook library and no Dear ImGui: it is the game here, nothing more. BUILD.md says how to run it under Wine.
 add_executable(grace_harness main.cpp)
 set_target_properties(grace_harness PROPERTIES OUTPUT_NAME grace-harness)
 target_link_libraries(grace_harness PRIVATE grace_abi d3d12 dxgi user32 dinput8 dxguid imm32)
@@ -10,3 +10,4 @@ gu_own_code(grace_harness)
 if(MINGW)
   target_link_options(grace_harness PRIVATE -municode)  # its entry point is wmain
 endif()
+

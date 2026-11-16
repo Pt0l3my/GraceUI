@@ -65,6 +65,9 @@ void closed(const grace::input::Holder& holder) noexcept;
 void tick() noexcept;
 // A fault in the input half: input is off for the session (every detour and the filter pass through) and any holder ends.
 void fault(const char* why) noexcept;
+// Input off for the session from the start, before any hook exists: the anti-cheat's notice-only mode (D88), in which
+// capture is never on and every detour and the filter are pure pass-through, the menu key included.
+void turn_off(const char* why) noexcept;
 bool off() noexcept;
 void note_menu_key(grace::input::MenuKey what) noexcept;  // "‹Mod› has the controls", or the menu GraceUI 0.1 lacks
 

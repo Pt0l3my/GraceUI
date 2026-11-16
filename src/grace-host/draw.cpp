@@ -11,10 +11,13 @@
 // a swap chain only with a live tag and calls unbind() once the tag says the swap chain has ended, and
 // mark_buffers_stale() before ResizeBuffers replaces the buffers, which render() takes before it touches one, so no
 // pointer into them is used after them. (3) Dear ImGui's objects (context, draw data, atlas texture) are used only
-// between their creation and the next call that may replace them, on this thread.
+// between their creation and the next call that may replace them, on this thread. The notices it draws are read from
+// the session's newest list (session.h), which no writer touches while this thread holds it.
 #include "draw.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cfloat>
 #include <cstdint>
 #include <cstring>
 
@@ -26,6 +29,7 @@
 #include "imgui_internal.h"  // ImFontAtlasBuildMain: the atlas baked once, before the first frame (D117)
 #include "input.h"
 #include "log.h"
+#include "session.h"
 
 #if defined(GRACEUI_TEST_EXPORTS)
 #include "graceui_test.h"
@@ -42,6 +46,41 @@ namespace {
 constexpr UINT kSlots = 4;  // frames GraceUI may have on the GPU at once (EST, D119), as many as the DX12 backend's
 constexpr UINT kMaxBuffers = DXGI_MAX_SWAP_CHAIN_BUFFERS;
 constexpr UINT kSrvDescriptors = 16;  // the atlas first; room for the textures S10.4.c registers
+
+// GraceUI 0.1's notices (D134): plain boxes at the top right, oldest first, in Grace's colours and Dear ImGui's own
+// font; S10.4.c gives them the Grace look and their place among the layers.
+constexpr float kNoticeMargin = 12.0f;
+constexpr float kNoticeWidth = 300.0f;
+constexpr float kNoticeAccent = 3.0f;
+constexpr float kNoticePad = 8.0f;
+constexpr float kNoticeGap = 6.0f;
+constexpr float kNoticeLines = 3.0f;
+constexpr std::uint32_t kNoticesDrawn = 5;
+
+constexpr ImU32 opaque(std::uint32_t rgb) noexcept {
+  return (0xFFu << IM_COL32_A_SHIFT) | (((rgb >> 16) & 0xFFu) << IM_COL32_R_SHIFT) |
+         (((rgb >> 8) & 0xFFu) << IM_COL32_G_SHIFT) | ((rgb & 0xFFu) << IM_COL32_B_SHIFT);
+}
+constexpr std::uint32_t kGround2 = 0x1D1A15;  // §3.2's ground.2, ink.hi and the three accents
+constexpr std::uint32_t kInkHigh = 0xE8E2D0;
+constexpr std::uint32_t kGold = 0xC9A65A;
+constexpr std::uint32_t kEmber = 0xDB9550;
+constexpr std::uint32_t kRot = 0xD9806F;
+constexpr ImU32 kAccents[] = {opaque(kGold), opaque(kEmber), opaque(kRot)};  // by GRACEUI_TONE_*
+
+#if defined(GRACEUI_TEST_EXPORTS)
+static_assert(kNoticeMargin == GRACEUI_TEST_NOTICE_MARGIN && kNoticeWidth == GRACEUI_TEST_NOTICE_WIDTH &&
+              kNoticeAccent == GRACEUI_TEST_NOTICE_ACCENT && kGround2 == GRACEUI_TEST_NOTICE_GROUND &&
+              kGold == GRACEUI_TEST_NOTICE_GOLD && kEmber == GRACEUI_TEST_NOTICE_EMBER &&
+              kRot == GRACEUI_TEST_NOTICE_ROT,
+              "graceui_test.h tells the harness where notices are drawn, and in what colours");
+#endif
+
+// The foreground draw list's room, reserved at warm-up for the most one frame draws: five notices of three lines (Dear
+// ImGui reserves four vertices and six indices for every byte of a text it draws, then gives back what it did not
+// use), the test panel and a holder's cursor.
+constexpr int kReservedVertices = 8192;
+constexpr int kReservedIndices = 12288;
 
 template <class T>
 void release(T*& object) noexcept {
@@ -79,6 +118,7 @@ struct Renderer {
   bool ready;           // our objects, the context and both backends exist, and the atlas's upload is queued
   bool format_pending;  // the swap chain's format changed: rebuild the DX12 backend once our frames are done
   bool off;
+  bool primed;          // warm-up's last frame, built and never submitted, has run (prime_frame)
 
   ID3D12DescriptorHeap* rtv_heap;
   ID3D12DescriptorHeap* srv_heap;
@@ -381,6 +421,9 @@ bool build_renderer() {
   io.LogFilename = nullptr;
   io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;  // the cursor is the input half's (§5.5)
   io.ConfigErrorRecoveryEnableTooltip = false;              // nothing of Dear ImGui's own is ever drawn on the game
+  // Dear ImGui frees a draw list unused for this long of its own time, and makes it again at its next use: on the
+  // present thread, during play, when a notice comes after a quiet spell. Never, then (D134; invariant 10).
+  io.ConfigMemoryCompactTimer = FLT_MAX;
   input::reserve_imgui_queues();  // a holder's input then allocates nothing during play (invariant 10)
   if (!ImGui_ImplWin32_Init(g.window) || !init_dx12_backend() || !start_atlas()) {
     return false;
@@ -453,13 +496,63 @@ void reread_swap_chain() noexcept {
   }
 }
 
-bool wants_to_draw() noexcept {
-  // GraceUI 0.1 draws nothing of its own but a holder's cursor; panels, notices and the menu join here with S10.4.c.
-  return state::test_panel.load(std::memory_order_relaxed) || input::wants_frames();
+bool notice_showing(const grace::abi::NoticeList& notices, std::int64_t now_ms) noexcept {
+  for (std::uint32_t i = 0; i < notices.count; ++i) {
+    if (notices.items[i].live_at(now_ms)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// The test panel stands for a mod's panel: the notice-only mode draws no panel (D88).
+bool test_panel_on() noexcept {
+  return state::test_panel.load(std::memory_order_relaxed) && !session::notice_only();
+}
+
+bool wants_to_draw(const grace::abi::NoticeList& notices, std::int64_t now_ms) noexcept {
+  // GraceUI 0.1 draws notices and a holder's cursor of its own; panels and the menu join here with S10.4.c.
+  return test_panel_on() || input::wants_frames() || notice_showing(notices, now_ms);
+}
+
+void draw_notices(const grace::abi::NoticeList& notices, std::int64_t now_ms) {
+  const float display_width = static_cast<float>(g.width);
+  const float width = std::min(kNoticeWidth, display_width - 2.0f * kNoticeMargin);
+  if (width < 64.0f) {
+    return;
+  }
+  ImDrawList* list = ImGui::GetForegroundDrawList();
+  ImFont* font = ImGui::GetFont();
+  const float size = ImGui::GetFontSize();
+  const float x1 = display_width - kNoticeMargin;
+  const float x0 = x1 - width;
+  const float text_x = x0 + kNoticeAccent + kNoticePad;
+  const float wrap = x1 - kNoticePad - text_x;
+  float y = kNoticeMargin;
+  std::uint32_t drawn = 0;
+  for (std::uint32_t i = 0; i < notices.count && drawn < kNoticesDrawn && y < static_cast<float>(g.height); ++i) {
+    const grace::abi::Notice& notice = notices.items[i];
+    if (!notice.live_at(now_ms)) {
+      continue;
+    }
+    const char* text = notice.text;
+    const char* end = text + notice.text_length;
+    const float text_height = std::min(font->CalcTextSizeA(size, FLT_MAX, wrap, text, end).y, size * kNoticeLines);
+    const float y1 = y + 2.0f * kNoticePad + text_height;
+    list->AddRectFilled(ImVec2(x0, y), ImVec2(x1, y1), opaque(kGround2));
+    list->AddRectFilled(ImVec2(x0, y), ImVec2(x0 + kNoticeAccent, y1), kAccents[notice.tone <= 2 ? notice.tone : 0]);
+    const ImVec4 clip(text_x, y + kNoticePad, x1 - kNoticePad, y + kNoticePad + text_height);
+    list->AddText(font, size, ImVec2(text_x, y + kNoticePad), opaque(kInkHigh), text, end, wrap, &clip);
+    y = y1 + kNoticeGap;
+    ++drawn;
+  }
 }
 
 void draw_test_panel() {
 #if defined(GRACEUI_TEST_EXPORTS)
+  if (!test_panel_on()) {
+    return;
+  }
   constexpr ImU32 panel = (255u << IM_COL32_A_SHIFT) | (unsigned{GRACEUI_TEST_PANEL_B} << IM_COL32_B_SHIFT) |
                           (unsigned{GRACEUI_TEST_PANEL_G} << IM_COL32_G_SHIFT) |
                           (unsigned{GRACEUI_TEST_PANEL_R} << IM_COL32_R_SHIFT);
@@ -471,7 +564,26 @@ void draw_test_panel() {
 #endif
 }
 
-ImDrawData* build_frame() {
+// Warm-up's last step (D134): one frame of Dear ImGui's, built and never submitted, which makes the foreground draw list
+// that the notices and the test panel use and reserves its room, so that no notice allocates on the present thread
+// during play (invariant 10).
+void prime_frame() {
+  ImGuiIO& io = ImGui::GetIO();
+  io.DisplaySize = ImVec2(static_cast<float>(std::max(g.width, 1u)), static_cast<float>(std::max(g.height, 1u)));
+  io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
+  io.DeltaTime = 1.0f / 60.0f;
+  ImGui_ImplDX12_NewFrame();
+  ImGui::NewFrame();
+  ImDrawList* list = ImGui::GetForegroundDrawList();
+  list->VtxBuffer.reserve(kReservedVertices);
+  list->IdxBuffer.reserve(kReservedIndices);
+  list->CmdBuffer.reserve(16);
+  ImGui::Render();
+  g.qpc_last = qpc_now();
+  g.primed = true;
+}
+
+ImDrawData* build_frame(const grace::abi::NoticeList& notices, std::int64_t now_ms) {
   ImGuiIO& io = ImGui::GetIO();
   io.DisplaySize = ImVec2(static_cast<float>(g.width), static_cast<float>(g.height));
   io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
@@ -484,6 +596,7 @@ ImDrawData* build_frame() {
   ImGui::NewFrame();
   input::after_new_frame();
   draw_test_panel();
+  draw_notices(notices, now_ms);  // last: the notice layer is above everything (D76)
   ImGui::Render();
   return ImGui::GetDrawData();
 }
@@ -606,8 +719,13 @@ void render() {
   if (g.format_pending && !rebuild_for_format()) {
     return;
   }
+  if (!g.primed) {
+    prime_frame();
+  }
   input::rendered();  // the overlay is live: the input half's watchdog hears it (2 s without one ends a holder)
-  if (!wants_to_draw() || g.width == 0 || g.height == 0) {
+  const std::int64_t now_ms = input::now_ms();
+  const grace::abi::NoticeList& notices = session::notices().read();
+  if (!wants_to_draw(notices, now_ms) || g.width == 0 || g.height == 0) {
     return;  // nothing to draw: the frame passes through untouched
   }
   Slot& slot = g.slots[g.draws % kSlots];
@@ -619,7 +737,7 @@ void render() {
   if (buffer == nullptr) {
     return;
   }
-  ImDrawData* data = build_frame();
+  ImDrawData* data = build_frame(notices, now_ms);
   if (data == nullptr || data->TotalVtxCount == 0 || data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f) {
     return;
   }

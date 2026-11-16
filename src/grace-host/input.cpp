@@ -403,6 +403,12 @@ void fault(const char* why) noexcept {
   closed(g_capture.close(grace::input::Closed::fault, now_ms()));
 }
 
+void turn_off(const char* why) noexcept {
+  if (!g_off.exchange(true, std::memory_order_acq_rel)) {
+    log_line("input is off for this session: %s", why);
+  }
+}
+
 bool off() noexcept { return g_off.load(std::memory_order_acquire); }
 
 void note_menu_key(grace::input::MenuKey what) noexcept {
