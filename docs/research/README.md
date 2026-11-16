@@ -12,6 +12,7 @@ repository.
 | **REN** | [renderers.md](renderers.md) | In-game renderer options (Dear ImGui, Ultralight, CEF, RmlUi, Blitz, Servo and others) against hudhook 0.9.3's limits, and the hardening of the local web server |
 | **SND** | [skyrimnet-dashboard.md](skyrimnet-dashboard.md) | How SkyrimNet's dashboard groups an AI framework: its sidebar categories and pages, top bar, page parts, Home cards, settings groups and kinds of setting, each fact tagged with its source; and what EldenNet takes, adapts, defers or leaves out. The evidence for DESIGN §4 (D38–D48) |
 | **FW** | [ui-frameworks.md](ui-frameworks.md) | Shared UI hosts for game mods, for GraceUI as a framework any Elden Ring mod can use (G14): Skyrim's Magelight UI, Meridian UI and PrismaUI as the Skyrizz session reports them, Elden Ring's ERNativeUI, EROverlay and others, how DLL mods find each other, why one process holds one hudhook, Dear ImGui across DLLs, Proton, licences and the community's view of AI. The evidence for proposal 0001 |
+| **SRV** | [server-basis.md](server-basis.md) | An independent review for G30 (2026-11-16): a C++ basis for the loopback HTTP and WebSocket server (our own, Boost.Beast, civetweb, cpp-httplib and others, with their 2025-26 security record), what a server of our own must get right (RFC 9112, RFC 6455), a fuzzing plan, the home-network mode, and a server inside the game's process |
 
 ## Citation conventions
 

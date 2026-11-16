@@ -242,7 +242,7 @@ one-line notes (DESIGN §4.6.5). The four rail entries and their tag are unchang
 
 **Amends.** G10 (superseded), EldenNet O25 (the pin and its rules move with the overlay), G2 ("keeps playing whatever it finds", D88) and invariants 15 and 16, all rewritten when the design is folded (S7.8.c).
 
-**Later changes.** 2026-11-08: by EldenNet's O60 (the owner's direction), EldenNet and GraceUI's in-game parts are expected to be written in C++, settled when Min's blueprint is adopted; hudhook (Rust) would then give way to a C++ overlay that GraceUI owns, with every rule of O25 restated for it and the owner's approval. The same day Min confirmed the blueprint is C++, so C++ is settled (O60's later change); the overlay itself is chosen at adoption.
+**Later changes.** 2026-11-08: by EldenNet's O60 (the owner's direction), EldenNet and GraceUI's in-game parts are expected to be written in C++, settled when Min's blueprint is adopted; hudhook (Rust) would then give way to a C++ overlay that GraceUI owns, with every rule of O25 restated for it and the owner's approval. The same day Min confirmed the blueprint is C++, so C++ is settled (O60's later change); the overlay itself is chosen at adoption. 2026-11-16: the owner chose it (EldenNet's O25 as changed that day): Dear ImGui 1.93.0 with its DX12 and Win32 backends and MinHook 1.3.4, pinned, in `grace-host` in place of hudhook 0.9.3; every rule of G15 stands with them (folded in EldenNet's roadmap S8.1.e). Owner's words: "Dear ImGui + MinHook (Recommended)".
 
 ## G16
 
@@ -523,3 +523,37 @@ EldenNet's launcher runs, if EldenNet's O76 is (a) or (b). (b): nothing in Grace
 adopted, and serves the dashboard from the saved files; its O78 (b) and O79 put the devkit's tools, viewers included,
 in EldenNet's dashboard behind Developer mode. So a host outside the game will serve GraceUI's pages either way; G29
 asks only how.
+
+## G30
+
+**The C++ basis of the loopback server** · *Open since 2026-11-16 · Decided by the owner 2026-11-16, as recommended*
+
+**Question.** With GraceUI's in-game parts in C++ (EldenNet's O60), `grace-serve`, the loopback HTTP and WebSocket
+server of §7.2, needs a C++ basis. **Options:** (a) **our own small server** on Windows sockets, serving only the narrow
+subset that §7.2 and §6.8 allow (HTTP/1.1 GET and POST with a Content-Length and caps, no chunked request bodies, one
+WebSocket per tab per RFC 6455), fuzzed in CI; (b) civetweb (MIT, C), with its file serving off and every handler
+wrapped by §7.2's checks; (c) Boost.Beast (BSL-1.0), which brings Boost and Asio with it.
+
+**Recommendation.** (a): every rule of §7.2 stays in our own code, the surface is only what the rules allow, and no
+server library needs patching; the risk, bugs in our own parsing, is met by fuzzing and §6.8's limits.
+
+**What each answer changes.** (a): `grace-serve` is our own code, with a fuzzer for its parser in CI. (b) or (c): the
+library is pinned, listed in `NOTICE` and tracked for security fixes, and `grace-serve` wraps it. §7.2's rules and
+invariant 4 hold whichever is chosen.
+
+**Follows from.** G4, G9, G17, G28; EldenNet's O60.
+
+*Later (2026-11-16):* the owner asked for a second agent's view before deciding; a request with §7.2's rules, the
+options and the questions was written for it.
+
+**Decision (2026-11-16).** (a): our own small server, on the narrow subset that §7.2 and §6.8 allow, built to the plan
+of the independent review (research note SRV, §5): the HTTP head parser and the WebSocket frame decoder are pure
+functions over bounded buffers, fuzzed in CI; one non-blocking I/O thread and one worker; `Connection: close` on every
+HTTP response; static paths matched to the manifest byte for byte; RFC 9112's and RFC 6455's strict rules; WebSockets
+capped at two, with plain HTTP connections capped on their own (§6.8, corrected the same day).
+
+**Owner's words.** "Our own server (Recommended)".
+
+**Evidence.** [research/server-basis.md](research/server-basis.md) (SRV): the review recommends the same, with
+Boost.Beast as the runner-up, and found that every general-purpose library it checked shipped parser or framing fixes
+in 2025-26.
