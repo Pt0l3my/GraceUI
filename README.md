@@ -9,11 +9,14 @@ Magelight UI and PrismaUI let mods do for Skyrim; when it opens to other modders
 **Status: design, and the first code.** The overlay host's render half and input half are built: `graceui.dll` starts on
 a mod's first request, hooks the game's frames and draws Dear ImGui on them, filters the game's window procedure, reads
 DirectInput and XInput, and keeps the game from the input of whoever holds it. Mods reach it through ABI 1, a preview
-until GraceUI 1.1 (`src/grace-abi/include/graceui.h`): they find it with `graceui-sys`, connect and show notices, and
-the slots for panels, draw lists, textures, faces and input are declared for the increments that build them. Before it
-hooks anything, GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder
-idles and is named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with an example mod of our
-own, and the rules by unit tests on Linux ([BUILD.md](BUILD.md)). The design is in [docs/DESIGN.md](docs/DESIGN.md),
+until GraceUI 1.1 (`src/grace-abi/include/graceui.h`): they find it with `graceui-sys`, connect, show notices in the
+Grace look, register textures and faces before their first frames, and draw panels on five layers with checked draw
+lists, built with GraceUI's shared atlas or a headless Dear ImGui of their own; a panel can take the controls, and the
+player can always take them back; any mod can report danger, which ends the view that holds input. The bridge
+protocol's slots, hotkeys and the log are declared for the increments that build them. Before it hooks anything,
+GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
+named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the
+rules by unit tests on Linux ([BUILD.md](BUILD.md)). The design is in [docs/DESIGN.md](docs/DESIGN.md),
 with the owner's decisions (indexed in §12, in full in [docs/DECISIONS.md](docs/DECISIONS.md)) and the decisions it
 settles (§13). The framework and the map were put to the owner as proposals, which keep their reasoning
 ([docs/proposals/](docs/proposals/)). The roadmap for both GraceUI and EldenNet is EldenNet's `docs/ROADMAP.md`.
@@ -75,12 +78,13 @@ see the dashboard.
 | `web/` | The browser app (TypeScript) |
 | `tools/grace-dev` | A fake host for developing and testing any mod's pages without the game |
 | `tools/grace-harness` | A Windows harness that runs the in-game view without the game |
-| `examples/` | Example mods, with invented content: `hello-notice`, in C, the first |
+| `examples/` | Example mods, with invented content: `hello-notice`, in C, a notice; `hello-panel`, in C++, a panel drawn by its own headless Dear ImGui |
 | `fixtures/` | Test states with invented names, for the demo space (EldenNet's are EldenNet's, G20) |
 | `mock/` | A static look mock of the menu |
 
 ## Licence
 
-MIT; see [LICENSE](LICENSE). Fonts, when added, are under the SIL Open Font License and come from their publishers;
-each ships with its licence and is credited in `NOTICE`. GraceUI contains no game files, text, fonts, icons or art,
+MIT; see [LICENSE](LICENSE). Fonts are under the SIL Open Font License and come from their publishers; each ships
+with its licence and is credited in `NOTICE` (Noto Sans and Noto Sans Mono so far, fetched by the build, never kept in
+this repository). GraceUI contains no game files, text, fonts, icons or art,
 and no code, styles, text or art from other UI projects. The rules are in [CLAUDE.md](CLAUDE.md).

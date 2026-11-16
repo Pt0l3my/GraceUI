@@ -512,3 +512,38 @@ is folded into EldenNet's design yet.
    (`GRACEUI_API1_COVERS`), and a feature used only if `has_cap` names it.
 5. **Two copies** (D135): ARCH §12.4's row "two copies of GraceUI at two paths" expects the second to idle and the
    active one to name it in a notice, by its name relative to the game's folder.
+
+## 15. Panels, draw lists, textures, faces, input and providers (S10.4.c, 2026-11-16)
+
+What GraceUI's 0.1 host settled on 2026-11-16 (D137 to D144; EldenNet's roadmap S10.4.c) asks of EldenNet. None of it
+is folded into EldenNet's design yet.
+
+1. **The order at T1** (D138, D139): connect with the caps EldenNet uses (`notices panels textures faces input
+   world-state`, each checked with `has_cap`), then, before anything is submitted, register every face (at most eight
+   for `eldennet`, EST) and every texture (at most 8 textures and 8 MiB, EST); then create the panels (at most 16,
+   EST) and submit. The first `submit` closes EldenNet's registration window (a later texture answers `too_late`), and
+   the overlay's warm-up, at the game's first frames after the hooks, seals the faces: EldenNet connects on T1 before
+   the game draws, so its faces are in time; a face that comes too late answers `too_late`, and EldenNet then draws its
+   text from GraceUI's own face 1 (Noto Sans 15) or its own atlas texture.
+2. **Text in panels** (D139): `glyph_table` answers `not_ready` until warm-up; then each face's glyphs, sorted by code
+   point, the pen at the top of the line as Dear ImGui's, with the atlas's texture id and generation 1 for the session.
+   A list that draws glyphs names that generation in `atlas_generation`. EldenNet's subtitles, call-out box and feed
+   lay their text out from these tables (its NPC §10's sizes as faces of its own) or, for F11, from its own Dear ImGui's
+   atlas registered as a texture.
+3. **Draw lists in the panel's own pixels** (D137): a list's origin is the panel's top-left corner, whatever the
+   anchor; clip rectangles within the panel; at most 256 KiB of vertices and of indices and 64 commands. A refused list
+   leaves the panel its last one, with one log line for the connection. EldenNet's F11 view on a headless Dear ImGui of
+   its own sets the display size to the panel's, sets `ImGuiBackendFlags_RendererHasVtxOffset`, and appends its
+   ImDrawLists into one list, each command keeping its vertex offset, as `examples/hello-panel` does.
+4. **Layers** (D76, D137): the subtitles, labels and feed on the hud layer; the chat box and call-out box on the panel
+   layer; the rollback modal on the modal layer; toasts, the banner and the pause badge as notices, which draw above
+   every layer in the Grace look (D141), in Noto Sans 15 from GraceUI's own `fonts\` folder.
+5. **Input** (D142): the chat box asks `request_input` for its own shown panel made with `GRACEUI_PANEL_TAKES_INPUT`
+   (a modal holder for the rollback modal, on the modal layer); the answer is at once, and a refusal names the
+   holder's mod id. Hiding the panel ends the holder; the player's exit always does. What the holder types reaches it
+   through `poll`, with §6's protocol (GraceUI 0.2): until then the chat box can take the controls from the game but
+   receives no characters, so EldenNet's v0.1 has no chat box in game, as its increments plan.
+6. **EldenNet as a world-state provider** (D143): `set_world_state` with its claims (danger from `safe_context`,
+   loading, a game menu or text entry, the title screen, multiplayer, its own anti-cheat finding), replaced whole at
+   each call; danger and loading end any holder at once, and a game menu keeps `request_input` at not now. EldenNet's
+   hud panels are its own to hide on danger: GraceUI ends only the view that holds input.
