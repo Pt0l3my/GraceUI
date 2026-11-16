@@ -11,23 +11,7 @@ set(GU_MINHOOK_COMMIT c3fcafdc10146beb5919319d0683e44e3c30d537)  # TsudaKageyu/m
 set(GU_IMGUI_DIR ${CMAKE_BINARY_DIR}/_deps/imgui-1.93.0)
 set(GU_MINHOOK_DIR ${CMAKE_BINARY_DIR}/_deps/minhook-1.3.4)
 
-# Download one file, unless the build tree already holds it with the pinned hash.
-function(gu_fetch repo commit path dest sha256)
-  set(target ${dest}/${path})
-  if(EXISTS ${target})
-    file(SHA256 ${target} have)
-    if(have STREQUAL sha256)
-      return()
-    endif()
-    file(REMOVE ${target})
-  endif()
-  set(url https://raw.githubusercontent.com/${repo}/${commit}/${path})
-  file(DOWNLOAD ${url} ${target} EXPECTED_HASH SHA256=${sha256} TLS_VERIFY ON STATUS st)
-  list(GET st 0 code)
-  if(NOT code EQUAL 0)
-    message(FATAL_ERROR "Could not download ${url} with its pinned hash: ${st}")
-  endif()
-endfunction()
+include(${CMAKE_CURRENT_LIST_DIR}/fetch.cmake)  # gu_fetch: one file, unless the build tree holds it with its hash
 
 foreach(pin IN ITEMS
     "LICENSE.txt|173506a2d6f7fb67990d257fb2507f188690eca39060c39469ae7bef43aae2a3"

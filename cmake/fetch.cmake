@@ -1,0 +1,18 @@
+# gu_fetch: one file of a third-party project, downloaded at configure time from the project's own repository at a
+# pinned commit and checked against its SHA-256, into the build tree (D106, D123). The repository keeps no copy.
+function(gu_fetch repo commit path dest sha256)
+  set(target ${dest}/${path})
+  if(EXISTS ${target})
+    file(SHA256 ${target} have)
+    if(have STREQUAL sha256)
+      return()
+    endif()
+    file(REMOVE ${target})
+  endif()
+  set(url https://raw.githubusercontent.com/${repo}/${commit}/${path})
+  file(DOWNLOAD ${url} ${target} EXPECTED_HASH SHA256=${sha256} TLS_VERIFY ON STATUS st)
+  list(GET st 0 code)
+  if(NOT code EQUAL 0)
+    message(FATAL_ERROR "Could not download ${url} with its pinned hash: ${st}")
+  endif()
+endfunction()

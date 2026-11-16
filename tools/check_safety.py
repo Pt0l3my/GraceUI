@@ -16,6 +16,8 @@ The source checks, over src/ (our own code; third-party code is fetched into the
   4. Only the DLL's abi files export anything.
   5. hooks.cpp's hook table names only functions of D102's published list.
   6. No project that EldenNet's O47 and O48 exclude is named in a build file (D106).
+  7. The pure modules (grace-input) include no Windows header, no Dear ImGui and no MinHook, and link nothing (G15 (a),
+     D124): their unit tests build on Linux, which proves the first, and this check names the line.
 Exit status 0 when every check passes; each failure is printed with its file and line.
 """
 import pathlib
@@ -49,6 +51,12 @@ PUBLISHED_HOOKS = {
 }
 
 EXCLUDED_PROJECTS = re.compile(r"\bme3\b|fromsoftware-rs|fromsoftware_rs", re.IGNORECASE)
+
+# The pure modules: no Win32, no Dear ImGui, no MinHook (D124).
+PURE_MODULES = ("src/grace-input/",)
+IMPURE_INCLUDE = re.compile(
+    r'#\s*include\s*[<"](windows|winuser|windef|winbase|imm|dinput|xinput|d3d1\d|dxgi[0-9_]*|imgui[a-z_]*|MinHook)'
+    r'\.h[">]', re.IGNORECASE)
 
 failures = []
 
@@ -153,6 +161,22 @@ def check_module_graph():
                 fail(path.relative_to(ROOT).as_posix(), number, "names a project EldenNet's O47 or O48 excludes")
 
 
+def check_pure_modules():
+    for module in PURE_MODULES:
+        folder = ROOT / module
+        for path in sorted(folder.rglob("*")):
+            rel = path.relative_to(ROOT).as_posix()
+            if path.suffix in (".cpp", ".c", ".h"):
+                for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                    if IMPURE_INCLUDE.search(line):
+                        fail(rel, number, "a pure module includes Win32, Dear ImGui or MinHook (D124)")
+            elif path.name == "CMakeLists.txt":
+                for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                    code = line.split("#", 1)[0]
+                    if re.search(r"target_link_libraries\s*\(\s*grace_input\b", code):
+                        fail(rel, number, "a pure module links a library (D124)")
+
+
 def check_hook_table():
     hooks = SRC / "grace-host" / "hooks.cpp"
     text = hooks.read_text(encoding="utf-8")
@@ -219,6 +243,7 @@ def check_exports(dll, test_build):
 def main(argv):
     check_sources()
     check_module_graph()
+    check_pure_modules()
     check_hook_table()
     if "--exports" in argv:
         check_exports(argv[argv.index("--exports") + 1], "--test" in argv)
