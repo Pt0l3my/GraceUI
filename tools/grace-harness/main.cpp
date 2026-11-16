@@ -1,18 +1,25 @@
-// grace-harness: graceui.dll's render half without a game (§2.2, D85). A Direct3D 12 window program that plays the
-// game's part: it presents frames of known clear colours, loads a test build of graceui.dll, calls
-// GraceUI_RequestApi(1), and reads its frames back to check what GraceUI drew on them. Every check prints PASS or FAIL
-// with what it saw, and the exit code is 0 only if all passed. BUILD.md runs it under Wine on Xvfb.
+// grace-harness: graceui.dll without a game (§2.2, D85). A Direct3D 12 window program that plays the game's part: it
+// presents frames of known clear colours, reads the keyboard and mouse through DirectInput and pads through XInput,
+// loads a test build of graceui.dll, calls GraceUI_RequestApi(1), reads its frames back to check what GraceUI drew on
+// them, and drives the input half through injected input, posted messages and the test exports. Every check prints PASS
+// or FAIL with what it saw, and the exit code is 0 only if all passed. BUILD.md runs it under Wine on Xvfb.
 //
-//   grace-harness.exe [--dll <path to graceui.dll>] [--scenario main|two-queues]
+//   grace-harness.exe [--dll <path to graceui.dll>] [--scenario main|two-queues|input|input-ansi]
 //
-// With no scenario it runs "main", then itself again with "two-queues" in a new process: that check needs a process in
-// which the host has not found a present queue yet.
+// With no scenario it runs "main", then itself again in a new process for each of the others: "two-queues" needs a
+// process in which the host has not found a present queue yet, "input" one whose XInput DLLs are loaded before GraceUI
+// starts, and "input-ansi" one whose game window is an ANSI window.
+#define DIRECTINPUT_VERSION 0x0800
 #include <windows.h>
 
 #include <d3d12.h>
+#include <dinput.h>
 #include <dxgi1_4.h>
+#include <imm.h>
+#include <xinput.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
@@ -184,12 +191,59 @@ bool panel_drawn(const Frame& frame, Colour clear, std::string& why) {
 
 // ---- The game's part: a window, a device, a queue (two in the two-queues scenario) and a swap chain.
 
+// What reached the game's window procedure: the input half keeps some messages from it (D125).
+struct Seen {
+  int key_down[256];
+  int key_up[256];
+  int chars;
+  int ime;
+  int mouse;
+  int kill_focus;
+};
+Seen g_seen{};
+
+void count(UINT message, WPARAM wparam) {
+  switch (message) {
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN: ++g_seen.key_down[wparam & 0xFF]; break;
+    case WM_KEYUP:
+    case WM_SYSKEYUP: ++g_seen.key_up[wparam & 0xFF]; break;
+    case WM_CHAR:
+    case WM_UNICHAR:
+    case WM_IME_CHAR: ++g_seen.chars; break;
+    case WM_IME_STARTCOMPOSITION:
+    case WM_IME_COMPOSITION:
+    case WM_IME_ENDCOMPOSITION: ++g_seen.ime; break;
+    case WM_MOUSEMOVE:
+    case WM_LBUTTONDOWN:
+    case WM_LBUTTONUP:
+    case WM_MOUSEWHEEL: ++g_seen.mouse; break;
+    case WM_KILLFOCUS: ++g_seen.kill_focus; break;
+    default: break;
+  }
+}
+
 LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+  count(message, wparam);
   return DefWindowProcW(window, message, wparam, lparam);
 }
 
+LRESULT CALLBACK window_procedure_ansi(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+  count(message, wparam);
+  return DefWindowProcA(window, message, wparam, lparam);
+}
+
+bool g_ansi = false;  // the input-ansi scenario: the game's window and message loop are ANSI
+
 void pump_messages() {
   MSG message;
+  if (g_ansi) {
+    while (PeekMessageA(&message, nullptr, 0, 0, PM_REMOVE)) {
+      TranslateMessage(&message);
+      DispatchMessageA(&message);
+    }
+    return;
+  }
   while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
     TranslateMessage(&message);
     DispatchMessageW(&message);
@@ -225,17 +279,29 @@ class Game {
   Game& operator=(const Game&) = delete;
 
   void create_window(int x) {
-    WNDCLASSEXW window_class{};
-    window_class.cbSize = sizeof window_class;
-    window_class.lpfnWndProc = &window_procedure;
-    window_class.hInstance = GetModuleHandleW(nullptr);
-    window_class.lpszClassName = L"GraceHarness";
-    RegisterClassExW(&window_class);
     RECT rect{0, 0, 640, 360};
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
-    window_ = CreateWindowExW(0, L"GraceHarness", L"GraceUI harness", WS_OVERLAPPEDWINDOW | WS_VISIBLE, x, 0,
-                              rect.right - rect.left, rect.bottom - rect.top, nullptr, nullptr,
-                              window_class.hInstance, nullptr);
+    if (g_ansi) {
+      WNDCLASSEXA window_class{};
+      window_class.cbSize = sizeof window_class;
+      window_class.lpfnWndProc = &window_procedure_ansi;
+      window_class.hInstance = GetModuleHandleW(nullptr);
+      window_class.lpszClassName = "GraceHarnessAnsi";
+      RegisterClassExA(&window_class);
+      window_ = CreateWindowExA(0, "GraceHarnessAnsi", "GraceUI harness", WS_OVERLAPPEDWINDOW | WS_VISIBLE, x, 0,
+                                rect.right - rect.left, rect.bottom - rect.top, nullptr, nullptr,
+                                window_class.hInstance, nullptr);
+    } else {
+      WNDCLASSEXW window_class{};
+      window_class.cbSize = sizeof window_class;
+      window_class.lpfnWndProc = &window_procedure;
+      window_class.hInstance = GetModuleHandleW(nullptr);
+      window_class.lpszClassName = L"GraceHarness";
+      RegisterClassExW(&window_class);
+      window_ = CreateWindowExW(0, L"GraceHarness", L"GraceUI harness", WS_OVERLAPPEDWINDOW | WS_VISIBLE, x, 0,
+                                rect.right - rect.left, rect.bottom - rect.top, nullptr, nullptr,
+                                window_class.hInstance, nullptr);
+    }
     if (window_ == nullptr) {
       fatal("no window");
     }
@@ -465,6 +531,7 @@ class Game {
 
   UINT width() const { return width_; }
   UINT height() const { return height_; }
+  HWND window() const { return window_; }
 
  private:
   static constexpr UINT64 kReadbackBytes = 1024ull * 1024 * 4;
@@ -526,6 +593,15 @@ struct GraceUi {
   decltype(&GraceUI_Test_ResetCounters) reset_counters = nullptr;
   decltype(&GraceUI_Test_GetFrameCosts) frame_costs = nullptr;
   decltype(&GraceUI_Test_GetLogLine) log_line = nullptr;
+  decltype(&GraceUI_Test_GetHookName) hook_name = nullptr;
+  decltype(&GraceUI_Test_RequestInput) request_input = nullptr;
+  decltype(&GraceUI_Test_ReleaseInput) release_input = nullptr;
+  decltype(&GraceUI_Test_SetWorld) set_world = nullptr;
+  decltype(&GraceUI_Test_SetCaret) set_caret = nullptr;
+  decltype(&GraceUI_Test_SetCodePage) set_code_page = nullptr;
+  decltype(&GraceUI_Test_GetInput) get_input = nullptr;
+  decltype(&GraceUI_Test_GetChars) get_chars = nullptr;
+  decltype(&GraceUI_Test_GetInputCosts) input_costs = nullptr;
 
   bool load(const std::wstring& path) {
     module = LoadLibraryW(path.c_str());
@@ -539,8 +615,19 @@ struct GraceUi {
     reset_counters = function_of<decltype(reset_counters)>(module, "GraceUI_Test_ResetCounters");
     frame_costs = function_of<decltype(frame_costs)>(module, "GraceUI_Test_GetFrameCosts");
     log_line = function_of<decltype(log_line)>(module, "GraceUI_Test_GetLogLine");
+    hook_name = function_of<decltype(hook_name)>(module, "GraceUI_Test_GetHookName");
+    request_input = function_of<decltype(request_input)>(module, "GraceUI_Test_RequestInput");
+    release_input = function_of<decltype(release_input)>(module, "GraceUI_Test_ReleaseInput");
+    set_world = function_of<decltype(set_world)>(module, "GraceUI_Test_SetWorld");
+    set_caret = function_of<decltype(set_caret)>(module, "GraceUI_Test_SetCaret");
+    set_code_page = function_of<decltype(set_code_page)>(module, "GraceUI_Test_SetCodePage");
+    get_input = function_of<decltype(get_input)>(module, "GraceUI_Test_GetInput");
+    get_chars = function_of<decltype(get_chars)>(module, "GraceUI_Test_GetChars");
+    input_costs = function_of<decltype(input_costs)>(module, "GraceUI_Test_GetInputCosts");
     return version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
-           reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr;
+           reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
+           request_input != nullptr && release_input != nullptr && set_world != nullptr && set_caret != nullptr &&
+           set_code_page != nullptr && get_input != nullptr && get_chars != nullptr && input_costs != nullptr;
   }
 
   GraceUiTestState state() const {
@@ -550,6 +637,32 @@ struct GraceUi {
       fatal("GraceUI_Test_GetState refused");
     }
     return out;
+  }
+
+  GraceUiTestInput input() const {
+    GraceUiTestInput out{};
+    out.size = sizeof out;
+    if (get_input(&out) == 0) {
+      fatal("GraceUI_Test_GetInput refused");
+    }
+    return out;
+  }
+
+  GraceUiTestAnswer request(std::uint32_t owner, std::uint32_t kind, std::uint32_t wants) const {
+    GraceUiTestAnswer answer{};
+    if (request_input(owner, kind, wants, &answer) == 0) {
+      fatal("GraceUI_Test_RequestInput refused");
+    }
+    return answer;
+  }
+
+  std::vector<std::string> hooks() const {
+    std::vector<std::string> names;
+    char name[128];
+    for (std::uint32_t i = 0; hook_name(i, name, sizeof name) > 0; ++i) {
+      names.emplace_back(name);
+    }
+    return names;
   }
 
   void print_log() const {
@@ -568,6 +681,49 @@ const char* method_name(std::uint32_t method) {
     case GRACEUI_TEST_QUEUE_ONLY_DIRECT: return "the device's only direct queue seen executing";
     default: return "not found";
   }
+}
+
+// D102's published list: the only names a hook of GraceUI's may carry.
+constexpr const char* kPublishedHooks[] = {"IDXGISwapChain::Present", "IDXGISwapChain1::Present1",
+                                           "IDXGISwapChain::ResizeBuffers", "IDXGISwapChain3::ResizeBuffers1",
+                                           "ID3D12CommandQueue::ExecuteCommandLists", "the game's window procedure",
+                                           "IDirectInputDevice8::GetDeviceState", "XInputGetState"};
+
+// Every installed hook is named in D102's list (its name up to " in <DLL>"); answers the list, for the report.
+bool hooks_published(const GraceUi& grace, std::string& text) {
+  bool ok = true;
+  text.clear();
+  for (const std::string& name : grace.hooks()) {
+    const std::string base = name.substr(0, name.find(" in "));
+    bool listed = false;
+    for (const char* published : kPublishedHooks) {
+      listed = listed || base == published;
+    }
+    ok = ok && listed;
+    text += (text.empty() ? "" : ", ") + name + (listed ? "" : " (NOT PUBLISHED)");
+  }
+  return ok;
+}
+
+// The hooks this process should hold: the render half's five, GetDeviceState where DirectInput is loaded (one function
+// for the keyboard and the mouse under Wine), XInputGetState in each of the `xinput` XInput DLLs loaded before the
+// start, and the window procedure's filter; all of them in D102's list, installed in one run.
+bool hooks_as_expected(const GraceUi& grace, std::uint32_t xinput, std::string& why) {
+  const GraceUiTestState state = grace.state();
+  const GraceUiTestInput input = grace.input();
+  std::string names;
+  const bool published = hooks_published(grace, names);
+  char text[900];
+  std::snprintf(text, sizeof text,
+                "%u hooks in %u install run: the render half's %u, GetDeviceState %u, XInputGetState %u (of %u XInput "
+                "DLLs loaded), the window procedure %u; %s: %s",
+                state.hooks_installed, state.hook_install_runs, input.render_hooks, input.dinput_hooks,
+                input.xinput_hooks, xinput, input.window_filter, published ? "all in D102's list" : "NOT all in D102's list",
+                names.c_str());
+  why = text;
+  return published && state.hook_install_runs == 1 && input.render_hooks == 5 && input.dinput_hooks >= 1 &&
+         input.dinput_hooks <= 2 && input.xinput_hooks == xinput && input.window_filter == 1 &&
+         state.hooks_installed == input.render_hooks + input.dinput_hooks + input.xinput_hooks + input.window_filter;
 }
 
 std::wstring folder_of_this_program() {
@@ -671,9 +827,12 @@ void run_main(const std::wstring& dll) {
 
   start_host(game, grace);
   GraceUiTestState state = grace.state();
-  check(state.init_threads_started == 1 && state.hook_install_runs == 1 && state.hooks_installed == 5, "start",
-        "GraceUI_RequestApi(1) answered null and started %u init thread, which installed %u hooks in %u run",
-        state.init_threads_started, state.hooks_installed, state.hook_install_runs);
+  std::string hooks_why;
+  ok = hooks_as_expected(grace, 0, hooks_why);
+  const std::uint32_t hooks = state.hooks_installed;
+  check(ok && state.init_threads_started == 1, "start",
+        "GraceUI_RequestApi(1) answered null and started %u init thread, which installed %s",
+        state.init_threads_started, hooks_why.c_str());
 
   // 1. Nothing to draw: every frame passes through untouched, and the host still binds and warms up.
   Frame frame;
@@ -749,7 +908,7 @@ void run_main(const std::wstring& dll) {
   const void* table = grace.request_api(1);
   state = grace.state();
   check(table == nullptr && state.init_threads_started == 1 && state.hook_install_runs == 1 &&
-            state.hooks_installed == 5,
+            state.hooks_installed == hooks,
         "second request", "answered %s; init threads %u, install runs %u, hooks %u",
         table == nullptr ? "null" : "a table", state.init_threads_started, state.hook_install_runs,
         state.hooks_installed);
@@ -759,7 +918,7 @@ void run_main(const std::wstring& dll) {
   const void* table_again = grace.request_api(1);
   state = grace.state();
   check(again == grace.module && table_again == nullptr && state.init_threads_started == 1 &&
-            state.hook_install_runs == 1 && state.hooks_installed == 5,
+            state.hook_install_runs == 1 && state.hooks_installed == hooks,
         "second load", "LoadLibrary of the same file gave %s module; init threads %u, install runs %u, hooks %u",
         again == grace.module ? "the same" : "another", state.init_threads_started, state.hook_install_runs,
         state.hooks_installed);
@@ -784,7 +943,7 @@ void run_main(const std::wstring& dll) {
   state = grace.state();
   check(second.module != grace.module && second_table == nullptr &&
             second_state.host == GRACEUI_TEST_HOST_IDLE_COPY && second_state.init_threads_started == 0 &&
-            second_state.hooks_installed == 0 && state.hooks_installed == 5 && state.hook_install_runs == 1 && ok,
+            second_state.hooks_installed == 0 && state.hooks_installed == hooks && state.hook_install_runs == 1 && ok,
         "second copy",
         "another module (%s) answered null, idles (state %u) with %u init threads and %u hooks; the first keeps its %u "
         "hooks; %s",
@@ -926,6 +1085,644 @@ void run_two_queues(const std::wstring& dll) {
   grace.print_log();
 }
 
+// ---- The input half (D77, D125): a game that reads its keyboard and mouse through DirectInput and its pads through
+// XInput, and whose window gets the messages Windows sends it. Injected input (SendInput) reaches DirectInput and the
+// window alike; posted and sent messages reach the window only. The test panel stays on, so that Dear ImGui's frames run
+// with and without a holder.
+
+constexpr Colour kInputColour{30, 30, 30};
+constexpr std::uint32_t kPanelKind = GRACEUI_TEST_KIND_PANEL;
+constexpr UINT kScanA = 0x1E;
+constexpr UINT kScanK = 0x25;
+constexpr UINT kScanEscape = 0x01;
+constexpr UINT kScanF5 = 0x3F;
+
+class GameInput {
+ public:
+  void open(HWND window) {
+    require(DirectInput8Create(GetModuleHandleW(nullptr), DIRECTINPUT_VERSION, IID_IDirectInput8W,
+                               reinterpret_cast<void**>(&input_), nullptr),
+            "DirectInput8Create");
+    require(input_->CreateDevice(GUID_SysKeyboard, &keyboard_, nullptr), "a DirectInput keyboard");
+    require(keyboard_->SetDataFormat(&c_dfDIKeyboard), "c_dfDIKeyboard");
+    require(keyboard_->SetCooperativeLevel(window, DISCL_NONEXCLUSIVE | DISCL_BACKGROUND), "the keyboard's level");
+    require(input_->CreateDevice(GUID_SysMouse, &mouse_, nullptr), "a DirectInput mouse");
+    require(mouse_->SetDataFormat(&c_dfDIMouse2), "c_dfDIMouse2");
+    require(mouse_->SetCooperativeLevel(window, DISCL_NONEXCLUSIVE | DISCL_BACKGROUND), "the mouse's level");
+    keyboard_->Acquire();
+    mouse_->Acquire();
+  }
+
+  std::array<std::uint8_t, 256> keys() {
+    std::array<std::uint8_t, 256> state{};
+    if (FAILED(keyboard_->GetDeviceState(256, state.data()))) {
+      keyboard_->Acquire();
+      keyboard_->GetDeviceState(256, state.data());
+    }
+    return state;
+  }
+
+  DIMOUSESTATE2 mouse() {
+    DIMOUSESTATE2 state{};
+    if (FAILED(mouse_->GetDeviceState(sizeof state, &state))) {
+      mouse_->Acquire();
+      mouse_->GetDeviceState(sizeof state, &state);
+    }
+    return state;
+  }
+
+ private:
+  IDirectInput8W* input_ = nullptr;
+  IDirectInputDevice8W* keyboard_ = nullptr;
+  IDirectInputDevice8W* mouse_ = nullptr;
+};
+
+bool none_down(const std::array<std::uint8_t, 256>& keys) {
+  return std::all_of(keys.begin(), keys.end(), [](std::uint8_t key) { return key == 0; });
+}
+
+// A key as a keyboard sends it, with its virtual key and its scan code: Wine 9.0 leaves a key injected by scan code
+// alone without a virtual key in its window messages, and one injected by virtual key alone without a DirectInput code.
+void inject_key(UINT vk, UINT scan, bool down) {
+  INPUT input{};
+  input.type = INPUT_KEYBOARD;
+  input.ki.wVk = static_cast<WORD>(vk);
+  input.ki.wScan = static_cast<WORD>(scan);
+  input.ki.dwFlags = down ? 0u : static_cast<DWORD>(KEYEVENTF_KEYUP);
+  SendInput(1, &input, sizeof input);
+}
+
+void inject_mouse(LONG dx, LONG dy, DWORD flags) {
+  INPUT input{};
+  input.type = INPUT_MOUSE;
+  input.mi.dx = dx;
+  input.mi.dy = dy;
+  input.mi.dwFlags = flags;
+  SendInput(1, &input, sizeof input);
+}
+
+// Wine hands injected input to DirectInput from a thread of its own: a moment for it, and the window its messages.
+void settle() {
+  Sleep(60);
+  pump_messages();
+}
+
+// The cursor in the middle of the game window's client area, with the window in front and holding the keyboard focus:
+// a click elsewhere would hand the focus to whatever is under the cursor (the desktop, under Xvfb). Wine brings its key
+// state into line with the X server's on X focus and pointer-grab events, releasing any key injected before them (the
+// X server never saw it), so those events are let pass before any key is injected.
+void cursor_into(HWND window) {
+  RECT client{};
+  GetClientRect(window, &client);
+  POINT middle{(client.left + client.right) / 2, (client.top + client.bottom) / 2};
+  ClientToScreen(window, &middle);
+  SetCursorPos(middle.x, middle.y);
+  if (GetForegroundWindow() != window) {
+    SetForegroundWindow(window);
+  }
+  if (GetFocus() != window) {
+    SetFocus(window);
+  }
+  Sleep(100);
+  settle();
+}
+
+// A key message's lParam: the scan code, a repeat count of 1, and whether the key was down before (a repeat, or a
+// release).
+LPARAM key_lparam(UINT scan, bool was_down, bool releasing) {
+  LPARAM value = 1 | (static_cast<LPARAM>(scan) << 16);
+  if (was_down) {
+    value |= LPARAM{1} << 30;
+  }
+  if (releasing) {
+    value |= LPARAM{1} << 31;
+  }
+  return value;
+}
+
+void post_key(HWND window, UINT vk, UINT scan, bool down, bool repeat) {
+  PostMessageW(window, down ? WM_KEYDOWN : WM_KEYUP, vk, key_lparam(scan, down ? repeat : true, !down));
+}
+
+using XInputGetStateFn = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
+
+// Every pad's answer through every XInput DLL loaded, and the states they filled.
+std::vector<DWORD> read_pads(const std::vector<XInputGetStateFn>& pads) {
+  std::vector<DWORD> answers;
+  for (const XInputGetStateFn get_state : pads) {
+    for (DWORD user = 0; user < 4; ++user) {
+      XINPUT_STATE state{};
+      answers.push_back(get_state(user, &state));
+    }
+  }
+  return answers;
+}
+
+void frames(Game& game, int count) {
+  for (int i = 0; i < count; ++i) {
+    game.frame(kInputColour, PresentWith::present);
+  }
+}
+
+std::vector<std::uint32_t> chars_of(const GraceUi& grace) {
+  std::vector<std::uint32_t> chars(1024);
+  chars.resize(grace.get_chars(chars.data(), static_cast<std::uint32_t>(chars.size())));
+  return chars;
+}
+
+std::string code_points(const std::vector<std::uint32_t>& points) {
+  std::string text;
+  for (const std::uint32_t point : points) {
+    char one[16];
+    std::snprintf(one, sizeof one, "%sU+%04X", text.empty() ? "" : " ", point);
+    text += one;
+  }
+  return text;
+}
+
+const char* reason_name(std::uint32_t reason) {
+  switch (reason) {
+    case GRACEUI_TEST_CLOSED_RELEASED: return "released";
+    case GRACEUI_TEST_CLOSED_MENU_KEY: return "the menu key";
+    case GRACEUI_TEST_CLOSED_DANGER: return "danger";
+    case GRACEUI_TEST_CLOSED_LOADING: return "loading";
+    case GRACEUI_TEST_CLOSED_FOCUS_LOST: return "focus lost";
+    case GRACEUI_TEST_CLOSED_NO_RENDER: return "no render";
+    case GRACEUI_TEST_CLOSED_FAULT: return "a fault";
+    case GRACEUI_TEST_CLOSED_PLAYER: return "the player's exit";
+    default: return "none";
+  }
+}
+
+// A holder that takes everything; its cursor confinement's X events are let pass before anything is injected.
+bool take(const GraceUi& grace, Game& game, std::uint32_t owner, std::uint32_t kind) {
+  const GraceUiTestAnswer answer = grace.request(owner, kind, GRACEUI_TEST_WANT_ALL);
+  frames(game, 2);
+  Sleep(100);
+  settle();
+  return answer.answer == GRACEUI_TEST_GRANTED;
+}
+
+Spread spread_ns(std::vector<std::uint32_t> ns) { return spread_of(std::move(ns)); }
+
+std::vector<std::uint32_t> input_costs_of(const GraceUi& grace, std::uint32_t kind) {
+  std::vector<std::uint32_t> ns(4096);
+  ns.resize(grace.input_costs(kind, ns.data(), static_cast<std::uint32_t>(ns.size())));
+  return ns;
+}
+
+void run_input(const std::wstring& dll) {
+  Game game(false);
+  const HWND window = game.window();
+  cursor_into(window);
+  pump_messages();
+  GameInput reads;
+  reads.open(window);
+  // Three XInput DLLs, loaded before GraceUI starts: each is hooked, found by name (D69).
+  std::vector<XInputGetStateFn> pads;
+  for (const wchar_t* name : {L"xinput1_4.dll", L"xinput1_3.dll", L"xinput9_1_0.dll"}) {
+    if (const HMODULE module = LoadLibraryW(name)) {
+      if (const XInputGetStateFn get_state = function_of<XInputGetStateFn>(module, "XInputGetState")) {
+        pads.push_back(get_state);
+      }
+    }
+  }
+  const std::vector<DWORD> pads_before = read_pads(pads);
+
+  // The game's own reads, before GraceUI: an injected key and mouse movement reach DirectInput.
+  inject_key('A', kScanA, true);
+  settle();
+  const bool sees_key = (reads.keys()[DIK_A] & 0x80) != 0;
+  inject_key('A', kScanA, false);
+  settle();
+  reads.keys();
+  reads.mouse();
+  inject_mouse(30, 20, MOUSEEVENTF_MOVE);
+  settle();
+  const DIMOUSESTATE2 moved = reads.mouse();
+  cursor_into(window);
+  check(sees_key && moved.lX != 0 && !pads.empty(), "input harness",
+        "before GraceUI, DirectInput reads an injected key (%s) and mouse movement (%ld,%ld); %zu XInput DLLs loaded, "
+        "pad 0 answering %lu (Wine has no pad)",
+        sees_key ? "yes" : "no", moved.lX, moved.lY, pads.size(), pads_before.empty() ? 0ul : pads_before[0]);
+
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  grace.set_panel(1);
+  frames(game, 30);
+  std::string why;
+  bool ok = hooks_as_expected(grace, static_cast<std::uint32_t>(pads.size()), why);
+  check(ok, "input hooks", "%s", why.c_str());
+
+  // 1. No holder: the game's reads pass untouched, but for the menu key, which never reaches the game (§5.1).
+  g_seen = Seen{};
+  inject_key('A', kScanA, true);
+  settle();
+  std::array<std::uint8_t, 256> keys = reads.keys();
+  const bool key_passes = (keys[DIK_A] & 0x80) != 0;
+  inject_key(VK_F5, kScanF5, true);
+  settle();
+  keys = reads.keys();
+  const bool menu_key_hidden = keys[DIK_F5] == 0 && (keys[DIK_A] & 0x80) != 0;
+  inject_key(VK_F5, kScanF5, false);
+  inject_key('A', kScanA, false);
+  settle();
+  const bool released = none_down(reads.keys());
+  cursor_into(window);
+  reads.mouse();
+  inject_mouse(25, 10, MOUSEEVENTF_MOVE);
+  settle();
+  const DIMOUSESTATE2 move = reads.mouse();
+  inject_mouse(0, 0, MOUSEEVENTF_LEFTDOWN);
+  settle();
+  const DIMOUSESTATE2 button = reads.mouse();
+  inject_mouse(0, 0, MOUSEEVENTF_LEFTUP);
+  settle();
+  reads.mouse();
+  const bool pads_untouched = read_pads(pads) == pads_before;
+  check(key_passes && menu_key_hidden && released && move.lX != 0 && button.rgbButtons[0] == 0x80 && pads_untouched &&
+            g_seen.key_down['A'] == 1 && g_seen.key_down[VK_F5] == 0 && g_seen.key_up[VK_F5] == 0,
+        "pass-through",
+        "with no holder: A read %s, F5 read %s and its messages kept from the game (%d down, %d up), A's messages "
+        "the game's (%d down); mouse moved %ld,%ld and its button read 0x%02x; XInputGetState %s",
+        key_passes ? "down" : "UP", menu_key_hidden ? "up" : "DOWN", g_seen.key_down[VK_F5], g_seen.key_up[VK_F5],
+        g_seen.key_down['A'], move.lX, move.lY, button.rgbButtons[0],
+        pads_untouched ? "answered as before GraceUI" : "ANSWERED OTHERWISE");
+
+  // 2. request_input: granted; refused naming the holder; the holder asking again is told it holds input.
+  const GraceUiTestAnswer granted = grace.request(1, kPanelKind, GRACEUI_TEST_WANT_ALL);
+  const GraceUiTestAnswer refused = grace.request(2, GRACEUI_TEST_KIND_MODAL, GRACEUI_TEST_WANT_ALL);
+  const GraceUiTestAnswer again = grace.request(1, kPanelKind, GRACEUI_TEST_WANT_ALL);
+  const bool other_released = grace.release_input(2) != 0;
+  Sleep(100);
+  settle();
+  check(granted.answer == GRACEUI_TEST_GRANTED && refused.answer == GRACEUI_TEST_REFUSED && refused.owner == 1 &&
+            refused.kind == kPanelKind && again.answer == GRACEUI_TEST_GRANTED && again.generation == granted.generation &&
+            !other_released && grace.input().holder_owner == 1,
+        "request_input",
+        "answered granted (%u), then refused (%u) naming owner %u, kind %u; the holder asking again: %u, generation "
+        "%u; a release by another: %s",
+        granted.answer, refused.answer, refused.owner, refused.kind, again.answer, again.generation,
+        other_released ? "TAKEN" : "ignored");
+
+  // 3. While the holder has input: the game reads nothing, and the holder's view gets the keys. The button goes down
+  // before the key: under Xvfb, Wine releases a key injected before a click (see cursor_into).
+  frames(game, 3);
+  cursor_into(window);
+  g_seen = Seen{};
+  reads.mouse();
+  inject_mouse(25, 10, MOUSEEVENTF_MOVE);
+  inject_mouse(0, 0, MOUSEEVENTF_LEFTDOWN);
+  Sleep(100);
+  settle();
+  const DIMOUSESTATE2 held_mouse = reads.mouse();
+  inject_key('A', kScanA, true);
+  settle();
+  keys = reads.keys();
+  const bool a_really_down = (GetAsyncKeyState('A') & 0x8000) != 0;
+  const bool keys_neutral = none_down(keys) && a_really_down;
+  const bool pads_still = read_pads(pads) == pads_before;
+  frames(game, 3);
+  GraceUiTestInput input = grace.input();
+  check(keys_neutral && held_mouse.lX == 0 && held_mouse.lY == 0 && held_mouse.rgbButtons[0] == 0 && pads_still &&
+            g_seen.key_down['A'] == 0 && input.imgui_keys_down >= 1 && input.imgui_draws_cursor == 1,
+        "neutral",
+        "while a panel holds input, with A (down: %s) and the left button held: the keyboard reads %s, the mouse "
+        "%ld,%ld with its button 0x%02x; XInputGetState %s; A's messages kept from the game (%d); Dear ImGui sees %u "
+        "key down and draws its own cursor (%u)",
+        a_really_down ? "yes" : "NO", none_down(keys) ? "nothing" : "KEYS", held_mouse.lX, held_mouse.lY,
+        held_mouse.rgbButtons[0],
+        pads_still ? "untouched" : "CHANGED", g_seen.key_down['A'], input.imgui_keys_down, input.imgui_draws_cursor);
+
+  // 4. The closing press (invariant 8): the holder ends with A and the left button still held; the game reads neither
+  // until each is released, and never sees the press that began while the holder had input.
+  const bool closed = grace.release_input(1) != 0;
+  frames(game, 2);
+  keys = reads.keys();
+  const DIMOUSESTATE2 after_close = reads.mouse();
+  const bool held = (GetAsyncKeyState('A') & 0x8000) != 0 && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+  const bool masked = keys[DIK_A] == 0 && after_close.rgbButtons[0] == 0 && held;
+  Sleep(300);
+  const bool still_masked = reads.keys()[DIK_A] == 0 && (GetAsyncKeyState('A') & 0x8000) != 0;
+  inject_key('A', kScanA, false);
+  inject_mouse(0, 0, MOUSEEVENTF_LEFTUP);
+  settle();
+  reads.keys();
+  reads.mouse();
+  inject_key('A', kScanA, true);
+  inject_mouse(0, 0, MOUSEEVENTF_LEFTDOWN);
+  settle();
+  keys = reads.keys();
+  const DIMOUSESTATE2 pressed_again = reads.mouse();
+  const bool games_again = (keys[DIK_A] & 0x80) != 0 && pressed_again.rgbButtons[0] == 0x80;
+  inject_key('A', kScanA, false);
+  inject_mouse(0, 0, MOUSEEVENTF_LEFTUP);
+  settle();
+  reads.keys();
+  reads.mouse();
+  input = grace.input();
+  check(closed && masked && still_masked && games_again && g_seen.key_down['A'] == 1 && g_seen.key_up['A'] == 1 &&
+            input.last_close_reason == GRACEUI_TEST_CLOSED_RELEASED && input.holder_owner == 0,
+        "closing press",
+        "released (%s) with A and the button held: read %s, and A still %s 300 ms later; once released and pressed "
+        "again, the game's (%s); A's messages reaching the game: %d down and %d up, those of the second press only",
+        reason_name(input.last_close_reason), masked ? "up" : "DOWN", still_masked ? "up" : "DOWN",
+        games_again ? "yes" : "NO", g_seen.key_down['A'], g_seen.key_up['A']);
+
+  // 5. Characters: posted WM_CHAR units, a pair, a lone high half, a lone low half and swapped halves among them, and
+  // WM_UNICHAR, reach Dear ImGui as code points, and the game none of them.
+  take(grace, game, 1, kPanelKind);
+  grace.reset_counters();
+  g_seen = Seen{};
+  const std::uint16_t units[] = {'G', 'r', 0xE2, 0xD83D, 0xDE00, 0xD83D, 'x', 0xDE00, 'z', 0xDE00, 0xD83D, 'y'};
+  for (const std::uint16_t unit : units) {
+    PostMessageW(window, WM_CHAR, unit, 1);
+  }
+  PostMessageW(window, WM_UNICHAR, 0x1F642, 0);
+  const LRESULT takes_unichar = SendMessageW(window, WM_UNICHAR, UNICODE_NOCHAR, 0);
+  frames(game, 6);
+  const std::vector<std::uint32_t> got = chars_of(grace);
+  const std::vector<std::uint32_t> want = {'G', 'r', 0xE2, 0x1F600, 0xFFFD, 'x', 0xFFFD, 'z', 0xFFFD, 0xFFFD, 'y',
+                                           0x1F642};
+  check(got == want && takes_unichar == TRUE && g_seen.chars == 0, "characters",
+        "Dear ImGui received %s (wanted %s); WM_UNICHAR taken (%s); character messages reaching the game: %d",
+        code_points(got).c_str(), code_points(want).c_str(), takes_unichar == TRUE ? "yes" : "NO", g_seen.chars);
+
+  // 6. The IME's composition window at the holder's caret, and its messages kept from the game.
+  grace.set_caret(120, 80, 18);
+  SendMessageW(window, WM_IME_STARTCOMPOSITION, 0, 0);
+  COMPOSITIONFORM composition{};
+  const HIMC context = ImmGetContext(window);
+  const bool read_form = context != nullptr && ImmGetCompositionWindow(context, &composition) != FALSE;
+  if (context != nullptr) {
+    ImmReleaseContext(window, context);
+  }
+  SendMessageW(window, WM_IME_ENDCOMPOSITION, 0, 0);
+  check(read_form && composition.dwStyle == CFS_FORCE_POSITION && composition.ptCurrentPos.x == 120 &&
+            composition.ptCurrentPos.y == 80 && g_seen.ime == 0,
+        "IME", "the composition window placed at %ld,%ld (style 0x%lx) for a caret at 120,80; IME messages reaching the "
+        "game: %d",
+        composition.ptCurrentPos.x, composition.ptCurrentPos.y, static_cast<unsigned long>(composition.dwStyle),
+        g_seen.ime);
+
+  // 7. The player's exit: Escape held 1 s ends any holder, and neither its press, its repeats nor its release reach
+  // the game (its menu would open).
+  g_seen = Seen{};
+  post_key(window, VK_ESCAPE, kScanEscape, true, false);
+  const DWORD escape_start = GetTickCount();
+  while (GetTickCount() - escape_start < 1500 && grace.input().holder_owner != 0) {
+    post_key(window, VK_ESCAPE, kScanEscape, true, true);
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(30);
+  }
+  const DWORD held_for = GetTickCount() - escape_start;
+  input = grace.input();
+  post_key(window, VK_ESCAPE, kScanEscape, true, true);
+  post_key(window, VK_ESCAPE, kScanEscape, false, false);
+  frames(game, 2);
+  const int escape_messages = g_seen.key_down[VK_ESCAPE] + g_seen.key_up[VK_ESCAPE];
+  post_key(window, VK_ESCAPE, kScanEscape, true, false);
+  post_key(window, VK_ESCAPE, kScanEscape, false, false);
+  frames(game, 2);
+  check(input.holder_owner == 0 && input.last_close_reason == GRACEUI_TEST_CLOSED_PLAYER && held_for >= 950 &&
+            escape_messages == 0 && g_seen.key_down[VK_ESCAPE] == 1 && g_seen.key_up[VK_ESCAPE] == 1,
+        "Escape held",
+        "the holder ended (%s) after %lu ms of Escape held; Escape's messages reaching the game meanwhile: %d; the next "
+        "press: %d down, %d up",
+        reason_name(input.last_close_reason), static_cast<unsigned long>(held_for), escape_messages,
+        g_seen.key_down[VK_ESCAPE], g_seen.key_up[VK_ESCAPE]);
+
+  // 8. The menu key: with a panel holding input, the first press says "‹Mod› has the controls" and the second within
+  // 2 s is the player's exit; with the menu holding it, one press closes it. The game never sees it.
+  take(grace, game, 1, kPanelKind);
+  g_seen = Seen{};
+  const std::uint32_t notices = grace.input().notices;
+  post_key(window, VK_F5, kScanF5, true, false);
+  post_key(window, VK_F5, kScanF5, false, false);
+  frames(game, 2);
+  input = grace.input();
+  const bool warned = input.notices == notices + 1 && input.holder_owner == 1;
+  post_key(window, VK_F5, kScanF5, true, false);
+  post_key(window, VK_F5, kScanF5, false, false);
+  frames(game, 2);
+  const GraceUiTestInput exited = grace.input();
+  take(grace, game, 3, GRACEUI_TEST_KIND_MENU);
+  post_key(window, VK_F5, kScanF5, true, false);
+  post_key(window, VK_F5, kScanF5, false, false);
+  frames(game, 2);
+  input = grace.input();
+  check(warned && exited.holder_owner == 0 && exited.last_close_reason == GRACEUI_TEST_CLOSED_PLAYER &&
+            input.holder_owner == 0 && input.last_close_reason == GRACEUI_TEST_CLOSED_MENU_KEY &&
+            g_seen.key_down[VK_F5] == 0 && g_seen.key_up[VK_F5] == 0,
+        "menu key",
+        "a panel: the first press %s, the second ended it (%s); the menu: one press ended it (%s); F5's messages "
+        "reaching the game: %d",
+        warned ? "warned" : "DID NOT WARN", reason_name(exited.last_close_reason), reason_name(input.last_close_reason),
+        g_seen.key_down[VK_F5] + g_seen.key_up[VK_F5]);
+
+  // 9. The opening press: K held as the holder takes input does nothing in it until released.
+  inject_key('K', kScanK, true);
+  settle();
+  reads.keys();
+  take(grace, game, 1, kPanelKind);
+  frames(game, 2);
+  const std::uint32_t inert = grace.input().imgui_keys_down;
+  inject_key('K', kScanK, false);
+  settle();
+  frames(game, 2);
+  inject_key('K', kScanK, true);
+  settle();
+  frames(game, 3);
+  const std::uint32_t fresh = grace.input().imgui_keys_down;
+  check(inert == 0 && fresh >= 1, "opening press",
+        "K held as the panel took input: Dear ImGui saw %u key down; released and pressed again: %u", inert, fresh);
+
+  // 10. Focus loss ends the holder and releases every key Dear ImGui saw held (K is still down).
+  const HWND other = CreateWindowExW(0, L"GraceHarness", L"other", WS_OVERLAPPEDWINDOW, 700, 400, 200, 120, nullptr,
+                                     nullptr, GetModuleHandleW(nullptr), nullptr);
+  const std::uint32_t keys_before = grace.input().imgui_keys_down;
+  const bool focused_before = GetFocus() == window && grace.input().holder_owner == 1;
+  g_seen = Seen{};
+  ShowWindow(other, SW_SHOW);  // a new window shown in front takes the activation and the focus
+  SetForegroundWindow(other);
+  SetFocus(other);
+  pump_messages();
+  frames(game, 3);
+  input = grace.input();
+  check(focused_before && keys_before >= 1 && input.holder_owner == 0 &&
+            input.last_close_reason == GRACEUI_TEST_CLOSED_FOCUS_LOST && input.imgui_keys_down == 0 &&
+            g_seen.kill_focus >= 1,
+        "focus loss",
+        "with a panel holding input and %u key down in Dear ImGui, the window lost the focus (WM_KILLFOCUS reached the "
+        "game: %d): the holder ended (%s), and Dear ImGui sees %u key down",
+        keys_before, g_seen.kill_focus, reason_name(input.last_close_reason), input.imgui_keys_down);
+  inject_key('K', kScanK, false);
+  settle();
+  cursor_into(window);
+  if (other != nullptr) {
+    DestroyWindow(other);
+  }
+  pump_messages();
+  frames(game, 3);
+
+  // 11. A provider's danger: request_input answers not_now, and a holder ends (invariant 9).
+  grace.set_world(GRACEUI_TEST_WORLD_DANGER);
+  const GraceUiTestAnswer in_danger = grace.request(1, kPanelKind, GRACEUI_TEST_WANT_ALL);
+  grace.set_world(0);
+  take(grace, game, 1, kPanelKind);
+  grace.set_world(GRACEUI_TEST_WORLD_DANGER);
+  input = grace.input();
+  grace.set_world(0);
+  check(in_danger.answer == GRACEUI_TEST_NOT_NOW && in_danger.why == GRACEUI_TEST_NOT_NOW_DANGER &&
+            input.holder_owner == 0 && input.last_close_reason == GRACEUI_TEST_CLOSED_DANGER,
+        "danger", "request_input in danger: answer %u, reason %u; a holder when danger came: ended (%s)",
+        in_danger.answer, in_danger.why, reason_name(input.last_close_reason));
+
+  // 12. 2 s without an overlay frame ends the holder (the game reads input on, presenting nothing).
+  frames(game, 3);
+  take(grace, game, 1, kPanelKind);
+  const DWORD quiet_start = GetTickCount();
+  while (GetTickCount() - quiet_start < 4000 && grace.input().holder_owner != 0) {
+    reads.keys();
+    pump_messages();
+    Sleep(100);
+  }
+  const DWORD quiet_for = GetTickCount() - quiet_start;
+  input = grace.input();
+  frames(game, 5);
+  check(input.holder_owner == 0 && input.last_close_reason == GRACEUI_TEST_CLOSED_NO_RENDER && quiet_for >= 1900,
+        "no render", "with no frame presented, the holder ended (%s) after %lu ms", reason_name(input.last_close_reason),
+        static_cast<unsigned long>(quiet_for));
+
+  // 13. The input half's own cost per message and per read, and no allocation in it or on the present thread, with a
+  // holder's frames fed every frame.
+  grace.reset_counters();
+  for (int i = 0; i < 1000; ++i) {
+    reads.keys();
+    reads.mouse();
+    read_pads(pads);
+    PostMessageW(window, WM_MOUSEMOVE, 0, MAKELPARAM(i % 600, 100));
+    if (i % 20 == 0) {
+      pump_messages();
+    }
+  }
+  pump_messages();
+  const Spread idle_window = spread_ns(input_costs_of(grace, GRACEUI_TEST_COST_WINDOW));
+  const Spread idle_dinput = spread_ns(input_costs_of(grace, GRACEUI_TEST_COST_DINPUT));
+  const Spread idle_xinput = spread_ns(input_costs_of(grace, GRACEUI_TEST_COST_XINPUT));
+  const GraceUiTestState idle_state = grace.state();
+
+  // A holder's frames as a player types and moves the mouse: a move every frame, a key pressed or released and a
+  // character every fourth (15 characters a second at 60 frames a second), the GPU idle before each frame as for
+  // the render half's frame cost.
+  take(grace, game, 1, kPanelKind);
+  const auto busy_frame = [&](int i) {
+    PostMessageW(window, WM_MOUSEMOVE, 0, MAKELPARAM(100 + i % 300, 120));
+    if (i % 4 == 0) {
+      PostMessageW(window, WM_CHAR, 'a' + i % 26, 1);
+      post_key(window, 'J', 0x24, i % 8 == 0, false);
+    }
+    reads.keys();
+    reads.mouse();
+    read_pads(pads);
+    game.frame(kInputColour, PresentWith::present);
+    game.wait_idle();
+  };
+  for (int i = 0; i < 60; ++i) {
+    busy_frame(i);
+  }
+  grace.reset_counters();
+  const GraceUiTestState busy_before = grace.state();
+  for (int i = 0; i < 300; ++i) {
+    busy_frame(i);
+  }
+  const GraceUiTestState busy = grace.state();
+  input = grace.input();
+  const Spread held_window = spread_ns(input_costs_of(grace, GRACEUI_TEST_COST_WINDOW));
+  const Spread held_dinput = spread_ns(input_costs_of(grace, GRACEUI_TEST_COST_DINPUT));
+  const Spread held_xinput = spread_ns(input_costs_of(grace, GRACEUI_TEST_COST_XINPUT));
+  const Costs held_frames = frame_costs(grace);
+  grace.release_input(1);
+  frames(game, 2);
+  check(idle_state.allocations == 0 && idle_state.frees == 0 && busy.allocations == 0 && busy.frees == 0 &&
+            input.events_dropped == 0,
+        "input allocations",
+        "in the filter, the detours and the present thread: %llu allocations and %llu frees over 1000 reads and "
+        "messages with no holder; %llu and %llu over %llu frames with a holder fed every frame; %u events dropped",
+        static_cast<unsigned long long>(idle_state.allocations), static_cast<unsigned long long>(idle_state.frees),
+        static_cast<unsigned long long>(busy.allocations), static_cast<unsigned long long>(busy.frees),
+        static_cast<unsigned long long>(busy.frames_drawn - busy_before.frames_drawn), input.events_dropped);
+  check(idle_window.p99_us <= 50 && idle_dinput.p99_us <= 50 && idle_xinput.p99_us <= 50 && held_window.p99_us <= 50 &&
+            held_dinput.p99_us <= 50 && held_xinput.p99_us <= 50,
+        "input cost",
+        "GraceUI's own work (budget: p99 50 us each, EST), median / p99 in us: with no holder, the window filter "
+        "%.2f / %.2f per message, GetDeviceState %.2f / %.2f per read, XInputGetState %.2f / %.2f; with a holder, "
+        "%.2f / %.2f, %.2f / %.2f, %.2f / %.2f",
+        idle_window.median_us, idle_window.p99_us, idle_dinput.median_us, idle_dinput.p99_us, idle_xinput.median_us,
+        idle_xinput.p99_us, held_window.median_us, held_window.p99_us, held_dinput.median_us, held_dinput.p99_us,
+        held_xinput.median_us, held_xinput.p99_us);
+  check(held_frames.count >= 300 && held_frames.own.p99_us <= 1000.0, "holder frame cost",
+        "with a holder fed every frame and its cursor drawn, over %u frames: GraceUI's own work median %.1f us, p99 "
+        "%.1f us (budget: p99 1000 us); the whole detour median %.1f us, p99 %.1f us",
+        held_frames.count, held_frames.own.median_us, held_frames.own.p99_us, held_frames.total.median_us,
+        held_frames.total.p99_us);
+
+  const GraceUiTestState state = grace.state();
+  check(state.render_off == 0 && grace.input().input_off == 0 && state.hook_install_runs == 1, "input path",
+        "the render path and input still on after every check; %llu presents, %llu frames drawn, %llu fed by a holder",
+        static_cast<unsigned long long>(state.presents), static_cast<unsigned long long>(state.frames_drawn),
+        static_cast<unsigned long long>(grace.input().frames_fed));
+  grace.print_log();
+}
+
+// ---- An ANSI game window: its character messages carry bytes in the keyboard's code page, a double-byte character in
+// two of them, or whole in WM_IME_CHAR; the filter joins and decodes them before Dear ImGui sees them.
+
+void run_input_ansi(const std::wstring& dll) {
+  g_ansi = true;
+  Game game(false);
+  const HWND window = game.window();
+  SetForegroundWindow(window);
+  SetFocus(window);
+  pump_messages();
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  grace.set_panel(1);
+  frames(game, 30);
+  GraceUiTestInput input = grace.input();
+  const bool ansi = input.window_filter == 1 && input.window_unicode == 0 && IsWindowUnicode(window) == FALSE;
+  const bool granted = take(grace, game, 1, kPanelKind);
+  grace.reset_counters();
+  g_seen = Seen{};
+  grace.set_code_page(1252);
+  PostMessageA(window, WM_CHAR, 'a', 1);
+  PostMessageA(window, WM_CHAR, 0xE9, 1);  // é in Windows-1252
+  frames(game, 4);
+  grace.set_code_page(932);
+  PostMessageA(window, WM_CHAR, 0x82, 1);  // あ in Shift-JIS, a lead byte and a trail byte in two messages
+  PostMessageA(window, WM_CHAR, 0xA0, 1);
+  frames(game, 4);
+  SendMessageA(window, WM_IME_CHAR, 0x82A2, 1);  // い, whole, as an IME sends it (the lead byte high)
+  SendMessageA(window, WM_UNICHAR, 0x1F600, 0);
+  frames(game, 4);
+  grace.set_code_page(0);
+  const std::vector<std::uint32_t> got = chars_of(grace);
+  const std::vector<std::uint32_t> want = {'a', 0xE9, 0x3042, 0x3044, 0x1F600};
+  input = grace.input();
+  check(ansi && granted && got == want && g_seen.chars == 0, "ANSI characters",
+        "an ANSI window, filtered as one (%s); Dear ImGui received %s (wanted %s); character messages reaching the "
+        "game: %d",
+        ansi ? "yes" : "NO", code_points(got).c_str(), code_points(want).c_str(), g_seen.chars);
+  grace.release_input(1);
+  grace.print_log();
+}
+
 int run_child(const std::wstring& dll, const wchar_t* scenario) {
   wchar_t program[MAX_PATH];
   GetModuleFileNameW(nullptr, program, MAX_PATH);
@@ -959,13 +1756,23 @@ int wmain(int argc, wchar_t** argv) {
   if (scenario == L"two-queues") {
     std::printf("-- scenario: two direct queues\n");
     run_two_queues(dll);
+  } else if (scenario == L"input") {
+    std::printf("-- scenario: the input half\n");
+    run_input(dll);
+  } else if (scenario == L"input-ansi") {
+    std::printf("-- scenario: the input half on an ANSI window\n");
+    run_input_ansi(dll);
   } else {
     std::printf("-- scenario: one direct queue\n");
     run_main(dll);
     if (scenario.empty()) {
-      std::fflush(stdout);
-      const int child = run_child(dll, L"two-queues");
-      check(child == 0, "two-queues scenario", "its process ended with %d", child);
+      for (const wchar_t* child_scenario : {L"two-queues", L"input", L"input-ansi"}) {
+        std::fflush(stdout);
+        const int child = run_child(dll, child_scenario);
+        char name[64];
+        std::snprintf(name, sizeof name, "%ls scenario", child_scenario);
+        check(child == 0, name, "its process ended with %d", child);
+      }
     }
   }
   std::printf("-- %d passed, %d failed\n", g_passed, g_failed);
