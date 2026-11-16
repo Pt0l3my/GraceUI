@@ -54,14 +54,14 @@ see the dashboard.
 | `docs/research/` | The studies behind it, in our own words |
 | `docs/eldennet-changes.md` | What EldenNet's design needs to change for GraceUI |
 | `docs/proposals/` | Proposals put to the owner: the framework (0001) and the map (0002) |
-| `crates/grace-protocol` | The bridge protocol's types (Rust; TypeScript generated from them) |
-| `crates/grace-view` | The menu's structure, focus and input rules, without a renderer |
-| `crates/grace-draw` | The in-game view's drawing: the menu as vertex lists, without a renderer |
-| `crates/graceui` | `graceui.dll`, the host: the game's one overlay, the public C ABI, the menu and the server |
-| `crates/grace-abi` | The public C ABI and its header, `graceui.h` |
-| `crates/graceui-sys` | The helper a mod uses to find GraceUI and call it (Rust, with a header-only C version) |
-| `crates/grace-serve` | The loopback server for the browser dashboard, inside `graceui.dll` |
-| `crates/grace-host` | The overlay inside `graceui.dll`: hudhook, its hooks, the controls and the drawing of every mod's panels |
+| `src/grace-protocol` | The bridge protocol's types (C++; they and the web app's TypeScript types are generated from one schema) |
+| `src/grace-view` | The menu's structure, focus and input rules, without a renderer |
+| `src/grace-draw` | The in-game view's drawing: the menu as vertex lists, without a renderer |
+| `src/graceui` | `graceui.dll`, the host: the game's one overlay, the public C ABI, the menu and the server |
+| `src/grace-abi` | The public C ABI and its header, `graceui.h` |
+| `src/graceui-sys` | The helper a mod uses to find GraceUI and call it (a header-only C helper, with a thin C++ wrapper) |
+| `src/grace-serve` | The loopback server for the browser dashboard, inside `graceui.dll`: our own small server (G30) |
+| `src/grace-host` | The overlay inside `graceui.dll`: Dear ImGui's DX12 and Win32 backends with MinHook, its hooks, the controls and the drawing of every mod's panels |
 | `pages/` | The menu's categories and pages, as data |
 | `tokens/grace.toml` | The Grace theme's colours, sizes and timings |
 | `web/` | The browser app (TypeScript) |

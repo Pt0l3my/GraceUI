@@ -11,11 +11,11 @@ Magelight UI and PrismaUI are for Skyrim; EldenNet requires it as a dependency a
 menu and dashboard become its first user. What this changes is in [proposal 0001](docs/proposals/0001-ui-framework.md),
 put to the owner as G15–G20. **Decided the same day, as recommended:** G15, GraceUI owns the one overlay (hudhook, its
 MinHook, the Present hook and the input hooks move into `graceui.dll` with every rule of EldenNet's O25, and EldenNet
-draws through GraceUI), superseding G10; G16, other mods write page data and checked panels, no HTML in game; G17,
-GraceUI serves the browser view for every mod that opts in. G18–G20 are Open. **Folded on 2026-11-15** (EldenNet's
-roadmap S7.8.c): DESIGN.md now holds the design as G15–G17 decided it (proposal 0001's parts, adopted), the map's
-decisions G21–G27 (proposal 0002) and the D-entries they settle; the rules and invariants below follow it. What
-depends on G18–G20 stays as written until the owner answers.
+draws through GraceUI), superseding G10, on Dear ImGui and MinHook since 2026-11-16 (EldenNet's O25 as changed); G16,
+other mods write page data and checked panels, no HTML in game; G17, GraceUI serves the browser view for every mod that
+opts in. G18–G20 are Open. **Folded on 2026-11-15** (EldenNet's roadmap S7.8.c): DESIGN.md now holds the design as
+G15–G17 decided it (proposal 0001's parts, adopted), the map's decisions G21–G27 (proposal 0002) and the D-entries they
+settle; the rules and invariants below follow it. What depends on G18–G20 stays as written until the owner answers.
 
 - The design is [docs/DESIGN.md](docs/DESIGN.md); the evidence is in [docs/research/](docs/research/README.md); what
   EldenNet must change is in [docs/eldennet-changes.md](docs/eldennet-changes.md).
