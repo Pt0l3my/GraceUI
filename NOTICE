@@ -1,0 +1,149 @@
+GraceUI
+=======
+
+GraceUI's own code is under the MIT License: see LICENSE.
+
+graceui.dll also contains the third-party code below, compiled into its grace-host module only (D107, invariant 16).
+GraceUI's build downloads each file at configure time from the project's own repository, at the commit of the pinned
+tag, and checks it against its SHA-256 (cmake/third_party.cmake); no copy is kept in this repository. Changing either
+version needs the owner's approval, after its licence files are read again (D107). Both licences were read in full on
+2026-11-16: neither has a clause on the use of AI. Dear ImGui's pull-request template asks its contributors not to send
+AI-generated prose; that is a rule for contributions to that project, not a term of its licence, and GraceUI sends it
+nothing.
+
+The Microsoft C runtime is linked into graceui.dll statically, under Microsoft's terms for its redistribution; the
+runtime and the Windows SDK are downloaded by xwin outside every repository and are never kept in one (BUILD.md).
+
+
+Dear ImGui 1.93.0
+-----------------
+
+Source:   https://github.com/ocornut/imgui, tag v1.93.0, commit c1aaac65e896a45f81f47a4d68f9959e0f86c859
+Licence:  MIT (below)
+Used:     the core and two of its backends, DirectX 12 and Win32 (the Win32 one built without its gamepad code)
+
+SHA-256 of each file used:
+  173506a2d6f7fb67990d257fb2507f188690eca39060c39469ae7bef43aae2a3  LICENSE.txt
+  fa91f606da783669ffd485f3f9e0cd0d92cddeac459efce4c2b9327cce7a3233  imconfig.h
+  314462301948fbd5673f5ead6f9a53acf54767cbee57e186e69f8f8b022c7094  imgui.h
+  9542082a1eaeffcab7b3d8069e707839ce1714d167005e9f273ac9f656b415ed  imgui.cpp
+  fff3bb04ca11e32041144e83a37b89ec92f4d5c62d681eb7ef29ee6cd7663e84  imgui_draw.cpp
+  61bc50172d907cc931159cdce48fbff1db616cda33251c9c3469e316056939e6  imgui_internal.h
+  36635c1cf2ad1b7c88cdced456cceba3a1d02266d78a63d77e9cce92f4d48d61  imgui_tables.cpp
+  d2d388f711688f6a5ce1ae3b30168c1bf4f954ead40235b0b2b9667452850c93  imgui_widgets.cpp
+  889b396795202d1457560a797a7242e96f6f132d4b88ca2d69be58bf05e1771f  imstb_rectpack.h
+  a985f5fa0ed97353d493b497961e9eef52082edcd045cf6954b69990ec9d0741  imstb_textedit.h
+  c51a0f7e7ea760f2366bd3752635ec58e21fccfec4a832501639990ba6ce0528  imstb_truetype.h
+  f9b26b6994e33c2fb80b343c076273564fde9ed3859685f0c2c52428c4634ebf  backends/imgui_impl_dx12.h
+  b3a780be746161f8a869729f354ad5a23ff1b0800ba77d386d0c52c8150fbc56  backends/imgui_impl_dx12.cpp
+  2736595b8de1e56871661d5d9b96deec567d35521746fbe2ade8f0543acdfd2b  backends/imgui_impl_win32.h
+  6a602ce28470bb209636c40633156e63a530acd49f137819d837d80688d52df6  backends/imgui_impl_win32.cpp
+
+    The MIT License (MIT)
+
+    Copyright (c) 2014-2026 Omar Cornut
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+Dear ImGui includes, and graceui.dll therefore contains:
+
+- stb_rect_pack, stb_textedit and stb_truetype (imstb_*.h), by Sean Barrett, under a choice of the MIT License
+  (Copyright (c) 2017 Sean Barrett; the text is the MIT text above, with that line) or the public domain; GraceUI takes
+  them under the MIT License.
+- The ProggyClean font, embedded in imgui_draw.cpp: MIT License, Copyright (c) 2004, 2005 Tristan Grimmer (the text is
+  the MIT text above, with that line).
+- The ProggyForever font, minimal version, embedded in imgui_draw.cpp: MIT License, Copyright (c) 2026 Disco Hello,
+  Copyright (c) 2019,2023 Tristan Grimmer (the text is the MIT text above, with those lines).
+
+GraceUI's build leaves out Dear ImGui's obsolete functions (IMGUI_DISABLE_OBSOLETE_FUNCTIONS), and with them the table
+of Japanese characters that imgui_draw.cpp otherwise holds.
+
+
+MinHook 1.3.4
+-------------
+
+Source:   https://github.com/TsudaKageyu/minhook, tag v1.3.4, commit c3fcafdc10146beb5919319d0683e44e3c30d537
+Licence:  BSD 2-Clause, for MinHook and for the Hacker Disassembler Engine 64 it contains (both below)
+Used:     its hook engine and the 64-bit Hacker Disassembler Engine (src/buffer.c, src/hook.c, src/trampoline.c,
+          src/hde/hde64.c and their headers)
+
+SHA-256 of each file used:
+  d5c2224982b0b95a16b098a561335fa93f3eaf4d0aa964b7843edb986df78dc8  LICENSE.txt
+  62dff05e63155c6bf8135c36a0d79dedbdcaaede9da26fe38daf0bea34323e38  include/MinHook.h
+  0ab484d7870c3a8e7a3a1ee61e2070072cf445ed85b619d4c4207fed34356d99  src/buffer.c
+  9769702bd625249e59a19ede05c84365fcc7707e1fa0e5df08df42227cee13e3  src/buffer.h
+  edcce4c81985d7dd5b73feae96d6498c8f749b1bca4c3d2d9926ea9a17a84755  src/hook.c
+  f13a169f803ff5a8e45c58ce668b4377a9878c0fc4452369b8a1325065186b2b  src/trampoline.c
+  53ed9934492320617a27bfd952ffe7f5b7a4a1d09963d4512447082fe7b727b4  src/trampoline.h
+  824eafa315322e6da105a7ce4ec1fc0e0adeee0106d32152fbb0b59e709bd15c  src/hde/hde64.c
+  e99aa4997bda14b534c614c3d8cb78a72c4aca91a1212c8b03ec605d1d75e36e  src/hde/hde64.h
+  b774446d2f110ce954fb0a710f4693c5562ddbd8d56fe84106f2ee80db8b50a2  src/hde/table64.h
+  604d1cdf45c5a95bc9cf1bbf39ca05ef83013541101d34971c5cd7577e3d5247  src/hde/pstdint.h
+
+    MinHook - The Minimalistic API Hooking Library for x64/x86
+    Copyright (C) 2009-2017 Tsuda Kageyu.
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions
+    are met:
+
+     1. Redistributions of source code must retain the above copyright
+        notice, this list of conditions and the following disclaimer.
+     2. Redistributions in binary form must reproduce the above copyright
+        notice, this list of conditions and the following disclaimer in the
+        documentation and/or other materials provided with the distribution.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+    TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER
+    OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+    EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+    PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+    PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+    LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+    Hacker Disassembler Engine 64 C
+    Copyright (c) 2008-2009, Vyacheslav Patkov.
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions
+    are met:
+
+     1. Redistributions of source code must retain the above copyright
+        notice, this list of conditions and the following disclaimer.
+     2. Redistributions in binary form must reproduce the above copyright
+        notice, this list of conditions and the following disclaimer in the
+        documentation and/or other materials provided with the distribution.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+    TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+    CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+    EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+    PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+    PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+    LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
