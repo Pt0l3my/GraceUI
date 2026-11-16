@@ -1,7 +1,7 @@
 # Changes EldenNet's design needs for GraceUI
 
 A short list for EldenNet's design (branch `design/v1-proposal`), from [GraceUI's design](DESIGN.md). EldenNet's codes
-(DESIGN, ARCH, NPC, MEM, ER02) refer to its documents; "GraceUI §n", G1–G30 and D1–D114 to GraceUI's. Nothing in §1 to
+(DESIGN, ARCH, NPC, MEM, ER02) refer to its documents; "GraceUI §n", G1–G30 and D1–D136 to GraceUI's. Nothing in §1 to
 §10 is changed in EldenNet yet, apart from the roster, which EldenNet's design now records (its O43 as updated, O45 and
 O46; §9 item 1); §11, the framework's changes, was folded into EldenNet's design on 2026-11-15 (roadmap S7.8.c), and
 where it and an earlier item disagree, §11 holds. Items marked **(G*n*)** come from that entry of GraceUI's
@@ -481,3 +481,34 @@ GraceUI's own pages (Menu, Hotkeys, Browser view), and EldenNet's pages carry on
 keys of its own instead of GraceUI's: `ui.home_cards` (was `ui.menu.home_cards`) and `ui.show_world` (was
 `ui.menu.show_world`), in its `settings.toml`; its Settings page keeps General, Hotkeys (its own: talk, skip page,
 debug) and Developer.
+
+## 14. ABI 1, the anti-cheat check and two copies (S10.4.b, 2026-11-16)
+
+What GraceUI's 0.1 host settled on 2026-11-16 (D131 to D136; EldenNet's roadmap S10.4.b) asks of EldenNet. None of it
+is folded into EldenNet's design yet.
+
+1. **Connecting** (D131, D136; ARCH §3.2's Connect and ConnectB): T1 finds GraceUI with `graceui-sys` (`graceui_sys.h`,
+   or its C++ wrapper `graceui::Api::find`), on T1 and never in `DllMain`, allowing the load from `Game\GraceUI\`
+   (`GRACEUI_SYS_LOAD`), for at most 30 s, then connects as `eldennet` (its id, `[a-z0-9-]{3,32}`, also its space's
+   id), its display name, its version, its GraceUI floor (0.1.0 for v0.1) and the caps it uses (`notices` for v0.1).
+   The answers: ok, as designed; inactive with `GRACEUI_INACTIVE_ANTI_CHEAT`, the banner through `notice` (item 2);
+   inactive with another reason (the overlay could not start, or turned itself off), too_old (GraceUI has already
+   shown a notice naming EldenNet and both versions), duplicate_id (another mod took the id) or refused: a failed
+   connect, EldenNet headless at L2 with one log line, as ARCH §10.3's "Overlay failed to install" row has it.
+2. **The banner and toasts as notices** (D134): a notice is a tone (normal, warning or danger: gold, ember or rot), a
+   key, a duration and 1 to 512 bytes of UTF-8 text. The banner is one notice under a key of EldenNet's with a duration
+   of 0, shown until EldenNet withdraws it with an empty text under the same key, or replaces its text in place; the
+   pause badge likewise under its own key; a toast is a timed notice. At most four of a mod's notices show at once, a
+   fifth answering full: the banner, the pause badge and DESIGN §12's two toasts fit. GraceUI 0.1 draws notices plainly
+   at the top right, three lines at most, until S10.4.c gives them the Grace look.
+3. **ARCH §5.3** (D133): "GraceUI makes the same check before it hooks" becomes "GraceUI makes the same check in its
+   first `GraceUI_RequestApi`, before it returns its table and before it hooks". Both use the same two clauses; where
+   EldenNet's own check hits and GraceUI's did not (an anti-cheat module loaded between the two), `connect` answers ok
+   and EldenNet shows its banner through `notice` all the same: its gate stays its own.
+4. **ABI 1 is a preview** (D131, D132; §13 item 2): EldenNet pins GraceUI by its release and compiles against that
+   release's `graceui.h`. In S10.4.b only `has_cap`, `connect`, `disconnect` and `notice` work, which is all the
+   banner needs; F11's view waits on S10.4.c and d (`create_panel`, `submit`, `request_input`, `register_hotkey`),
+   whose slots answer not_yet until then. A slot is called only if the table's size covers it
+   (`GRACEUI_API1_COVERS`), and a feature used only if `has_cap` names it.
+5. **Two copies** (D135): ARCH §12.4's row "two copies of GraceUI at two paths" expects the second to idle and the
+   active one to name it in a notice, by its name relative to the game's folder.
