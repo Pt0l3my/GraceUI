@@ -82,6 +82,11 @@ TEST_CASE("the newest value read while two threads write: never torn") {
   std::thread second(writer, 2u);
   int torn = 0;
   int read = 0;
+  // The reads race the writes, not the threads' start: on a loaded machine the loop below can end before either writer
+  // has published anything.
+  for (Item out; !latest.read(out);) {
+    std::this_thread::yield();
+  }
   for (int i = 0; i < 200000; ++i) {
     Item out;
     if (latest.read(out)) {
