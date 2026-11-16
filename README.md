@@ -6,9 +6,10 @@ on their PC, which GraceUI serves while the game runs, unless anti-cheat or an u
 GraceUI holds the game's one overlay, so other Elden Ring mods can draw their own pages and panels through it, as
 Magelight UI and PrismaUI let mods do for Skyrim; when it opens to other modders is still to be decided.
 
-**Status: design, and the first code.** The overlay host's render half is built: `graceui.dll` starts on a mod's first
-request, hooks the game's frames and draws Dear ImGui on them, checked by a Direct3D 12 harness under Wine
-([BUILD.md](BUILD.md)). The design is in [docs/DESIGN.md](docs/DESIGN.md), with the owner's decisions
+**Status: design, and the first code.** The overlay host's render half and input half are built: `graceui.dll` starts
+on a mod's first request, hooks the game's frames and draws Dear ImGui on them, filters the game's window procedure,
+reads DirectInput and XInput, and keeps the game from the input of whoever holds it, checked by a Direct3D 12 harness
+under Wine and, for the input rules, by unit tests on Linux ([BUILD.md](BUILD.md)). The design is in [docs/DESIGN.md](docs/DESIGN.md), with the owner's decisions
 (indexed in §12, in full in [docs/DECISIONS.md](docs/DECISIONS.md)) and the decisions it settles (§13). The framework
 and the map were put to the owner as proposals, which keep their reasoning ([docs/proposals/](docs/proposals/)). The
 roadmap for both GraceUI and EldenNet is EldenNet's `docs/ROADMAP.md`.
@@ -57,6 +58,7 @@ see the dashboard.
 | `docs/eldennet-changes.md` | What EldenNet's design needs to change for GraceUI |
 | `docs/proposals/` | Proposals put to the owner: the framework (0001) and the map (0002) |
 | `src/grace-protocol` | The bridge protocol's types (C++; they and the web app's TypeScript types are generated from one schema) |
+| `src/grace-input` | The input holder's rules: capture, masking, the player's exit and characters made whole, without Win32 |
 | `src/grace-view` | The menu's structure, focus and input rules, without a renderer |
 | `src/grace-draw` | The in-game view's drawing: the menu as vertex lists, without a renderer |
 | `src/graceui` | `graceui.dll`, the host: the game's one overlay, the public C ABI, the menu and the server |

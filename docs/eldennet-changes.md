@@ -392,7 +392,11 @@ item above and one here disagree, this one holds. It replaces §1 item 1's "Elde
    GraceUI, which finds the XInput DLLs by module name, not through the game's import table; the chat box and call-out
    box take input through `request_input`; EldenNet's keys (the chat key, F11, the talk gesture's chord) are
    registered hotkeys; the Steam on-screen keyboard is opened by GraceUI for its own fields and by EldenNet for its chat
-   box, as now.
+   box, as now. *Later (2026-11-16, GraceUI's 0.1 host, its input half, D124 to D130): a key held as a holder takes
+   input does nothing in it until released, its characters included, so NPC §5.1's rule of swallowing the first
+   `WM_CHAR` that matches the hotkey within 100 ms is GraceUI's general rule now, and the chat box needs none of its
+   own; NPC §5.5's packet number "bumped once" becomes one more for each grant and each close (D128); `GetDeviceData`
+   stays unhooked unless S4 finds the game reads it (D127, as NPC §5.5 has it).*
 4. **ARCH**: threads T3, T4 and T5 become GraceUI's (EldenNet's T3 work is its `on_present` callback, under the same
    rules); C12's capture statics become GraceUI's state, read through events; R12 becomes "EldenNet hooks nothing";
    §1.4's and §3.2's Hooks step becomes "connect to GraceUI" on T1 after the safety step; §10.3's "Overlay failed to
