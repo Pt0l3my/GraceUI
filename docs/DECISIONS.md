@@ -40,7 +40,11 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 - **2026-11-15.** G21–G26 decided (G23 not as recommended). G28 (a narrow upload route, for EldenNet's plugins)
   put and decided the same day, as recommended. G29 (GraceUI's server for hosts outside the game) put with
   EldenNet's proposal 0002.
-- **Open.** G18–G20, G29.
+- **2026-11-16.** G30 (the server's C++ basis: our own) put and decided the same day, as recommended. G18–G20 and G29
+  decided, as recommended (the framework opens with GraceUI 1.1; no SkyrimNet-derived material in GraceUI; EldenNet's
+  pages live in EldenNet; one server library for hosts outside the game), and folded into both designs the same day
+  (EldenNet's roadmap S7.8.d and S7.12.e).
+- **Open.** None.
 
 ## G1
 
@@ -86,7 +90,10 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 **Owner's words.** "Browser dashboard will work the same way as SkyrimNet's, open the IP:port of the dashboard, always on."
 
-**Later changes.** G9 (2026-11-07): other devices on the home network only behind a switch, each after pairing with a code shown in game.
+**Later changes.** G9 (2026-11-07): other devices on the home network only behind a switch, each after pairing with a
+code shown in game. G29 (2026-11-16): off game too, while EldenNet's launcher runs, served by `grace-serve` as one
+library for hosts outside the game under every rule of §7.2 and invariant 4; the home-network switch and pairing stay in
+the game at first (§7.2 item 26).
 
 ## G5
 
@@ -190,6 +197,10 @@ one-line notes (DESIGN §4.6.5). The four rail entries and their tag are unchang
 
 **Supersedes.** For GraceUI, the sandbox-only study of SkyrimNet's dashboard (EldenNet O52): structure only, the bundle's source never read.
 
+**Later changes.** G19 (2026-11-16): for GraceUI, as a framework other mods use, no SkyrimNet-derived material enters
+GraceUI, and `NOTICE` stays free of SkyrimNet entries; whatever EldenNet takes from SkyrimNet lives in EldenNet's own
+pages, which G20 put in EldenNet's repository (DESIGN §3.17, CLAUDE.md).
+
 ## G13
 
 **An interactive showcase of the menu** · *2026-11-08 · Decided by the owner*
@@ -286,7 +297,7 @@ one-line notes (DESIGN §4.6.5). The four rail entries and their tag are unchang
 
 ## G18
 
-**When the framework opens to other modders** · *Open since 2026-11-08*
+**When the framework opens to other modders** · *Open since 2026-11-08 · Decided by the owner 2026-11-16, as recommended*
 
 **Question.** **(a) After EldenNet v1.0, as GraceUI 1.1** (recommended): the ABI is designed now, EldenNet uses it from GraceUI 0.1, an example mod of ours exercises it in CI, and the guide, the examples and a frozen ABI 1 are published with 1.1. **(b) With GraceUI 1.0**, at EldenNet v1.0. **(c) Early**, as a preview marked unstable from GraceUI 0.2. **In plain words:** Should other modders get GraceUI only once EldenNet 1.0 is out, at the same time, or as early as possible with a warning that it may change?
 
@@ -296,9 +307,15 @@ one-line notes (DESIGN §4.6.5). The four rail entries and their tag are unchang
 
 **Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
 
+**Decision (2026-11-16).** (a): the framework opens to other modders after EldenNet v1.0, as GraceUI 1.1. Its ABI is
+designed now and EldenNet uses it from GraceUI 0.1, an example mod of ours exercises it in CI, and the guide, the
+examples and a frozen ABI 1 are published with 1.1; until then ABI 1 is a preview.
+
+**Owner's words.** "After EldenNet 1.0 (Recommended)", asked when other modders should get GraceUI.
+
 ## G19
 
-**SkyrimNet-derived material and other mods** · *Open since 2026-11-08*
+**SkyrimNet-derived material and other mods** · *Open since 2026-11-08 · Decided by the owner 2026-11-16, as recommended*
 
 **Question.** G12 lets GraceUI use SkyrimNet's code, dashboard and styling, as Min approved for building on SkyrimNet. If GraceUI is a framework, anything SkyrimNet-derived in it reaches every mod and player that uses it. **(a) Not until confirmed** (recommended): GraceUI keeps to its own code and the Grace theme; whatever is adopted from Min's blueprint for EldenNet's pages lives in EldenNet; once the blueprint arrives, you ask Min, if you wish, whether what GraceUI would adopt may be passed on through a public framework. **(b) Yes**: G12 covers GraceUI as a framework, credited as Min wishes. **In plain words:** Min agreed that EldenNet and GraceUI may build on SkyrimNet. Does that agreement also cover other people's mods getting SkyrimNet-derived parts through GraceUI?
 
@@ -308,9 +325,19 @@ one-line notes (DESIGN §4.6.5). The four rail entries and their tag are unchang
 
 **Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
 
+**Decision (2026-11-16).** (a): GraceUI keeps to its own code and the Grace theme. No SkyrimNet-derived material enters
+GraceUI, and NOTICE stays free of SkyrimNet entries; whatever EldenNet takes from SkyrimNet lives in EldenNet's own
+pages. Asking Min whether a public framework may pass such parts on stays possible, as a new question. Since EldenNet's
+O84 there is no blueprint to adopt from, and since G30 the server is our own too.
+
+**Amends.** G12, for GraceUI (its later changes); §3.17's last line.
+
+**Owner's words.** "No, keep it our own (Recommended)", asked whether GraceUI, as a framework other mods use, should
+also carry SkyrimNet-derived parts.
+
 ## G20
 
-**Where EldenNet's pages live** · *Open since 2026-11-08*
+**Where EldenNet's pages live** · *Open since 2026-11-08 · Decided by the owner 2026-11-16, as recommended*
 
 **Question.** G14 leaves open which pages are EldenNet's own once GraceUI is a framework. EldenNet's menu and dashboard content (its categories, pages, settings description, help texts and Home cards), its fixtures, the spoiler, roster and Playthrough goldens, the spoiler rules SP1–SP9, EldenNet's halves of the privacy rules PV1–PV8 and DESIGN §4: **(a) In EldenNet's repository** (recommended), as content EldenNet ships and registers with GraceUI at start; GraceUI keeps the frame, the components, the theme, PV3, PV6 and PV7 as framework rules, and a demo space with invented content (D82). **(b) In GraceUI's repository**, as its first user's bundled pages, as designed now. **In plain words:** EldenNet's own pages, and the rules that keep them free of spoilers, could move to EldenNet, so that GraceUI holds only the parts every mod shares, or stay in GraceUI as now. Which should it be?
 
@@ -319,6 +346,19 @@ one-line notes (DESIGN §4.6.5). The four rail entries and their tag are unchang
 **What each answer changes.** (a): D82 applies; DESIGN §4, SP1–SP9, EldenNet's halves of PV1–PV8, D61, its fixtures and goldens move to EldenNet in S7.8.c; invariants 1 and 2 take their framework form in GraceUI and their EldenNet form in EldenNet; §5 of this proposal's item 9 goes to eldennet-changes. (b): DESIGN §4, SP1–SP9, the goldens and invariants 1 and 2 stay in GraceUI as they are, beside the framework rules; GraceUI's release carries EldenNet's page data as a bundled space that EldenNet's `connect` activates, and the framework carries one user's content.
 
 **Follows from.** G14; [proposal 0001](proposals/0001-ui-framework.md) §8, with its reasons in §4 and the evidence in FW.
+
+**Decision (2026-11-16).** (a): EldenNet's pages live in EldenNet's repository, as content EldenNet ships and registers
+with GraceUI at start: its menu and dashboard content (its categories, pages, settings description, help texts and Home
+cards), its fixtures, the spoiler, roster and Playthrough goldens, the spoiler rules SP1–SP9, EldenNet's halves of
+PV1–PV8 and DESIGN §4. GraceUI keeps the frame, the components, the theme, PV3, PV6 and PV7 as framework rules, and a
+demo space with invented content (D82). The move is a fold of its own (EldenNet's roadmap S7.8.d).
+
+**Amends.** DESIGN §4, §9 and §13, folded on 2026-11-16: EldenNet's content, SP1–SP9, PV1, PV2, PV4, PV5 and PV8, D61
+and the goldens moved to EldenNet's PAGES under the same numbers; D82 came into force; invariants 1 and 2 took their
+framework form (CLAUDE.md).
+
+**Owner's words.** "In EldenNet (Recommended)", asked where EldenNet's own pages and the spoiler rules that guard them
+should live.
 
 ## G21
 
@@ -503,7 +543,7 @@ a one-use ticket; refused from any paired device; GraceUI keeps nothing after ha
 
 ## G29
 
-**GraceUI's server for hosts outside the game?** · *2026-11-15 · Open*
+**GraceUI's server for hosts outside the game?** · *2026-11-15 · Decided by the owner 2026-11-16, as recommended*
 
 **Question.** EldenNet's owner asked for its dashboard in the browser with the game closed, and for the EldenNet
 devkit's tools in the browser (EldenNet's proposal 0002, O76 and O78). Both hosts run outside the game, where
@@ -523,6 +563,17 @@ EldenNet's launcher runs, if EldenNet's O76 is (a) or (b). (b): nothing in Grace
 adopted, and serves the dashboard from the saved files; its O78 (b) and O79 put the devkit's tools, viewers included,
 in EldenNet's dashboard behind Developer mode. So a host outside the game will serve GraceUI's pages either way; G29
 asks only how.
+
+**Decision (2026-11-16).** (a): GraceUI publishes its server (`grace-serve`, our own since G30) as one library for hosts
+outside the game, EldenNet's launcher first, with every rule of §7.2 and invariant 4: loopback only; Host, Origin, Fetch
+Metadata, the session cookie and the ticket checked; a strict CSP; only the files listed served. The home-network switch
+and pairing (G9) stay in the game at first, and G4 widens to off game while EldenNet's launcher runs. The fold is
+EldenNet's roadmap S7.12.e.
+
+**Amends.** G4 (its later changes), invariant 4 and §7.2 (item 26), folded on 2026-11-16.
+
+**Owner's words.** "Reuse GraceUI's server (Recommended)", asked how EldenNet's launcher and the devkit should serve the
+pages outside the game.
 
 ## G30
 

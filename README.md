@@ -60,15 +60,15 @@ see the dashboard.
 | `src/graceui` | `graceui.dll`, the host: the game's one overlay, the public C ABI, the menu and the server |
 | `src/grace-abi` | The public C ABI and its header, `graceui.h` |
 | `src/graceui-sys` | The helper a mod uses to find GraceUI and call it (a header-only C helper, with a thin C++ wrapper) |
-| `src/grace-serve` | The loopback server for the browser dashboard, inside `graceui.dll`: our own small server (G30) |
+| `src/grace-serve` | The loopback server for the browser dashboard, inside `graceui.dll`: our own small server (G30), also published as a library for hosts outside the game, EldenNet's launcher first (G29) |
 | `src/grace-host` | The overlay inside `graceui.dll`: Dear ImGui's DX12 and Win32 backends with MinHook, its hooks, the controls and the drawing of every mod's panels |
-| `pages/` | The menu's categories and pages, as data |
+| `pages/` | GraceUI's own space and the demo space, as data (EldenNet's pages live in EldenNet, G20) |
 | `tokens/grace.toml` | The Grace theme's colours, sizes and timings |
 | `web/` | The browser app (TypeScript) |
 | `tools/grace-dev` | A fake host for developing and testing any mod's pages without the game |
 | `tools/grace-harness` | A Windows harness that runs the in-game view without the game |
 | `examples/` | Example mods, with invented content |
-| `fixtures/` | Test states with invented names |
+| `fixtures/` | Test states with invented names, for the demo space (EldenNet's are EldenNet's, G20) |
 | `mock/` | A static look mock of the menu |
 
 ## Licence

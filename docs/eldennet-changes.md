@@ -11,7 +11,10 @@ G15, and read-only towards the game; EldenNet starts no new thread for the UI, w
 and the server's (GraceUI D71, D81). *Later (2026-11-16): both designs were re-based on C++ (EldenNet O60, roadmap
 S8.1.e), and the owner put Dear ImGui 1.93.0 and MinHook 1.3.4 in hudhook's place (EldenNet O25, GraceUI G15); the
 notes of that date below say what this changes in each item that names hudhook or Rust, and GraceUI D106 to D110 hold
-the rest.*
+the rest.* *Later (2026-11-16): by G20 (a), what GraceUI §4.1, §4.2.1, §4.4 to §4.6 and §4.8 to §4.12 held, with
+SP1–SP9, PV1, PV2, PV4, PV5, PV8 and D61 and the fixture states and goldens, is EldenNet's `docs/design/pages.md`
+(PAGES), under the same numbers; references to them below resolve there through GraceUI's pointers. §13 lists what
+G18–G20 and G29 change in EldenNet, folded the same day.*
 
 ## 1. The main UI on F5 through GraceUI
 
@@ -107,7 +110,9 @@ the rest.*
 7's serving fall away, and `devices.toml` (item 8) lives in GraceUI's user folder (D84); the rules themselves stand,
 in GraceUI. §11 item 7 lists what EldenNet keeps.* *Later (2026-11-16): `grace-serve` is our own small C++ server, on
 two threads of GraceUI's own (G30, decided by the owner that day, as recommended; GraceUI §7.6), and the rules stand,
-with more of them for its own code (GraceUI §7.2 items 19 to 25).*
+with more of them for its own code (GraceUI §7.2 items 19 to 25).* *Later (2026-11-16): G29 (a), decided that day:
+`grace-serve` is also one library for hosts outside the game, under the same rules, and EldenNet's launcher serves the
+dashboard off game through it (§13 item 4).*
 
 1. `grace-serve` runs as tasks on the Net runtime (T7–T8) from the end of init's gate and safety steps to exit, at the
    title screen and after a later L1 trip, never when the gate or the safety step fails (an unknown build or
@@ -408,12 +413,14 @@ item above and one here disagree, this one holds. It replaces §1 item 1's "Elde
    the server's threads are GraceUI's. *Later (2026-11-16): the launcher's first screen, and F11's Copy dashboard
    address and Open in browser (§3 item 4), show `http://127.0.0.1:PORT` only, the one address GraceUI shows, with the
    port read from GraceUI's settings; `localhost` and `[::1]` are redirected to it (GraceUI §7.2 items 14 and 23, D84,
-   D112).*
+   D112).* *Later (2026-11-16): `eldennet.dll` still links no `grace-serve`; EldenNet's launcher links it as the library
+   for hosts outside the game (G29 (a), §13 item 4).*
 8. **The world-state provider**: EldenNet publishes danger, loading, a game menu or text entry open, the title screen,
    multiplayer and an anti-cheat hit from `safe_context`, its `ui` group and T10 (D78), as one provider among any
    others, and keeps gating its own space.
 9. **EldenNet's pages** wait for G20 (Open). Under its recommended answer, (a), its page data, fixtures and goldens,
-   SP1–SP9, its PV rules and D61 join EldenNet's documents and CI, and GraceUI's page lint runs there (D82).
+   SP1–SP9, its PV rules and D61 join EldenNet's documents and CI, and GraceUI's page lint runs there (D82). *Later
+   (2026-11-16): G20 decided (a), and folded the same day (§13 item 1).*
 10. **D34 widened**: lines addressed to the player wait while any input holder is active, from GraceUI's "input held
     by" event.
 11. **DESIGN §12 and §13**: the presentation row names GraceUI as the host; §13's seams name the `UiPort`, with GraceUI
@@ -442,3 +449,31 @@ GraceUI's part of EldenNet's own decisions (EldenNet's proposal 0001); EldenNet'
 4. **The plugins-stopped pop-up** (D105, EldenNet O70): EldenNet asks GraceUI for it when a plugin host stops, with
    the plugin, the cause and how sure it is; the choice comes back as `plugins.restart`. In game GraceUI shows a
    notice first and the modal only at a safe moment.
+
+## 13. EldenNet's pages, the framework's opening and the server off game (G18–G20, G29; decided 2026-11-16)
+
+What G18 (a), G19 (a), G20 (a) and G29 (a), decided by the owner on 2026-11-16, as recommended, change in EldenNet.
+Folded into both designs the same day (EldenNet's roadmap S7.8.d and S7.12.e).
+
+1. **EldenNet's pages** (G20 (a), D82; proposal 0001 §5 item 9): its page data, fixtures and goldens, SP1–SP9, its PV
+   rules and D61 join EldenNet's documents and CI, and GraceUI's page lint runs there. Done: EldenNet's
+   `docs/design/pages.md` (PAGES) holds GraceUI's §4 content under its numbers, SP1–SP9 (PAGES §4.8), PV1, PV2, PV4, PV5
+   and PV8 (PAGES §4.9), the fixture states and the spoiler, roster and Playthrough goldens (PAGES §5) and D61 (PAGES
+   §6), with invariants 1 and 2 in their EldenNet form (PAGES §3); EldenNet's DESIGN §12 points to it. EldenNet's pages
+   are compiled into `eldennet.dll` and registered at its start; they run GraceUI's page lint and parity tests in
+   EldenNet's CI against a pinned GraceUI.
+2. **The framework opens after EldenNet v1.0** (G18 (a)): GraceUI 1.1 publishes the guide, the examples and a frozen
+   ABI 1; until then ABI 1 is a preview, which EldenNet pins by tag as it does now. Nothing else changes in EldenNet.
+3. **SkyrimNet-derived material** (G19 (a)): none in GraceUI; whatever EldenNet takes from SkyrimNet lives in
+   EldenNet's own pages, under EldenNet's own licence rules (its O53, O84).
+4. **The server off game** (G29 (a)): GraceUI publishes `grace-serve` as one library for hosts outside the game, with
+   every rule of GraceUI §7.2 and invariant 4 (GraceUI §7.2 item 26). EldenNet's launcher links it, and serves the
+   dashboard with the game closed through it once EldenNet's engine runs there (O76); `eldennet.dll` links none. The
+   home-network switch and pairing (G9) stay in the game at first, so the launcher serves on loopback only. In EldenNet:
+   DESIGN §3.2, ARCH §4.13 and ARCH §2.3's launcher row; the rest of O76 to O79 is folded with S7.12.c.
+
+*Later (2026-11-16, D115):* GraceUI's own settings (`hotkeys.menu`, `ui.scale`, `ui.menu.*`, `dashboard.*`) are homed on
+GraceUI's own pages (Menu, Hotkeys, Browser view), and EldenNet's pages carry only links to them. EldenNet keeps two
+keys of its own instead of GraceUI's: `ui.home_cards` (was `ui.menu.home_cards`) and `ui.show_world` (was
+`ui.menu.show_world`), in its `settings.toml`; its Settings page keeps General, Hotkeys (its own: talk, skip page,
+debug) and Developer.

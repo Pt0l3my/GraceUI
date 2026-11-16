@@ -1,5 +1,9 @@
 # What GraceUI needs for the profile editor (from EldenNet's character-profile design)
 
+*Later (2026-11-16): since G20 (a), the editor's pages are EldenNet's, in EldenNet's `docs/design/pages.md` (PAGES),
+which holds what DESIGN §4 held under the same numbers, SP1–SP9 and PV1, PV2, PV4, PV5 and PV8 included; this input now
+applies there, and its `G:` line numbers point into DESIGN as it was.*
+
 Input for the next GraceUI design pass; not yet applied to docs/DESIGN.md. Source: EldenNet DESIGN §7.7 and NPC §4.5–§4.8
 (commit 588f083 on EldenNet's design/v1-proposal). The owner decided EldenNet O43 on 2026-11-07, which puts
 the editor in v1, at EldenNet v0.6 with the other settings pages, in both views. G = docs/DESIGN.md.
