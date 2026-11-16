@@ -72,9 +72,11 @@ wine64 reg add 'HKCU\Software\Wine\Direct3D' /v renderer /t REG_SZ /d vulkan /f 
 xvfb-run -a -s "-screen 0 1280x720x24" wine64 build-cl-test/bin/grace-harness.exe
 ```
 
-On a new prefix, the very first run once failed with "no window" while Wine was still setting the prefix up; the
-next runs passed. Running `xvfb-run -a wine64 wineboot -u` once after making the prefix avoids it. Debian's Wine
-packages keep `wine64` in `/usr/lib/wine`: put it on the `PATH` first.
+A run fails with "no window" when a Wine server is still running for the prefix from an earlier `xvfb-run`. That
+server stays bound to a display that has gone, so the harness can't open its window. Stop it before every run with
+`wineserver -k` (Debian keeps it in `/usr/lib/wine`); with that, three runs in a row passed all 43 checks
+(2026-11-16). On a new prefix, run `xvfb-run -a wine64 wineboot -u` once first. Debian's Wine packages keep `wine64`
+in `/usr/lib/wine`: put it on the `PATH` first.
 
 Wine 9.0 with Mesa's lavapipe (`mesa-vulkan-drivers`) creates the Direct3D 12 device, queue and flip-model swap chain
 the harness needs. The harness prints one line per check, PASS or FAIL with what it saw, and exits with 0 only if all
