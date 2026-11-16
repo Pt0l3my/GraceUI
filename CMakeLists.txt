@@ -19,6 +19,7 @@ else()
   set(_gu_unit_tests_default ON)
 endif()
 option(GRACEUI_UNIT_TESTS "The pure modules' unit tests (doctest under CTest, D106)" ${_gu_unit_tests_default})
+option(GRACEUI_FUZZ "Linux and Clang only: the draw-list checker's libFuzzer target (BUILD.md)" OFF)
 set(GRACEUI_SANITIZE "" CACHE STRING
   "Linux only: the sanitizers for the unit tests, as -fsanitize takes them (address,undefined or thread)")
 

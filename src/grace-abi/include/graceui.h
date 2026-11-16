@@ -82,8 +82,13 @@ typedef uint32_t GraceUiStatus;
 #define GRACEUI_REFUSED 4u       /* an argument failed its check (connect's answer says which); nothing was done */
 #define GRACEUI_NOT_CONNECTED 5u /* the handle names no connected mod */
 #define GRACEUI_NOT_YET 6u       /* the slot is declared, but this GraceUI does not provide it yet (has_cap) */
-#define GRACEUI_FULL 7u          /* a bounded store has no room: this mod's notices */
+#define GRACEUI_FULL 7u          /* a bounded store has no room: this mod's notices, panels, textures or faces, or the
+                                    session's */
 #define GRACEUI_FAULT 8u         /* a fault inside GraceUI: nothing was done, and GraceUI's log has a line (D110) */
+#define GRACEUI_NOT_READY 9u     /* not yet possible in this session: ask again later (glyph_table before the shared
+                                    atlas is baked at the overlay's warm-up) */
+#define GRACEUI_TOO_LATE 10u     /* past its time: a texture after the mod's registration window (its first submit),
+                                    a face after warm-up */
 
 /* Why connect answered GRACEUI_INACTIVE. */
 #define GRACEUI_INACTIVE_ANTI_CHEAT 1u  /* an anti-cheat was found before GraceUI hooked: notices only (D88) */
@@ -105,10 +110,27 @@ typedef uint32_t GraceUiStatus;
 #define GRACEUI_CAPS_MAX 256u          /* bytes of a mod's caps */
 #define GRACEUI_NOTICE_TEXT_MAX 512u   /* bytes of a notice's text */
 #define GRACEUI_NOTICES_PER_MOD 4u     /* a mod's notices showing at once */
+#define GRACEUI_PANELS_MAX 64u         /* panels in the session (EST) */
+#define GRACEUI_PANELS_PER_MOD 8u      /* a mod's panels (EST) */
+#define GRACEUI_TEXTURES_MAX 64u       /* textures in the session (EST) */
+#define GRACEUI_TEXTURES_PER_MOD 8u    /* a mod's textures (EST) */
+#define GRACEUI_TEXTURE_BYTES_PER_MOD 8388608u /* a mod's textures' pixels, 4 bytes each (EST: 8 MiB) */
+#define GRACEUI_TEXTURE_SIDE_MAX 4096u /* a texture's width and height */
+#define GRACEUI_FACES_PER_MOD 2u       /* a mod's faces in the shared atlas (EST; EldenNet's surfaces more, D80) */
+#define GRACEUI_FACE_BYTES_MAX 4194304u /* a face's font file (EST: 4 MiB) */
+#define GRACEUI_FACE_RANGES_MAX 64u    /* a face's code-point ranges */
+#define GRACEUI_DRAW_VERTEX_BYTES_MAX 262144u /* a submission's vertices (D76, EST: 256 KiB, 13,107 vertices) */
+#define GRACEUI_DRAW_INDEX_BYTES_MAX 262144u  /* a submission's indices (EST: 256 KiB) */
+#define GRACEUI_DRAW_COMMANDS_MAX 64u  /* a submission's commands (D76, EST) */
 
 /* ---- Capabilities: the features has_cap names. */
 
 #define GRACEUI_CAP_NOTICES "notices" /* notice: since GraceUI 0.1 */
+#define GRACEUI_CAP_PANELS "panels"   /* create_panel, submit, show_panel, hide_panel: since GraceUI 0.1 */
+#define GRACEUI_CAP_TEXTURES "textures" /* register_texture: since GraceUI 0.1 */
+#define GRACEUI_CAP_FACES "faces"     /* register_face, glyph_table: since GraceUI 0.1 */
+#define GRACEUI_CAP_INPUT "input"     /* request_input, release_input: since GraceUI 0.1 */
+#define GRACEUI_CAP_WORLD_STATE "world-state" /* set_world_state: since GraceUI 0.1 */
 
 /* A connected mod's handle, which every slot after connect takes; 0 is none. */
 typedef uint64_t GraceUiConsumer;
@@ -154,7 +176,14 @@ typedef struct GraceUiNotice {
   uint64_t text_length;
 } GraceUiNotice;
 
-/* ---- Textures, faces and glyphs (D76, D80): registered once, in the mod's registration window. */
+/* ---- Textures, faces and glyphs (D76, D80): registered once, in the mod's registration window.
+ *
+ * A texture is registered from the mod's connect until its first submit (its registration window), within its budget
+ * (GRACEUI_TEXTURES_PER_MOD, GRACEUI_TEXTURE_BYTES_PER_MOD): its pixels are copied before the call returns, and GraceUI
+ * uploads it once, at the overlay's warm-up or, for a mod that comes later, at its next frame; a command that names it
+ * is drawn once it is on the GPU. A face joins the one shared atlas, which GraceUI bakes once at warm-up and never
+ * grows: register_face is taken only before warm-up (GRACEUI_TOO_LATE after it). glyph_table then gives any face's
+ * glyphs, GraceUI's own among them (face 1: the notices' face), for a mod to lay out its own text in its draw lists. */
 
 #define GRACEUI_TEXTURE_RGBA8 1u /* four bytes a pixel, R first, straight alpha */
 
@@ -196,8 +225,18 @@ typedef struct GraceUiGlyphTable {
   uint64_t atlas;              /* the atlas's texture id, for draw commands */
   const GraceUiGlyph* glyphs;  /* GraceUI's, read-only, sorted by code point: valid while `generation` is current */
 } GraceUiGlyphTable;
+/* A glyph's quad is measured from the pen at the top of the line, as Dear ImGui's are: a line's baseline is at the pen's
+ * y plus `ascent`; `descent` is below the baseline, negative as fonts give it; the next line is `pixel_height` below.
+ * In GraceUI 0.1 the atlas is never rebuilt, so a table stays valid for the session. */
 
-/* ---- Panels and draw lists (D76). */
+/* ---- Panels and draw lists (D76).
+ *
+ * A panel is a rectangle of the display a mod draws itself, on a layer, hidden until show_panel. Its draw lists are in
+ * the panel's own pixels, its top-left corner at 0,0, whatever its place on the display: GraceUI moves them where the
+ * anchor puts the panel, and every clip rectangle must lie within the panel's width and height, so nothing is drawn
+ * outside it. submit copies the list before it returns and checks it (counts, each command's ranges, every index
+ * within its command's own vertices, clip rectangles, texture ids, the atlas's generation, the size bounds); a list
+ * that fails is refused (GRACEUI_REFUSED), logged once, and the panel keeps its last list. */
 
 #define GRACEUI_LAYER_HUD 1u    /* the layers a mod's panel takes: hud < panel < (GraceUI's menu) < modal < (notices) */
 #define GRACEUI_LAYER_PANEL 2u
@@ -220,7 +259,9 @@ typedef struct GraceUiPanelDesc {
   uint32_t layer;   /* GRACEUI_LAYER_* */
   uint32_t anchor;  /* GRACEUI_ANCHOR_* */
   uint32_t flags;   /* GRACEUI_PANEL_* */
-  float x;          /* the panel's bounds from its anchor, in the display's pixels */
+  float x;          /* the panel's bounds from its anchor, in the display's pixels: x and y move it inwards from the
+                       anchor's edges (from the centre, rightwards and downwards, for a centred anchor); width and
+                       height from 1 to 16384 */
   float y;
   float width;
   float height;
@@ -236,7 +277,7 @@ typedef struct GraceUiDrawVert {
 } GraceUiDrawVert;
 
 typedef struct GraceUiDrawCommand {
-  float clip_x0;           /* the clip rectangle, in the display's pixels */
+  float clip_x0;           /* the clip rectangle, in the panel's pixels: within its width and height */
   float clip_y0;
   float clip_x1;
   float clip_y1;
@@ -283,7 +324,9 @@ typedef struct GraceUiInputRequest {
   uint32_t kind;      /* GRACEUI_HOLDER_PANEL or GRACEUI_HOLDER_MODAL */
   uint32_t wants;     /* GRACEUI_WANT_* */
   uint32_t reserved;  /* 0 */
-  uint64_t panel;     /* the panel whose view takes the input (create_panel's id) */
+  uint64_t panel;     /* the panel whose view takes the input (create_panel's id): the mod's own, shown, made with
+                         GRACEUI_PANEL_TAKES_INPUT, on the modal layer for GRACEUI_HOLDER_MODAL and on another for
+                         GRACEUI_HOLDER_PANEL */
 } GraceUiInputRequest;
 
 typedef struct GraceUiInputAnswer {
@@ -338,8 +381,9 @@ typedef GraceUiStatus (*GraceUiReservedSlot)(GraceUiConsumer consumer, const voi
 /*
  * ABI 1's table (D73, D131), in D73's order. Each slot answers GRACEUI_NOT_CONNECTED for a handle that names no
  * connected mod, then GRACEUI_INACTIVE while GraceUI is inactive (notice excepted in notice-only mode), then
- * GRACEUI_NOT_YET where this GraceUI does not provide it. GraceUI 0.1 provides has_cap, connect, disconnect and notice;
- * every other slot is declared for the increments that build it.
+ * GRACEUI_NOT_YET where this GraceUI does not provide it. GraceUI 0.1 provides every slot but the bridge protocol's four
+ * (register_pages, publish, poll, answer), register_hotkey and log, which are declared for the increments that build
+ * them.
  */
 typedef struct GraceUiApi1 {
   uint32_t size;             /* the table's size in this GraceUI: a slot exists only if it ends within it */
@@ -363,15 +407,29 @@ typedef struct GraceUiApi1 {
   GraceUiReservedSlot poll;
   GraceUiReservedSlot answer;
 
+  /* A texture, in the mod's registration window: GRACEUI_OK with its id, _REFUSED (a format, size or row length
+   * GraceUI does not take), _FULL (over the mod's budget or the session's) or _TOO_LATE (after its first submit). */
   GraceUiStatus (*register_texture)(GraceUiConsumer consumer, const GraceUiTextureDesc* texture, uint64_t* texture_id);
+  /* A face for the shared atlas, before warm-up: GRACEUI_OK with its id, _REFUSED (not a TrueType or OpenType file,
+   * a size outside 6 to 128 pixels, bad ranges), _FULL or _TOO_LATE. */
   GraceUiStatus (*register_face)(GraceUiConsumer consumer, const GraceUiFaceDesc* face, uint32_t* face_id);
+  /* A face's glyphs in the shared atlas: GRACEUI_OK, _NOT_READY before warm-up, or _REFUSED for an unknown face. */
   GraceUiStatus (*glyph_table)(GraceUiConsumer consumer, uint32_t face_id, GraceUiGlyphTable* table);
+  /* A panel, hidden: GRACEUI_OK with its id, _REFUSED or _FULL (GRACEUI_PANELS_PER_MOD). */
   GraceUiStatus (*create_panel)(GraceUiConsumer consumer, const GraceUiPanelDesc* panel, uint64_t* panel_id);
+  /* The panel's next draw list (above): GRACEUI_OK or _REFUSED. The mod's first submit closes its registration
+   * window. */
   GraceUiStatus (*submit)(GraceUiConsumer consumer, uint64_t panel_id, const GraceUiDrawList* list);
   GraceUiStatus (*show_panel)(GraceUiConsumer consumer, uint64_t panel_id);
+  /* Hiding a panel that holds input ends its holder (released). */
   GraceUiStatus (*hide_panel)(GraceUiConsumer consumer, uint64_t panel_id);
+  /* GRACEUI_OK with the answer, given at once (D77): granted, refused naming the holder, or not now with the reason;
+   * nothing queues and nothing deposes the holder. The player's exit (a second press of the menu key within 2 s of
+   * "<mod> has the controls", or Escape held 1 s) always ends a holder. _REFUSED for a request that names no panel of
+   * the mod's that may take input, or a kind that does not suit its layer. */
   GraceUiStatus (*request_input)(GraceUiConsumer consumer, const GraceUiInputRequest* request,
                                  GraceUiInputAnswer* answer);
+  /* Gives input back if the mod holds it; GRACEUI_OK either way. */
   GraceUiStatus (*release_input)(GraceUiConsumer consumer);
   GraceUiStatus (*register_hotkey)(GraceUiConsumer consumer, const GraceUiHotkeyDesc* hotkey, uint32_t* hotkey_id);
 
@@ -380,6 +438,8 @@ typedef struct GraceUiApi1 {
    * after connect answered GRACEUI_INACTIVE with GRACEUI_INACTIVE_ANTI_CHEAT (D88). */
   GraceUiStatus (*notice)(GraceUiConsumer consumer, const GraceUiNotice* notice);
 
+  /* The mod's claims as a world-state provider (D78), replacing its earlier ones; every provider's are combined, and
+   * any provider's danger or loading ends the input holder (invariant 9). GRACEUI_OK or _REFUSED (an unknown flag). */
   GraceUiStatus (*set_world_state)(GraceUiConsumer consumer, const GraceUiWorldState* state);
   GraceUiStatus (*log)(GraceUiConsumer consumer, uint32_t level, const char* text, uint64_t text_length);
 } GraceUiApi1;
