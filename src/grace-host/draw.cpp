@@ -24,6 +24,7 @@
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
 #include "imgui_internal.h"  // ImFontAtlasBuildMain: the atlas baked once, before the first frame (D117)
+#include "input.h"
 #include "log.h"
 
 #if defined(GRACEUI_TEST_EXPORTS)
@@ -478,8 +479,7 @@ ImDrawData* build_frame() {
   io.DeltaTime = seconds > 1e-6 ? static_cast<float>(seconds) : 1e-6f;
   g.qpc_last = now;
   ImGui_ImplDX12_NewFrame();
-  // The input half calls ImGui_ImplWin32_NewFrame here while a holder has input (§5, D77); until then the render half
-  // asks the window for nothing on this thread.
+  input::before_imgui_frame();  // the window's input, while a holder has it (the input half; D77, D122)
   ImGui::NewFrame();
   draw_test_panel();
   ImGui::Render();

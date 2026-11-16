@@ -109,6 +109,6 @@ It links its runtime statically, so neither binary needs a MinGW DLL. Its harnes
 
 `tools/check_safety.py` stands in for CI until GraceUI has one (D110, invariant 16): raw pointers from callers,
 `reinterpret_cast` and hook code only in grace-host's `abi`, `hooks` and `draw` files and the DLL's `abi` file, each
-cast with a `// SAFETY:` comment; MinHook only in grace-host's hooks files, Dear ImGui's backends only in its draw
-files, and only grace-host linking either; exports only in the DLL's `abi` file; the hook table only D102's functions;
+cast with a `// SAFETY:` comment; MinHook only in grace-host's hooks files, Dear ImGui's backends only in grace-host,
+and only grace-host linking either; exports only in the DLL's `abi` file; the hook table only D102's functions;
 and, with `--exports`, a DLL's export table.

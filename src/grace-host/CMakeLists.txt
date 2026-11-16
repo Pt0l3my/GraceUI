@@ -7,6 +7,7 @@ add_library(grace_host STATIC
   draw_alloc.cpp
   hooks.cpp
   hooks_vtable.c
+  input.cpp
   log.cpp)
 target_include_directories(grace_host
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include

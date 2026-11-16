@@ -11,7 +11,7 @@ The source checks, over src/ (our own code; third-party code is fetched into the
      abi files (D110), each with a "// SAFETY:" comment on its statement or in the three lines before it; a C file's
      pointer casts only in those files too.
   2. Each of those files that holds raw pointers from callers, casts or hook code carries a SAFETY comment.
-  3. MinHook is included and called only in grace-host's hooks files, and Dear ImGui's backends only in its draw files
+  3. MinHook is included and called only in grace-host's hooks files, and Dear ImGui's backends only in grace-host
      (invariant 16); only grace-host's CMakeLists.txt links MinHook or Dear ImGui (the module graph).
   4. Only the DLL's abi files export anything.
   5. hooks.cpp's hook table names only functions of D102's published list.
@@ -29,7 +29,7 @@ SRC = ROOT / "src"
 # D110: the files where raw pointers from callers, casts and hook code may live.
 ALLOWED = re.compile(r"^src/(grace-host/(abi|hooks|draw)[^/]*|graceui/abi[^/]*)\.(cpp|c|h)$")
 HOOK_FILES = re.compile(r"^src/grace-host/hooks[^/]*\.(cpp|c|h)$")
-DRAW_FILES = re.compile(r"^src/grace-host/draw[^/]*\.(cpp|h)$")
+GRACE_HOST_FILES = re.compile(r"^src/grace-host/")
 DLL_ABI_FILES = re.compile(r"^src/graceui/abi[^/]*\.cpp$")
 
 CPP_CASTS = re.compile(r"\b(reinterpret_cast|const_cast|bit_cast)\s*<")
@@ -126,8 +126,8 @@ def check_sources():
                 needs_safety = True
                 if not HOOK_FILES.match(rel):
                     fail(rel, number, "MinHook outside grace-host's hooks files (invariant 16)")
-            if re.search(r'#\s*include\s*[<"]imgui_impl_', include) and not DRAW_FILES.match(rel):
-                fail(rel, number, "a Dear ImGui backend outside grace-host's draw files (invariant 16)")
+            if re.search(r'#\s*include\s*[<"]imgui_impl_', include) and not GRACE_HOST_FILES.match(rel):
+                fail(rel, number, "a Dear ImGui backend outside grace-host (invariant 16)")
             if re.search(r"__declspec\s*\(\s*dllexport\s*\)|\bGRACEUI_API\b\s+[A-Za-z_].*\(", code):
                 if not DLL_ABI_FILES.match(rel) and not rel.startswith("src/grace-abi/include/"):
                     fail(rel, number, "an export outside the DLL's abi files")
