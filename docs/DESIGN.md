@@ -1021,9 +1021,10 @@ The first proposal's `ui.menu.names` is dropped: names are plain only (D39).
 changed only through EldenNet's plugin commands) on Plugins. `providers.toml` (read and write) on AI › Providers (its
 entries) and AI › Models (slot models and the preset); `secrets.toml` **write-only** on AI › Providers (the UI sees set,
 missing or rejected, never a value); `models.toml` (read) on AI › Models; `identity/types.toml` (read) on NPC types;
-persona and bio display fields only (`display_name_fallback`, `public.summary`, the news temperament) on Named NPCs;
-each persona stage's public line, for the stage seen only, on Playthrough; a world stage's `line` only for stages that
-hold, on History › World; `overrides/` and `disable.toml` (read, as relative paths, ids and counts) on Content packs.
+persona and bio display fields only (`display_name_fallback`, `public.summary`, `public.role`, `subjects`, the news
+temperament) on Named NPCs; each persona stage's public line, for the stage seen only, on Playthrough; a world stage's
+`line` only for stages that hold, on History › World; `overrides/` and `disable.toml` (read, as relative paths, ids and
+counts) on Content packs.
 View state, never stored: live updates, the journey in view, the rail collapsed, sections open.
 
 **Actions** (each a command, §6.6): Pause AI for this session (Home, D15); run the self-test (AI › Self-test, Home);
@@ -1209,8 +1210,8 @@ named boss (EldenNet O43, as updated; D67).
 - **Rules.** Only people met on this journey (SP4, SP5). A story line only for the stage active at the last meeting
   (EldenNet's `stage_seen`), never a later or unseen one; a related story only for a met person the stage's own line
   links; never a stage id, road, gist, track, knowledge entry, next step, "has something for you" mark, fate or count
-  of what is left (SP1, SP5). Lines pass the persona's lock set (SP2). No chat or model text (PV4); lines and notes are
-  never searched (§4.3). At the title screen: "Load a character to see this".
+  of what is left (SP1, SP5). Story lines are authored and reviewed when written; notes are our labels (SP2). No chat
+  or model text (PV4); lines and notes are never searched (§4.3). At the title screen: "Load a character to see this".
 - **Keys and pad.** ↑↓ the table, → or A into the detail.
 - **Related.** Named NPCs, History › Memories, History › World.
 
@@ -1225,22 +1226,24 @@ base-game roster by EldenNet v1.0).
   the first-meeting name (the pre-reveal fallback, SP3); then named NPCs without a shipped bio once seen (SP4), marked
   "no lines in this version" unless the player's own profile gives them a voice. Met and Nearby follow the journey in
   view and are absent at the title screen. Right, tabs: **Profile** (the name, with the veiled look for a perceived
-  character whose name the game has not shown, SP5; the **general profile**: who they appear to be on a first meeting,
-  from `public.summary` (a persona's, or the bio's for every other named NPC and named boss, EldenNet O46), which passes
-  the Stranger Test, EldenNet NPC §3.1; the news temperament in words; for a met character, an "On this journey" line
-  with the status word and a link to their row on Playthrough); **Allowances** (the slot's row of `allow."<slot>"`, its
-  slot `persona:…`, `character:…`, `mine:…` or `named:…`, as shortcuts, with inherited values faint and their source);
-  **Reactions** (this slot's per-reaction tri-states, `allow."<slot>".reactions.<id>`, as shortcuts into NPC types;
-  cooldowns are the same for every NPC and live on Behaviour › Reactions). Every character, met or not, opens on
-  Profile.
+  character whose name the game has not shown, SP5; the **general profile**, from its bio's first-meeting layer (a
+  persona's, or the roster bio of every other named NPC and named boss, EldenNet O46), each field reviewed at the
+  opening state when written (the Stranger Test, EldenNet NPC §3.1): who they appear to be (`public.summary`), what they
+  do (`public.role`) and, for one that speaks, what they like to talk about (`subjects`); the news temperament in words;
+  for a met character, an "On this journey" line with the status word and a link to their row on Playthrough);
+  **Allowances** (the slot's row of `allow."<slot>"`, its slot `persona:…`, `character:…`, `mine:…` or `named:…`, as
+  shortcuts, with inherited values faint and their source); **Reactions** (this slot's per-reaction tri-states,
+  `allow."<slot>".reactions.<id>`, as shortcuts into NPC types; cooldowns are the same for every NPC and live on
+  Behaviour › Reactions). Every character, met or not, opens on Profile.
 - **Data.** Reads `named`, `named/<id>`, `kinds`. Writes `settings.set` (shortcut rows).
-- **Rules.** A general profile holds first-meeting knowledge only (G8): never a stage, fate, later form, reveal, quest
-  step or relation the story discloses later, nor a road, gist, private field, tie, forbid list, beckon, knowledge entry
-  or quest track (SP1). Every named boss and every named invader with a shipped bio is in the roster from the start, by
-  its first-meeting name (for a boss the game never shows calm before its fight, the name its bar shows), read from the
-  player's install; its general profile says only what a first meeting shows: for such a boss, what the opening of its
-  fight shows; for an NPC the game can show calm, that meeting, never a later fight (D67). Bosses and invaders without a
-  bio stay out until the game names them (SP4).
+- **Rules.** A general profile holds first-meeting knowledge only (G8): its bio's `public.summary`, `public.role` and
+  `subjects` (EldenNet O46); never a stage, fate, later form, reveal, quest step or relation the story discloses later,
+  nor a road, gist, private field, tie, forbid list, beckon, knowledge entry or quest track (SP1). Every named boss and
+  every named invader with a shipped bio is in the roster from the start, by its first-meeting name (for a boss the game
+  never shows calm before its fight, the name its bar shows), read from the player's install; its general profile says
+  only what a first meeting shows: for such a boss, which is silent and has the seen fields only (EldenNet O46), what
+  the opening of its fight shows; for an NPC the game can show calm, that meeting, never a later fight (D67). Bosses and
+  invaders without a bio stay out until the game names them (SP4).
 - **Keys and pad.** ↑↓ the list, → or A into the detail, LB/RB the tabs.
 - **Related** (per character): Playthrough (their row), History › Memories and History › Conversations filtered to
   them, NPC types.
@@ -1287,7 +1290,7 @@ editable but Forget (D13). Before a playthrough is loaded, each page says "Load 
   (certain, likely), who heard it (met NPCs, from the event's audience).
 - **Data.** `history.page` with `view: events` (§6.6).
 - **Rules.** Only events the Tarnished perceived (SP7; EldenNet's `seen` bit, eldennet-changes §2); plumbing events
-  (flag and stage changes, readiness, read groups) are never listed; every text passes the lock check (SP2).
+  (flag and stage changes, readiness, read groups) are never listed; every text is our label or a name (SP2, SP3).
 - **Related.** Tools › Event monitor, Conversations, Behaviour › Reactions.
 
 **Conversations** (`history.conversations`; 0.3).
@@ -1296,8 +1299,8 @@ editable but Forget (D13). Before a playthrough is loaded, each page says "Load 
 - **Layout.** A list (the NPC as shown, when, how many lines, how it ended) and the transcript of the chosen one: the
   Tarnished's typed lines and the NPC's displayed lines, nothing unshown.
 - **Data.** `history.page` with `view: conversations`; `conversation/<id>`.
-- **Rules.** Lines pass the NPC's own lock set (SP2). Chat text on screen only (PV4): never in search, a title or a URL;
-  ids are opaque numbers.
+- **Rules.** Only lines that were shown, as they were shown (SP2). Chat text on screen only (PV4): never in search, a
+  title or a URL; ids are opaque numbers.
 - **Related.** Memories, Characters › Named NPCs.
 
 **Memories** (`history.memories`; 0.3).
@@ -1323,7 +1326,8 @@ editable but Forget (D13). Before a playthrough is loaded, each page says "Load 
 - **Sections.** **Memory work** (waiting, running, the last result in words) · **Backups** (count and times, no
   paths). A note: "Diaries and scene memories: later version."
 - **Data.** Reads `memories`, `journal/<id>`. Writes `settings.set`, `memory.forget_npc`, `memory.forget_journey`.
-- **Rules.** Journals and keepsakes pass the NPC's own lock set (SP2). Model text on screen only (PV4); no paths.
+- **Rules.** Journals and keepsakes are shown as EldenNet's memory job wrote them, from grounded inputs only (SP2;
+  EldenNet O86). Model text on screen only (PV4); no paths.
 - **Keys and pad.** Forget: A, then a second A on the confirmation's focused "Forget" after 1 s.
 - **Related.** Conversations, Characters › Named NPCs, Settings › Developer.
 
@@ -1586,16 +1590,21 @@ a later version (O41, EldenNet DESIGN §13); v1 is dialogue only and never write
 ### 4.8 Spoiler rules (from IA §6; binding on both views)
 
 - **SP1. Projections, not raw content.** The core never sends the UI flag ids, catalogue aliases, notes, stage ids,
-  roads, gists, private fields, forbid lists, knows, beckons, ties, heard lines, knowledge text, prompts or model text
-  that was not displayed. The only authored texts shown are written to be impersonal: `public.summary` (the roster's
-  general profiles, every named NPC's and named boss's, G5, G8; EldenNet O43, O46), a world stage's `line`, a persona
-  stage's public line for the stage seen (Playthrough), our labels and our help. Workshop is the one exception (SP8).
-- **SP2. The lock filter.** Every content or model string passes EldenNet's per-sentence lock check at projection time:
-  the Tarnished's set for global strings, the NPC's own set for its journal and lines (`Locked(P)` for a persona,
-  `Locked(C)` for a character, EldenNet O45). A failing item is dropped whole and counted on System › Status.
+  roads, gists, private fields, a bio's revealed, companion and lived layers, forbid lists, knows, beckons, ties, heard
+  lines, knowledge text, prompts or model text that was not displayed. The only authored texts shown are written to be
+  impersonal: `public.summary`, `public.role` and `subjects` (the roster's general profiles, every named NPC's and
+  named boss's, G5, G8; EldenNet O43, O46), a world stage's `line`, a persona stage's public line for the stage seen
+  (Playthrough), our labels and our help. Workshop is the one exception (SP8).
+- **SP2. Shown, grounded or impersonal (was the lock filter).**
   *Later (2026-11-15):* EldenNet's O86 keeps spoilers by grounding alone and drops its locked-term sets and output
   lock, so this filter goes; SP2 is re-cut in EldenNet's fold (its roadmap S7.13.b): the views show only what was
   shown in game or written impersonal (SP1).
+  *Re-cut (2026-11-16):* a view holds only what the game showed (lines displayed, names as SP3 allows, perceived events
+  in our labels, SP7), what EldenNet wrote from the same grounded inputs as its prompts (journals and keepsakes; from
+  1.1, lore notes), and SP1's authored texts, each reviewed when written (the Stranger Test for public fields, EldenNet
+  NPC §3.1). Nothing is checked, dropped or counted for spoilers at projection time: each of EldenNet's prompts and jobs
+  holds only what the NPC knows at its stage, and a few test questions per character measure what the model itself
+  knows of the game (EldenNet O86).
 - **SP3. Names as the game shows them.** On-screen names come from the runtime name of the current row, or the
   first-meeting name (the pre-reveal fallback); a veiled persona stays veiled; regions by the names of regions
   entered. GraceUI stores no name.
@@ -1718,7 +1727,7 @@ with a page of their own show as statements (G7); everything else is simply abse
 | Settings › Audio & Voice: the player's voice and its placement, narration | Not planned (the player character is unvoiced; EldenNet voices NPC lines only) | SN06 §7.3 (the Tarnished is a silent protagonist); O8 |
 | Settings › Audio & Voice: voicing the game's own lines | Not applicable (the game voices its own lines) | — |
 | Settings › Audio & Voice: lip-sync helpers | Later (v2: native subtitles and mouth movement, S9); none in v1 | EldenNet DESIGN §1.2, §12 (ER03 §5) |
-| Characters: generated profiles, profile updates | Not planned: the journal is the evolving layer; uncurated NPCs use their card or stay mute | EldenNet DESIGN §7.1, §10.3 |
+| Characters: generated profiles, profile updates | Not planned: profile updates live on as each bio's lived layer, made per journey from its memories (EldenNet O46); uncurated NPCs use their card or stay mute | EldenNet DESIGN §7.1, §10.3 |
 | Characters: virtual entities | Not planned | SN01 §14.3 |
 | Home: latest screenshot, profile and diary shortcuts, pinned characters with teleport | Not planned; teleport never (a game write) | EldenNet DESIGN §0 item 3 |
 | History › Diaries | Later | EldenNet DESIGN §1.2, Deferred |
@@ -1819,10 +1828,10 @@ statement in the rail (principle 8, §4.2.1).
 - **Glow and motion** (G22 (a)). A still glow, brightening on hover, and one flare for a thing new since the map was
   last opened (off under reduced motion); invariant 14 is unchanged. Glow is full, soft or off (D95).
 - **Lore notes** (G23 (c)). The model adds notes on its own, each from two or more of the player's memories tied to one
-  place or person and citing them, through the lock filter (SP2), batched on a light slot under EldenNet's pacing; the
-  player may edit or remove any, and a removed note is not written again from the same memories. **Lore notes by AI**,
-  on by default in Settings › Map, turns it off. Notes are kept per playthrough and shown on Map and History ›
-  Memories.
+  place or person, citing them and given nothing else (grounded inputs, as for every EldenNet summary job: SP2, EldenNet
+  O86), batched on a light slot under EldenNet's pacing; the player may edit or remove any, and a removed note is not
+  written again from the same memories. **Lore notes by AI**, on by default in Settings › Map, turns it off. Notes are
+  kept per playthrough and shown on Map and History › Memories.
 - **Privacy** (proposal 0002 §9). The player's map never leaves their PC except to their own browser on loopback, or a
   paired device on their home network while they have switched that on (G9); never in a log, report, URL or support
   bundle (PV1–PV8). Tiles are served only to an authorised session and listed in no index. Documents, fixtures and
@@ -2073,7 +2082,7 @@ space's traffic also carries `space`, the space's id (D81); GraceUI's own frames
 | `settings` | state | Values, the settings description (§6.9), availability, changed flags | on change | Every page with settings rows, Quick switches, Settings |
 | `providers` | state | `providers.toml`, `models.toml` presets, advice and budgets, key status (never a key) | on change | AI › Providers, AI › Models, Home › Setup |
 | `named` | state | The roster (every named NPC and named boss with a general profile, in name order, by the name the game shows or the first-meeting name, at the title screen too; G8, D67), facts in words (MEM §2.2's rendered keys only, SP1), quest-business readiness for met personas only (SP5) | on change | Characters › Named NPCs, Behaviour › Speaking up |
-| `named/<id>` | state | One NPC's profile and allowances, its per-reaction allowances included | on change | Characters › Named NPCs |
+| `named/<id>` | state | One NPC's general profile (`public.summary`, `public.role`, `subjects`; SP1), news temperament and allowances, its per-reaction allowances included | on change | Characters › Named NPCs |
 | `playthrough` *new* | state | This journey's people met: the name as shown, the status word (from perception only), last met (a region entered, play time), the disposition word, the public line of the stage seen (`stage_seen`), related lines for met people only, up to three notes since the last conversation, and the world-now line (SP1–SP9) | on change | Characters › Playthrough |
 | `memories` *new* | state | Met NPCs per journey of this playthrough, with keepsake counts and memory work | on change | History › Memories |
 | `journal/<id>` | state | One NPC's journal, keepsakes and facts in words (MEM §2.2's rendered keys only; never `stage_seen`, `world_seen`, `world_seen_pt`, `world_cued`, `spoke_pt` or `verified:`) for every journey of this playthrough (earlier ones read-only), memory work | on change | History › Memories |
@@ -2362,7 +2371,7 @@ A command and its answer:
 | Page lint | Every exported setting has exactly one home, and that home is one of §4.5's page ids; every shortcut row and quick switch names a home that exists; no unknown keys; every page has an id, a category, a description, help text and at least one Related link that resolves, and names its increment or a later-version tag; statement pages hold no controls; Settings' link-out groups hold no rows; every component used exists in both views | Linux CI |
 | Server security suite | Run with two spaces: a page cannot reach another space's topics or commands, and each space's sensitive commands are refused from a paired device. Uploads (§7.2 item 18): no ticket, a reused or expired ticket, another session's ticket, a size or hash that differs from the ticket's, an oversized body, a second upload at once, an upload on the network listener, a cross-site or foreign-origin request, a command not marked as taking a file, each refused; nothing of an upload left in memory or on disk after the call. Wrong or missing `Host`; foreign or missing `Origin` on upgrades; a missing, stale or foreign session cookie; a replayed ticket; a cookie overwritten from another port; a narrower-Path `en_session` and a cookie flood from another port; files not listed in `graceui.toml`; a missing web folder; `Sec-Fetch-Site` cross-site; oversized frames; command floods; no CORS headers; every security header present; no cookie in any log line; port taken → fail closed; with `dashboard.lan` on: a Host naming an address not bound, an unpaired device reaching anything but the pairing page, five wrong codes, an expired or reused code, `dashboard.pair` from any browser, a forgotten device's cookie, `secrets.set`, `secrets.clear` and `providers.update` from a paired device, and `dashboard.lan` off closing every device connection; on the network listener, an unpaired device's page load gets no session cookie, a loopback `Host` gets 421, a forged loopback `Origin` is refused, a session cookie is not accepted, and `dashboard.forget_device` and `dashboard.disconnect` are refused; a device name or network address in a log line or report | Linux CI, against `grace-serve` |
 | Web app | Component tests; each page against fixture states; the key-field lint (no password-type input, key fields in no form and cleared after `secrets.set`, §7.4); keyboard-only walkthroughs of the rail, top bar and every page; Home's Customise round trip (`ui.menu.home_cards`); Live updates holding a stream; an automated accessibility check (its licence checked first); the mock's two window sizes (1280 × 720, 2560 × 1440) | Linux CI, headless browser |
-| Spoiler goldens | For each of EldenNet's fixture states (with our invented names), each page's and each Home card's rendered text, tiles and counts match a golden; no count includes a veiled or absent item; a hidden character, a boss before its bar or an unannounced invader changes no count; History › Events lists no event the Tarnished did not perceive; an earlier journey shows read-only; titles and URLs carry no chat text; the roster at the title-screen fixture, named bosses included, shows only general profiles that pass the opening lock set, in name order, and an overlap fixture (an invented character the game can show calm, with a later boss form) shows no "Boss" tag and no bar name, met or not; Playthrough shows nothing of anyone not met, "Alive when last met" for someone who died unseen, the line of the stage seen and never a later one, and no related story for an unmet person | Linux CI (web), Windows CI (in game) |
+| Spoiler goldens | For each of EldenNet's fixture states (with our invented names), each page's and each Home card's rendered text, tiles and counts match a golden; no count includes a veiled or absent item; a hidden character, a boss before its bar or an unannounced invader changes no count; History › Events lists no event the Tarnished did not perceive; an earlier journey shows read-only; titles and URLs carry no chat text; the roster at the title-screen fixture, named bosses included, shows only general profiles (`public.summary`, `public.role` and, for an entry that speaks, `subjects`), in name order, and an overlap fixture (an invented character the game can show calm, with a later boss form) shows no "Boss" tag and no bar name, met or not; Playthrough shows nothing of anyone not met, "Alive when last met" for someone who died unseen, the line of the stage seen and never a later one, and no related story for an unmet person | Linux CI (web), Windows CI (in game) |
 | View parity | Each page's structure (rows, labels, values, order, focus order), the rail, the top bar and Home's grid dumped from both views and compared with one golden (U6), per space | Linux CI (the in-game structure from `graceui.dll` driven by `grace-dev`), Windows CI |
 | Contrast | The table of §3.3 recomputed from `tokens/grace.toml` (U7) | Linux CI |
 | In-game view harness (`grace-harness`, D85) | A Windows program that opens a Direct3D 12 window, loads `graceui.dll` and a mod's DLL (our example mods, and EldenNet's panels with fixtures) and feeds input: screenshots compared within a tolerance, frame cost, atlas size, the upload counter. WARP in CI is LIKELY to work, to be confirmed | Windows CI and developer machines |
@@ -2576,7 +2585,7 @@ repository) waits for G20 and is not in force until the owner answers; until the
 | D64 | Roster and playthrough | Named NPCs and NPC types hold what is the same in every playthrough (general profiles, allowances, reactions, the news temperament); Playthrough holds this journey's state. Named NPCs' "Now" and "Has heard of" move to Playthrough, and the roster is usable at the title screen | One page for both | Under G8 the roster is shown before any meeting, so the journey's state needs a page bound to the journey | Owner, G8 |
 | D65 | What Playthrough may say | Status from perception only (here now; alive when last met; away, when the Tarnished passed where they were last met and did not perceive them; fell, when the Tarnished saw it); a story line only for the stage active at the last meeting (EldenNet's `stage_seen`), never a later one; related stories only for met people the stage's own line links; notes only from records; never a next step, a "has something for you" mark, a fate or a count of what is left; its lines and notes are never searched (D21) | Reading flags directly; quest tracks | A flag can hold before its effect is seen (D11); `stage_seen` is what the Tarnished witnessed | SP1–SP9; MEM §2.2 |
 | D66 | Pairing a device (G9) | A six-digit code shown in game for two minutes, one use, void after five wrong tries; one random device cookie per device, kept by EldenNet only as a hash with its name and date in `devices.toml` until the player forgets it; Forget revokes it at once and closes its connections, whether `dashboard.lan` is on or off; `dashboard.lan` off closes the network listener and every device connection; the network listener accepts only device cookies and never grants the session cookie; paired devices are refused `secrets.set`, `secrets.clear` and `providers.update`; this PC (a connection on the loopback listener) never needs a code (Since G17 (a) GraceUI keeps the hashes, in `Game\GraceUI\user\devices.toml` (D84); paired devices are refused every command a space marks as sensitive (D81)) | A host field with no pairing; a code per session; a code shown in this PC's browser too | The owner's G9 words; a key is never typed over the network; a code shown in a browser could be read by another user signed in on the same PC (§7.1) | Owner, G9; §7.2 item 16 |
-| D67 | Named bosses in the roster | Characters › Named NPCs lists every named NPC and every named boss with a shipped bio from the start (named invaders among the named NPCs), by the name the game shows at a first meeting, read from the player's install. A boss the game never shows calm before its fight is listed by the name its bar shows and carries a "Boss" tag. An NPC the game can show calm before any fight (persona or not; one profile id across forms, EldenNet §7.8) carries no tag and is never listed by its bar name. Which entries carry the tag is fixed per entry in EldenNet's index, never by the playthrough (D64). Its general profile says only what a first meeting shows: for a tagged boss, what the opening of its fight shows; for every other entry, its calm first meeting; each group (Met, Not met, Seen) is in name order, never grouped or ordered by region, kind or order of play, and nothing is counted per region; on NPC types a named boss appears only as its slot among the named slots, and the boss kind row still names no one | Bosses only once their bar has shown (SP4 before); a separate Bosses group; order of play | The owner's answers to EldenNet's roster questions ("bios for every named NPCs and bosses with names", "shipped full roster from beginning"); an order by region or progression would hint at what comes next | Owner, EldenNet O43 as updated; G5, G8 |
+| D67 | Named bosses in the roster | Characters › Named NPCs lists every named NPC and every named boss with a shipped bio from the start (named invaders among the named NPCs), by the name the game shows at a first meeting, read from the player's install. A boss the game never shows calm before its fight is listed by the name its bar shows and carries a "Boss" tag. An NPC the game can show calm before any fight (persona or not; one profile id across forms, EldenNet §7.8) carries no tag and is never listed by its bar name. Which entries carry the tag is fixed per entry in EldenNet's index, never by the playthrough (D64). Its general profile says only what a first meeting shows: for a tagged boss, what the opening of its fight shows; for every other entry, its calm first meeting; each group (Met, Not met, Seen) is in name order, never grouped or ordered by region, kind or order of play, and nothing is counted per region; on NPC types a named boss appears only as its slot among the named slots, and the boss kind row still names no one (Since EldenNet O46, 2026-11-16: the general profile is the bio's `public.summary`, `public.role` and `subjects`, each reviewed at the opening state when written; a tagged boss, or a named boss of a voiceless kind, has the seen fields only and is silent, so it shows no `subjects`) | Bosses only once their bar has shown (SP4 before); a separate Bosses group; order of play | The owner's answers to EldenNet's roster questions ("bios for every named NPCs and bosses with names", "shipped full roster from beginning"); an order by region or progression would hint at what comes next | Owner, EldenNet O43 as updated; G5, G8 |
 | D68 | Memories of other NPCs | A keepsake about another NPC (EldenNet O45) shows on History › Memories, and in the `journal/<id>` projection (and its count in `memories`), only when every event it cites had the Tarnished in its audience, and names that NPC as the game shows them (SP3); otherwise it is shown and counted nowhere | Every keepsake; no keepsake about another NPC | Absence is silent (SP5); what the Tarnished heard is theirs to see (SP7) | EldenNet O45; SP3, SP5, SP7 |
 | D69 | The host's shape | `graceui.dll` itself is the host: its `grace-host` crate alone holds hudhook 0.9.3 with every O25 rule, its MinHook, the Present hook, the window procedure (with EldenNet's `WM_CHAR` surrogate fix and IME placement) and the DInput and XInput detours for capture and masking; XInput is hooked in every XInput DLL already loaded at install, found by name, so GraceUI reads no import table of the game's; no second GraceUI module. Supersedes G10 (b)'s split and D56's "links no hudhook" | A hook-free GraceUI module beside the host; a dual mode in which EldenNet hosts when present | One process holds one hudhook and one MinHook safely; a framework other mods use must be present without EldenNet; a second module adds a private ABI and a second copy to guard, for no isolation within one process | G15 (a); proposal 0001 §4.1 |
 | D70 | Finding GraceUI | The helper (header-only C, and the `graceui-sys` crate with a thin safe wrapper) runs on the mod's own worker, never in `DllMain`: `GetModuleHandleW(L"graceui.dll")` and its export; else a scan of loaded modules for the export, the first that answers; else, if the mod allows it, `LoadLibraryExW` of `<folder of eldenring.exe>\GraceUI\graceui.dll`; polled every 250 ms for at most 30 s (EST). Exports: `GraceUI_Version()` (callable from any thread, needs no start) and `GraceUI_RequestApi(major)`. Absence means the mod's UI is off, never an error dialog | Load order or a loader's API; a registry of hosts | Every peer host uses this shape, and it survives renaming and duplicates | G15 (a); proposal 0001 §4.3 |
