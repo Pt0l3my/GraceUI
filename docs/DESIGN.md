@@ -2595,9 +2595,9 @@ it.
 | [G15](DECISIONS.md#g15) | Who owns the one overlay? | (a) GraceUI owns it, so any mod can use it without EldenNet; supersedes G10. Since 2026-11-16 the overlay is Dear ImGui with MinHook, in hudhook's place (EldenNet O25) | Decided 2026-11-08; its libraries changed by the owner on 2026-11-16 |
 | [G16](DECISIONS.md#g16) | What do other mods write, and what draws it in game? | (a) page data plus checked panels; no HTML in game | Decided 2026-11-08 |
 | [G17](DECISIONS.md#g17) | Is the browser view a GraceUI feature for every mod? | (a) yes, for mods that opt in | Decided 2026-11-08 |
-| [G18](DECISIONS.md#g18) | When does the framework open to other modders? | Recommended: (a) after EldenNet v1.0, as GraceUI 1.1 | **Open** |
-| [G19](DECISIONS.md#g19) | May SkyrimNet-derived material reach other mods through GraceUI? | Recommended: (a) not until Min confirms | **Open** |
-| [G20](DECISIONS.md#g20) | Where do EldenNet's pages live? | Recommended: (a) in EldenNet's repository, registered with GraceUI | **Open** |
+| [G18](DECISIONS.md#g18) | When does the framework open to other modders? | (a) after EldenNet v1.0, as GraceUI 1.1 | Decided 2026-11-16, as recommended |
+| [G19](DECISIONS.md#g19) | May SkyrimNet-derived material reach other mods through GraceUI? | (a) not until Min confirms: GraceUI keeps its own code and theme | Decided 2026-11-16, as recommended |
+| [G20](DECISIONS.md#g20) | Where do EldenNet's pages live? | (a) in EldenNet's repository, registered with GraceUI | Decided 2026-11-16, as recommended |
 | [G21](DECISIONS.md#g21) | What is the map drawn on? | (a) the player's own game map, its tiles composed as the game composes them for the pieces held, read at run time, never shipped; the drawn base as fallback | Decided 2026-11-15 |
 | [G22](DECISIONS.md#g22) | May anything on the map loop or pulse? | (a) no; still glow and one-shot flares (invariant 14 unchanged) | Decided 2026-11-15 |
 | [G23](DECISIONS.md#g23) | Who writes the lore notes? | (c) the model adds notes on its own, citing memories; the player edits or removes them; a setting, on by default | Decided 2026-11-15 |
@@ -2606,7 +2606,7 @@ it.
 | [G26](DECISIONS.md#g26) | In game, how is the game's map kept to what the player has reached? | (a) as the game shows it: composed at start and again when a map piece is gained; a measured exception to invariant 11 | Decided 2026-11-15 |
 | [G27](DECISIONS.md#g27) | How does the map show terrain? | (a) the exact terrain built locally: a 3D relief in the browser, a relief image in game; our own sprites and the tile-grid schematic as the fallback | Decided 2026-11-14 |
 | [G28](DECISIONS.md#g28) | May a space take a file from the browser view? | (a) a narrow upload route on the loopback listener, for a space's sensitive file commands alone, refused from paired devices | Decided 2026-11-15 |
-| [G29](DECISIONS.md#g29) | GraceUI's server for hosts outside the game? | (a) recommended: one server library GraceUI publishes, with every rule of §7.2 and invariant 4 | Open |
+| [G29](DECISIONS.md#g29) | GraceUI's server for hosts outside the game? | (a) one server library GraceUI publishes, with every rule of §7.2 and invariant 4 | Decided 2026-11-16, as recommended |
 | [G30](DECISIONS.md#g30) | What is the loopback server built on, in C++? | (a) our own small server, on the narrow subset §7.2 and §6.8 allow, built to the independent review's plan (SRV §5) and fuzzed in CI (§7.6) | Decided 2026-11-16, as recommended |
 
 ---
