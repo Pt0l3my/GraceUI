@@ -28,7 +28,7 @@ CC=gcc CXX=g++ cmake -S . -B build-linux-gcc -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build-linux-gcc && ctest --test-dir build-linux-gcc --output-on-failure
 ```
 
-`grace-input`'s 57 cases cover the holder's answers, the close routine from every exit path, the player's exit and its
+`grace-input`'s 58 cases cover the holder's answers, the close routine from every exit path, the player's exit and its
 timing, the watchdog, the game's view of DirectInput and XInput (untouched, at rest, a closing press hidden until
 released, the packet number), the holder's pad view with the opening press, the window-message routing, the surrogate
 pairing (lone and swapped halves too) and the ANSI byte joiner, and the hand-overs between threads under

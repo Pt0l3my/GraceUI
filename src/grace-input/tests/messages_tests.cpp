@@ -221,6 +221,16 @@ TEST_CASE("focus loss ends the holder and forgets every key seen held") {
   CHECK_FALSE(world.rules.focus_lost(kStart + 600).holds());  // no holder: nothing to close
 }
 
+TEST_CASE("focus loss forgets Escape for the player's exit, as each source saw it") {
+  World world;
+  world.capture.escape(Source::direct_input, true, kStart);  // a read saw Escape down; then the reads failed, unfocused
+  world.press(kEscape, kVkEscape, kStart);
+  world.rules.focus_lost(kStart + 100);
+  REQUIRE(world.take(Kind::panel, want_all, kStart + 5000).answer == Answer::granted);
+  world.capture.rendered(kStart + 6500);
+  CHECK_FALSE(world.capture.tick(kStart + 6500).holds());  // no stale press ends the next holder
+}
+
 TEST_CASE("mouse: the holder's while it has the mouse; a press it began never reaches the game") {
   World world;
   CHECK(world.rules.mouse_button(0, true).route == Route::game);  // held as the holder takes input

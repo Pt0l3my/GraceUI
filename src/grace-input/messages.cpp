@@ -163,7 +163,9 @@ Decision MessageRules::raw_input(std::uint8_t device) noexcept {
 
 Holder MessageRules::focus_lost(std::int64_t now_ms) noexcept {
   const Holder closed = capture_->close(Closed::focus_lost, now_ms);
+  // Both of Escape's timers: an unfocused game's DirectInput reads may fail, and none would report the release.
   capture_->escape(Source::messages, false, now_ms);
+  capture_->escape(Source::direct_input, false, now_ms);
   game_down_.clear_all();
   captured_down_.clear_all();
   holder_down_.clear_all();
