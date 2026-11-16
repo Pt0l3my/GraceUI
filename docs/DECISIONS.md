@@ -526,7 +526,7 @@ asks only how.
 
 ## G30
 
-**The C++ basis of the loopback server** · *2026-11-16 · Open*
+**The C++ basis of the loopback server** · *Open since 2026-11-16 · Decided by the owner 2026-11-16, as recommended*
 
 **Question.** With GraceUI's in-game parts in C++ (EldenNet's O60), `grace-serve`, the loopback HTTP and WebSocket
 server of §7.2, needs a C++ basis. **Options:** (a) **our own small server** on Windows sockets, serving only the narrow
@@ -545,3 +545,15 @@ invariant 4 hold whichever is chosen.
 
 *Later (2026-11-16):* the owner asked for a second agent's view before deciding; a request with §7.2's rules, the
 options and the questions was written for it.
+
+**Decision (2026-11-16).** (a): our own small server, on the narrow subset that §7.2 and §6.8 allow, built to the plan
+of the independent review (research note SRV, §5): the HTTP head parser and the WebSocket frame decoder are pure
+functions over bounded buffers, fuzzed in CI; one non-blocking I/O thread and one worker; `Connection: close` on every
+HTTP response; static paths matched to the manifest byte for byte; RFC 9112's and RFC 6455's strict rules; WebSockets
+capped at two, with plain HTTP connections capped on their own (§6.8, corrected the same day).
+
+**Owner's words.** "Our own server (Recommended)".
+
+**Evidence.** [research/server-basis.md](research/server-basis.md) (SRV): the review recommends the same, with
+Boost.Beast as the runner-up, and found that every general-purpose library it checked shipped parser or framing fixes
+in 2025-26.
