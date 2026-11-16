@@ -113,6 +113,7 @@ TEST_CASE("connect: duplicate_id while the id is connected, and free again after
   CHECK(owner == first.owner);
   CHECK(consumers.owner_of(first.handle) == 0);
   CHECK(consumers.disconnect(first.handle, owner) == GRACEUI_NOT_CONNECTED);  // a handle disconnects once
+  consumers.left(first.owner);
 
   const ConnectResult again = consumers.connect(request("same-mod"), kGraceUi, Inactive::none);
   CHECK(again.status == GRACEUI_OK);
@@ -209,4 +210,26 @@ TEST_CASE("mods connecting at once from many threads: one id connects once") {
   CHECK(ok.load() == 1);
   CHECK(duplicate.load() == kThreads - 1);
   CHECK(consumers->count() == kThreads + 1);
+}
+
+TEST_CASE("a slot being left is given to nobody until its clean-up is done") {
+  // The host withdraws a disconnected mod's notices and holder by its number after disconnect(); a mod connecting on
+  // another thread meanwhile must not have that number, or it would lose what it had just made (the review's L14).
+  auto consumers = std::make_unique<Consumers>();
+  std::vector<ConnectResult> connected;
+  for (std::uint32_t i = 0; i < kMaxConsumers; ++i) {
+    connected.push_back(consumers->connect(request(("mod-" + std::to_string(i)).c_str()), kGraceUi, Inactive::none));
+    REQUIRE(connected.back().status == GRACEUI_OK);
+  }
+  std::uint32_t owner = 0;
+  REQUIRE(consumers->disconnect(connected[5].handle, owner) == GRACEUI_OK);
+  CHECK(consumers->owner_of(connected[5].handle) == 0);  // its handle names nobody at once
+  CHECK(consumers->count() == kMaxConsumers - 1);
+  const ConnectResult meanwhile = consumers->connect(request("late-mod"), kGraceUi, Inactive::none);
+  CHECK(meanwhile.status == GRACEUI_REFUSED);  // its slot is not free yet, and no other is
+  CHECK(meanwhile.reason == GRACEUI_REFUSED_TOO_MANY);
+  consumers->left(owner);
+  const ConnectResult after = consumers->connect(request("late-mod"), kGraceUi, Inactive::none);
+  CHECK(after.status == GRACEUI_OK);
+  CHECK(after.owner == owner);
 }

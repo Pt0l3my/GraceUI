@@ -5,6 +5,7 @@
 #include <atomic>
 
 #include "counters.h"
+#include "grace/abi/world.h"
 #include "grace/input/queue.h"
 #include "imgui.h"
 #include "imgui_internal.h"  // ImGuiContext's input queues: emptied between holders and reserved at warm-up
@@ -48,15 +49,18 @@ constinit std::atomic<std::int32_t> g_caret_x{0};
 constinit std::atomic<std::int32_t> g_caret_y{0};
 constinit std::atomic<std::int32_t> g_caret_height{0};
 
-// The world-state providers' claims (D78): none in GraceUI 0.1 but the test exports'.
-constinit std::atomic<bool> g_danger{false};
-constinit std::atomic<bool> g_loading{false};
-constinit std::atomic<bool> g_game_menu{false};
+// The world-state providers' claims (D78) are read where they are kept, the session's World, whose combined word is
+// written under its lock: never a copy, so that the last provider to report decides, whatever order their threads run
+// in (D143). A test build's own claims are or-ed in.
+#if defined(GRACEUI_TEST_EXPORTS)
+constinit std::atomic<std::uint32_t> g_test_world{0};
+#endif
 
 constinit std::atomic<bool> g_off{false};
 constinit std::atomic<std::uint32_t> g_last_granted{0};
 
-// The cursor's confinement before a holder took the mouse (§5.2), put back at the close.
+// The cursor's confinement before a holder took the mouse (§5.2), put back at the close. Set only after the cursor is
+// confined, so that a close that finds it unset leaves the granting thread to undo its own confinement.
 constinit std::atomic<bool> g_clipped{false};
 constinit std::atomic<std::int32_t> g_saved_clip[4]{};
 
@@ -101,29 +105,33 @@ const char* closed_name(grace::input::Closed why) noexcept {
 }
 
 // Confines the cursor to the window's client area while a holder has the mouse (§5.2), keeping the clip it replaces.
-void confine_cursor(bool first) noexcept {
+// Answers whether it confined it.
+bool confine_cursor(bool first) noexcept {
   const HWND target = g_window.load(std::memory_order_acquire);
   RECT client{};
   if (target == nullptr || !GetClientRect(target, &client)) {
-    return;
+    return false;
   }
   POINT corners[2] = {{client.left, client.top}, {client.right, client.bottom}};
   if (!ClientToScreen(target, &corners[0]) || !ClientToScreen(target, &corners[1])) {
-    return;
+    return false;
   }
   if (first) {
     RECT saved{};
     if (!GetClipCursor(&saved)) {
-      return;
+      return false;
     }
     g_saved_clip[0].store(saved.left, std::memory_order_relaxed);
     g_saved_clip[1].store(saved.top, std::memory_order_relaxed);
     g_saved_clip[2].store(saved.right, std::memory_order_relaxed);
     g_saved_clip[3].store(saved.bottom, std::memory_order_relaxed);
-    g_clipped.store(true, std::memory_order_release);
   }
   const RECT clip{corners[0].x, corners[0].y, corners[1].x, corners[1].y};
   ClipCursor(&clip);
+  if (first) {
+    g_clipped.store(true, std::memory_order_seq_cst);
+  }
+  return true;
 }
 
 void restore_cursor() noexcept {
@@ -141,6 +149,27 @@ bool ready() noexcept {
          state::bound.load(std::memory_order_relaxed) && state::renderer_ready.load(std::memory_order_relaxed) &&
          state::atlas_ready.load(std::memory_order_relaxed) && !state::render_off.load(std::memory_order_relaxed) &&
          last != 0 && now_ms() - last <= grace::input::kNoRenderMs;
+}
+
+std::uint32_t world_flags() noexcept {
+  std::uint32_t flags = session::world().combined();
+#if defined(GRACEUI_TEST_EXPORTS)
+  flags |= g_test_world.load(std::memory_order_acquire);
+#endif
+  return flags;
+}
+
+// The holder's conditions as they are now (grace::input::ReadConditions): read before a grant and again after it, and
+// by every writer's settle() (D129, D143).
+grace::input::Conditions read_conditions(const void*) noexcept {
+  const std::uint32_t flags = world_flags();
+  grace::input::Conditions conditions;
+  conditions.ready = ready();
+  conditions.danger = (flags & GRACEUI_WORLD_DANGER) != 0;
+  conditions.loading = (flags & GRACEUI_WORLD_LOADING) != 0;
+  conditions.game_menu = (flags & GRACEUI_WORLD_GAME_MENU) != 0;
+  conditions.off = g_off.load(std::memory_order_acquire) || state::render_off.load(std::memory_order_acquire);
+  return conditions;
 }
 
 // ---- Feeding Dear ImGui (present thread).
@@ -343,18 +372,24 @@ bool caret_in_client(std::int32_t& x, std::int32_t& y, std::int32_t& height) noe
 }
 
 grace::input::Request request(std::uint16_t owner, Kind kind, std::uint8_t wants) noexcept {
-  grace::input::Conditions conditions;
-  conditions.ready = ready();
-  conditions.danger = g_danger.load(std::memory_order_acquire);
-  conditions.loading = g_loading.load(std::memory_order_acquire);
-  conditions.game_menu = g_game_menu.load(std::memory_order_acquire);
-  const grace::input::Request answer = g_capture.request(owner, kind, wants, conditions, now_ms());
+  const grace::input::Request answer = g_capture.request(owner, kind, wants, &read_conditions, nullptr, now_ms());
+  if (answer.answer == grace::input::Answer::not_now) {
+    closed(answer.holder);  // a holder granted, then ended at once by a claim made meanwhile (invariant 9)
+    return answer;
+  }
   if (answer.answer == grace::input::Answer::granted &&
       g_last_granted.exchange(answer.holder.generation, std::memory_order_acq_rel) != answer.holder.generation) {
-    if ((answer.holder.wants & grace::input::want_mouse) != 0) {
-      confine_cursor(true);
-    }
     log_line("%s holds input", kind_name(answer.holder.kind));
+    if ((answer.holder.wants & grace::input::want_mouse) != 0 && confine_cursor(true)) {
+      // The holder may have ended between its grant and the confinement (focus loss, on the window's thread), and that
+      // close found nothing to put back: the confinement is undone here. g_clipped is stored above, the holder read
+      // below, and closed() fences between its close and its own look at g_clipped: one of the two undoes it.
+      std::atomic_thread_fence(std::memory_order_seq_cst);
+      const Holder now = g_capture.holder();
+      if (now.phase != Phase::active || now.generation != answer.holder.generation) {
+        restore_cursor();
+      }
+    }
   }
   return answer;
 }
@@ -368,16 +403,7 @@ bool release(std::uint16_t owner) noexcept {
   return true;
 }
 
-void set_world(bool danger, bool loading, bool game_menu) noexcept {
-  g_danger.store(danger, std::memory_order_release);
-  g_loading.store(loading, std::memory_order_release);
-  g_game_menu.store(game_menu, std::memory_order_release);
-  if (danger) {
-    closed(g_capture.close(grace::input::Closed::danger, now_ms()));  // invariant 9
-  } else if (loading) {
-    closed(g_capture.close(grace::input::Closed::loading, now_ms()));
-  }
-}
+void world_changed() noexcept { closed(g_capture.settle(&read_conditions, nullptr, now_ms())); }  // invariant 9
 
 bool close_holder(grace::input::Closed why, std::uint32_t generation) noexcept {
   const Holder ended = g_capture.close(why, now_ms(), generation);
@@ -395,6 +421,7 @@ void closed(const Holder& holder) noexcept {
   if (!holder.holds()) {
     return;  // nobody was closed here
   }
+  std::atomic_thread_fence(std::memory_order_seq_cst);  // the close above, g_clipped below (request() pairs with it)
   restore_cursor();
   const grace::input::LastClose last = g_capture.last_close();
   log_line("%s no longer holds input: %s", kind_name(holder.kind),
@@ -407,13 +434,14 @@ void fault(const char* why) noexcept {
   if (!g_off.exchange(true, std::memory_order_acq_rel)) {
     log_line("input is off for this session: %s", why);
   }
-  closed(g_capture.close(grace::input::Closed::fault, now_ms()));
+  closed(g_capture.settle(&read_conditions, nullptr, now_ms()));  // off: any holder ends (fault)
 }
 
 void turn_off(const char* why) noexcept {
   if (!g_off.exchange(true, std::memory_order_acq_rel)) {
     log_line("input is off for this session: %s", why);
   }
+  closed(g_capture.settle(&read_conditions, nullptr, now_ms()));
 }
 
 bool off() noexcept { return g_off.load(std::memory_order_acquire); }
@@ -437,7 +465,7 @@ bool wants_frames() noexcept { return g_capture.holder().phase == Phase::active;
 
 void rendered() noexcept { g_capture.rendered(now_ms()); }
 
-void render_off() noexcept { closed(g_capture.close(grace::input::Closed::fault, now_ms())); }
+void render_off() noexcept { closed(g_capture.settle(&read_conditions, nullptr, now_ms())); }  // state::render_off is set
 
 void reserve_imgui_queues() noexcept {
   ImGuiContext& context = *ImGui::GetCurrentContext();
@@ -523,6 +551,10 @@ void after_new_frame() noexcept {
 }
 
 #if defined(GRACEUI_TEST_EXPORTS)
+void test_set_world(std::uint32_t flags) noexcept {
+  g_test_world.store(flags & grace::abi::kWorldFlags, std::memory_order_release);
+  world_changed();
+}
 void test_set_code_page(std::uint32_t code_page) noexcept {
   g_forced_code_page.store(code_page, std::memory_order_relaxed);
 }

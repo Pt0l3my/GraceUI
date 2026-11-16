@@ -118,6 +118,13 @@ bool Panels::alive(std::uint32_t index, std::uint64_t id) const noexcept {
   return index < kMaxPanels && slot_of(id) == index;
 }
 
+bool Panels::shown(GraceUiConsumer owner, std::uint64_t id) const noexcept {
+  const SpinGuard guard(lock_);
+  const std::uint32_t index = slot_of(id);
+  return index != kMaxPanels && slots_[index].owner.load(std::memory_order_relaxed) == owner &&
+         slots_[index].visible.load(std::memory_order_relaxed);
+}
+
 std::uint32_t Panels::remove_owner(GraceUiConsumer owner) noexcept {
   const SpinGuard guard(lock_);
   std::uint32_t removed = 0;

@@ -397,8 +397,9 @@ void test_request_input(std::uint32_t owner, std::uint32_t kind, std::uint32_t w
 bool test_release_input(std::uint32_t owner) noexcept { return input::release(static_cast<std::uint16_t>(owner)); }
 
 void test_set_world(std::uint32_t flags) noexcept {
-  input::set_world((flags & GRACEUI_TEST_WORLD_DANGER) != 0, (flags & GRACEUI_TEST_WORLD_LOADING) != 0,
-                   (flags & GRACEUI_TEST_WORLD_GAME_MENU) != 0);
+  static_assert(GRACEUI_TEST_WORLD_DANGER == GRACEUI_WORLD_DANGER && GRACEUI_TEST_WORLD_LOADING == GRACEUI_WORLD_LOADING &&
+                GRACEUI_TEST_WORLD_GAME_MENU == GRACEUI_WORLD_GAME_MENU);
+  input::test_set_world(flags);
 }
 
 void test_set_caret(std::int32_t x, std::int32_t y, std::int32_t height) noexcept { input::set_caret(x, y, height); }

@@ -61,8 +61,12 @@ class Consumers {
   // is connected, and the answer is ok, or inactive with `inactive`'s reason. A floor of 0 means any version.
   ConnectResult connect(const ConnectRequest& request, std::uint32_t graceui_version, Inactive inactive) noexcept;
 
-  // Disconnects the handle's mod: GRACEUI_OK, with its number in `owner`, or GRACEUI_NOT_CONNECTED.
+  // Disconnects the handle's mod: GRACEUI_OK, with its number in `owner`, or GRACEUI_NOT_CONNECTED. Its handle names
+  // nobody from now on, but its slot is not given to another mod until left(owner): what the host withdraws by the
+  // mod's number meanwhile (its notices, its holder) cannot be a newer mod's.
   GraceUiStatus disconnect(GraceUiConsumer handle, std::uint32_t& owner) noexcept;
+  // The disconnected mod's clean-up is done: its slot is free.
+  void left(std::uint32_t owner) noexcept;
 
   // The connected mod's number for `handle`, or 0: a handle from before a disconnect never names the slot's next mod.
   std::uint32_t owner_of(GraceUiConsumer handle) const noexcept;
@@ -77,6 +81,7 @@ class Consumers {
  private:
   struct Slot {
     bool connected = false;
+    bool leaving = false;  // disconnected, its clean-up not done yet: not free
     std::uint32_t generation = 0;  // connects in this slot so far: a handle carries it
     ConsumerInfo info{};
   };

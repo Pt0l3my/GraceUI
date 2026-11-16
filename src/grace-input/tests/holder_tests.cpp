@@ -243,3 +243,116 @@ TEST_CASE("one holder at a time, whatever the threads do (ThreadSanitizer)") {
   CHECK(static_cast<std::uint64_t>(closed.load()) == capture.closes());
   CHECK(capture.closes() <= all.size());
 }
+
+// ---- The providers' claims against a request on another thread (D143, invariant 9).
+
+namespace {
+
+// A world of claims as the host keeps it: one word other threads write, read by the conditions' reader.
+struct World {
+  // Mutable: the reader is handed the world as a const context, and its first read may act as a writer.
+  mutable std::atomic<bool> danger{false};
+  mutable std::atomic<bool> loading{false};
+  mutable std::atomic<bool> off{false};
+  // A writer that runs inside the request's first read, after it has read the conditions and before its grant: the
+  // interleaving the review found (a claim and its settle() between a request's read and its compare-and-swap).
+  Capture* capture = nullptr;
+  mutable std::atomic<int> reads{0};
+  bool claim_during_first_read = false;
+  bool off_during_first_read = false;
+  mutable Holder settled{};
+};
+
+Conditions read_world(const void* context) noexcept {
+  const World* world = static_cast<const World*>(context);
+  Conditions conditions;
+  conditions.ready = true;
+  conditions.danger = world->danger.load();
+  conditions.loading = world->loading.load();
+  conditions.off = world->off.load();
+  if (world->reads.fetch_add(1) == 0 && (world->claim_during_first_read || world->off_during_first_read)) {
+    (world->off_during_first_read ? world->off : world->danger).store(true);
+    world->settled = world->capture->settle(&read_world, world, kStart);  // finds nobody to end yet
+  }
+  return conditions;
+}
+
+}  // namespace
+
+TEST_CASE("a danger claim made between a request's read and its grant ends the new holder at once") {
+  Capture capture;
+  World world;
+  world.capture = &capture;
+  world.claim_during_first_read = true;
+  const Request answer = capture.request(3, Kind::panel, want_all, &read_world, &world, kStart);
+  CHECK_FALSE(world.settled.holds());  // the provider's own settle() came before the grant: it found no holder
+  CHECK(answer.answer == Answer::not_now);
+  CHECK(answer.why == NotNow::danger);
+  CHECK(answer.holder.holds());  // the holder the second read ended
+  CHECK(answer.holder.owner == 3);
+  CHECK_FALSE(capture.holder().holds());
+  CHECK(capture.last_close().why == Closed::danger);
+  // The claim stands: the next request is not granted either.
+  CHECK(capture.request(3, Kind::panel, want_all, &read_world, &world, kStart).why == NotNow::danger);
+}
+
+TEST_CASE("input turned off between a request's read and its grant ends the new holder (fault)") {
+  Capture capture;
+  World world;
+  world.capture = &capture;
+  world.off_during_first_read = true;
+  const Request answer = capture.request(3, Kind::modal, want_all, &read_world, &world, kStart);
+  CHECK(answer.answer == Answer::not_now);
+  CHECK(answer.why == NotNow::not_ready);
+  CHECK_FALSE(capture.holder().holds());
+  CHECK(capture.last_close().why == Closed::fault);
+}
+
+TEST_CASE("settle: the newest claims decide, whatever order the writers' settle() calls come in") {
+  Capture capture;
+  World world;
+  REQUIRE(capture.request(5, Kind::panel, want_all, &read_world, &world, kStart).answer == Answer::granted);
+  // A provider that cleared its claims settles late, after another claimed danger: the claim is what is read.
+  world.danger.store(true);
+  const Holder ended = capture.settle(&read_world, &world, kStart);
+  CHECK(ended.owner == 5);
+  CHECK(capture.last_close().why == Closed::danger);
+  CHECK_FALSE(capture.settle(&read_world, &world, kStart).holds());  // nobody left; the claim stays
+  CHECK(capture.request(5, Kind::panel, want_all, &read_world, &world, kStart).why == NotNow::danger);
+  world.danger.store(false);
+  CHECK_FALSE(capture.settle(&read_world, &world, kStart).holds());  // no claim: nothing ends
+  world.loading.store(true);
+  CHECK(capture.request(5, Kind::panel, want_all, &read_world, &world, kStart).why == NotNow::loading);
+  world.loading.store(false);
+  const Request granted = capture.request(5, Kind::panel, want_all, &read_world, &world, kStart);
+  CHECK(granted.answer == Answer::granted);
+  world.loading.store(true);
+  CHECK(capture.settle(&read_world, &world, kStart).generation == granted.holder.generation);
+  CHECK(capture.last_close().why == Closed::loading);
+}
+
+TEST_CASE("no holder outlives a danger claim, whatever the threads do (ThreadSanitizer)") {
+  // One thread asks for input while another claims danger and settles, many times over: once both are done, a claim
+  // of danger stands, so no holder may remain.
+  for (int round = 0; round < 2000; ++round) {
+    Capture capture;
+    World world;
+    std::atomic<int> ready{0};
+    std::thread asker([&] {
+      ready.fetch_add(1);
+      while (ready.load() < 2) {
+      }
+      (void)capture.request(1, Kind::panel, want_all, &read_world, &world, kStart);
+    });
+    std::thread provider([&] {
+      ready.fetch_add(1);
+      while (ready.load() < 2) {
+      }
+      world.danger.store(true);
+      (void)capture.settle(&read_world, &world, kStart);
+    });
+    asker.join();
+    provider.join();
+    REQUIRE_FALSE(capture.holder().holds());
+  }
+}

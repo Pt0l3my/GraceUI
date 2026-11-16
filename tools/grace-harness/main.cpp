@@ -3070,6 +3070,88 @@ void run_panels(const std::wstring& dll) {
         reason_name(escaped.last_close_reason), g_seen.key_down[VK_F5], g_seen.key_down[VK_ESCAPE],
         reason_name(released.last_close_reason));
 
+  // 9a. Providers and a request on threads of their own (the review's M1): one provider claims danger and clears it
+  // over and over, ending on danger, while another clears its own claims as often and a third thread asks for input
+  // all the while. However their calls interleave, the danger that stands at the end ends every holder: none is left,
+  // the combined claims say danger, and a request is not now (danger).
+  {
+    game.frame(kPanelsColour, PresentWith::present);  // the overlay drew just now: requests may be granted
+    const std::uint32_t generation_before = grace.input().generation;
+    std::atomic<bool> stop{false};
+    std::atomic<int> asked_count{0};
+    std::thread asker([&] {
+      GraceUiStatus asked = GRACEUI_OK;
+      while (!stop.load()) {
+        mod.request(modal, GRACEUI_HOLDER_MODAL, asked);
+        asked_count.fetch_add(1);
+      }
+    });
+    const DWORD asking_since = GetTickCount();
+    while (asked_count.load() < 50 && GetTickCount() - asking_since < 2000) {
+      Sleep(1);
+    }
+    std::thread clearer([&] {
+      for (int i = 0; i < 3000; ++i) {
+        late_mod.world(0);
+      }
+    });
+    for (int i = 0; i < 3000; ++i) {
+      mod.world((i & 1) != 0 ? GRACEUI_WORLD_DANGER : 0u);
+    }
+    mod.world(GRACEUI_WORLD_DANGER);
+    clearer.join();
+    Sleep(20);
+    stop.store(true);
+    asker.join();
+    const GraceUiTestInput raced = grace.input();
+    const GraceUiTestState raced_state = grace.state();
+    const GraceUiInputAnswer after_race = mod.request(modal, GRACEUI_HOLDER_MODAL, status);
+    check(raced.holder_owner == 0 && raced_state.world_flags == GRACEUI_WORLD_DANGER &&
+              after_race.answer == GRACEUI_INPUT_NOT_NOW && after_race.why == GRACEUI_NOT_NOW_DANGER,
+          "providers on threads",
+          "after 3,000 claims of danger and clears on one thread, 3,000 clears on another and requests on a third "
+          "(%u grants meanwhile), ending on danger: holder %u, combined flags %u, a request %s (why %u)",
+          raced.generation - generation_before, raced.holder_owner, raced_state.world_flags,
+          answer_name(after_race.answer), after_race.why);
+    mod.world(0);
+  }
+  // 9b. The holder's panel hidden on one thread while another asks for input with it (the review's L14): once it ends
+  // hidden, no holder is left, however the calls interleave.
+  {
+    game.frame(kPanelsColour, PresentWith::present);
+    const std::uint32_t generation_before = grace.input().generation;
+    std::atomic<bool> stop{false};
+    std::atomic<int> asked_count{0};
+    std::thread asker([&] {
+      GraceUiStatus asked = GRACEUI_OK;
+      while (!stop.load()) {
+        mod.request(modal, GRACEUI_HOLDER_MODAL, asked);
+        asked_count.fetch_add(1);
+      }
+    });
+    const DWORD asking_since = GetTickCount();
+    while (asked_count.load() < 50 && GetTickCount() - asking_since < 2000) {
+      Sleep(1);
+    }
+    for (int i = 0; i < 3000; ++i) {
+      if ((i & 1) != 0) {
+        table->show_panel(mod.me, modal);
+      } else {
+        table->hide_panel(mod.me, modal);
+      }
+    }
+    table->hide_panel(mod.me, modal);
+    Sleep(20);
+    stop.store(true);
+    asker.join();
+    const GraceUiTestInput hidden = grace.input();
+    check(hidden.holder_owner == 0, "hidden on a thread",
+          "after 3,000 shows and hides on one thread while another asked for input with the panel (%u grants "
+          "meanwhile), ending hidden: holder %u",
+          hidden.generation - generation_before, hidden.holder_owner);
+    table->show_panel(mod.me, modal);
+  }
+
   // 9. World-state providers (D78): every claim combined; danger ends the holder and answers not now; a provider's
   // claims go with it; an unknown flag is refused.
   mod.request(modal, GRACEUI_HOLDER_MODAL, status);

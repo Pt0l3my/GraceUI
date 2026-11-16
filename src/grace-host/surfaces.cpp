@@ -63,9 +63,10 @@ void log_list_refusal(GraceUiConsumer consumer, std::uint32_t owner, const char*
 
 constinit std::atomic<bool> g_anti_cheat_reported{false};
 
+// After the World changed: the input half reads the newest combined claims itself (never `flags`, which another
+// provider's call may already have replaced), so whichever provider settles last decides (D143, invariant 9).
 void apply_world(std::uint32_t flags) noexcept {
-  input::set_world((flags & GRACEUI_WORLD_DANGER) != 0, (flags & GRACEUI_WORLD_LOADING) != 0,
-                   (flags & GRACEUI_WORLD_GAME_MENU) != 0);
+  input::world_changed();
   if ((flags & GRACEUI_WORLD_ANTI_CHEAT) != 0 && !g_anti_cheat_reported.exchange(true, std::memory_order_relaxed)) {
     // D78, D81: the browser view closes for the session; GraceUI 0.1 serves none yet.
     log_line("a world-state provider reports an anti-cheat: the browser view stays closed this session");
@@ -207,10 +208,12 @@ GraceUiStatus show_panel(GraceUiConsumer consumer, std::uint64_t panel, bool vis
     refused(visible ? "show_panel" : "hide_panel", "a panel that is not the mod's");
     return GRACEUI_REFUSED;
   }
+  // A hidden view holds no input (D77). Hidden above under the panels' lock, its holder read below: request_input
+  // publishes the holder's panel and then asks under the same lock whether it is shown, so one of the two ends it.
   std::uint32_t generation = 0;
   std::uint64_t holding = 0;
   if (!visible && session::input_panel(generation, holding) && holding == panel) {
-    input::close_holder(grace::input::Closed::released, generation);  // a hidden view holds no input (D77)
+    input::close_holder(grace::input::Closed::released, generation);
   }
   return GRACEUI_OK;
 }
@@ -311,6 +314,13 @@ GraceUiStatus request_input(GraceUiConsumer consumer, std::uint32_t kind, std::u
   switch (answer.answer) {
     case grace::input::Answer::granted:
       session::set_input_panel(answer.holder.generation, panel);
+      // The panel may have been hidden or removed (its mod's other thread, or its disconnect) between the check above
+      // and the grant, and that thread then found no holder of it to end: asked again here, under the panels' lock.
+      if (!panels.shown(consumer, panel)) {
+        input::close_holder(grace::input::Closed::released, answer.holder.generation);
+        out.answer = GRACEUI_INPUT_NOT_NOW;
+        out.why = GRACEUI_NOT_NOW_NOT_READY;
+      }
       break;
     case grace::input::Answer::refused: {
       out.holder_kind = static_cast<std::uint32_t>(answer.holder.kind);
@@ -358,11 +368,13 @@ GraceUiStatus set_world_state(GraceUiConsumer consumer, std::uint32_t flags) noe
 }
 
 void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept {
+  // The panels first, under their lock, then the holder: a request_input of the mod's on another thread either sees
+  // its panel gone after its grant (and ends its own holder) or was granted before this reads the holder.
+  session::panels().remove_owner(consumer);
   const grace::input::Holder holder = input::capture().holder();
   if (holder.holds() && holder.owner == owner && holder.kind != grace::input::Kind::menu) {
     input::close_holder(grace::input::Closed::released, holder.generation);
   }
-  session::panels().remove_owner(consumer);
   session::registry().retire_owner(consumer);
   apply_world(session::world().remove(consumer));
 }

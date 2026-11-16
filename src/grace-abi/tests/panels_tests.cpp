@@ -190,3 +190,19 @@ TEST_CASE("the present thread's view while mods' threads make and remove panels:
   writer.join();
   CHECK(seen > 0);
 }
+
+TEST_CASE("shown: the mod's own panel, shown and alive, read under the panels' lock") {
+  auto panels = std::make_unique<Panels>();
+  std::uint64_t a = 0;
+  REQUIRE(panels->create(kModA, desc(), a) == PanelResult::ok);
+  CHECK_FALSE(panels->shown(kModA, a));  // hidden at first
+  REQUIRE(panels->set_visible(kModA, a, true) == PanelResult::ok);
+  CHECK(panels->shown(kModA, a));
+  CHECK_FALSE(panels->shown(kModB, a));  // another mod's view of it: not its panel
+  REQUIRE(panels->set_visible(kModA, a, false) == PanelResult::ok);
+  CHECK_FALSE(panels->shown(kModA, a));
+  REQUIRE(panels->set_visible(kModA, a, true) == PanelResult::ok);
+  CHECK(panels->remove_owner(kModA) == 1);
+  CHECK_FALSE(panels->shown(kModA, a));  // gone with its mod
+  CHECK_FALSE(panels->shown(kModA, 0));
+}

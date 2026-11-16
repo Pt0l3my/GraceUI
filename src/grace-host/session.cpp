@@ -36,8 +36,11 @@ Stores& stores() {
   return *made;
 }
 
-constinit std::atomic<std::uint64_t> g_input_panel{0};
-constinit std::atomic<std::uint32_t> g_input_generation{0};
+// The panel that holds input, and its holder's generation: one pair, written and read whole under a lock of mods'
+// threads (the present thread never reads it).
+constinit grace::abi::SpinLock g_input_panel_lock;
+constinit std::uint64_t g_input_panel = 0;
+constinit std::uint32_t g_input_generation = 0;
 
 }  // namespace
 
@@ -143,13 +146,15 @@ void controls_notice(std::uint32_t owner) noexcept {
 }
 
 void set_input_panel(std::uint32_t generation, std::uint64_t panel) noexcept {
-  g_input_panel.store(panel, std::memory_order_relaxed);
-  g_input_generation.store(generation, std::memory_order_release);
+  const grace::abi::SpinGuard guard(g_input_panel_lock);
+  g_input_panel = panel;
+  g_input_generation = generation;
 }
 
 bool input_panel(std::uint32_t& generation, std::uint64_t& panel) noexcept {
-  generation = g_input_generation.load(std::memory_order_acquire);
-  panel = g_input_panel.load(std::memory_order_relaxed);
+  const grace::abi::SpinGuard guard(g_input_panel_lock);
+  generation = g_input_generation;
+  panel = g_input_panel;
   return generation != 0 && panel != 0;
 }
 
@@ -264,8 +269,11 @@ GraceUiStatus disconnect(GraceUiConsumer consumer) noexcept {
   const bool known = session::consumers().info_of(static_cast<std::uint32_t>(consumer & 0xFFu), info);
   const GraceUiStatus status = session::consumers().disconnect(consumer, owner);
   if (status == GRACEUI_OK) {
+    // The mod's number is not given to another until its clean-up is done (Consumers::left): what is withdrawn here by
+    // that number is this mod's alone.
     session::notices().withdraw_owner(owner, input::now_ms());
     forget(consumer, owner);
+    session::consumers().left(owner);
     log_line("%s disconnected", known ? info.id : "a mod");
   }
   return status;
