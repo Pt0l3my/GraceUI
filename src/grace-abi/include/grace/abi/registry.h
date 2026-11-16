@@ -10,8 +10,9 @@
 // released by the present thread after its last frame's fence, which frees nothing of GraceUI's own heap.
 //
 // Faces. A mod adds a face to the shared atlas before warm-up (at most GRACEUI_FACES_PER_MOD for a mod other than
-// EldenNet, EST); warm-up seals the table, and later faces are refused. A face's data stays for the session: the atlas
-// reads it.
+// EldenNet, EST), within the atlas's room: each face's estimated area (face_area), counted when it is committed, so that
+// the bake can never ask Dear ImGui for more than its largest texture (8192 by 8192) holds. Warm-up seals the table, and
+// later faces are refused. A face's data stays for the session: the atlas reads it.
 #pragma once
 
 #include <atomic>
@@ -38,6 +39,11 @@ inline constexpr std::uint32_t kFaceRangesMax = GRACEUI_FACE_RANGES_MAX;
 inline constexpr std::uint32_t kFaceCodePointsMax = 65536;  // EST: code points a face's ranges cover in all
 inline constexpr float kFacePixelsMin = 6.0f;
 inline constexpr float kFacePixelsMax = 128.0f;
+// The shared atlas's room for the mods' faces, in estimated pixels (face_area; D139 as amended on 2026-11-16, EST):
+// every mod's together, and the share of the mods other than EldenNet (D80: EldenNet's surfaces come first). An
+// estimate is an upper bound for most glyphs, so a full room bakes into well under Dear ImGui's 8192 by 8192 limit.
+inline constexpr std::uint64_t kAtlasAreaMods = 8192ull * 4096;
+inline constexpr std::uint64_t kAtlasAreaOthers = kAtlasAreaMods / 2;
 
 // The shared atlas's texture id; a mod's textures have others (texture_id), never 0 and never this.
 inline constexpr std::uint64_t kAtlasTexture = 1;
@@ -93,6 +99,17 @@ bool valid_ranges(const std::uint32_t* pairs, std::uint64_t pair_count) noexcept
 // GraceUI's default ranges (§3.4): Latin, Latin-1, Latin Extended-A, General Punctuation and U+FFFD, as pairs then 0.
 const std::uint32_t* default_ranges() noexcept;
 
+// The code points of `ranges` (pairs then 0, Dear ImGui's form; null for default_ranges()) to which the font's character
+// map gives a glyph: the subtable Dear ImGui's rasteriser (stb_truetype) reads, the last for platform 0 or for platform
+// 3 with encoding 1 or 10, in its formats 0, 4, 6, 12 or 13. A code point a font lacks is not baked, so it takes no
+// room. Every code point of the ranges if the map is missing, cut short or in another format (an upper bound).
+std::uint64_t mapped_code_points(const unsigned char* data, std::uint64_t length, const std::uint32_t* ranges) noexcept;
+
+// A face's estimated room in the shared atlas, in pixels: each of `glyphs` (and the fallback and ellipsis glyphs Dear
+// ImGui adds) as a box of (2 * pixel_height + 2) by (pixel_height + 2), its bitmap oversampled twice across (D117) and
+// padded; a glyph is seldom wider than the line is high, so this is an upper bound for most faces.
+std::uint64_t face_area(std::uint64_t glyphs, float pixel_height) noexcept;
+
 class Registry {
  public:
   Registry() = default;
@@ -133,6 +150,11 @@ class Registry {
   Registered begin_face(GraceUiConsumer owner, std::uint32_t budget, float pixel_height, std::uint32_t& slot) noexcept;
   std::vector<unsigned char>& face_data(std::uint32_t slot) noexcept { return faces_[slot].data; }
   std::vector<std::uint32_t>& face_ranges(std::uint32_t slot) noexcept { return faces_[slot].ranges; }
+  // The face's room in the shared atlas, once its data is checked and before its commit: `area` (face_area) within
+  // kAtlasAreaMods for every mod's faces together and, for a mod other than EldenNet, within kAtlasAreaOthers for theirs;
+  // full past either. abort_face gives it back.
+  Registered reserve_area(std::uint32_t slot, std::uint64_t area, bool eldennet) noexcept;
+  std::uint64_t area_used() const noexcept;  // every committed or reserved face's
   // Its id, or 0 if warm-up sealed the table meanwhile (the face is then late, and abort_face frees it).
   std::uint32_t commit_face(std::uint32_t slot) noexcept;
   void abort_face(std::uint32_t slot) noexcept;
@@ -170,6 +192,8 @@ class Registry {
     std::atomic<FaceState> state{FaceState::empty};
     GraceUiConsumer owner = 0;
     float pixel_height = 0.0f;
+    std::uint64_t area = 0;  // its reserved room in the atlas, under lock_
+    bool others = false;     // counted in the share of the mods other than EldenNet
     std::vector<unsigned char> data;
     std::vector<std::uint32_t> ranges;
   };
@@ -179,6 +203,8 @@ class Registry {
   mutable SpinLock lock_;  // mods' threads only
   OwnerBook books_[kMaxConsumers]{};
   std::uint64_t bytes_ = 0;  // every texture registered and not yet gone, under lock_
+  std::uint64_t area_ = 0;         // every face's reserved room in the atlas, under lock_
+  std::uint64_t others_area_ = 0;  // ... of the mods other than EldenNet
   TextureSlot textures_[kMaxTextures];
   FaceSlot faces_[kMaxFaces];
   std::atomic<bool> sealed_{false};

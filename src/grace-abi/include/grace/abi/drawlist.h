@@ -25,13 +25,23 @@ inline constexpr std::uint32_t kDrawVerticesMax = kDrawVertexBytesMax / sizeof(G
 inline constexpr std::uint32_t kDrawIndicesMax = kDrawIndexBytesMax / sizeof(std::uint16_t);
 inline constexpr std::uint32_t kDrawCommandsMax = GRACEUI_DRAW_COMMANDS_MAX;
 inline constexpr std::uint32_t kCommandVerticesMax = 65536;
-// A command as ABI 1.0 first gave it: a mod's stride below this is refused.
+// A command as ABI 1.0 first gave it: a mod's stride below this is refused; and above GRACEUI_DRAW_COMMAND_SIZE_MAX
+// (EST), so that a stride that is not one (an unset field, a garbage value) never sends the copy far past the mod's
+// array (L6): a later ABI's command grows by members, never by hundreds of bytes.
 inline constexpr std::uint32_t kDrawCommandSize10 = 40;
+inline constexpr std::uint32_t kDrawCommandSizeMax = GRACEUI_DRAW_COMMAND_SIZE_MAX;
+
+// A submission's counts and stride within the bounds above, checked before anything of it is read or copied.
+constexpr bool list_shape_fits(std::uint64_t vertices, std::uint64_t indices, std::uint64_t commands,
+                               std::uint64_t command_size) noexcept {
+  return vertices <= kDrawVerticesMax && indices <= kDrawIndicesMax && commands <= kDrawCommandsMax &&
+         command_size >= kDrawCommandSize10 && command_size <= kDrawCommandSizeMax;
+}
 
 // Why the checker refused a list; none if it passed.
 enum class Refusal : std::uint8_t {
   none = 0,
-  too_large = 1,     // more vertices, indices or commands than kDraw*Max, or a stride below the first command's size
+  too_large = 1,     // more vertices, indices or commands than kDraw*Max, or a stride outside kDrawCommandSize10..Max
   vertex_range = 2,  // a command's vertices outside the list's, or more than kCommandVerticesMax of them
   index_range = 3,   // a command's indices outside the list's, or not whole triangles
   index = 4,         // an index beyond its command's own vertices

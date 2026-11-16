@@ -83,6 +83,195 @@ bool valid_ranges(const std::uint32_t* pairs, std::uint64_t pair_count) noexcept
 
 const std::uint32_t* default_ranges() noexcept { return kDefaultRanges; }
 
+namespace {
+
+// A font's bytes, read only within their length.
+struct Bytes {
+  const unsigned char* data;
+  std::uint64_t length;
+
+  bool has(std::uint64_t offset, std::uint64_t size) const noexcept {
+    return offset <= length && size <= length - offset;
+  }
+  std::uint32_t u16(std::uint64_t offset) const noexcept { return read_u16(data + offset); }
+  std::uint32_t u32(std::uint64_t offset) const noexcept { return read_u32(data + offset); }
+};
+
+// Where the character map's subtable that stb_truetype reads begins (stbtt_InitFont's choice: the last record for
+// platform 0, or for platform 3 with encoding 1 or 10), or false if there is none within the file.
+bool unicode_subtable(const Bytes& font, std::uint64_t& at) noexcept {
+  if (!font.has(0, 12)) {
+    return false;
+  }
+  const std::uint32_t tables = font.u16(4);
+  std::uint64_t cmap = 0;
+  for (std::uint32_t i = 0; i < tables && cmap == 0; ++i) {
+    const std::uint64_t record = 12 + std::uint64_t{i} * 16;
+    if (font.has(record, 16) && font.u32(record) == tag("cmap")) {
+      cmap = font.u32(record + 8);
+    }
+  }
+  if (cmap == 0 || !font.has(cmap, 4)) {
+    return false;
+  }
+  const std::uint32_t records = font.u16(cmap + 2);
+  bool found = false;
+  for (std::uint32_t i = 0; i < records; ++i) {
+    const std::uint64_t record = cmap + 4 + std::uint64_t{i} * 8;
+    if (!font.has(record, 8)) {
+      return false;
+    }
+    const std::uint32_t platform = font.u16(record);
+    const std::uint32_t encoding = font.u16(record + 2);
+    if (platform == 0 || (platform == 3 && (encoding == 1 || encoding == 10))) {
+      at = cmap + font.u32(record + 4);
+      found = true;
+    }
+  }
+  return found && font.has(at, 2);
+}
+
+// The code points in [first, last] that one span of a map gives a glyph, its glyph for a code point answered by `glyph`
+// (0: none); spans that cannot be glyphless but at one point are counted whole by their callers.
+template <class Glyph>
+std::uint64_t count_each(std::uint32_t first, std::uint32_t last, Glyph glyph) noexcept {
+  std::uint64_t count = 0;
+  for (std::uint64_t c = first; c <= last; ++c) {
+    count += glyph(static_cast<std::uint32_t>(c)) != 0 ? 1u : 0u;
+  }
+  return count;
+}
+
+// The code points of one range [first, last] the subtable at `at` maps to a glyph; false if it cannot be read.
+bool mapped_in(const Bytes& font, std::uint64_t at, std::uint32_t first, std::uint32_t last,
+               std::uint64_t& count) noexcept {
+  const std::uint32_t format = font.u16(at);
+  const auto overlap = [&](std::uint32_t start, std::uint32_t end, std::uint32_t& lo, std::uint32_t& hi) {
+    lo = first > start ? first : start;
+    hi = last < end ? last : end;
+    return lo <= hi;
+  };
+  std::uint32_t lo = 0;
+  std::uint32_t hi = 0;
+  switch (format) {
+    case 0: {  // 256 one-byte glyph ids
+      if (!font.has(at, 6 + 256)) {
+        return false;
+      }
+      if (overlap(0, 255, lo, hi)) {
+        count += count_each(lo, hi, [&](std::uint32_t c) { return std::uint32_t{font.data[at + 6 + c]}; });
+      }
+      return true;
+    }
+    case 6: {  // one run of two-byte glyph ids
+      if (!font.has(at, 10)) {
+        return false;
+      }
+      const std::uint32_t start = font.u16(at + 6);
+      const std::uint32_t entries = font.u16(at + 8);
+      if (entries == 0 || !font.has(at + 10, std::uint64_t{entries} * 2)) {
+        return entries == 0;
+      }
+      if (overlap(start, start + entries - 1, lo, hi)) {
+        count += count_each(lo, hi, [&](std::uint32_t c) { return font.u16(at + 10 + std::uint64_t{c - start} * 2); });
+      }
+      return true;
+    }
+    case 4: {  // segments of the BMP
+      if (!font.has(at, 14)) {
+        return false;
+      }
+      const std::uint32_t segments = font.u16(at + 6) / 2;
+      const std::uint64_t ends = at + 14;
+      const std::uint64_t starts = ends + std::uint64_t{segments} * 2 + 2;
+      const std::uint64_t deltas = starts + std::uint64_t{segments} * 2;
+      const std::uint64_t offsets = deltas + std::uint64_t{segments} * 2;
+      if (!font.has(ends, std::uint64_t{segments} * 8 + 2)) {
+        return false;
+      }
+      for (std::uint32_t i = 0; i < segments; ++i) {
+        const std::uint32_t start = font.u16(starts + i * 2);
+        const std::uint32_t end = font.u16(ends + i * 2);
+        if (start > end || !overlap(start, end, lo, hi)) {
+          continue;
+        }
+        const std::uint32_t delta = font.u16(deltas + i * 2);
+        const std::uint32_t offset = font.u16(offsets + i * 2);
+        if (offset == 0) {
+          // glyph = (c + delta) mod 65536, which is 0 for one code point at most
+          const std::uint32_t none = (0x10000u - delta) & 0xFFFFu;
+          count += std::uint64_t{hi} - lo + 1 - (none >= lo && none <= hi ? 1u : 0u);
+          continue;
+        }
+        count += count_each(lo, hi, [&](std::uint32_t c) -> std::uint32_t {
+          const std::uint64_t where = offsets + i * 2 + offset + std::uint64_t{c - start} * 2;
+          if (!font.has(where, 2)) {
+            return 0;
+          }
+          const std::uint32_t id = font.u16(where);
+          return id == 0 ? 0 : (id + delta) & 0xFFFFu;
+        });
+      }
+      return true;
+    }
+    case 12:    // groups of consecutive glyphs
+    case 13: {  // groups sharing one glyph
+      if (!font.has(at, 16)) {
+        return false;
+      }
+      const std::uint64_t groups = font.u32(at + 12);
+      if (!font.has(at + 16, groups * 12)) {
+        return false;
+      }
+      for (std::uint64_t g = 0; g < groups; ++g) {
+        const std::uint64_t group = at + 16 + g * 12;
+        const std::uint32_t start = font.u32(group);
+        const std::uint32_t end = font.u32(group + 4);
+        const std::uint32_t glyph = font.u32(group + 8);
+        if (start > end || !overlap(start, end, lo, hi)) {
+          continue;
+        }
+        std::uint64_t mapped = std::uint64_t{hi} - lo + 1;
+        if (glyph == 0 && (format == 13 || lo == start)) {
+          mapped = format == 13 ? 0 : mapped - 1;  // glyph 0 is "no glyph"
+        }
+        count += mapped;
+      }
+      return true;
+    }
+    default: return false;
+  }
+}
+
+}  // namespace
+
+std::uint64_t mapped_code_points(const unsigned char* data, std::uint64_t length, const std::uint32_t* ranges) noexcept {
+  if (ranges == nullptr) {
+    ranges = kDefaultRanges;
+  }
+  std::uint64_t points = 0;
+  for (const std::uint32_t* pair = ranges; pair[0] != 0; pair += 2) {
+    points += pair[1] >= pair[0] ? std::uint64_t{pair[1]} - pair[0] + 1 : 0;
+  }
+  const Bytes font{data, data != nullptr ? length : 0};
+  std::uint64_t at = 0;
+  if (!unicode_subtable(font, at)) {
+    return points;
+  }
+  std::uint64_t mapped = 0;
+  for (const std::uint32_t* pair = ranges; pair[0] != 0; pair += 2) {
+    if (pair[1] >= pair[0] && !mapped_in(font, at, pair[0], pair[1], mapped)) {
+      return points;
+    }
+  }
+  return mapped < points ? mapped : points;
+}
+
+std::uint64_t face_area(std::uint64_t glyphs, float pixel_height) noexcept {
+  const auto pixels = static_cast<std::uint64_t>(pixel_height > 0.0f ? pixel_height + 0.999f : 0.0f);
+  return (glyphs + 2) * (2 * pixels + 2) * (pixels + 2);
+}
+
 Registry::OwnerBook& Registry::book(GraceUiConsumer owner) noexcept {
   OwnerBook& entry = books_[(owner & 0xFFu) % kMaxConsumers];
   if (entry.owner != owner) {
@@ -307,6 +496,24 @@ Registered Registry::begin_face(GraceUiConsumer owner, std::uint32_t budget, flo
   return Registered::full;
 }
 
+Registered Registry::reserve_area(std::uint32_t slot, std::uint64_t area, bool eldennet) noexcept {
+  const SpinGuard guard(lock_);
+  FaceSlot& face = faces_[slot];
+  if (area > kAtlasAreaMods - area_ || (!eldennet && area > kAtlasAreaOthers - others_area_)) {
+    return Registered::full;
+  }
+  area_ += area;
+  others_area_ += eldennet ? 0 : area;
+  face.area = area;
+  face.others = !eldennet;
+  return Registered::ok;
+}
+
+std::uint64_t Registry::area_used() const noexcept {
+  const SpinGuard guard(lock_);
+  return area_;
+}
+
 std::uint32_t Registry::commit_face(std::uint32_t slot) noexcept {
   FaceState expected = FaceState::writing;
   if (!faces_[slot].state.compare_exchange_strong(expected, FaceState::committed, std::memory_order_acq_rel)) {
@@ -320,6 +527,10 @@ void Registry::abort_face(std::uint32_t slot) noexcept {
   FaceSlot& face = faces_[slot];
   OwnerBook& entry = book(face.owner);
   entry.faces -= entry.faces > 0 ? 1 : 0;
+  area_ -= face.area;
+  others_area_ -= face.others ? face.area : 0;
+  face.area = 0;
+  face.others = false;
   free_vector(face.data);
   std::vector<std::uint32_t>().swap(face.ranges);
   face.owner = 0;

@@ -122,6 +122,7 @@ typedef uint32_t GraceUiStatus;
 #define GRACEUI_DRAW_VERTEX_BYTES_MAX 262144u /* a submission's vertices (D76, EST: 256 KiB, 13,107 vertices) */
 #define GRACEUI_DRAW_INDEX_BYTES_MAX 262144u  /* a submission's indices (EST: 256 KiB) */
 #define GRACEUI_DRAW_COMMANDS_MAX 64u  /* a submission's commands (D76, EST) */
+#define GRACEUI_DRAW_COMMAND_SIZE_MAX 256u /* a submission's command stride, in bytes (EST): a larger one is refused */
 
 /* ---- Capabilities: the features has_cap names. */
 

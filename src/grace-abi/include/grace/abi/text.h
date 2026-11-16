@@ -26,4 +26,8 @@ bool valid_caps(std::string_view caps) noexcept;
 // A notice's text: 1 to 512 bytes of UTF-8 with no control character but the line feed.
 bool valid_notice_text(std::string_view text) noexcept;
 
+// Where to start `text` so that its end fits in `room` bytes and it begins on a character, not inside one: 0 if the
+// whole fits. A name too long for its notice keeps its end, the file's own name (L12).
+std::size_t utf8_tail_start(std::string_view text, std::size_t room) noexcept;
+
 }  // namespace grace::abi

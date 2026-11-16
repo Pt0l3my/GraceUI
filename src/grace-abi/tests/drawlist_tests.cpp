@@ -246,3 +246,18 @@ TEST_CASE("the triple buffer under a writer thread: whole lists only, and no all
   CHECK(counts.allocations == 0);
   CHECK(counts.frees == 0);
 }
+
+TEST_CASE("a submission's shape: counts within their bounds, and a command stride from ABI 1.0's to 256 bytes") {
+  CHECK(list_shape_fits(0, 0, 0, kDrawCommandSize10));
+  CHECK(list_shape_fits(kDrawVerticesMax, kDrawIndicesMax, kDrawCommandsMax, kDrawCommandSizeMax));
+  CHECK_FALSE(list_shape_fits(kDrawVerticesMax + 1, 0, 0, kDrawCommandSize10));
+  CHECK_FALSE(list_shape_fits(0, kDrawIndicesMax + 1, 0, kDrawCommandSize10));
+  CHECK_FALSE(list_shape_fits(0, 0, kDrawCommandsMax + 1, kDrawCommandSize10));
+  CHECK_FALSE(list_shape_fits(0, 0, 1, kDrawCommandSize10 - 1));
+  // A stride that is no stride (an unset field, a garbage value) would send the copy gigabytes past the mod's array
+  // (the review's L6): refused before anything is read.
+  CHECK_FALSE(list_shape_fits(0, 0, 1, kDrawCommandSizeMax + 1));
+  CHECK_FALSE(list_shape_fits(0, 0, 1, 0x7FFFFFFFu));
+  CHECK_FALSE(list_shape_fits(0, 0, 1, 0xFFFFFFFFu));
+  CHECK(kDrawCommandSizeMax == 256u);
+}

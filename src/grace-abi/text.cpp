@@ -126,4 +126,15 @@ bool valid_notice_text(std::string_view text) noexcept {
   return !text.empty() && text.size() <= GRACEUI_NOTICE_TEXT_MAX && printable_text(text, true);
 }
 
+std::size_t utf8_tail_start(std::string_view text, std::size_t room) noexcept {
+  if (text.size() <= room) {
+    return 0;
+  }
+  std::size_t start = text.size() - room;
+  while (start < text.size() && (static_cast<unsigned char>(text[start]) & 0xC0u) == 0x80u) {
+    ++start;  // a continuation byte: the character it belongs to began before the cut
+  }
+  return start;
+}
+
 }  // namespace grace::abi

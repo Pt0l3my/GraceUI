@@ -106,4 +106,72 @@ class DbcsJoiner {
   bool waiting_ = false;
 };
 
+// The bytes of an ANSI window's character messages when its code page is UTF-8 (65001, which Windows' "use Unicode UTF-8
+// for worldwide language support" makes every ANSI window's): a lead byte waits for its one to three continuation
+// bytes, and the sequence is decoded here, since IsDBCSLeadByteEx knows no lead byte in UTF-8 and each byte decoded on
+// its own is invalid (L13). A byte that cannot continue a waiting sequence ends it as U+FFFD and then counts on its
+// own; a stray continuation byte, a byte that never leads, an overlong form, a surrogate and a point past U+10FFFF are
+// U+FFFD. NUL gives nothing.
+class Utf8Joiner {
+ public:
+  constexpr Utf8Joiner() = default;
+
+  // One byte in; answers how many code points `out` received (0, 1 or 2).
+  int push(std::uint8_t byte, char32_t (&out)[2]) noexcept {
+    int count = 0;
+    if (need_ != 0) {
+      if ((byte & 0xC0u) == 0x80u) {
+        point_ = (point_ << 6) | (byte & 0x3Fu);
+        if (--need_ != 0) {
+          return 0;
+        }
+        out[0] = finished();
+        return 1;
+      }
+      out[count++] = kReplacement;  // cut short
+      need_ = 0;
+    }
+    if (byte < 0x80u) {
+      if (byte != 0) {
+        out[count++] = byte;
+      }
+      return count;
+    }
+    if (byte >= 0xC2u && byte <= 0xDFu) {
+      start(byte & 0x1Fu, 1);
+    } else if (byte >= 0xE0u && byte <= 0xEFu) {
+      start(byte & 0x0Fu, 2);
+    } else if (byte >= 0xF0u && byte <= 0xF4u) {
+      start(byte & 0x07u, 3);
+    } else {
+      out[count++] = kReplacement;
+    }
+    return count;
+  }
+
+  // A waiting sequence is dropped: when the holder changes, the keyboard's code page does, or the window loses focus.
+  void reset() noexcept { need_ = 0; }
+
+  constexpr bool waiting() const noexcept { return need_ != 0; }
+
+ private:
+  void start(std::uint32_t bits, std::uint8_t continuation) noexcept {
+    point_ = bits;
+    need_ = continuation;
+    length_ = static_cast<std::uint8_t>(continuation + 1);
+  }
+
+  char32_t finished() const noexcept {
+    const std::uint32_t least = length_ == 2 ? 0x80u : length_ == 3 ? 0x800u : 0x10000u;
+    if (point_ < least || point_ > 0x10FFFFu || (point_ >= 0xD800u && point_ <= 0xDFFFu)) {
+      return kReplacement;
+    }
+    return static_cast<char32_t>(point_);
+  }
+
+  std::uint32_t point_ = 0;
+  std::uint8_t need_ = 0;    // continuation bytes still to come
+  std::uint8_t length_ = 0;  // the whole sequence's
+};
+
 }  // namespace grace::input

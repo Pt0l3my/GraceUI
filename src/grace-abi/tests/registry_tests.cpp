@@ -3,7 +3,9 @@
 // the table, and the checks on a font file and its ranges.
 #include <doctest/doctest.h>
 
+#include <array>
 #include <atomic>
+#include <initializer_list>
 #include <cstring>
 #include <memory>
 #include <thread>
@@ -275,4 +277,159 @@ TEST_CASE("a face's ranges: pairs within 0x20 to 0x10FFFF, outside the surrogate
     ++pairs;
   }
   CHECK(valid_ranges(defaults, pairs));
+}
+
+// ---- The atlas's room (the review's M3): faces' areas from their fonts' character maps, within the room.
+
+namespace {
+
+void put16(std::vector<unsigned char>& bytes, std::uint32_t value) {
+  bytes.push_back(static_cast<unsigned char>(value >> 8));
+  bytes.push_back(static_cast<unsigned char>(value));
+}
+
+void put32(std::vector<unsigned char>& bytes, std::uint32_t value) {
+  put16(bytes, value >> 16);
+  put16(bytes, value & 0xFFFFu);
+}
+
+// An invented font file whose one table is a character map with one subtable, for `platform` and `encoding`.
+std::vector<unsigned char> font_with_map(const std::vector<unsigned char>& subtable, std::uint32_t platform = 3,
+                                         std::uint32_t encoding = 1) {
+  std::vector<unsigned char> font;
+  put32(font, 0x00010000u);
+  put16(font, 1);  // one table
+  put16(font, 0);
+  put16(font, 0);
+  put16(font, 0);
+  font.insert(font.end(), {'c', 'm', 'a', 'p'});
+  put32(font, 0);                                                         // checksum
+  put32(font, 28);                                                        // offset
+  put32(font, static_cast<std::uint32_t>(12 + subtable.size()));          // length
+  put16(font, 0);                                                         // the map's version
+  put16(font, 1);                                                         // one record
+  put16(font, platform);
+  put16(font, encoding);
+  put32(font, 12);  // the subtable, from the map's start
+  font.insert(font.end(), subtable.begin(), subtable.end());
+  return font;
+}
+
+// Format 4: A-Z as themselves; a-c through the glyph array (5, 0, 7: b has none); U+0100-U+01FF shifted so that
+// U+0100 lands on glyph 0; and the closing U+FFFF segment, glyphless.
+std::vector<unsigned char> format4() {
+  struct Segment {
+    std::uint32_t start, end, delta, offset;
+  };
+  const Segment segments[] = {{0x41, 0x5A, 0, 0}, {0x61, 0x63, 0, 1}, {0x100, 0x1FF, 0x10000u - 0x100u, 0},
+                              {0xFFFF, 0xFFFF, 1, 0}};
+  const std::uint32_t count = 4;
+  std::vector<unsigned char> table;
+  put16(table, 4);
+  put16(table, 0);  // its length: not read
+  put16(table, 0);
+  put16(table, count * 2);
+  put16(table, 0);
+  put16(table, 0);
+  put16(table, 0);
+  for (const Segment& s : segments) put16(table, s.end);
+  put16(table, 0);  // reserved
+  for (const Segment& s : segments) put16(table, s.start);
+  for (const Segment& s : segments) put16(table, s.delta & 0xFFFFu);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    // The second segment's glyphs follow the offsets: from its own offset word, (count - i) words on.
+    put16(table, segments[i].offset != 0 ? (count - i) * 2 : 0);
+  }
+  for (const std::uint32_t id : {5u, 0u, 7u}) put16(table, id);
+  return table;
+}
+
+std::vector<unsigned char> groups(std::uint32_t format,
+                                  std::initializer_list<std::array<std::uint32_t, 3>> list) {
+  std::vector<unsigned char> table;
+  put16(table, format);
+  put16(table, 0);
+  put32(table, 0);
+  put32(table, 0);
+  put32(table, static_cast<std::uint32_t>(list.size()));
+  for (const auto& group : list) {
+    put32(table, group[0]);
+    put32(table, group[1]);
+    put32(table, group[2]);
+  }
+  return table;
+}
+
+}  // namespace
+
+TEST_CASE("mapped code points: format 4, its deltas, glyph array and glyphless points") {
+  const std::vector<unsigned char> font = font_with_map(format4());
+  const std::uint32_t ranges[] = {0x20, 0x7E, 0x100, 0x17F, 0};
+  CHECK(mapped_code_points(font.data(), font.size(), ranges) == 26 + 2 + 127);
+  const std::uint32_t last[] = {0xFFF0, 0xFFFF, 0};
+  CHECK(mapped_code_points(font.data(), font.size(), last) == 0);
+  // The default ranges: A-Z and a, c of Basic Latin; U+0101-U+017F of Latin Extended-A.
+  CHECK(mapped_code_points(font.data(), font.size(), nullptr) == 26 + 2 + 127);
+}
+
+TEST_CASE("mapped code points: formats 12 and 13, and a group that starts on glyph 0") {
+  const std::vector<unsigned char> twelve =
+      font_with_map(groups(12, {{0x20, 0x7E, 1}, {0x3000, 0x3002, 0}, {0x4E00, 0x9FFF, 100}}), 3, 10);
+  const std::uint32_t ranges[] = {0x20, 0x7E, 0x3000, 0x3002, 0x4E00, 0x4EFF, 0x1F600, 0x1F64F, 0};
+  CHECK(mapped_code_points(twelve.data(), twelve.size(), ranges) == 95 + 2 + 256);
+  const std::vector<unsigned char> thirteen = font_with_map(groups(13, {{0x2000, 0x200F, 0}, {0x2010, 0x201F, 9}}), 0, 4);
+  const std::uint32_t punctuation[] = {0x2000, 0x206F, 0};
+  CHECK(mapped_code_points(thirteen.data(), thirteen.size(), punctuation) == 16);
+}
+
+TEST_CASE("mapped code points: every code point of the ranges when the map cannot be read") {
+  const std::uint32_t ranges[] = {0x20, 0x7E, 0x4E00, 0x4EFF, 0};
+  const std::uint64_t points = 95 + 256;
+  std::vector<unsigned char> two;  // format 2, which GraceUI does not read
+  put16(two, 2);
+  put16(two, 0);
+  CHECK(mapped_code_points(font_with_map(two).data(), font_with_map(two).size(), ranges) == points);
+  std::vector<unsigned char> cut = font_with_map(groups(12, {{0x20, 0x7E, 1}}));
+  cut.resize(cut.size() - 4);  // its last group runs past the end
+  CHECK(mapped_code_points(cut.data(), cut.size(), ranges) == points);
+  const std::vector<unsigned char> other_platform = font_with_map(groups(12, {{0x20, 0x7E, 1}}), 1, 0);
+  CHECK(mapped_code_points(other_platform.data(), other_platform.size(), ranges) == points);
+  CHECK(mapped_code_points(font_like().data(), font_like().size(), ranges) == points);  // a map with no subtable
+  CHECK(mapped_code_points(nullptr, 0, ranges) == points);
+  CHECK(mapped_code_points(nullptr, 0, nullptr) == 95 + 96 + 128 + 112 + 1);
+}
+
+TEST_CASE("a face's area, and the atlas's room: EldenNet's faces first, the other mods' within their share") {
+  CHECK(face_area(0, 15.0f) == 2u * 32u * 17u);
+  CHECK(face_area(98, 24.0f) == 100u * 50u * 26u);
+  CHECK(face_area(98, 23.5f) == face_area(98, 24.0f));  // a fractional size takes the next pixel
+
+  auto registry = std::make_unique<Registry>();
+  const GraceUiConsumer others[] = {kModA, kModB, (1ull << 8) | 3};
+  const GraceUiConsumer eldennet = (1ull << 8) | 4;
+  std::uint32_t slot = 0;
+  // Another mod: within the others' share, then full; a face refused for room is aborted and gives its room back.
+  REQUIRE(registry->begin_face(others[0], kFacesPerMod, 24.0f, slot) == Registered::ok);
+  CHECK(registry->reserve_area(slot, kAtlasAreaOthers + 1, false) == Registered::full);
+  registry->abort_face(slot);
+  CHECK(registry->area_used() == 0);
+  REQUIRE(registry->begin_face(others[0], kFacesPerMod, 24.0f, slot) == Registered::ok);
+  CHECK(registry->reserve_area(slot, kAtlasAreaOthers / 2, false) == Registered::ok);
+  CHECK(registry->commit_face(slot) != 0);
+  REQUIRE(registry->begin_face(others[1], kFacesPerMod, 24.0f, slot) == Registered::ok);
+  CHECK(registry->reserve_area(slot, kAtlasAreaOthers / 2, false) == Registered::ok);
+  CHECK(registry->commit_face(slot) != 0);
+  REQUIRE(registry->begin_face(others[2], kFacesPerMod, 24.0f, slot) == Registered::ok);
+  CHECK(registry->reserve_area(slot, 1, false) == Registered::full);  // the others' share is used up
+  registry->abort_face(slot);
+  // EldenNet still has the rest of the room, and no more.
+  REQUIRE(registry->begin_face(eldennet, kFacesEldenNet, 24.0f, slot) == Registered::ok);
+  CHECK(registry->reserve_area(slot, kAtlasAreaMods - kAtlasAreaOthers + 1, true) == Registered::full);
+  CHECK(registry->reserve_area(slot, kAtlasAreaMods - kAtlasAreaOthers, true) == Registered::ok);
+  CHECK(registry->commit_face(slot) != 0);
+  CHECK(registry->area_used() == kAtlasAreaMods);
+  REQUIRE(registry->begin_face(eldennet, kFacesEldenNet, 24.0f, slot) == Registered::ok);
+  CHECK(registry->reserve_area(slot, 1, true) == Registered::full);
+  registry->abort_face(slot);
+  CHECK(registry->area_used() == kAtlasAreaMods);
 }
