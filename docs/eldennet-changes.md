@@ -471,3 +471,9 @@ Folded into both designs the same day (EldenNet's roadmap S7.8.d and S7.12.e).
    dashboard with the game closed through it once EldenNet's engine runs there (O76); `eldennet.dll` links none. The
    home-network switch and pairing (G9) stay in the game at first, so the launcher serves on loopback only. In EldenNet:
    DESIGN §3.2, ARCH §4.13 and ARCH §2.3's launcher row; the rest of O76 to O79 is folded with S7.12.c.
+
+*Later (2026-11-16, D115):* GraceUI's own settings (`hotkeys.menu`, `ui.scale`, `ui.menu.*`, `dashboard.*`) are homed on
+GraceUI's own pages (Menu, Hotkeys, Browser view), and EldenNet's pages carry only links to them. EldenNet keeps two
+keys of its own instead of GraceUI's: `ui.home_cards` (was `ui.menu.home_cards`) and `ui.show_world` (was
+`ui.menu.show_world`), in its `settings.toml`; its Settings page keeps General, Hotkeys (its own: talk, skip page,
+debug) and Developer.

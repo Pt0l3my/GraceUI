@@ -401,7 +401,7 @@ ELDEN RING\Game\GraceUI\        beside eldenring.exe
 | GraceUI missing, half-copied, or too old for EldenNet | EldenNet's launcher installs the carried release or explains (D83); in the process, a failed connect leaves EldenNet headless with a log line (§2.9's table, D88) |
 | An anti-cheat module present | GraceUI draws notices only (EldenNet's banner among them) and serves no menu, panel, input or socket for the session (D88) |
 | No overlay render for 2 s while any holder has input | Capture released (EldenNet DESIGN §8.1); the holder's view closes and the holder is told why (D77) |
-| The dashboard port is taken | Server off for the session; one toast and one log line naming the port, both possible causes (another program, or a range Windows reserves; §7.2 item 24) and where to change it (Settings › Browser view, or `dashboard.port`); never another interface or port |
+| The dashboard port is taken | Server off for the session; one toast and one log line naming the port, both possible causes (another program, or a range Windows reserves; §7.2 item 24) and where to change it (GraceUI › Browser view, or `dashboard.port`); never another interface or port |
 | A browser tab from an earlier game start | The session cookie no longer matches: the page reloads itself once and gets a new one; nothing to copy |
 | Protocol major mismatch (a stale cached page) | "This page needs updating: reload it" (§6.4); never a crash |
 | A topic's projection fails to build | That block shows "Unavailable" and System › Status counts it; the rest of the page works |
@@ -739,7 +739,7 @@ voice previews play through EldenNet's audio path at the player's request, never
   detail pane.
 - **The browser view** is semantic HTML with ARIA roles (tablist, grid, switch, slider, dialog), so screen readers
   work there. In game no OS screen reader can reach the overlay; the browser is the accessible surface, and the menu
-  says so in Settings › Menu.
+  says so in GraceUI › Menu.
 - **Motion**: the reduced-motion setting; no flashing.
 
 ### 3.13 Scale 75–150% and screens
@@ -891,7 +891,7 @@ A 44 px strip above the page with no ground of its own; search at the left, the 
 | **Status lamp** | One word and a dot: Ready (EldenNet DESIGN §4.4's L4), Reduced (L3), Observing (L2), Paused (AI paused), Dormant (the session gate, loading), Inactive (L1 or off); hover or focus gives the reason; a click opens System › Status | Every page | — |
 | **Live updates** (clock icon) | Live, every 5 s, or paused: throttles or holds the page's live topics so a moving table can be read | Pages with live data: Home, Requests, Events, Event monitor, Traces, Logs, Performance | View state, session only |
 | **Journey** (book icon) | The playthrough in view: the character's name and "Journey 1" (NG+ cycles are later journeys); a menu lists this playthrough's earlier journeys, which History and Playthrough then show read-only. At the title: "No character loaded" | History pages, Playthrough, Named NPCs (its Met and Nearby chips) | View state, session only; the current journey again at each open |
-| **Theme** (palette icon) | Grace or Grace Clear | Every page | A shortcut of `ui.menu.theme` (home: Settings › Menu) |
+| **Theme** (palette icon) | Grace or Grace Clear | Every page | A shortcut of `ui.menu.theme` (home: GraceUI › Menu) |
 | **Quick switches** (power icon; pad Start) | A menu of shortcut rows, each marked "lives in …": EldenNet on; Pause AI for this session; Conversation; Call-out; Named NPCs speak unasked; Other NPCs speak unasked; NPC-to-NPC; Autonomy; Self-awareness; Status awareness; Memory; Floating labels | Every page | Shortcuts only |
 | **Close** (in game) | Closes the menu (§5.1) | Every page | — |
 
@@ -1027,8 +1027,8 @@ to EldenNet's PAGES §4.9 on 2026-11-16 (G20), with their ids.
 - **PV2. Write-only secrets.** Moved to EldenNet's PAGES §4.9 on 2026-11-16 (G20).
 - **PV3. GraceUI keeps nothing.** No page content in any log line GraceUI hands EldenNet, in browser storage or in
   caches; the session cookie is set by the server, `HttpOnly`, and lasts until the browser closes; a paired device's
-  cookie (G9) lasts until the player forgets the device, and EldenNet keeps only its hash; no console output
-  in release builds; no analytics.
+  cookie (G9) lasts until the player forgets the device, and GraceUI keeps only its hash, in its user folder (D84); no
+  console output in release builds; no analytics.
 - **PV4. Chat and model text stay on screen.** Moved to EldenNet's PAGES §4.9 on 2026-11-16 (G20).
 - **PV5. Scrubbing.** Moved to EldenNet's PAGES §4.9 on 2026-11-16 (G20).
 - **PV6. No outside requests.** Fonts, assets and Docs ship with GraceUI and EldenNet and are served from this
@@ -1111,7 +1111,7 @@ Proposal 0001 §4.5 holds the detail. The browser view is an ordinary web page (
 
 ### 5.1 Opening and closing
 
-- **Key.** `hotkeys.menu`, default **F5**, rebindable in Settings › Hotkeys, stored by name; GraceUI's own setting
+- **Key.** `hotkeys.menu`, default **F5**, rebindable in GraceUI › Hotkeys (D115), stored by name; GraceUI's own setting
   (D79, D84), migrated out of EldenNet's `settings.toml`. EldenNet's S4 spike confirms that F5 is free in the game's
   default layout. The key is always masked from the game. F10 no longer opens anything; a schema migration removes
   `hotkeys.settings` (D6).
@@ -1205,7 +1205,7 @@ While a text field has focus, keys type into it; only Esc and F5 act, and only t
 - Focus model: the rail, the top bar, the page, and the drawer or detail pane are four scopes. A modal is a scope
   that takes focus and gives it back to the control that opened it. In a table, ↑↓ moves through rows, A opens the
   row's drawer and → reaches the row's actions. Sliders and choices are edited in place with ← →.
-- **Opening on a pad (D33).** No default chord in v1: every pad button already has a game function. Settings › Hotkeys
+- **Opening on a pad (D33).** No default chord in v1: every pad button already has a game function. GraceUI › Hotkeys
   can set one if S4 finds a chord that is free, as it does for the talk gesture (EldenNet O11). Players can map a spare
   button to F5 with Steam Input; on the Deck a back button is the natural choice. The documentation says how.
 - **Glyphs**: our own neutral drawings, following the last device used (§3.8). Pad mode forces 44 px rows and shows
@@ -1258,9 +1258,9 @@ While a text field has focus, keys type into it; only Esc and F5 act, and only t
 
 - An ordinary page: no capture, the browser's own focus, the same keyboard map where the browser allows it (`/`,
   Q and E, Page Up and Page Down, Esc for modals). Tab order follows the visual order.
-- Key capture on Settings › Hotkeys records `KeyboardEvent.code` and maps it to the framework's key names (EldenNet's,
-  moved with the hotkeys); keys a browser reserves for itself (F5 reloads the page, F11 is full screen) are captured
-  only while the capture field holds focus, and a note says so.
+- Key capture on a Hotkeys page (GraceUI's own, or a space's) records `KeyboardEvent.code` and maps it to the
+  framework's key names (EldenNet's, moved with the hotkeys); keys a browser reserves for itself (F5 reloads the page,
+  F11 is full screen) are captured only while the capture field holds focus, and a note says so.
 - Gamepads in the browser are not supported in v1.
 
 ---
@@ -1561,11 +1561,11 @@ in hosts outside the game too (G29).
     a random device cookie that lasts until the player forgets the device. GraceUI keeps only its hash, with the name
     the player gives the device and the date it paired, in a file of its own in its user folder
     (`Game\GraceUI\user\devices.toml`, D84), never in a settings file, so Copy settings, the bug report and recordings
-    never carry it. Each paired device is listed on Settings › Browser view, whether `dashboard.lan` is on or off, with
+    never carry it. Each paired device is listed on GraceUI › Browser view, whether `dashboard.lan` is on or off, with
     a Forget button, which revokes it at once and closes its connections. Switching `dashboard.lan` off closes the
     network listener and every device connection; paired devices stay listed until forgotten. Paired devices are refused
     every command a space marks as sensitive: EldenNet's `secrets.set`, `secrets.clear` and `providers.update` (D81).
-17. **Disconnect browsers**: Settings › Browser view drops every connection and renews the cookie
+17. **Disconnect browsers**: GraceUI › Browser view drops every connection and renews the cookie
     (`dashboard.disconnect`); at most two WebSocket connections at once (§6.8).
 18. **Uploads (G28, decided by the owner)**: one route, `POST /upload`, on the loopback listener alone, for a space's
     commands that take a file and are marked sensitive (EldenNet's `plugins.install` first); the page first asks for a
@@ -1599,7 +1599,7 @@ in hosts outside the game too (G29).
     wait, and Ping is answered with Pong. The ticket's 2 s (item 4) are counted from the 101; each connection has a
     bounded send queue, so a tab that does not read is closed, not buffered for; and the command rate limit (§6.8) is
     counted before the JSON is parsed.
-23. **One address shown** (D112; SRV §7): Settings › Browser view, Home's Status card, F11 and EldenNet's launcher
+23. **One address shown** (D112; SRV §7): GraceUI › Browser view, Home's Status card, F11 and EldenNet's launcher
     show `http://127.0.0.1:PORT` only, and a top-level navigation whose `Host` is `localhost:PORT` or `[::1]:PORT` is
     redirected to the same path on `http://127.0.0.1:PORT` (its `Location` written from the listed file's own name, or
     `/` for a path not listed, so that nothing of the request reaches the header, item 19). So the dashboard has one
@@ -1769,7 +1769,7 @@ a change to a page description or a component shows up in both views or fails CI
 | v0.3 Remembrance | 0.3 | Characters › Named NPCs (the pilot NPC); Characters › Playthrough (people met, status, last met, disposition, has heard of, notes); History › Conversations and Memories with Forget; Home › Nearby; Behaviour › Speaking up (named NPCs); the top bar's Journey | Browser | Forget's confirmation and backup; SP3 and SP7 goldens; the NG+ journey fixture |
 | v0.4 War cries | 0.4 | Characters › NPC types; Behaviour › Pacing, Reactions, Speaking up (all), Combat, Awareness (as S8 passes); History › Events; Tools › Event monitor; Home › Happening now and Recent events; Voice › Text and subtitles (browser); settings writable in the browser (D17); GraceUI's own Hotkeys page in the browser (D77) and search across spaces | Browser | Command validation; the event monitor's rates and ring; `history.page` and the `seen` bit; testers tune pacing (EldenNet X2) |
 | v0.5 Veil | 0.5 | History › World; Named NPCs for every persona and the roster's first bios, with general profiles; Playthrough's story lines and World now | Browser | SP5 and SP6 goldens on all world stages; the roster and Playthrough goldens |
-| v0.6 Threshold | 0.6 | `fonts\` in the folder; **The menu in game on F5**: every page but Workshop, F10 folded in; Settings (General, Hotkeys, Menu, Browser view, Developer, All settings); First light; Settings › Browser view's home-network switch and pairing (G9); Behaviour › Conversation with the call-out; Voice › Text and subtitles in game; AI › Providers and Models writable; Bug report's copy and save; the later-version statement pages with their "WIP" tags (G7), Map's among them; the space switcher and GraceUI's own space (D79); the demo space beside EldenNet's | Both | U2–U4 and U6 in game, across holders; the close matrix for every holder, the player's exit among them; the providers' danger close; Proton, the Deck and HDR on EldenNet's matrix; the ABI and connect tests; a GraceUI patch dropped over the bundled copy, in game; the pairing cases of the server suite |
+| v0.6 Threshold | 0.6 | `fonts\` in the folder; **The menu in game on F5**: every page but Workshop, F10 folded in; Settings (General, Hotkeys, Developer, All settings) and GraceUI's own Menu, Hotkeys and Browser view (D115); First light; GraceUI › Browser view's home-network switch and pairing (G9); Behaviour › Conversation with the call-out; Voice › Text and subtitles in game; AI › Providers and Models writable; Bug report's copy and save; the later-version statement pages with their "WIP" tags (G7), Map's among them; the space switcher and GraceUI's own space (D79); the demo space beside EldenNet's | Both | U2–U4 and U6 in game, across holders; the close matrix for every holder, the player's exit among them; the providers' danger close; Proton, the Deck and HDR on EldenNet's matrix; the ABI and connect tests; a GraceUI patch dropped over the bundled copy, in game; the pairing cases of the server suite |
 | v1.0 | 1.0 | Accessibility pass, pad-only walkthrough, the Deck's scale (G6), the full matrix; Named NPCs with the whole base-game roster (EldenNet v1.0); GraceUI's own semantic versions from here (D74) | Both | U1–U9 green on the release candidate |
 | v1.1 | 1.1 | **The map** (G24 (a), §4.13): the Map page and Settings › Map, the map panel kind (D91), the browser's WebGL map with its 3D relief, the in-game map and its texture (G26). **By G18 (a)**, decided by the owner on 2026-11-16, the framework opens to other modders: the modders' guide, the three example mods, the C mock, GraceUI's own release page, a frozen ABI 1 | Both | The map's goldens (nothing beyond the fixture's game map and the reached and seen layers), the upload counter, the map key's input tests; the examples in the harness and the guide's snippets compiling in CI (G18 (a)) |
 | v1.5 | 1.5 | Voice › Text-to-speech and Speech-to-text become pages with controls (EldenNet's TTS, push-to-talk in Settings › Hotkeys) | Both | — |
@@ -1996,6 +1996,7 @@ PAGES, and D61 with them (EldenNet's roadmap S7.8.d).
 | D112 | One address shown | Settings › Browser view, Home's Status card, F11 and EldenNet's launcher show `http://127.0.0.1:PORT` only; a top-level navigation whose `Host` is `localhost:PORT` or `[::1]:PORT` is redirected to the same path on `http://127.0.0.1:PORT`, its `Location` written from the listed file's own name (or `/` for a path not listed), so the dashboard has one origin and one cookie jar; `localhost:8642` and `[::1]:8642` still work when typed (§7.2 items 3, 14 and 23). Amends D58 and D60 | Showing and serving the three loopback names alike | `127.0.0.1`, `localhost` and `[::1]` are three origins with three cookie jars, and browsers may try `::1` first for `localhost`, so where another program holds `[::1]:PORT`, "localhost" reaches that program; a path from our own list keeps §7.2 item 19's rule that nothing of the request is written into a header | SRV §7; D58, D60 |
 | D113 | The pairing code's window and the firewall prompt | The six-digit code is valid only while the pairing screen is open in game, beside D66's two minutes, single use and five wrong tries; before `dashboard.lan` is first turned on, the game explains Windows' firewall prompt: allowing needs an administrator, and dismissing it leaves a block rule, after which other devices cannot connect (§7.2 item 25) | The code valid for its two minutes whatever the player is doing; no word on the prompt | A six-digit code is a million guesses, so its life should be no longer than the player's own act of pairing; a dismissed prompt fails silently for other devices, and its rule covers the game's executable, not the port | SRV §6, §7; G9, D66 |
 | D114 | No secure-context features | The browser view depends on no feature limited to secure contexts (service workers, `crypto.subtle`), so the same web app works on a paired device; the one exception is the upload (§7.2 item 18), which only the loopback listener takes, a secure context, so its SHA-256 uses `crypto.subtle` there (§7.2 item 25) | Service workers for caching; `crypto.subtle` for hashing | A page on a private address over plain HTTP, as `dashboard.lan` serves it, is not a secure context, so those features are missing there | SRV §6; G9 |
+| D115 | GraceUI's own settings, on its own pages | GraceUI's keys (`hotkeys.menu`, `ui.scale`, `ui.menu.theme` and the menu's own options, `dashboard.*`) are homed on the pages of GraceUI's own space at the rail's foot (D79): Menu (`ui.scale`, `ui.menu.*`), Hotkeys (`hotkeys.menu`, and every registered hotkey listed with its space for its conflicts, each changed on its own space's page; D77) and Browser view (`dashboard.*`, the address, browsers connected, pairing and paired devices); their commands go through GraceUI's own space. A space's page may carry a link to one of them where a player would look (EldenNet's Text and subtitles to the size, its Hotkeys to the menu key): navigation only, no command crosses spaces. A setting that arranges or shows a space's own pages is that space's: EldenNet's Home cards and World page are `ui.home_cards` and `ui.show_world` in EldenNet's settings. Earlier entries' Settings › Menu, Hotkeys and Browser view name these pages | Homes on EldenNet's pages, as listed until now | §6.9's lint (a key's home is a page of its own space) and D81 (commands stay within their space) hold, and every mod finds GraceUI's settings in one place | G20 (a); EldenNet's WHY§107 and roadmap S7.8.e |
 
 ---
 
