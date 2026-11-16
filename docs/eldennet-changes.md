@@ -269,6 +269,8 @@ player switches `dashboard.lan` on (G9).
 5. **Per-stage public lines**: each persona stage may carry `public.line` (≤ 25 words: what the Tarnished has seen of
    the story by that stage, in our words) and `public.links` (the related personas that line may name), linted
    against the Tarnished's lock set at that stage and reviewed like content; a stage without a line shows nothing.
+   *Later (2026-11-16): EldenNet's O86.* There is no lock set: each line is reviewed when written, at its stage, and
+   nothing lints it against a set of terms (EldenNet MEM §7.5; SP2 as re-cut).
 6. **The prompt**: "the framework will inject correct NPC profile into the request payload prompt" (the owner, G8) is
    EldenNet DESIGN §7.8's match by profile id (O45); GraceUI shows only the public fields.
 7. **Memories and conversations for every profiled NPC (O45)**: the `memories`, `journal/<id>` and `conversation/<id>`
@@ -315,6 +317,9 @@ design and D89–D98 its decisions. The items below stand with their Later notes
    *Later (2026-11-15): G23 decided (c).* The notes are added to the map by the model itself, by the same rules; the
    player edits or removes them, a removed note is not written again from the same memories, and a setting (Lore notes
    by AI, on by default) turns it off.
+   *Later (2026-11-16): EldenNet's O86.* There is no lock filter: a note is written from the player's memories, which
+   hold only what each NPC could know (EldenNet MEM §3.3, §7), and SP2 as re-cut shows only what the game showed or
+   EldenNet wrote from the same grounded inputs.
 7. **Terrain** (G27 (a), decided 2026-11-14): the terrain's heights read from the player's install (the source to be
    found by S7.9.c: map pieces, collision or a height texture, each structure verified, O48), built once on the PC
    with the drawn base and cached; projected for the browser's 3D relief and rendered once as the in-game relief

@@ -17,7 +17,7 @@ theme), and every page holds EldenNet's own features and settings, in Elden Ring
 
 **How to read the references.** "§n" is a section of this document. EldenNet's documents keep their own codes:
 "EldenNet DESIGN §n" (its master design), ARCH, NPC and MEM (its architecture, NPC and memory documents), its spikes
-S0–S10, success criteria C1–C14 and owner decisions O1–O64 (its `docs/DECISIONS.md`); GraceUI's own are G1–G27
+S0–S10, success criteria C1–C14 and owner decisions O1–O86 (its `docs/DECISIONS.md`); GraceUI's own are G1–G29
 ([DECISIONS.md](DECISIONS.md)). GraceUI's research notes are ML (Magelight UI), LOOK
 (the look and the Grace theme), IA (information architecture), REN (renderers), SND (SkyrimNet's dashboard) and FW
 (UI frameworks), in [research/](research/README.md). "Proposal 0001 §n" and "proposal 0002 §n" point into the two
@@ -1112,13 +1112,16 @@ Related card of §4.2.4.
   when the shipped advice changed in this version; the free-model warning (free models are not advised for prepared
   lines and autonomy, and free presets turn autonomy off, O37). **One card per job slot**, by player label with the
   slot id as a chip: *Conversation* (`dialogue`), *Quick lines* (`bark_live`), *Prepared lines* (`bark_pool`),
-  *Memory* (`memory`), *Self-test* (`selftest`); each with its provider, model (a picker from the provider's model
-  list, or text), fallback model, a health dot and word, and the fixed budgets read-only (tokens, temperature,
-  first-token and total time, retries: "the same in every preset", EldenNet DESIGN §11.2). The **Prepared lines** card
-  also holds `pools.max_jobs_per_session` (its home), the pool's state in words (cards ready, generating, paused in a
-  fight; counts cover every type, which are all listed (G5); pool lines are never listed before they play) and
-  "Prepare lines now" (`pools.prebake`; at rest or at the title only). **Decisions** (`meta`): a dimmed card with a
-  "WIP" tag (a later version, G7), no controls.
+  *Memory* (`memory`), *Self-test* (`selftest`) and, from 0.4, *Decisions* (`decisions`); each with its provider,
+  model (a picker from the provider's model list, or text), fallback model, a health dot and word, and the fixed
+  budgets read-only (tokens, temperature, first-token and total time, retries: "the same in every preset", EldenNet
+  DESIGN §11.2). The **Prepared lines** card also holds `pools.max_jobs_per_session` (its home), the pool's state in
+  words (cards ready, generating, paused in a fight; counts cover every type, which are all listed (G5); pool lines are
+  never listed before they play) and "Prepare lines now" (`pools.prebake`; at rest or at the title only). The
+  **Decisions** card serves EldenNet's decision calls (in v1, who speaks next at a shared place; EldenNet ARCH §11.8)
+  and says in words that a preset naming no model for it uses the Quick lines model, and that the rules decide when
+  no model answers in time. Since EldenNet's decision calls came into v1 it is a card like the others, with no "WIP"
+  tag (G7's note of 2026-11-16).
 - **Data.** Reads `providers`, `health`, `settings`. Writes `providers.update`, `settings.set`, `pools.prebake`.
 - **Rules.** Pool lines are never listed before they play. Privacy as Providers; on a paired device (G9) whatever here
   writes `providers.update` is read-only, as on Providers.
@@ -1241,9 +1244,10 @@ base-game roster by EldenNet v1.0).
   nor a road, gist, private field, tie, forbid list, beckon, knowledge entry or quest track (SP1). Every named boss and
   every named invader with a shipped bio is in the roster from the start, by its first-meeting name (for a boss the game
   never shows calm before its fight, the name its bar shows), read from the player's install; its general profile says
-  only what a first meeting shows: for such a boss, which is silent and has the seen fields only (EldenNet O46), what
-  the opening of its fight shows; for an NPC the game can show calm, that meeting, never a later fight (D67). Bosses and
-  invaders without a bio stay out until the game names them (SP4).
+  only what a first meeting shows: for such a boss, which has the seen fields only and never converses (EldenNet O46;
+  one of a speaking kind keeps its combat lines, O42), what the opening of its fight shows; for an NPC the game can
+  show calm, that meeting, never a later fight (D67). Bosses and invaders without a bio stay out until the game names
+  them (SP4).
 - **Keys and pad.** ↑↓ the list, → or A into the detail, LB/RB the tabs.
 - **Related** (per character): Playthrough (their row), History › Memories and History › Conversations filtered to
   them, NPC types.
@@ -1316,15 +1320,17 @@ editable but Forget (D13). Before a playthrough is loaded, each page says "Load 
   weight and no text of their own. Never the `stage_seen`, `world_seen`, `world_seen_pt`, `world_cued`, `spoke_pt` or
   `verified:` keys (SP1); "fought beside you" without the boss's name (SP4); a place by its runtime name, and only a
   region entered (SP3).
-- **Table** (keepsakes only, at most 8 per NPC, MEM §2.3). NPC, when, the keepsake, weight (a number and a word), basis
-  ("Seen", or "You told them" for a claim, MEM §2.5), about (you, themselves, the world, or another NPC by the name the
-  game shows, D68), and a mark on the one protected keepsake (the heaviest about you with weight 0.7 or more, MEM §2.3).
+- **Table** (keepsakes only, at most 8 per NPC, each one witness's own memory, MEM §2.3). NPC, when, the keepsake,
+  weight (a number and a word), basis ("Seen", or "You told them" for a claim, MEM §2.5), about (you, themselves, the
+  world, or another NPC by the name the game shows, D68), and a mark on the one protected keepsake (the heaviest about
+  you with weight 0.7 or more, MEM §2.3).
   A name the Tarnished told is shown on the NPC card, never as a row (MEM §2.5 drops it as a duplicate).
 - **Toolbar.** Forget this NPC (with an NPC chosen) · Forget this journey (in `rot`, at the right). Both name exactly
   what goes and what stays, take a backup and need a deliberate second press; in game, a danger close cancels them
   (MEM §9.5).
 - **Sections.** **Memory work** (waiting, running, the last result in words) · **Backups** (count and times, no
-  paths). A note: "Diaries and scene memories: later version."
+  paths). A note: "Diaries: later version." Memories of scenes are in v1: each NPC that witnessed a scene writes its
+  own, one per witness (EldenNet MEM §2.3, §3.1), and they show as its keepsakes.
 - **Data.** Reads `memories`, `journal/<id>`. Writes `settings.set`, `memory.forget_npc`, `memory.forget_journey`.
 - **Rules.** Journals and keepsakes are shown as EldenNet's memory job wrote them, from grounded inputs only (SP2;
   EldenNet O86). Model text on screen only (PV4); no paths.
@@ -1653,7 +1659,7 @@ a later version (O41, EldenNet DESIGN §13); v1 is dialogue only and never write
 | Provider health and error classes | AI › Providers › Health | Home › Status (dots) | 0.2 |
 | Model slots, fallbacks, fixed budgets | AI › Models | — | 0.2 / 0.6 |
 | Model presets and EldenNet's advice | AI › Models | Home › Setup, AI › Providers (advice) | 0.2 |
-| The reserved `meta` slot, typed decisions | AI › Models (a later-version card) | — | later |
+| The `decisions` slot: decision calls (the next speaker at a shared place in v1, the recall gate later) | AI › Models (the Decisions card) | — | 0.4 / 0.6 |
 | Self-test (in First light, and silent at start-up) | AI › Self-test | Home › Setup, First light | 0.2 |
 | Model call log, usage, cost | AI › Requests | Home › Model calls | 0.2 |
 | Prepared lines (pools), preparing them | AI › Models (Prepared lines) | Behaviour › Combat | 0.4 |
@@ -1684,7 +1690,7 @@ a later version (O41, EldenNet DESIGN §13); v1 is dialogue only and never write
 | Pacing and reach, presets | Behaviour › Pacing | Combat, Speaking up, Conversation | 0.4 |
 | Acts and gestures | Behaviour › Acts (statement) | NPC types (locked) | later |
 | Your own event rules | Behaviour › Reactions (a locked row) | — | later |
-| Thoughts (`npc_thought`), diaries, scene memories, `@name` addressing, the pad intent list | No page: a later-version line on Awareness, Memories and Conversation | — | later / 1.1 |
+| Thoughts (`npc_thought`), diaries, `@name` addressing, the pad intent list | No page: a later-version line on Awareness, Memories and Conversation (memories of scenes are in v1, one per witness, on History › Memories) | — | later / 1.1 |
 | Spoiler layers, safety rules, context gates | No setting; stated on Settings › General and Docs › Spoilers | — | — |
 | The master switch | Settings › General | Quick switches | 0.6 |
 | Pause AI for the session | Home's header | Quick switches | 0.2 |
@@ -1717,7 +1723,7 @@ with a page of their own show as statements (G7); everything else is simply abse
 | AI › Vision (screenshots described by a model; a gallery) | Not planned | No EldenNet DESIGN entry; sending screen captures to a provider is a privacy question; heavy |
 | AI › GameMaster | Later: AI › Director (statement) | EldenNet DESIGN §13, the `Directed` class |
 | AI › Providers › Routing (rotation, failover, a first-token guard) | Adapted and simplified: one fallback per slot on Models; health on Providers | SN01 §14.2 |
-| Request styles per provider, decision providers | Later (the `meta` slot, `DecisionRequest`) | EldenNet DESIGN §11.2, §13 |
+| Request styles per provider, decision providers | Adapted: decision calls in EldenNet's own format over the same providers, on the `decisions` slot (AI › Models' Decisions card); no request styles of their own | EldenNet DESIGN §11.2; ARCH §11.8 |
 | A hosted first-party account, sign-in, a community link | Never | No accounts; PV rules |
 | Voice › Bard Singing | Not planned | SN01 §14.3 |
 | Voice › Samples (cloning) | Never for the cast's voices | EldenNet DESIGN §1.2, Never column |
@@ -2418,7 +2424,7 @@ a change to a page description or a component shows up in both views or fails CI
 | v1.0 | 1.0 | Accessibility pass, pad-only walkthrough, the Deck's scale (G6), the full matrix; Named NPCs with the whole base-game roster (EldenNet v1.0); GraceUI's own semantic versions from here (D74) | Both | U1–U9 green on the release candidate |
 | v1.1 | 1.1 | **The map** (G24 (a), §4.13): the Map page and Settings › Map, the map panel kind (D91), the browser's WebGL map with its 3D relief, the in-game map and its texture (G26). **Under G18 (a)**, still Open, the framework opens to other modders: the modders' guide, the three example mods, the C mock, GraceUI's own release page, a frozen ABI 1 | Both | The map's goldens (nothing beyond the fixture's game map and the reached and seen layers), the upload counter, the map key's input tests; under G18 (a), the examples in the harness and the guide's snippets compiling in CI |
 | v1.5 | 1.5 | Voice › Text-to-speech and Speech-to-text become pages with controls (EldenNet's TTS, push-to-talk in Settings › Hotkeys) | Both | — |
-| Later | — | AI › Director and Behaviour › Acts become pages; Acts allowances live; diaries and scene memories on History; your own event rules on Reactions; Workshop editors; HTML in game if G1 ever changes | — | — |
+| Later | — | AI › Director and Behaviour › Acts become pages; Acts allowances live; diaries on History; your own event rules on Reactions; Workshop editors; HTML in game if G1 ever changes | — | — |
 
 ---
 
@@ -2580,12 +2586,12 @@ repository) waits for G20 and is not in force until the owner answers; until the
 | D59 | The off switch | `dashboard.enabled`, on by default, homed in Settings › Browser view; off means no socket (GraceUI's own setting, D84; the player's switch wins over any space's `browser = "always"`, D81) | No switch | Always on is the owner's default; a player who wants no listening port, such as on a Deck in game mode, can still have none | Owner, G4 |
 | D60 | Loopback sign-in | A session cookie (256 random bits, new at each game start; `HttpOnly`, `SameSite=Strict`, host-only, no expiry) is set on any top-level page load that arrives on the loopback listener with a loopback `Host` (never on the network listener, D66); API calls and the WebSocket ticket need it as well as `Origin` and Fetch Metadata; the page acts on nothing in its URL. Changes D31 in part (GraceUI's server since G17 (a); the cookie and its rules unchanged) | No credential on loopback, the other checks only; keeping the token in the link | The player types the address and nothing else (G4); the cookie is a second lock beside Host and Origin against web pages and survives a reload; what limits other programs is §7.1's | §7.2; REN §6 |
 | D61 | Keys bound to their address | Changing a provider's base URL or kind, from either view, clears its key and its extra header values, which must then be set again (EldenNet's rule for its own provider settings, applied by EldenNet's command entry point; where it is recorded follows G20) | A confirmation in game for every address change | No visitor to the dashboard can send a player's key to another address | §7.4 |
-| D62 | The WIP tag | "WIP" on the four later-version rail entries and their flyout rows, beside statement-page titles and on AI › Models' dimmed Decisions card; tooltips and accessible names say when; settings rows keep their availability badges (Five entries since the Map's statement, §4.13) | "WIP" on rows too | The owner named the entries' tag; a row's badge says when the setting starts to work (§4.1 principle 3) | Owner, G7 |
+| D62 | The WIP tag | "WIP" on the four later-version rail entries and their flyout rows and beside statement-page titles; tooltips and accessible names say when; settings rows keep their availability badges (Five entries since the Map's statement, §4.13. AI › Models' Decisions card lost its tag on 2026-11-16, when EldenNet's decision calls came into v1: G7's note) | "WIP" on rows too | The owner named the entries' tag; a row's badge says when the setting starts to work (§4.1 principle 3) | Owner, G7 |
 | D63 | Playthrough's place | Characters › Playthrough (`characters.playthrough`), first in Characters | History › Playthrough | It is about people and how they are now, beside the roster it complements; History holds records of what happened, and its World page stays the record of world stages | Owner, G5 and G8 |
 | D64 | Roster and playthrough | Named NPCs and NPC types hold what is the same in every playthrough (general profiles, allowances, reactions, the news temperament); Playthrough holds this journey's state. Named NPCs' "Now" and "Has heard of" move to Playthrough, and the roster is usable at the title screen | One page for both | Under G8 the roster is shown before any meeting, so the journey's state needs a page bound to the journey | Owner, G8 |
 | D65 | What Playthrough may say | Status from perception only (here now; alive when last met; away, when the Tarnished passed where they were last met and did not perceive them; fell, when the Tarnished saw it); a story line only for the stage active at the last meeting (EldenNet's `stage_seen`), never a later one; related stories only for met people the stage's own line links; notes only from records; never a next step, a "has something for you" mark, a fate or a count of what is left; its lines and notes are never searched (D21) | Reading flags directly; quest tracks | A flag can hold before its effect is seen (D11); `stage_seen` is what the Tarnished witnessed | SP1–SP9; MEM §2.2 |
 | D66 | Pairing a device (G9) | A six-digit code shown in game for two minutes, one use, void after five wrong tries; one random device cookie per device, kept by EldenNet only as a hash with its name and date in `devices.toml` until the player forgets it; Forget revokes it at once and closes its connections, whether `dashboard.lan` is on or off; `dashboard.lan` off closes the network listener and every device connection; the network listener accepts only device cookies and never grants the session cookie; paired devices are refused `secrets.set`, `secrets.clear` and `providers.update`; this PC (a connection on the loopback listener) never needs a code (Since G17 (a) GraceUI keeps the hashes, in `Game\GraceUI\user\devices.toml` (D84); paired devices are refused every command a space marks as sensitive (D81)) | A host field with no pairing; a code per session; a code shown in this PC's browser too | The owner's G9 words; a key is never typed over the network; a code shown in a browser could be read by another user signed in on the same PC (§7.1) | Owner, G9; §7.2 item 16 |
-| D67 | Named bosses in the roster | Characters › Named NPCs lists every named NPC and every named boss with a shipped bio from the start (named invaders among the named NPCs), by the name the game shows at a first meeting, read from the player's install. A boss the game never shows calm before its fight is listed by the name its bar shows and carries a "Boss" tag. An NPC the game can show calm before any fight (persona or not; one profile id across forms, EldenNet §7.8) carries no tag and is never listed by its bar name. Which entries carry the tag is fixed per entry in EldenNet's index, never by the playthrough (D64). Its general profile says only what a first meeting shows: for a tagged boss, what the opening of its fight shows; for every other entry, its calm first meeting; each group (Met, Not met, Seen) is in name order, never grouped or ordered by region, kind or order of play, and nothing is counted per region; on NPC types a named boss appears only as its slot among the named slots, and the boss kind row still names no one (Since EldenNet O46, 2026-11-16: the general profile is the bio's `public.summary`, `public.role` and `subjects`, each reviewed at the opening state when written; a tagged boss, or a named boss of a voiceless kind, has the seen fields only and is silent, so it shows no `subjects`) | Bosses only once their bar has shown (SP4 before); a separate Bosses group; order of play | The owner's answers to EldenNet's roster questions ("bios for every named NPCs and bosses with names", "shipped full roster from beginning"); an order by region or progression would hint at what comes next | Owner, EldenNet O43 as updated; G5, G8 |
+| D67 | Named bosses in the roster | Characters › Named NPCs lists every named NPC and every named boss with a shipped bio from the start (named invaders among the named NPCs), by the name the game shows at a first meeting, read from the player's install. A boss the game never shows calm before its fight is listed by the name its bar shows and carries a "Boss" tag. An NPC the game can show calm before any fight (persona or not; one profile id across forms, EldenNet §7.8) carries no tag and is never listed by its bar name. Which entries carry the tag is fixed per entry in EldenNet's index, never by the playthrough (D64). Its general profile says only what a first meeting shows: for a tagged boss, what the opening of its fight shows; for every other entry, its calm first meeting; each group (Met, Not met, Seen) is in name order, never grouped or ordered by region, kind or order of play, and nothing is counted per region; on NPC types a named boss appears only as its slot among the named slots, and the boss kind row still names no one (Since EldenNet O46, 2026-11-16: the general profile is the bio's `public.summary`, `public.role` and `subjects`, each reviewed at the opening state when written; a tagged boss, or a named boss of a voiceless kind, has the seen fields only and never converses, so it shows no `subjects`; a voiceless one never speaks, and a tagged boss of a speaking kind keeps its combat lines, EldenNet O42) | Bosses only once their bar has shown (SP4 before); a separate Bosses group; order of play | The owner's answers to EldenNet's roster questions ("bios for every named NPCs and bosses with names", "shipped full roster from beginning"); an order by region or progression would hint at what comes next | Owner, EldenNet O43 as updated; G5, G8 |
 | D68 | Memories of other NPCs | A keepsake about another NPC (EldenNet O45) shows on History › Memories, and in the `journal/<id>` projection (and its count in `memories`), only when every event it cites had the Tarnished in its audience, and names that NPC as the game shows them (SP3); otherwise it is shown and counted nowhere | Every keepsake; no keepsake about another NPC | Absence is silent (SP5); what the Tarnished heard is theirs to see (SP7) | EldenNet O45; SP3, SP5, SP7 |
 | D69 | The host's shape | `graceui.dll` itself is the host: its `grace-host` crate alone holds hudhook 0.9.3 with every O25 rule, its MinHook, the Present hook, the window procedure (with EldenNet's `WM_CHAR` surrogate fix and IME placement) and the DInput and XInput detours for capture and masking; XInput is hooked in every XInput DLL already loaded at install, found by name, so GraceUI reads no import table of the game's; no second GraceUI module. Supersedes G10 (b)'s split and D56's "links no hudhook" | A hook-free GraceUI module beside the host; a dual mode in which EldenNet hosts when present | One process holds one hudhook and one MinHook safely; a framework other mods use must be present without EldenNet; a second module adds a private ABI and a second copy to guard, for no isolation within one process | G15 (a); proposal 0001 §4.1 |
 | D70 | Finding GraceUI | The helper (header-only C, and the `graceui-sys` crate with a thin safe wrapper) runs on the mod's own worker, never in `DllMain`: `GetModuleHandleW(L"graceui.dll")` and its export; else a scan of loaded modules for the export, the first that answers; else, if the mod allows it, `LoadLibraryExW` of `<folder of eldenring.exe>\GraceUI\graceui.dll`; polled every 250 ms for at most 30 s (EST). Exports: `GraceUI_Version()` (callable from any thread, needs no start) and `GraceUI_RequestApi(major)`. Absence means the mod's UI is off, never an error dialog | Load order or a loader's API; a registry of hosts | Every peer host uses this shape, and it survives renaming and duplicates | G15 (a); proposal 0001 §4.3 |
