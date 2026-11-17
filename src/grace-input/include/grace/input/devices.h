@@ -31,6 +31,8 @@ class KeyboardLedger {
   // Rewrites `state` (what GetDeviceState returned) to what the game may see: nothing while a holder takes the
   // keyboard; after it ends, nothing of a key held at the close until it is released; never the menu key (§5.1).
   void filter(std::uint8_t (&state)[256], const Capture& capture, Key menu_key, std::int64_t now_ms) noexcept;
+  // The same, hiding every key of `hidden` as the menu key is hidden: the menu key and the mods' hotkeys' (D155).
+  void filter(std::uint8_t (&state)[256], const Capture& capture, const KeyBits& hidden, std::int64_t now_ms) noexcept;
 
   KeyBits latest() const noexcept { return latest_.load(); }   // the newest real state read
   KeyBits masked() const noexcept { return masked_.load(); }

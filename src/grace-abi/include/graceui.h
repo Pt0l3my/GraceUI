@@ -123,6 +123,8 @@ typedef uint32_t GraceUiStatus;
 #define GRACEUI_DRAW_INDEX_BYTES_MAX 262144u  /* a submission's indices (EST: 256 KiB) */
 #define GRACEUI_DRAW_COMMANDS_MAX 64u  /* a submission's commands (D76, EST) */
 #define GRACEUI_DRAW_COMMAND_SIZE_MAX 256u /* a submission's command stride, in bytes (EST): a larger one is refused */
+#define GRACEUI_HOTKEYS_PER_MOD 8u     /* a mod's hotkeys (EST) */
+#define GRACEUI_HOTKEYS_MAX 64u        /* hotkeys in the session (EST) */
 
 /* ---- Capabilities: the features has_cap names. */
 
@@ -132,6 +134,7 @@ typedef uint32_t GraceUiStatus;
 #define GRACEUI_CAP_FACES "faces"     /* register_face, glyph_table: since GraceUI 0.1 */
 #define GRACEUI_CAP_INPUT "input"     /* request_input, release_input: since GraceUI 0.1 */
 #define GRACEUI_CAP_WORLD_STATE "world-state" /* set_world_state: since GraceUI 0.1 */
+#define GRACEUI_CAP_HOTKEYS "hotkeys" /* register_hotkey, and poll's hotkey events: since GraceUI 0.1 (D155) */
 
 /* A connected mod's handle, which every slot after connect takes; 0 is none. */
 typedef uint64_t GraceUiConsumer;
@@ -338,7 +341,14 @@ typedef struct GraceUiInputAnswer {
   char holder[40];       /* with GRACEUI_INPUT_REFUSED: the holder's mod id, NUL-terminated ("graceui": the menu) */
 } GraceUiInputAnswer;
 
-/* ---- Hotkeys (D77): an action with a default key and modifiers or a pad chord; GraceUI's Hotkeys page rebinds it. */
+/* ---- Hotkeys (D77, D155): an action with a default key and modifiers or a pad chord; GraceUI's Hotkeys page rebinds it.
+ *
+ * GraceUI watches for the hotkey in the game's window procedure: a fresh press of its key with exactly its modifiers,
+ * while no holder has input, is one press, which the mod takes through poll (GRACEUI_EVENT_HOTKEY) on its own thread.
+ * The press, its repeats, characters and release never reach the game; a key bound with no modifier is never the
+ * game's while it is bound, through DirectInput as well. A default already taken (by another hotkey, or the menu key)
+ * registers unbound: the hotkey exists and fires nothing until the player binds it (GraceUI 0.6's Hotkeys page), and
+ * GraceUI's log names it. GraceUI 0.1 takes keys alone: a pad chord answers GRACEUI_NOT_YET. */
 
 #define GRACEUI_MOD_CTRL 1u
 #define GRACEUI_MOD_SHIFT 2u
@@ -346,14 +356,28 @@ typedef struct GraceUiInputAnswer {
 
 typedef struct GraceUiHotkeyDesc {
   uint32_t size;
-  uint32_t key;          /* the default key, a Windows virtual key; 0 for none */
-  uint32_t modifiers;    /* GRACEUI_MOD_* */
-  uint32_t pad_chord;    /* the default pad chord, XInput's button bits; 0 for none */
-  const char* action;    /* the action's id within the mod */
+  uint32_t key;          /* the default key, a Windows virtual key (not Escape, a modifier or a mouse button); 0 for
+                            none */
+  uint32_t modifiers;    /* GRACEUI_MOD_*; Alt with F4 is refused */
+  uint32_t pad_chord;    /* the default pad chord, XInput's button bits; 0 for none (GraceUI 0.1: 0 only) */
+  const char* action;    /* the action's id within the mod: 1 to 32 of a-z, 0-9 and '-', not the mod's already */
   uint64_t action_length;
-  const char* name;      /* what the Hotkeys page calls it, UTF-8 */
+  const char* name;      /* what the Hotkeys page calls it: 1 to 64 bytes of UTF-8 */
   uint64_t name_length;
 } GraceUiHotkeyDesc;
+
+/* ---- poll's events (D155): what GraceUI has for a mod, one at a time, on the mod's own thread. GraceUI 0.1 gives
+ * hotkey presses; the bridge protocol (§6, GraceUI 0.2) adds its own kinds, and their fields after these. */
+
+#define GRACEUI_EVENT_NONE 0u   /* nothing is waiting */
+#define GRACEUI_EVENT_HOTKEY 1u /* a hotkey of the mod's was pressed */
+
+typedef struct GraceUiEvent {
+  uint32_t size;       /* set by the caller to sizeof(GraceUiEvent) */
+  uint32_t kind;       /* GRACEUI_EVENT_* */
+  uint32_t hotkey_id;  /* with GRACEUI_EVENT_HOTKEY: register_hotkey's id */
+  uint32_t count;      /* with GRACEUI_EVENT_HOTKEY: its presses since its last event, 1 or more */
+} GraceUiEvent;
 
 /* ---- World-state providers (D78): every claim of every provider is combined. */
 
@@ -382,9 +406,9 @@ typedef GraceUiStatus (*GraceUiReservedSlot)(GraceUiConsumer consumer, const voi
 /*
  * ABI 1's table (D73, D131), in D73's order. Each slot answers GRACEUI_NOT_CONNECTED for a handle that names no
  * connected mod, then GRACEUI_INACTIVE while GraceUI is inactive (notice excepted in notice-only mode), then
- * GRACEUI_NOT_YET where this GraceUI does not provide it. GraceUI 0.1 provides every slot but the bridge protocol's four
- * (register_pages, publish, poll, answer), register_hotkey and log, which are declared for the increments that build
- * them.
+ * GRACEUI_NOT_YET where this GraceUI does not provide it. GraceUI 0.1 provides every slot but three of the bridge
+ * protocol's four (register_pages, publish, answer) and log, which are declared for the increments that build them;
+ * its poll gives hotkey events alone (D155).
  */
 typedef struct GraceUiApi1 {
   uint32_t size;             /* the table's size in this GraceUI: a slot exists only if it ends within it */
@@ -405,7 +429,9 @@ typedef struct GraceUiApi1 {
 
   GraceUiReservedSlot register_pages; /* the bridge protocol's (§6), from GraceUI 0.2 */
   GraceUiReservedSlot publish;
-  GraceUiReservedSlot poll;
+  /* The mod's next event, at once: GRACEUI_OK with one (GRACEUI_EVENT_NONE if nothing is waiting), or _REFUSED for an
+   * event that is null or below its first size. Call it until it gives GRACEUI_EVENT_NONE; it never waits (D155). */
+  GraceUiStatus (*poll)(GraceUiConsumer consumer, GraceUiEvent* event);
   GraceUiReservedSlot answer;
 
   /* A texture, in the mod's registration window: GRACEUI_OK with its id, _REFUSED (a format, size or row length
@@ -432,6 +458,10 @@ typedef struct GraceUiApi1 {
                                  GraceUiInputAnswer* answer);
   /* Gives input back if the mod holds it; GRACEUI_OK either way. */
   GraceUiStatus (*release_input)(GraceUiConsumer consumer);
+  /* A hotkey (above): GRACEUI_OK with its id, bound or, if its default is taken, unbound; _REFUSED (a reserved key, an
+   * unknown modifier, Alt+F4, an action that is not an id or already the mod's, a name that is not 1 to 64 bytes of
+   * UTF-8, a key with no place on the keyboard); _FULL (GRACEUI_HOTKEYS_PER_MOD, or the session's); _NOT_YET for a pad
+   * chord. */
   GraceUiStatus (*register_hotkey)(GraceUiConsumer consumer, const GraceUiHotkeyDesc* hotkey, uint32_t* hotkey_id);
 
   /* Shows, replaces or withdraws one of the mod's notices: GRACEUI_OK, _REFUSED (a text that is not UTF-8, too long,

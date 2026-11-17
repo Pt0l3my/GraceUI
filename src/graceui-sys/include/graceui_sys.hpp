@@ -131,6 +131,32 @@ class Api {
                                                         : GRACEUI_NOT_YET;
   }
 
+  // ---- Hotkeys and poll (D155; has_cap(GRACEUI_CAP_HOTKEYS)). A GraceUI before D155 answers not_yet to both.
+  // A hotkey: `key` a Windows virtual key (0 for none), `modifiers` GRACEUI_MOD_*; GRACEUI_OK with its id, bound or,
+  // if its default is taken, unbound.
+  GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::string_view action, std::string_view name,
+                                std::uint32_t key, std::uint32_t modifiers, std::uint32_t& id) const noexcept {
+    if (!GRACEUI_API1_COVERS(table_, register_hotkey)) {
+      return GRACEUI_NOT_YET;
+    }
+    GraceUiHotkeyDesc in{};
+    in.size = sizeof in;
+    in.key = key;
+    in.modifiers = modifiers;
+    in.action = action.data();
+    in.action_length = action.size();
+    in.name = name.data();
+    in.name_length = name.size();
+    return table_->register_hotkey(consumer, &in, &id);
+  }
+  // The mod's next event: GRACEUI_OK with one, its kind GRACEUI_EVENT_NONE once nothing is waiting. Never waits.
+  GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& event) const noexcept {
+    event = GraceUiEvent{};
+    event.size = sizeof event;
+    return GRACEUI_API1_COVERS(table_, poll) && has_cap(GRACEUI_CAP_HOTKEYS) ? table_->poll(consumer, &event)
+                                                                             : GRACEUI_NOT_YET;
+  }
+
  private:
   const GraceUiApi1* table_ = nullptr;
 };

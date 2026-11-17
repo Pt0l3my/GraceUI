@@ -12,6 +12,7 @@
 #include "grace/abi/drawlist.h"
 #include "grace/abi/panels.h"
 #include "grace/abi/registry.h"
+#include "grace/abi/text.h"
 #include "grace/abi/world.h"
 #include "grace/host/host.h"
 #include "input.h"
@@ -376,6 +377,111 @@ GraceUiStatus set_world_state(GraceUiConsumer consumer, std::uint32_t flags) noe
   return GRACEUI_OK;
 }
 
+namespace {
+
+// A virtual key's place on the keyboard, as DirectInput and the window's messages name it (grace::input::Key): kNoKey
+// for 0, and for a virtual key that is a mouse button or has no scan code on this keyboard layout.
+grace::input::Key key_of_virtual(std::uint32_t vk) noexcept {
+  switch (vk) {
+    case 0: return grace::input::kNoKey;
+    case VK_LBUTTON: case VK_RBUTTON: case VK_MBUTTON: case VK_XBUTTON1: case VK_XBUTTON2: case VK_CANCEL:
+      return grace::input::kNoKey;
+    case VK_PAUSE: return 0xC5;    // DIK_PAUSE, as key_from_message names it
+    case VK_NUMLOCK: return 0x45;  // DIK_NUMLOCK
+    default: break;
+  }
+  if (vk > 0xFE) {
+    return grace::input::kNoKey;
+  }
+  const UINT scan = MapVirtualKeyW(vk, MAPVK_VK_TO_VSC_EX);
+  if ((scan & 0x7Fu) == 0) {
+    return grace::input::kNoKey;
+  }
+  const bool extended = (scan & 0xFF00u) == 0xE000u || (scan & 0xFF00u) == 0xE100u;
+  return static_cast<grace::input::Key>((scan & 0x7Fu) | (extended ? 0x80u : 0u));
+}
+
+// An action's id within its mod: 1 to 32 of a-z, 0-9 and '-'.
+bool valid_action(std::string_view action) noexcept {
+  if (action.empty() || action.size() > grace::input::kActionMax) {
+    return false;
+  }
+  for (const char c : action) {
+    if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
+GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::uint32_t modifiers,
+                              std::uint32_t pad_chord, std::string_view action, std::string_view name,
+                              std::uint32_t& id) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  const std::uint32_t owner = admitted(consumer, status);
+  if (owner == 0) {
+    return status;
+  }
+  if (pad_chord != 0) {
+    return GRACEUI_NOT_YET;  // GraceUI 0.1 takes keys alone (D155)
+  }
+  const grace::input::Key place = key_of_virtual(key);
+  if (!valid_action(action) || !grace::abi::valid_name(name) || (key != 0 && place == grace::input::kNoKey) ||
+      modifiers > 0xFFu) {
+    refused("register_hotkey", "an action that is not an id, a name that is not a display name, or a key with no "
+                               "place on the keyboard");
+    return GRACEUI_REFUSED;
+  }
+  std::uint32_t added_id = 0;
+  const grace::input::Added added = input::hotkeys().add(static_cast<std::uint16_t>(owner), action, place,
+                                                         static_cast<std::uint8_t>(modifiers), input::menu_key(),
+                                                         added_id);
+  switch (added) {
+    case grace::input::Added::bound:
+      break;
+    case grace::input::Added::unbound:
+      if (key != 0) {
+        char mod_id[GRACEUI_ID_MAX + 1];
+        id_of(owner, mod_id);
+        log_line("%s's hotkey %.*s is unbound: its default key is taken", mod_id, static_cast<int>(action.size()),
+                 action.data());
+      }
+      break;
+    case grace::input::Added::invalid:
+      refused("register_hotkey", "a reserved key (Escape, a modifier, Alt+F4), an unknown modifier, or an action "
+                                 "the mod has already");
+      return GRACEUI_REFUSED;
+    case grace::input::Added::full:
+      return GRACEUI_FULL;
+  }
+  if (session::consumers().owner_of(consumer) != owner) {
+    // The mod disconnected meanwhile, on another thread, and its clean-up may have run before the hotkey was added.
+    input::hotkeys().remove(added_id);
+    return GRACEUI_NOT_CONNECTED;
+  }
+  id = added_id;
+  return GRACEUI_OK;
+}
+
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  const std::uint32_t owner = admitted(consumer, status);
+  if (owner == 0) {
+    return status;
+  }
+  grace::input::Press press;
+  if (input::hotkeys().take(static_cast<std::uint16_t>(owner), press)) {
+    out.kind = GRACEUI_EVENT_HOTKEY;
+    out.hotkey_id = press.id;
+    out.count = press.count;
+  } else {
+    out.kind = GRACEUI_EVENT_NONE;
+  }
+  return GRACEUI_OK;
+}
+
 void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept {
   // The panels first, under their lock, then the holder: a request_input of the mod's on another thread either sees
   // its panel gone after its grant (and ends its own holder) or was granted before this reads the holder.
@@ -385,6 +491,7 @@ void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept {
     input::close_holder(grace::input::Closed::released, holder.generation);
   }
   session::registry().retire_owner(consumer);
+  input::hotkeys().remove_owner(static_cast<std::uint16_t>(owner));
   apply_world(session::world().remove(consumer));
 }
 

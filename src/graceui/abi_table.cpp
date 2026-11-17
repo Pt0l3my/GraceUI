@@ -414,6 +414,57 @@ GraceUiStatus set_world_state(GraceUiConsumer consumer, const GraceUiWorldState*
   }
 }
 
+// ---- D155's slots: hotkeys, and poll's hotkey events.
+
+constexpr std::uint32_t kHotkey10 = 48;
+constexpr std::uint32_t kEvent10 = 16;
+
+GraceUiStatus register_hotkey(GraceUiConsumer consumer, const GraceUiHotkeyDesc* hotkey,
+                              std::uint32_t* hotkey_id) noexcept {
+  try {
+    GraceUiHotkeyDesc in{};
+    char action[GRACEUI_ID_MAX];
+    char name[GRACEUI_NAME_MAX];
+    std::string_view action_view;
+    std::string_view name_view;
+    if (hotkey_id == nullptr || !read_in(hotkey, kHotkey10, in) ||
+        !read_text(in.action, in.action_length, action, action_view) ||
+        !read_text(in.name, in.name_length, name, name_view)) {
+      return refused_argument(consumer, "register_hotkey",
+                              "a hotkey that is null, below its first size, or with an action or name too long");
+    }
+    std::uint32_t id = 0;
+    const GraceUiStatus status = grace::host::abi1::register_hotkey(consumer, in.key, in.modifiers, in.pad_chord,
+                                                                    action_view, name_view, id);
+    if (status == GRACEUI_OK) {
+      *hotkey_id = id;  // SAFETY: checked not null above
+    }
+    return status;
+  } catch (...) {
+    grace::host::abi1::fault("register_hotkey");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent* event) noexcept {
+  try {
+    std::uint32_t event_size = 0;
+    if (!can_write(event, kEvent10, event_size)) {
+      return refused_argument(consumer, "poll", "an event that is null or below its first size");
+    }
+    GraceUiEvent out{};
+    out.size = static_cast<std::uint32_t>(sizeof out);
+    const GraceUiStatus status = grace::host::abi1::poll(consumer, out);
+    if (status == GRACEUI_OK) {
+      write_out(event, event_size, out);
+    }
+    return status;
+  } catch (...) {
+    grace::host::abi1::fault("poll");
+    return GRACEUI_FAULT;
+  }
+}
+
 // ---- The slots later increments build: not connected, inactive, or not yet.
 
 GraceUiStatus not_yet(GraceUiConsumer consumer, const char* slot) noexcept {
@@ -427,11 +478,7 @@ GraceUiStatus not_yet(GraceUiConsumer consumer, const char* slot) noexcept {
 
 GraceUiStatus register_pages(GraceUiConsumer consumer, const void*) noexcept { return not_yet(consumer, "register_pages"); }
 GraceUiStatus publish(GraceUiConsumer consumer, const void*) noexcept { return not_yet(consumer, "publish"); }
-GraceUiStatus poll(GraceUiConsumer consumer, const void*) noexcept { return not_yet(consumer, "poll"); }
 GraceUiStatus answer(GraceUiConsumer consumer, const void*) noexcept { return not_yet(consumer, "answer"); }
-GraceUiStatus register_hotkey(GraceUiConsumer consumer, const GraceUiHotkeyDesc*, std::uint32_t*) noexcept {
-  return not_yet(consumer, "register_hotkey");
-}
 GraceUiStatus log(GraceUiConsumer consumer, std::uint32_t, const char*, std::uint64_t) noexcept {
   return not_yet(consumer, "log");
 }

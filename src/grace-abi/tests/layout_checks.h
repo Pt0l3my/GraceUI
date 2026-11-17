@@ -160,6 +160,12 @@ GU_AT(GraceUiHotkeyDesc, action_length, 24);
 GU_AT(GraceUiHotkeyDesc, name, 32);
 GU_AT(GraceUiHotkeyDesc, name_length, 40);
 
+GU_SIZE(GraceUiEvent, 16);
+GU_AT(GraceUiEvent, size, 0);
+GU_AT(GraceUiEvent, kind, 4);
+GU_AT(GraceUiEvent, hotkey_id, 8);
+GU_AT(GraceUiEvent, count, 12);
+
 GU_SIZE(GraceUiWorldState, 8);
 GU_AT(GraceUiWorldState, size, 0);
 GU_AT(GraceUiWorldState, flags, 4);

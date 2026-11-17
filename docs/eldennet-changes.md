@@ -576,3 +576,25 @@ What EldenNet must know or change; none of it is folded into EldenNet's design y
 7. **When the overlay is off** (D149, D150): a removed or replaced device, or a fault, turns the render path off for
    the session, and input with it; `connect` and the slots then answer inactive (render dead), and F5 reaches the game.
    EldenNet shows its own fallback (its launcher's notice, its log) as for any inactive session.
+
+## 17. Hotkeys and a first `poll` for F11 (S10.4.d, 2026-11-17, D155)
+
+Agreed with EldenNet's session on 2026-11-17: F11's toggle goes through GraceUI's hotkeys, brought forward into 0.1.
+None of it is folded into EldenNet's design yet.
+
+1. **Registering F11** (D155): after `connect` with the cap `hotkeys` among its caps (checked with `has_cap`), T1 calls
+   `register_hotkey` once: action `debug-view` (1 to 32 of a-z, 0-9 and '-'), a display name of its own, key `VK_F11`
+   (0x7A), modifiers 0, pad chord 0. The answer is `ok` with the hotkey's id, bound or, if another mod or GraceUI's
+   menu key took F11 first, unbound (GraceUI logs which); `refused` for Escape, a modifier, Alt+F4 or a bad action;
+   `not_yet` for a pad chord; `full` past 8 a mod. With `graceui_sys.hpp`: `api.register_hotkey(me, "debug-view",
+   name, VK_F11, 0, id)`.
+2. **Taking its presses** (D155): `poll(me, &event)` on EldenNet's own thread (T6, or T1's loop until T6 exists),
+   called until its kind is `GRACEUI_EVENT_NONE`; each `GRACEUI_EVENT_HOTKEY` names the hotkey's id and its presses
+   since the last event (1 as a rule); an odd count toggles the view. `poll` never waits; once per frame of EldenNet's
+   loop is enough. With `graceui_sys.hpp`: `api.poll(me, event)`.
+3. **What the game sees**: nothing of F11 while EldenNet's hotkey binds it, through DirectInput or as messages, as for
+   the menu key; while a holder (the menu, the chat box, a modal) has input, F11 fires nothing. EldenNet reads no key
+   itself and hooks nothing for it (invariants 8 and 16).
+4. **ARCH**: F11's row moves from EldenNet's own input to GraceUI's hotkey (`hotkeys.debug_view`'s home is GraceUI's
+   Hotkeys page from GraceUI 0.6, D115); EldenNet's §14 item 4 above (F11 waiting on `register_hotkey`) is settled by
+   this.

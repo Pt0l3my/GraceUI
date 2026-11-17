@@ -7,12 +7,19 @@
 // 8), and a release the game saw begin always reaches it. A holder gets a key's messages only from a press it saw
 // begin, so the press held when it took input does nothing in it until released (the opening press). The menu key
 // never reaches the game (§5.1) and never a holder: it is the host's. The mouse and raw input follow the same way.
+//
+// The mods' hotkeys (D77, D155), once set_hotkeys() names their table: with no holder, a fresh press of a hotkey's key
+// with exactly its modifiers fires it (Decision::hotkey), and the press, its repeats, characters and release are the
+// hotkey's, never the game's. A key bound with no modifier is never the game's while bound, whatever the modifiers and
+// whether or not a holder has input; with a holder that takes the keyboard it goes to the holder as any key does, and
+// fires nothing (hotkeys stand aside). A press the game saw begin keeps reaching the game to its release.
 #pragma once
 
 #include <cstdint>
 
 #include "grace/input/devices.h"
 #include "grace/input/holder.h"
+#include "grace/input/hotkeys.h"
 #include "grace/input/keys.h"
 
 namespace grace::input {
@@ -28,20 +35,25 @@ struct Decision {
   bool to_holder = false;
   MenuKey menu = MenuKey::nothing;  // what a fresh press of the menu key did
   Holder closed{};                  // a holder this message ended (the menu key, the player's exit, focus loss)
+  std::uint32_t hotkey = 0;         // the hotkey this fresh press fired (counted already), or 0
 };
 
 class MessageRules {
  public:
-  constexpr MessageRules(Capture& capture, const KeyboardLedger& keyboard, const MouseLedger& mouse) noexcept
-      : capture_(&capture), keyboard_(&keyboard), mouse_(&mouse) {}
+  constexpr MessageRules(Capture& capture, const KeyboardLedger& keyboard, const MouseLedger& mouse,
+                         Hotkeys* hotkeys = nullptr) noexcept
+      : capture_(&capture), keyboard_(&keyboard), mouse_(&mouse), hotkeys_(hotkeys) {}
   MessageRules(const MessageRules&) = delete;
   MessageRules& operator=(const MessageRules&) = delete;
 
   void set_menu_key(Key key) noexcept { menu_key_ = key; }
   Key menu_key() const noexcept { return menu_key_; }
+  void set_hotkeys(Hotkeys* hotkeys) noexcept { hotkeys_ = hotkeys; }
 
-  // WM_KEYDOWN, WM_KEYUP and their system forms. `repeat` is bit 30 of a key-down's lParam (the key was already down).
-  Decision key(Key key, std::uint32_t vk, bool down, bool system, bool repeat, std::int64_t now_ms) noexcept;
+  // WM_KEYDOWN, WM_KEYUP and their system forms. `repeat` is bit 30 of a key-down's lParam (the key was already down);
+  // `modifiers` the Ctrl, Shift and Alt keys held as the message came (kModCtrl and the rest).
+  Decision key(Key key, std::uint32_t vk, bool down, bool system, bool repeat, std::int64_t now_ms,
+               std::uint8_t modifiers = 0) noexcept;
 
   // A character for the holder (WM_CHAR, WM_UNICHAR, an ANSI window's WM_IME_CHAR), by the key that made it, or kNoKey.
   Decision character(Key key) noexcept;
@@ -66,13 +78,18 @@ class MessageRules {
   KeyBits captured_down() const noexcept { return captured_down_; }
   KeyBits holder_down() const noexcept { return holder_down_; }
   KeyBits holder_inert() const noexcept { return holder_inert_; }
+  KeyBits hotkey_down() const noexcept { return hotkey_down_; }
 
  private:
   Holder follow() noexcept;  // the holder now; a new one starts its own view of what is down
+  bool hotkey_key(Key key, bool down, bool repeat, const Holder& holder, std::uint8_t modifiers,
+                  Decision& decision) noexcept;
 
   Capture* capture_;
   const KeyboardLedger* keyboard_;
   const MouseLedger* mouse_;
+  Hotkeys* hotkeys_ = nullptr;
+  KeyBits hotkey_down_;    // a hotkey's press, from its press to its release: never the game's
   Key menu_key_ = kF5;
   std::uint32_t followed_ = 0;  // the holder's generation the holder sets below belong to
 

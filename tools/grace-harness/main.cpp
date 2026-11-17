@@ -1542,6 +1542,8 @@ std::vector<std::uint32_t> input_costs_of(const GraceUi& grace, std::uint32_t ki
   return ns;
 }
 
+const char* status_name(GraceUiStatus status);
+
 void run_input(const std::wstring& dll) {
   Game game(false);
   const HWND window = game.window();
@@ -1956,6 +1958,152 @@ void run_input(const std::wstring& dll) {
         "p99 %.1f us",
         held_windows.runs.size(), held_windows.text().c_str(), held_frames.total.median_us, held_frames.total.p99_us);
 
+  // Hotkeys through ABI 1 (D155): two mods; a bare F11 and Ctrl+K fire once each, through poll, and never reach the
+  // game, by DirectInput or as messages; K alone does; a taken default registers unbound; nothing fires while a holder
+  // has input; a mod's hotkeys go with it.
+  {
+    const graceui::Api api(grace.table());
+    GraceUiConnectAnswer first_answer{};
+    GraceUiConnectAnswer second_answer{};
+    api.connect(graceui::Mod{"harness-keys", "Harness keys", GRACEUI_VERSION_PACK(1, 0, 0), 0, "hotkeys"},
+                first_answer);
+    api.connect(graceui::Mod{"harness-keys-two", "Harness keys two", GRACEUI_VERSION_PACK(1, 0, 0), 0, "hotkeys"},
+                second_answer);
+    const GraceUiConsumer first = first_answer.consumer;
+    const GraceUiConsumer second = second_answer.consumer;
+    std::uint32_t f11 = 0;
+    std::uint32_t chat = 0;
+    std::uint32_t taken = 0;
+    std::uint32_t unused = 0;
+    const GraceUiStatus f11_status = api.register_hotkey(first, "debug-view", "Debug view", VK_F11, 0, f11);
+    const GraceUiStatus chat_status = api.register_hotkey(first, "chat", "Chat", 'K', GRACEUI_MOD_CTRL, chat);
+    const GraceUiStatus taken_status = api.register_hotkey(second, "debug-view", "Debug view", VK_F11, 0, taken);
+    const GraceUiStatus escape_status = api.register_hotkey(first, "escape", "Escape", VK_ESCAPE, 0, unused);
+    const GraceUiStatus again_status = api.register_hotkey(first, "chat", "Chat", 'L', 0, unused);
+    const GraceUiStatus bad_action = api.register_hotkey(first, "Chat Two", "Chat", 'L', 0, unused);
+    GraceUiHotkeyDesc chord{};
+    chord.size = sizeof chord;
+    chord.pad_chord = XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START;
+    chord.action = "pad";
+    chord.action_length = 3;
+    chord.name = "Pad";
+    chord.name_length = 3;
+    const GraceUiStatus chord_status = grace.table()->register_hotkey(first, &chord, &unused);
+    const bool unbound_logged = grace.logged("hotkey debug-view is unbound");
+    const auto poll_all = [&](GraceUiConsumer mod, std::uint32_t& id, std::uint32_t& count) {
+      std::uint32_t events = 0;
+      GraceUiEvent event{};
+      while (api.poll(mod, event) == GRACEUI_OK && event.kind == GRACEUI_EVENT_HOTKEY && events < 16) {
+        id = event.hotkey_id;
+        count += event.count;
+        ++events;
+      }
+      return events;
+    };
+    std::uint32_t id = 0;
+    std::uint32_t count = 0;
+    std::uint32_t second_id = 0;
+    std::uint32_t second_count = 0;
+    const std::uint32_t nothing_yet = poll_all(first, id, count);
+
+    // F11, bound with no modifier.
+    cursor_into(window);
+    reads.keys();
+    g_seen = Seen{};
+    inject_key(VK_F11, 0x57, true);
+    settle();
+    const bool f11_read = (reads.keys()[DIK_F11] & 0x80) != 0;
+    inject_key(VK_F11, 0x57, false);
+    settle();
+    reads.keys();
+    id = 0;
+    count = 0;
+    const std::uint32_t f11_events = poll_all(first, id, count);
+    const bool f11_fired = f11_events == 1 && id == f11 && count == 1;
+    const std::uint32_t second_events = poll_all(second, second_id, second_count);
+    const int f11_messages = g_seen.key_down[VK_F11] + g_seen.key_up[VK_F11];
+
+    // Ctrl+K: the hotkey's; K alone: the game's.
+    g_seen = Seen{};
+    inject_key(VK_CONTROL, 0x1D, true);
+    settle();
+    inject_key('K', kScanK, true);
+    settle();
+    const std::array<std::uint8_t, 256> chord_keys = reads.keys();
+    const bool k_hidden = chord_keys[DIK_K] == 0 && (chord_keys[DIK_LCONTROL] & 0x80) != 0;
+    inject_key('K', kScanK, false);
+    settle();
+    inject_key(VK_CONTROL, 0x1D, false);
+    settle();
+    reads.keys();
+    id = 0;
+    count = 0;
+    const bool chat_fired = poll_all(first, id, count) == 1 && id == chat && count == 1;
+    const int k_with_ctrl = g_seen.key_down['K'];
+    g_seen = Seen{};
+    inject_key('K', kScanK, true);
+    settle();
+    const bool k_read = (reads.keys()[DIK_K] & 0x80) != 0;
+    inject_key('K', kScanK, false);
+    settle();
+    reads.keys();
+    const int k_alone = g_seen.key_down['K'];
+    id = 0;
+    count = 0;
+    const std::uint32_t after_k = poll_all(first, id, count);
+
+    // A holder has input: hotkeys stand aside.
+    const bool held = take(grace, game, 7, kPanelKind);
+    inject_key(VK_F11, 0x57, true);
+    settle();
+    inject_key(VK_F11, 0x57, false);
+    settle();
+    reads.keys();
+    grace.release_input(7);
+    frames(game, 2);
+    id = 0;
+    count = 0;
+    const std::uint32_t while_held = poll_all(first, id, count);
+
+    // The first mod disconnects: its F11 goes, and F11 is the game's again (the second's stays unbound).
+    api.disconnect(first);
+    cursor_into(window);
+    reads.keys();
+    g_seen = Seen{};
+    inject_key(VK_F11, 0x57, true);
+    settle();
+    const bool f11_free = (reads.keys()[DIK_F11] & 0x80) != 0;
+    inject_key(VK_F11, 0x57, false);
+    settle();
+    reads.keys();
+    const int f11_free_messages = g_seen.key_down[VK_F11];
+    GraceUiEvent gone{};
+    const GraceUiStatus gone_status = api.poll(first, gone);
+    second_count = 0;
+    const std::uint32_t second_after = poll_all(second, second_id, second_count);
+    api.disconnect(second);
+    check(first_answer.status == GRACEUI_OK && second_answer.status == GRACEUI_OK && api.has_cap("hotkeys") &&
+              f11_status == GRACEUI_OK && chat_status == GRACEUI_OK && taken_status == GRACEUI_OK && taken != 0 &&
+              unbound_logged && escape_status == GRACEUI_REFUSED && again_status == GRACEUI_REFUSED &&
+              bad_action == GRACEUI_REFUSED && chord_status == GRACEUI_NOT_YET && nothing_yet == 0 && !f11_read &&
+              f11_fired && second_events == 0 && f11_messages == 0 && k_hidden && chat_fired && k_with_ctrl == 0 &&
+              k_read && k_alone >= 1 && after_k == 0 && held && while_held == 0 && f11_free &&
+              f11_free_messages >= 1 && gone_status == GRACEUI_NOT_CONNECTED && second_after == 0,
+          "hotkeys",
+          "two mods connected (%s, %s); F11 %s, Ctrl+K %s, F11 again by the second %s (unbound, logged: %s), Escape "
+          "%s, an action again %s, an action not an id %s, a pad chord %s; F11 pressed: DirectInput %s, %u event(s) "
+          "(%s), the second mod %u, its messages reaching the game %d; Ctrl+K: K %s from DirectInput, the hotkey %s, "
+          "K's messages reaching the game %d; K alone: read %s, messages %d, events %u; with a holder (%s): %u "
+          "event(s); after the first's disconnect: F11 read %s, messages %d, its poll %s, the second's events %u",
+          status_name(first_answer.status), status_name(second_answer.status), status_name(f11_status),
+          status_name(chat_status), status_name(taken_status), unbound_logged ? "yes" : "NO",
+          status_name(escape_status), status_name(again_status), status_name(bad_action), status_name(chord_status),
+          f11_read ? "SAW IT" : "did not see it", f11_events, f11_fired ? "fired once" : "NOT AS EXPECTED",
+          second_events, f11_messages, k_hidden ? "hidden" : "NOT HIDDEN", chat_fired ? "fired once" : "DID NOT FIRE",
+          k_with_ctrl, k_read ? "yes" : "NO", k_alone, after_k, held ? "granted" : "NOT GRANTED", while_held,
+          f11_free ? "yes" : "NO", f11_free_messages, status_name(gone_status), second_after);
+  }
+
   const GraceUiTestState state = grace.state();
   check(state.render_off == 0 && grace.input().input_off == 0 && state.hook_install_runs == 1, "input path",
         "the render path and input still on after every check; %llu presents, %llu frames drawn, %llu fed by a holder",
@@ -2129,9 +2277,11 @@ std::vector<GraceUiStatus> unbuilt_answers(const GraceUiApi1* table, GraceUiCons
   hotkey.size = sizeof hotkey;
   GraceUiWorldState world{};
   world.size = sizeof world;
+  GraceUiEvent event{};
+  event.size = sizeof event;
   return {table->register_pages(consumer, nullptr),
           table->publish(consumer, nullptr),
-          table->poll(consumer, nullptr),
+          table->poll(consumer, &event),
           table->answer(consumer, nullptr),
           table->register_texture(consumer, &texture, &id64),
           table->register_face(consumer, &face, &id32),
@@ -2147,14 +2297,11 @@ std::vector<GraceUiStatus> unbuilt_answers(const GraceUiApi1* table, GraceUiCons
           table->log(consumer, GRACEUI_LOG_INFO, "invented", 8)};
 }
 
-// The six slots GraceUI 0.1 still only declares (the bridge protocol's four, register_hotkey and log): not yet.
+// The four slots GraceUI 0.1 still only declares (three of the bridge protocol's four, and log): not yet. Its poll gives
+// hotkey events alone, and register_hotkey takes keys (D155).
 std::vector<GraceUiStatus> declared_answers(const GraceUiApi1* table, GraceUiConsumer consumer) {
-  std::uint32_t id32 = 0;
-  GraceUiHotkeyDesc hotkey{};
-  hotkey.size = sizeof hotkey;
-  return {table->register_pages(consumer, nullptr), table->publish(consumer, nullptr), table->poll(consumer, nullptr),
-          table->answer(consumer, nullptr), table->register_hotkey(consumer, &hotkey, &id32),
-          table->log(consumer, GRACEUI_LOG_INFO, "invented", 8)};
+  return {table->register_pages(consumer, nullptr), table->publish(consumer, nullptr),
+          table->answer(consumer, nullptr), table->log(consumer, GRACEUI_LOG_INFO, "invented", 8)};
 }
 
 // "16 slots: not_yet", or each slot's answer where they differ.
@@ -2270,7 +2417,8 @@ void run_abi(const std::wstring& dll) {
   const bool caps_ok = api.has_cap(GRACEUI_CAP_NOTICES) && api.has_cap(GRACEUI_CAP_PANELS) &&
                        api.has_cap(GRACEUI_CAP_TEXTURES) && api.has_cap(GRACEUI_CAP_FACES) &&
                        api.has_cap(GRACEUI_CAP_INPUT) && api.has_cap(GRACEUI_CAP_WORLD_STATE) &&
-                       !api.has_cap("hotkeys") && !api.has_cap("Panels") && !api.has_cap("") &&
+                       api.has_cap(GRACEUI_CAP_HOTKEYS) && !api.has_cap("pages") && !api.has_cap("Panels") &&
+                       !api.has_cap("") &&
                        !api.has_cap("Notices") && table->has_cap(nullptr, 0) == 0 && table->has_cap(nullptr, 7) == 0;
   bool slots_present = true;
   for (std::size_t offset = offsetof(GraceUiApi1, has_cap); offset < sizeof(GraceUiApi1); offset += sizeof(void*)) {
@@ -2283,7 +2431,7 @@ void run_abi(const std::wstring& dll) {
             GRACEUI_API1_COVERS(table, log),
         "table",
         "%u bytes (this header's %zu), ABI 1.%u, GraceUI %u.%u.%u; every one of the 20 slots %s; majors 0, 2 and "
-        "0xFFFFFFFF %s; has_cap: notices, panels, textures, faces, input and world-state yes, hotkeys, \"Panels\", "
+        "0xFFFFFFFF %s; has_cap: notices, panels, textures, faces, input, world-state and hotkeys yes, pages, \"Panels\", "
         "\"\", \"Notices\" and a null name %s",
         table->size, sizeof(GraceUiApi1), table->abi_minor, GRACEUI_VERSION_MAJOR(table->graceui_version),
         GRACEUI_VERSION_MINOR(table->graceui_version), GRACEUI_VERSION_PATCH(table->graceui_version),
@@ -2465,7 +2613,7 @@ void run_abi(const std::wstring& dll) {
   const Connected waiting = connect(table, request_for("abi-waiting"));
   const std::vector<GraceUiStatus> unbuilt = declared_answers(table, waiting.answer.consumer);
   const std::vector<GraceUiStatus> nobody = unbuilt_answers(table, 0);
-  check(all_answer(unbuilt, GRACEUI_NOT_YET) && all_answer(nobody, GRACEUI_NOT_CONNECTED) && unbuilt.size() == 6 &&
+  check(all_answer(unbuilt, GRACEUI_NOT_YET) && all_answer(nobody, GRACEUI_NOT_CONNECTED) && unbuilt.size() == 4 &&
             nobody.size() == 16,
         "not yet", "a connected mod: %s; a handle of 0: %s", answers_text(unbuilt).c_str(),
         answers_text(nobody).c_str());

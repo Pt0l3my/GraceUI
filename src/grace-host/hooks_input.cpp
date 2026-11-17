@@ -230,6 +230,22 @@ void lost_focus(std::int64_t now) noexcept {
   g_utf8.reset();
 }
 
+// The Ctrl, Shift and Alt keys as the window's thread sees them for the message in hand (its message queue's key
+// state, which GetKeyState reads), for the hotkeys' modifiers (D155).
+std::uint8_t modifiers_now() noexcept {
+  std::uint8_t modifiers = 0;
+  if (GetKeyState(VK_CONTROL) < 0) {
+    modifiers |= grace::input::kModCtrl;
+  }
+  if (GetKeyState(VK_SHIFT) < 0) {
+    modifiers |= grace::input::kModShift;
+  }
+  if (GetKeyState(VK_MENU) < 0) {
+    modifiers |= grace::input::kModAlt;
+  }
+  return modifiers;
+}
+
 void handled(const Decision& decision) noexcept {
   if (decision.menu != grace::input::MenuKey::nothing) {
     input::note_menu_key(decision.menu);
@@ -261,7 +277,15 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
       const bool system = message == WM_SYSKEYDOWN || message == WM_SYSKEYUP;
       const auto vk = static_cast<std::uint32_t>(wparam);
       const Key key = grace::input::key_from_message(bits, vk);
-      const Decision decision = rules.key(key, vk, down, system, down && (bits & (1u << 30)) != 0, now);
+      const bool repeat = down && (bits & (1u << 30)) != 0;
+      // The modifiers are read only for a fresh press of a key some hotkey binds, with no holder: GetKeyState can cost
+      // a call into Wine's server (100 us and more under Xvfb), and no other message has a use for them.
+      const std::uint8_t modifiers = down && !repeat && key != grace::input::kNoKey &&
+                                             input::hotkeys().bound_keys().test(key) &&
+                                             !input::capture().holder().holds()
+                                         ? modifiers_now()
+                                         : 0;
+      const Decision decision = rules.key(key, vk, down, system, repeat, now, modifiers);
       handled(decision);
       if (decision.to_holder) {
         push_key(key, vk, down);
@@ -461,7 +485,7 @@ void filter_device_state(IDirectInputDevice8W* device, DWORD size, void* data) n
         // SAFETY: DirectInput has just written the caller's 256 bytes at `data`, c_dfDIKeyboard's layout.
         auto& keys = *static_cast<std::uint8_t(*)[256]>(data);
         input::capture().escape(grace::input::Source::direct_input, (keys[grace::input::kEscape] & 0x80u) != 0, now);
-        input::keyboard().filter(keys, input::capture(), input::menu_key(), now);
+        input::keyboard().filter(keys, input::capture(), input::hidden_keys(), now);
       } else if (type == DI8DEVTYPE_MOUSE && (size == sizeof(DIMOUSESTATE) || size == sizeof(DIMOUSESTATE2))) {
         DIMOUSESTATE2 mouse{};
         // SAFETY: DirectInput has just written `size` bytes at `data`: a DIMOUSESTATE or a DIMOUSESTATE2, whose first

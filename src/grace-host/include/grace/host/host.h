@@ -77,6 +77,12 @@ GraceUiStatus request_input(GraceUiConsumer consumer, std::uint32_t kind, std::u
                             GraceUiInputAnswer& out) noexcept;
 GraceUiStatus release_input(GraceUiConsumer consumer) noexcept;
 GraceUiStatus set_world_state(GraceUiConsumer consumer, std::uint32_t flags) noexcept;
+// A hotkey (D155): `key` a virtual key, the strings already copied; `id` set with GRACEUI_OK.
+GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::uint32_t modifiers,
+                              std::uint32_t pad_chord, std::string_view action, std::string_view name,
+                              std::uint32_t& id) noexcept;
+// The mod's next event (D155): hotkey presses in GraceUI 0.1; `out` is GraceUI's own, zeroed by the caller.
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out) noexcept;
 // A mod disconnected: its panels, textures, claims and input go with it.
 void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept;
 // A connect refused before it reached the rules (a string longer than its bound, a struct below its first size): its log
