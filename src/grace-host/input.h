@@ -10,6 +10,7 @@
 
 #include "grace/input/devices.h"
 #include "grace/input/holder.h"
+#include "grace/input/hotkeys.h"
 #include "grace/input/messages.h"
 
 namespace grace::host::input {
@@ -25,6 +26,10 @@ std::int64_t now_ms() noexcept;  // the rules' clock: GetTickCount64
 
 // The menu key (§5.1): F5 until GraceUI's own settings can rebind it (D115). Always masked from the game.
 grace::input::Key menu_key() noexcept;
+grace::input::Hotkeys& hotkeys() noexcept;  // the mods' hotkeys (D155)
+// What DirectInput's readers hide from the game besides a holder's capture: the menu key, every key bound with no
+// modifier, and a hotkey's press with modifiers until its release.
+grace::input::KeyBits hidden_keys() noexcept;
 
 // ---- What the window procedure hands the holder, in order: pushed on the window's thread, popped on the present thread.
 struct HolderEvent {

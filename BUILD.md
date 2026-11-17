@@ -36,14 +36,18 @@ CC=gcc CXX=g++ cmake -S . -B build-linux-gcc -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build-linux-gcc && ctest --test-dir build-linux-gcc --output-on-failure
 ```
 
-`grace-input`'s 64 cases cover the holder's answers, the close routine from every exit path, the player's exit and its
+`grace-input`'s 76 cases cover the holder's answers, the close routine from every exit path, the player's exit and its
 timing, the watchdog, the game's view of DirectInput and XInput (untouched, at rest, a closing press hidden until
 released, the packet number), the holder's pad view with the opening press, the window-message routing, the surrogate
 pairing (lone and swapped halves too), the ANSI byte joiner and the UTF-8 one (cut short, stray, overlong, a surrogate,
 past U+10FFFF), and the hand-overs between threads under ThreadSanitizer. From the host's review (D145): a claim of
 danger or input turned off between a request's read and its grant ends the new holder at once, the newest claims
 decide whatever order the writers settle in, and no holder outlives a danger claim over 2,000 rounds of two threads.
-Wine has no pad, so the pads' masking is checked here only.
+Wine has no pad, so the pads' masking is checked here only. Since D155 (2026-11-17): the mods' hotkeys, bound, unbound when taken
+and refused, their bounds, presses counted for their own mod alone, a removed or replaced hotkey counting nothing, the
+filter's routing of a hotkey's press, of a key bound with no modifier, of a press the game saw begin and of presses while
+a holder has input, DirectInput's view of them, focus loss, and presses counted on one thread while another adds,
+removes and takes, under ThreadSanitizer.
 
 `grace-abi`'s 48 cases cover `connect`'s answers across versions, ids and the session's states (ok, too_old against
 floors below, at and above GraceUI's, duplicate_id, inactive with each reason, refused with each), handles that outlive
@@ -133,7 +137,7 @@ server stays bound to a display that has gone, so the harness can't open its win
 `wineserver -k` (Debian keeps it in `/usr/lib/wine`); with that, three runs in a row of each build passed all 82 checks
 (2026-11-16, S10.4.c). Frame-cost checks then failed now and then under another build's load (a p99 of 1.0 to 1.6 ms
 against 1 ms, with no allocation, its median as usual), and one functional check raced the example's thread; since
-D154 and the refusals check's fix, ten runs in a row of each build passed all 95 checks (2026-11-16) at a load average
+D154 and the refusals check's fix, ten runs in a row of each build passed all 95 checks (2026-11-16) (96 since D155's hotkeys check, which a full run passed on 2026-11-17) at a load average
 of 1.3 to 10.5 on four cores, a frame-cost check taking a second window in 6 of the 80 checks run, a third in none.
 The long-name scenario names a folder in Unicode, which Wine can do only in a UTF-8 locale: hence `LC_ALL=C.UTF-8`
 above; without it that scenario fails, saying so. On a new prefix, run `xvfb-run -a wine64 wineboot -u` once first. Debian's Wine packages keep `wine64`
@@ -222,16 +226,17 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | input cost | GraceUI's own work per message in the filter and per read in each detour, the original's time left out, with and without a holder: within 50 µs at p99 each (EST) |
 | holder frame cost | With a holder fed input and its cursor drawn, the GPU idle before each frame, over 300 frames (in up to three windows, D154): GraceUI's own work in the detour within 1 ms at p99 |
 | input path | The render path and input are still on after every check |
+| hotkeys | Through ABI 1, two mods (D155): the first's F11 (bound with no modifier) and Ctrl+K register bound, the second's F11 unbound with a log line; Escape, an action again and an action that is not an id refused, a pad chord not_yet; injected F11 fires once through `poll`, the other mod gets nothing, and neither DirectInput nor the window's messages show it to the game; Ctrl+K fires once with K hidden from DirectInput and its messages kept; K alone reaches the game and fires nothing; with a holder nothing fires; after the first mod's disconnect F11 reaches the game and its `poll` answers not_connected |
 | render off | Last, the render path turned off as a fault turns it off: input goes off with it, the holder ends (a fault), F5 reaches DirectInput and the window again, and a request is not now (D150) |
 | ANSI characters | (the input-ansi scenario, a fourth process) On an ANSI window, filtered as one: bytes in Windows-1252, a Shift-JIS character in two posted `WM_CHAR`s and one whole in `WM_IME_CHAR`, `WM_UNICHAR`, and in UTF-8 as the code page characters of two, three and four bytes and a sequence cut short (U+FFFD), reach Dear ImGui as code points, and none reaches the game |
 | example mod | (the abi scenario) `hello-notice.dll`, loaded before GraceUI, finds it through `graceui-sys` by name once it is loaded (at its fourth look or later), connects as it names itself, and its request starts the host |
 | example's notice | Its notice is drawn at the top right, and nothing else |
-| table | 176 bytes, ABI 1.0, GraceUI's version, every slot set; majors 0, 2 and 0xFFFFFFFF answer null; `has_cap` names `notices`, `panels`, `textures`, `faces`, `input` and `world-state`, and nothing else |
+| table | 176 bytes, ABI 1.0, GraceUI's version, every slot set; majors 0, 2 and 0xFFFFFFFF answer null; `has_cap` names `notices`, `panels`, `textures`, `faces`, `input`, `world-state` and `hotkeys`, and nothing else |
 | connect answers | Seventeen requests across versions and ids answer ok, duplicate_id, too_old (naming both versions, with GraceUI's notice naming the mod and one log line) or refused with the reason; a null request, one below its first size, a null answer and one too small are refused, nothing written where it should not be |
 | struct sizes | A newer mod's larger request is read as far as this GraceUI knows it, and its larger answer written no further |
 | two consumers | Two mods connect in either order, each with its own handle; both notices drawn, in order; both gone once they disconnect |
 | disconnect | A handle after its disconnect names nobody, in every slot; the id connects again under a new handle |
-| not yet | The six slots still only declared (the bridge protocol's four, `register_hotkey`, `log`) answer not_yet to a connected mod, and all sixteen after `notice` not_connected to a handle of 0 |
+| not yet | The four slots still only declared (`register_pages`, `publish`, `answer`, `log`) answer not_yet to a connected mod, and all sixteen after `notice` not_connected to a handle of 0 |
 | notices | Shown, replaced in place by key, drawn in its tone, withdrawn by an empty text; a timed one goes when its time is up; four a mod, a fifth full; refused when it is not UTF-8, too long, empty without a key, of an unknown tone, null or too small; a long text three lines at most, on the Grace look's 22 px lines (D141); a mod's notices go with it |
 | notice allocations | As notices come, change and go over 300 frames after warm-up (in up to three windows, D154): no allocation or free on the present thread, and GraceUI's own work within 1 ms at p99 |
 | before warm-up | (the panels scenario) `hello-panel.dll`, loaded before GraceUI, connects and registers its face, two textures and its panel; the harness's mod registers a texture and faces of 18 and 24 px, a third face full, a file that is not a font and a size of 2 px refused, the font's whole BMP at 128 px full (over the atlas's room, D148); `glyph_table` answers not_ready |

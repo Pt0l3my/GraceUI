@@ -28,7 +28,8 @@ constinit grace::input::Capture g_capture;
 constinit grace::input::KeyboardLedger g_keyboard;
 constinit grace::input::MouseLedger g_mouse;
 constinit grace::input::PadLedger g_pads;
-constinit grace::input::MessageRules g_messages{g_capture, g_keyboard, g_mouse};
+constinit grace::input::Hotkeys g_hotkeys;
+constinit grace::input::MessageRules g_messages{g_capture, g_keyboard, g_mouse, &g_hotkeys};
 constinit grace::input::SpscRing<HolderEvent, 256> g_events;
 
 // The game's window and what the filter learns of it.
@@ -306,6 +307,13 @@ grace::input::KeyboardLedger& keyboard() noexcept { return g_keyboard; }
 grace::input::MouseLedger& mouse() noexcept { return g_mouse; }
 grace::input::PadLedger& pads() noexcept { return g_pads; }
 grace::input::MessageRules& messages() noexcept { return g_messages; }
+grace::input::Hotkeys& hotkeys() noexcept { return g_hotkeys; }
+
+grace::input::KeyBits hidden_keys() noexcept {
+  grace::input::KeyBits hidden = g_hotkeys.bare() | g_hotkeys.held();
+  hidden.set(menu_key());
+  return hidden;
+}
 
 std::int64_t now_ms() noexcept { return static_cast<std::int64_t>(GetTickCount64()); }
 

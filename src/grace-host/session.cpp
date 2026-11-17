@@ -217,7 +217,8 @@ bool log_connect_failure() noexcept {
 
 bool has_cap(std::string_view name) noexcept {
   return name == GRACEUI_CAP_NOTICES || name == GRACEUI_CAP_PANELS || name == GRACEUI_CAP_TEXTURES ||
-         name == GRACEUI_CAP_FACES || name == GRACEUI_CAP_INPUT || name == GRACEUI_CAP_WORLD_STATE;
+         name == GRACEUI_CAP_FACES || name == GRACEUI_CAP_INPUT || name == GRACEUI_CAP_WORLD_STATE ||
+         name == GRACEUI_CAP_HOTKEYS;
 }
 
 grace::abi::ConnectResult connect(const grace::abi::ConnectRequest& request) noexcept {

@@ -16,8 +16,45 @@ Holder MessageRules::follow() noexcept {
   return holder;
 }
 
-Decision MessageRules::key(Key key, std::uint32_t vk, bool down, bool system, bool repeat,
-                           std::int64_t now_ms) noexcept {
+bool MessageRules::hotkey_key(Key key, bool down, bool repeat, const Holder& holder, std::uint8_t modifiers,
+                              Decision& decision) noexcept {
+  if (hotkeys_ == nullptr || key == kNoKey) {
+    return false;
+  }
+  if (hotkey_down_.test(key)) {
+    if (!down || repeat) {
+      decision.route = Route::consume;  // the rest of a hotkey's press: its repeats and its release
+      if (!down) {
+        hotkey_down_.clear(key);
+        hotkeys_->let_go(key);
+      }
+      return true;
+    }
+    hotkey_down_.clear(key);  // a fresh press: the last one's release was lost
+    hotkeys_->let_go(key);
+  }
+  if (game_down_.test(key)) {
+    return false;  // a press the game saw begin reaches it to its release
+  }
+  if (down && !repeat && !holder.holds()) {
+    const std::uint32_t id = hotkeys_->match(key, modifiers);
+    if (id != 0 && hotkeys_->pressed(id)) {
+      hotkey_down_.set(key);
+      hotkeys_->hold(key);  // hidden from DirectInput's readers too, until its release
+      decision.route = Route::consume;
+      decision.hotkey = id;
+      return true;
+    }
+  }
+  if (hotkeys_->bare().test(key) && !holder.takes(want_keyboard)) {
+    decision.route = Route::consume;  // a key bound with no modifier is never the game's while bound
+    return true;
+  }
+  return false;
+}
+
+Decision MessageRules::key(Key key, std::uint32_t vk, bool down, bool system, bool repeat, std::int64_t now_ms,
+                           std::uint8_t modifiers) noexcept {
   const Holder holder = follow();
   Decision decision;
   if (key == kEscape) {
@@ -31,6 +68,9 @@ Decision MessageRules::key(Key key, std::uint32_t vk, bool down, bool system, bo
         decision.closed = capture_->last_close().holder;
       }
     }
+    return decision;
+  }
+  if (hotkey_key(key, down, repeat, holder, modifiers, decision)) {
     return decision;
   }
   const bool capturing = holder.takes(want_keyboard);
@@ -88,6 +128,9 @@ Decision MessageRules::character(Key key) noexcept {
     decision.to_holder = !menu && (key == kNoKey || holder_down_.test(key));
   } else if (menu || (key != kNoKey && captured_down_.test(key))) {
     decision.route = Route::consume;
+  } else if (hotkeys_ != nullptr && key != kNoKey && !game_down_.test(key) &&
+             (hotkey_down_.test(key) || hotkeys_->bare().test(key))) {
+    decision.route = Route::consume;  // a hotkey's character, or a bound key's
   }
   return decision;
 }
@@ -170,6 +213,10 @@ Holder MessageRules::focus_lost(std::int64_t now_ms) noexcept {
   captured_down_.clear_all();
   holder_down_.clear_all();
   holder_inert_.clear_all();
+  hotkey_down_.clear_all();
+  if (hotkeys_ != nullptr) {
+    hotkeys_->let_go_all();
+  }
   game_buttons_ = 0;
   captured_buttons_ = 0;
   holder_buttons_ = 0;

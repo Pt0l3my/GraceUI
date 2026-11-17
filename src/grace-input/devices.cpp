@@ -30,6 +30,13 @@ bool beyond(std::int32_t value, std::int32_t deadzone) noexcept { return std::ab
 
 void KeyboardLedger::filter(std::uint8_t (&state)[256], const Capture& capture, Key menu_key,
                             std::int64_t now_ms) noexcept {
+  KeyBits hidden;
+  hidden.set(menu_key);
+  filter(state, capture, hidden, now_ms);
+}
+
+void KeyboardLedger::filter(std::uint8_t (&state)[256], const Capture& capture, const KeyBits& hidden,
+                            std::int64_t now_ms) noexcept {
   KeyBits real;
   for (int key = 0; key < 256; ++key) {
     if ((state[key] & 0x80u) != 0) {
@@ -44,8 +51,7 @@ void KeyboardLedger::filter(std::uint8_t (&state)[256], const Capture& capture, 
     masked_.or_with(arm);
   }
   masked_.and_with(real);  // a masked key seen up is the game's again
-  KeyBits hide = capturing ? KeyBits::all() : masked_.load() & real;
-  hide.set(menu_key);
+  const KeyBits hide = capturing ? KeyBits::all() : (masked_.load() & real) | hidden;
   for (int key = 0; key < 256; ++key) {
     if (hide.test(static_cast<Key>(key))) {
       state[key] = 0;
