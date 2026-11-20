@@ -1,7 +1,7 @@
 # Changes EldenNet's design needs for GraceUI
 
 A short list for EldenNet's design (branch `design/v1-proposal`), from [GraceUI's design](DESIGN.md). EldenNet's codes
-(DESIGN, ARCH, NPC, MEM, ER02) refer to its documents; "GraceUI §n", G1–G30 and D1–D114 to GraceUI's. Nothing in §1 to
+(DESIGN, ARCH, NPC, MEM, ER02) refer to its documents; "GraceUI §n", G1–G30 and D1–D136 to GraceUI's. Nothing in §1 to
 §10 is changed in EldenNet yet, apart from the roster, which EldenNet's design now records (its O43 as updated, O45 and
 O46; §9 item 1); §11, the framework's changes, was folded into EldenNet's design on 2026-11-15 (roadmap S7.8.c), and
 where it and an earlier item disagree, §11 holds. Items marked **(G*n*)** come from that entry of GraceUI's
@@ -392,7 +392,11 @@ item above and one here disagree, this one holds. It replaces §1 item 1's "Elde
    GraceUI, which finds the XInput DLLs by module name, not through the game's import table; the chat box and call-out
    box take input through `request_input`; EldenNet's keys (the chat key, F11, the talk gesture's chord) are
    registered hotkeys; the Steam on-screen keyboard is opened by GraceUI for its own fields and by EldenNet for its chat
-   box, as now.
+   box, as now. *Later (2026-11-16, GraceUI's 0.1 host, its input half, D124 to D130): a key held as a holder takes
+   input does nothing in it until released, its characters included, so NPC §5.1's rule of swallowing the first
+   `WM_CHAR` that matches the hotkey within 100 ms is GraceUI's general rule now, and the chat box needs none of its
+   own; NPC §5.5's packet number "bumped once" becomes one more for each grant and each close (D128); `GetDeviceData`
+   stays unhooked unless S4 finds the game reads it (D127, as NPC §5.5 has it).*
 4. **ARCH**: threads T3, T4 and T5 become GraceUI's (EldenNet's T3 work is its `on_present` callback, under the same
    rules); C12's capture statics become GraceUI's state, read through events; R12 becomes "EldenNet hooks nothing";
    §1.4's and §3.2's Hooks step becomes "connect to GraceUI" on T1 after the safety step; §10.3's "Overlay failed to
@@ -477,3 +481,141 @@ GraceUI's own pages (Menu, Hotkeys, Browser view), and EldenNet's pages carry on
 keys of its own instead of GraceUI's: `ui.home_cards` (was `ui.menu.home_cards`) and `ui.show_world` (was
 `ui.menu.show_world`), in its `settings.toml`; its Settings page keeps General, Hotkeys (its own: talk, skip page,
 debug) and Developer.
+
+## 14. ABI 1, the anti-cheat check and two copies (S10.4.b, 2026-11-16)
+
+What GraceUI's 0.1 host settled on 2026-11-16 (D131 to D136; EldenNet's roadmap S10.4.b) asks of EldenNet. None of it
+is folded into EldenNet's design yet.
+
+1. **Connecting** (D131, D136; ARCH §3.2's Connect and ConnectB): T1 finds GraceUI with `graceui-sys` (`graceui_sys.h`,
+   or its C++ wrapper `graceui::Api::find`), on T1 and never in `DllMain`, allowing the load from `Game\GraceUI\`
+   (`GRACEUI_SYS_LOAD`), for at most 30 s, then connects as `eldennet` (its id, `[a-z0-9-]{3,32}`, also its space's
+   id), its display name, its version, its GraceUI floor (0.1.0 for v0.1) and the caps it uses (`notices` for v0.1).
+   The answers: ok, as designed; inactive with `GRACEUI_INACTIVE_ANTI_CHEAT`, the banner through `notice` (item 2);
+   inactive with another reason (the overlay could not start, or turned itself off), too_old (GraceUI has already
+   shown a notice naming EldenNet and both versions), duplicate_id (another mod took the id) or refused: a failed
+   connect, EldenNet headless at L2 with one log line, as ARCH §10.3's "Overlay failed to install" row has it.
+2. **The banner and toasts as notices** (D134): a notice is a tone (normal, warning or danger: gold, ember or rot), a
+   key, a duration and 1 to 512 bytes of UTF-8 text. The banner is one notice under a key of EldenNet's with a duration
+   of 0, shown until EldenNet withdraws it with an empty text under the same key, or replaces its text in place; the
+   pause badge likewise under its own key; a toast is a timed notice. At most four of a mod's notices show at once, a
+   fifth answering full: the banner, the pause badge and DESIGN §12's two toasts fit. GraceUI 0.1 draws notices plainly
+   at the top right, three lines at most, until S10.4.c gives them the Grace look.
+3. **ARCH §5.3** (D133): "GraceUI makes the same check before it hooks" becomes "GraceUI makes the same check in its
+   first `GraceUI_RequestApi`, before it returns its table and before it hooks". Both use the same two clauses; where
+   EldenNet's own check hits and GraceUI's did not (an anti-cheat module loaded between the two), `connect` answers ok
+   and EldenNet shows its banner through `notice` all the same: its gate stays its own.
+4. **ABI 1 is a preview** (D131, D132; §13 item 2): EldenNet pins GraceUI by its release and compiles against that
+   release's `graceui.h`. In S10.4.b only `has_cap`, `connect`, `disconnect` and `notice` work, which is all the
+   banner needs; F11's view waits on S10.4.c and d (`create_panel`, `submit`, `request_input`, `register_hotkey`),
+   whose slots answer not_yet until then. A slot is called only if the table's size covers it
+   (`GRACEUI_API1_COVERS`), and a feature used only if `has_cap` names it.
+5. **Two copies** (D135): ARCH §12.4's row "two copies of GraceUI at two paths" expects the second to idle and the
+   active one to name it in a notice, by its name relative to the game's folder.
+
+## 15. Panels, draw lists, textures, faces, input and providers (S10.4.c, 2026-11-16)
+
+What GraceUI's 0.1 host settled on 2026-11-16 (D137 to D144; EldenNet's roadmap S10.4.c) asks of EldenNet. None of it
+is folded into EldenNet's design yet.
+
+1. **The order at T1** (D138, D139): connect with the caps EldenNet uses (`notices panels textures faces input
+   world-state`, each checked with `has_cap`), then, before anything is submitted, register every face (at most eight
+   for `eldennet`, EST) and every texture (at most 8 textures and 8 MiB, EST); then create the panels (at most 16,
+   EST) and submit. The first `submit` closes EldenNet's registration window (a later texture answers `too_late`), and
+   the overlay's warm-up, at the game's first frames after the hooks, seals the faces: EldenNet connects on T1 before
+   the game draws, so its faces are in time; a face that comes too late answers `too_late`, and EldenNet then draws its
+   text from GraceUI's own face 1 (Noto Sans 15) or its own atlas texture.
+2. **Text in panels** (D139): `glyph_table` answers `not_ready` until warm-up; then each face's glyphs, sorted by code
+   point, the pen at the top of the line as Dear ImGui's, with the atlas's texture id and generation 1 for the session.
+   A list that draws glyphs names that generation in `atlas_generation`. EldenNet's subtitles, call-out box and feed
+   lay their text out from these tables (its NPC §10's sizes as faces of its own) or, for F11, from its own Dear ImGui's
+   atlas registered as a texture.
+3. **Draw lists in the panel's own pixels** (D137): a list's origin is the panel's top-left corner, whatever the
+   anchor; clip rectangles within the panel; at most 256 KiB of vertices and of indices and 64 commands. A refused list
+   leaves the panel its last one, with one log line for the connection. EldenNet's F11 view on a headless Dear ImGui of
+   its own sets the display size to the panel's, sets `ImGuiBackendFlags_RendererHasVtxOffset`, and appends its
+   ImDrawLists into one list, each command keeping its vertex offset, as `examples/hello-panel` does.
+4. **Layers** (D76, D137): the subtitles, labels and feed on the hud layer; the chat box and call-out box on the panel
+   layer; the rollback modal on the modal layer; toasts, the banner and the pause badge as notices, which draw above
+   every layer in the Grace look (D141), in Noto Sans 15 from GraceUI's own `fonts\` folder.
+5. **Input** (D142): the chat box asks `request_input` for its own shown panel made with `GRACEUI_PANEL_TAKES_INPUT`
+   (a modal holder for the rollback modal, on the modal layer); the answer is at once, and a refusal names the
+   holder's mod id. Hiding the panel ends the holder; the player's exit always does. What the holder types reaches it
+   through `poll`, with §6's protocol (GraceUI 0.2): until then the chat box can take the controls from the game but
+   receives no characters, so EldenNet's v0.1 has no chat box in game, as its increments plan.
+6. **EldenNet as a world-state provider** (D143): `set_world_state` with its claims (danger from `safe_context`,
+   loading, a game menu or text entry, the title screen, multiplayer, its own anti-cheat finding), replaced whole at
+   each call; danger and loading end any holder at once, and a game menu keeps `request_input` at not now. EldenNet's
+   hud panels are its own to hide on danger: GraceUI ends only the view that holds input.
+
+## 16. The host review's fixes (2026-11-16, D145 to D153)
+
+An independent review of GraceUI's in-game host found three Medium and fourteen Low issues, all fixed the same day.
+What EldenNet must know or change; none of it is folded into EldenNet's design yet:
+
+1. **Faces within the atlas's room** (D148): each face counts its estimated area against the shared atlas's room when
+   it is registered: the glyphs its font has in its ranges, each as a box of (2 × size + 2) by (size + 2) pixels. The
+   mods' faces share 8192 × 4096 estimated pixels; the mods other than EldenNet use at most half of it, so EldenNet's
+   faces always have the other half, and all of it when no other mod registers faces. A face past the room answers
+   `full` (and leaves the face's count as it was). EldenNet registers only the ranges each face needs: a CJK face of
+   the whole unified block at 24 px is about 27 million estimated pixels on its own, which fits only while the other
+   mods use little; its language's own kana and common kanji are a fraction of that. Should Dear ImGui still run out of
+   room, the bake is made again without the later faces, and their `glyph_table` answers refused: EldenNet's text then
+   falls back to GraceUI's face 1 or its own atlas texture, as for a face that came too late.
+2. **The bake takes a few frames** (D147, D148): warm-up bakes on GraceUI's own thread, so `glyph_table` answers
+   `not_ready` for some frames after the seal rather than for none; EldenNet already asks until it is ready.
+3. **A command stride of at most 256 bytes** (D152, `GRACEUI_DRAW_COMMAND_SIZE_MAX`): EldenNet's lists use ABI 1.0's
+   40-byte command, well within it.
+4. **World-state claims** (D145): nothing changes in what EldenNet calls; a request made just as a provider claims
+   danger is now answered not now (danger) rather than granted, and the last claim any provider made decides.
+5. **The first request** (D153): a request made while another thread's first request is still running waits 2 s at
+   most, then answers null; EldenNet asks from a thread of its own (D70), never from `DllMain`, and `graceui-sys`'s
+   look every 250 ms asks again.
+6. **The game's window** (D146): GraceUI now filters the bound swap chain's window, whatever window appeared first in
+   the game's process (a mod loader's console is never taken for it); nothing for EldenNet to change.
+7. **When the overlay is off** (D149, D150): a removed or replaced device, or a fault, turns the render path off for
+   the session, and input with it; `connect` and the slots then answer inactive (render dead), and F5 reaches the game.
+   EldenNet shows its own fallback (its launcher's notice, its log) as for any inactive session.
+
+## 17. Hotkeys and a first `poll` for F11 (S10.4.d, 2026-11-17, D155)
+
+Agreed with EldenNet's session on 2026-11-17: F11's toggle goes through GraceUI's hotkeys, brought forward into 0.1.
+None of it is folded into EldenNet's design yet.
+
+1. **Registering F11** (D155): after `connect` with the cap `hotkeys` among its caps (checked with `has_cap`), T1 calls
+   `register_hotkey` once: action `debug-view` (1 to 32 of a-z, 0-9 and '-'), a display name of its own, key `VK_F11`
+   (0x7A), modifiers 0, pad chord 0. The answer is `ok` with the hotkey's id, bound or, if another mod or GraceUI's
+   menu key took F11 first, unbound (GraceUI logs which); `refused` for Escape, a modifier, Alt+F4 or a bad action;
+   `not_yet` for a pad chord; `full` past 8 a mod. With `graceui_sys.hpp`: `api.register_hotkey(me, "debug-view",
+   name, VK_F11, 0, id)`.
+2. **Taking its presses** (D155): `poll(me, &event)` on EldenNet's own thread (T6, or T1's loop until T6 exists),
+   called until its kind is `GRACEUI_EVENT_NONE`; each `GRACEUI_EVENT_HOTKEY` names the hotkey's id and its presses
+   since the last event (1 as a rule); an odd count toggles the view. `poll` never waits; once per frame of EldenNet's
+   loop is enough. With `graceui_sys.hpp`: `api.poll(me, event)`.
+3. **What the game sees**: nothing of F11 while EldenNet's hotkey binds it, through DirectInput or as messages, as for
+   the menu key; while a holder (the menu, the chat box, a modal) has input, F11 fires nothing. EldenNet reads no key
+   itself and hooks nothing for it (invariants 8 and 16).
+4. **ARCH**: F11's row moves from EldenNet's own input to GraceUI's hotkey (`hotkeys.debug_view`'s home is GraceUI's
+   Hotkeys page from GraceUI 0.6, D115); EldenNet's §14 item 4 above (F11 waiting on `register_hotkey`) is settled by
+   this.
+
+## 18. The banner and the F11 view as part 12 builds them (S10.4.d, 2026-11-20, D156)
+
+What S10.4.d gives EldenNet's part 12; none of it is folded into EldenNet's design yet. `examples/hello-debug-view` is
+the whole of it in miniature, with invented content, and the harness runs it beside a second mod, each loaded before and
+after GraceUI.
+
+1. **The banner** (D134): one notice under EldenNet's own key with a duration of 0, its text replaced in place by a
+   later `notice` under the same key and withdrawn by an empty text. It needs only the cap `notices`, and it works in
+   the anti-cheat's notice-only mode, after `connect` answered inactive (anti-cheat) with a handle.
+2. **The F11 view on Dear ImGui's core** (D156): EldenNet compiles Dear ImGui 1.93.0's core with no backend (as
+   `gu_imgui_core` does) and includes `graceui_imgui.hpp` from `graceui-sys`. On T1, after `connect` with the caps
+   `notices panels textures hotkeys`: `ImGui::CreateContext()`, `graceui::imgui::prepare(io)`, its fonts added, then
+   `graceui::imgui::register_atlas(api, me, io)` before its first `submit` (its registration window); a panel of its
+   own, hidden, made with `create_panel`; F11 registered (§17). Each frame of its own, on its own thread: build the
+   view with `io.DisplaySize` set to the panel's size, `ImGui::Render()`, then `list.build(*ImGui::GetDrawData(),
+   width, height)` and, if it answered true, `api.submit(me, panel, list.view())`. A frame past ABI 1's bounds (256 KiB
+   of vertices or indices, 64 commands) is not built; the view then keeps its last list.
+3. **Opening and closing**: on each `GRACEUI_EVENT_HOTKEY` for F11 with an odd count, the view toggles: to open, one
+   list submitted and then `show_panel`, so it never shows empty; to close, `hide_panel`. The F11 view takes no input
+   in 0.1 (no `request_input`): its keys and pointer reach a holder only with §6's protocol (D142).
