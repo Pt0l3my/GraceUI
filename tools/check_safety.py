@@ -8,8 +8,8 @@ clang-tidy rule; this is the grep). Run it with python3 -I from anywhere:
     python3 -I tools/check_safety.py --exports DLL --test # a test build's: those two and GraceUI_Test_* only
     python3 -I tools/check_safety.py --abi-self-test      # shows that check 8 refuses what it must, and nothing else
 
-The source checks, over src/ and examples/ (our own code; third-party code is fetched into the build tree and not
-looked at; the web app's node_modules/ and dist/ are never walked):
+The source checks, over src/, examples/ and tools/grace-dev/ (our own code; third-party code is fetched into the build
+tree and not looked at; the web app's node_modules/ and dist/ are never walked):
   1. reinterpret_cast, const_cast and std::bit_cast appear only in grace-host's abi, hooks and draw files, the DLL's
      abi files (D110), graceui-sys's headers (a mod's side: GetProcAddress's answer made a function) and grace-serve's
      Winsock file (a SOCKET made the HANDLE SetHandleInformation takes, so that no socket is inherited, §7.2 item 24),
@@ -33,6 +33,9 @@ looked at; the web app's node_modules/ and dist/ are never walked):
      constant keeps its value (GRACEUI_ABI1_MINOR may only rise), every typedef and export its declaration, and every
      struct, the table GraceUiApi1 among them, keeps its members in their order, adding members only at its end; a slot
      of the table declared as GraceUiReservedSlot may be given its type, keeping its name and place.
+  9. grace-dev (tools/grace-dev/, D168) is a developer's tool, not a pure module and no part of graceui.dll: checks 1
+     to 4 hold for its code as for src/'s, so it casts, hooks and exports nothing; its library, grace_dev_core, is
+     linked by grace-dev and its tests alone; and it makes no shared library, so nothing of it is ever loaded by a game.
 Exit status 0 when every check passes; each failure is printed with its file and line.
 """
 import os
@@ -44,6 +47,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 EXAMPLES = ROOT / "examples"
+GRACE_DEV = ROOT / "tools" / "grace-dev"  # a tool, held to the source checks as src/ is (check 9)
 
 ABI_HEADER = "src/grace-abi/include/graceui.h"
 ABI_BASELINE = "src/grace-abi/baseline/graceui-abi1-0.h"
@@ -120,7 +124,7 @@ def project_files(name):
 
 
 def own_sources():
-    for folder in (SRC, EXAMPLES):
+    for folder in (SRC, EXAMPLES, GRACE_DEV):
         for path in sorted(folder.rglob("*")):
             rel = path.relative_to(ROOT).as_posix()
             if path.suffix in (".cpp", ".c", ".h", ".hpp") and path.is_file() and not rel.startswith(
@@ -239,6 +243,21 @@ def check_imgui_core():
         fail("cmake/third_party.cmake", 0, "gu_imgui_core, Dear ImGui's core alone, is missing")
     elif "backends" in block.group(1):
         fail("cmake/third_party.cmake", 0, "gu_imgui_core compiles a Dear ImGui backend (invariant 16)")
+
+
+def check_grace_dev():
+    """Check 9: grace-dev's library is its own and its tests', and grace-dev makes no shared library (D168)."""
+    own = "tools/grace-dev/CMakeLists.txt"
+    for path in sorted(ROOT.rglob("CMakeLists.txt")):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel.startswith(("build", ".claude/")):
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            code = line.split("#", 1)[0]
+            if re.search(r"\bgrace_dev_core\b", code) and "target_link_libraries" in code and rel != own:
+                fail(rel, number, "grace-dev's library linked outside grace-dev (D168)")
+            if rel == own and re.search(r"add_library\s*\([^)]*\b(SHARED|MODULE)\b", code):
+                fail(rel, number, "grace-dev makes a shared library: it is a program alone (D168)")
 
 
 def check_pure_modules():
@@ -550,6 +569,7 @@ def main(argv):
     check_module_graph()
     check_imgui_core()
     check_pure_modules()
+    check_grace_dev()
     check_hook_table()
     check_abi()
     if "--exports" in argv:

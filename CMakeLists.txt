@@ -85,6 +85,12 @@ add_subdirectory(src/grace-abi)
 add_subdirectory(src/grace-serve)
 add_subdirectory(src/grace-spaces)
 
+# grace-dev, the fake host (§9.2, D168): a developer's tool, on Linux and in the Windows test builds; never in a release
+# build, and not in the fuzzing build, whose grace-serve core carries the fuzzers' instrumentation.
+if(NOT GRACEUI_FUZZ AND (NOT WIN32 OR GRACEUI_TEST_EXPORTS))
+  add_subdirectory(tools/grace-dev)
+endif()
+
 if(WIN32)
   add_subdirectory(src/grace-host)
   add_subdirectory(src/graceui)

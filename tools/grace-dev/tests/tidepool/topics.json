@@ -1,0 +1,12 @@
+{
+  "pool.status": {
+    "tiles": [
+      {"label": "Depth", "value": "A hand's span"},
+      {"label": "Visitors", "value": "Two crabs, one anemone"}
+    ]
+  },
+  "pool.notes": [
+    {"seq": 7, "line": "The tide turned."},
+    {"seq": 8, "line": "A crab hid under the flat stone."}
+  ]
+}
