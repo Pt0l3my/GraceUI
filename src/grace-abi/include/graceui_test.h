@@ -90,7 +90,13 @@ typedef struct GraceUiTestState {
   uint32_t notice_face_grace;     /* 1 if notices are drawn in GraceUI's own face (fonts\NotoSans-Regular.ttf) */
   uint32_t world_flags;           /* every provider's claims, combined (GRACEUI_WORLD_*) */
   uint32_t providers;             /* world-state providers */
+  /* Appended for the in-game spikes (D175): */
+  uint32_t present_prologue;      /* GRACEUI_TEST_PROLOGUE_*: Present's first bytes as GraceUI found them at install */
+  uint32_t reserved2;
 } GraceUiTestState;
+
+/* What Present's first bytes held when GraceUI installed its hook (D86's cue that another hook was there first). */
+enum { GRACEUI_TEST_PROLOGUE_UNKNOWN = 0, GRACEUI_TEST_PROLOGUE_PLAIN = 1, GRACEUI_TEST_PROLOGUE_JUMP = 2 };
 
 /* What the anti-cheat check found (D133). */
 enum { GRACEUI_TEST_ANTI_CHEAT_NONE = 0, GRACEUI_TEST_ANTI_CHEAT_MODULE = 1, GRACEUI_TEST_ANTI_CHEAT_PARENT = 2 };
@@ -178,6 +184,22 @@ typedef struct GraceUiTestInput {
   uint64_t window;             /* the window whose filter is active, as a number (0 for none) */
   uint32_t windows_filtered;   /* windows given a filter so far: the first found, then the bound swap chain's */
   uint32_t reserved;
+  /* Appended for the in-game spikes (D175). Input of a device the holder takes that still reached the game, by kind
+   * (Alt+F4's press, which always does, left out): */
+  uint32_t passed_presses;     /* key presses */
+  uint32_t passed_releases;    /* key releases (one the game saw begin reaches it, by design) */
+  uint32_t passed_characters;
+  uint32_t passed_mouse;       /* mouse moves, wheels and button presses */
+  uint32_t passed_raw;         /* raw input */
+  /* DirectInput and XInput reads GraceUI changed: while a holder held, and with none (a closing press until it is
+   * released, and the menu key, which never reaches the game): */
+  uint32_t masked_keyboard_held;
+  uint32_t masked_mouse_held;
+  uint32_t masked_pad_held;
+  uint32_t masked_keyboard_free;
+  uint32_t masked_mouse_free;
+  uint32_t masked_pad_free;
+  uint32_t reserved2;
 } GraceUiTestInput;
 
 /* request_input (D77): fills *out; answers 1, or 0 if `out` is null. */

@@ -402,6 +402,7 @@ void test_fill_state(GraceUiTestState& out) noexcept {
   out.notice_face_grace = atlas::notice_face_is_grace() ? 1u : 0u;
   out.world_flags = session::world().combined();
   out.providers = session::world().providers();
+  out.present_prologue = hooks::present_prologue();
 }
 
 void test_reset_counters() noexcept {
@@ -532,6 +533,18 @@ void test_fill_input(GraceUiTestInput& out) noexcept {
   // SAFETY: a window handle is a value, given to the harness as a number to compare with its own windows'.
   out.window = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(input::window()));
   out.windows_filtered = static_cast<std::uint32_t>(hooks_input::windows_filtered());
+  const auto passed = [](counters::Passed kind) { return counters::passed_held[kind].load(std::memory_order_relaxed); };
+  out.passed_presses = passed(counters::press);
+  out.passed_releases = passed(counters::release);
+  out.passed_characters = passed(counters::character);
+  out.passed_mouse = passed(counters::mouse);
+  out.passed_raw = passed(counters::raw);
+  out.masked_keyboard_held = counters::masked_held[counters::dinput_keyboard].load(std::memory_order_relaxed);
+  out.masked_mouse_held = counters::masked_held[counters::dinput_mouse].load(std::memory_order_relaxed);
+  out.masked_pad_held = counters::masked_held[counters::xinput].load(std::memory_order_relaxed);
+  out.masked_keyboard_free = counters::masked_after[counters::dinput_keyboard].load(std::memory_order_relaxed);
+  out.masked_mouse_free = counters::masked_after[counters::dinput_mouse].load(std::memory_order_relaxed);
+  out.masked_pad_free = counters::masked_after[counters::xinput].load(std::memory_order_relaxed);
 }
 
 std::uint32_t test_copy_chars(std::uint32_t* out, std::uint32_t capacity) noexcept {

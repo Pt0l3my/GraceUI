@@ -790,3 +790,20 @@ scenario.json of timed steps, invented content only). grace-dev checks them as `
 3. **Words**: a secret reads Set or Missing; availability badges read "Waits on a game check", "Takes effect in
    v1.5", "Off because … is off" (for `requires:<key>` while that key is off) and "No effect in this version" (inert).
 4. **GraceUI 0.2.0**: the `pages` capability and protocol 1.1 come with it; a floor of 0.2.0 asks for both.
+
+## 30. GraceUI's side of the in-game spikes S0-E and S4 (2026-11-20, D175)
+
+What we agreed, from GraceUI's side; the launcher and the DLL's side are EldenNet's (its message of 2026-11-20).
+
+1. **The package**: from GraceUI's commit, graceui.dll's test build (its GraceUI folder with `graceui.toml`, which
+   E12's pre-flight takes as it is), `grace-spike.dll` and `grace-standin.dll`, built with clang-cl;
+   `tools/grace-spike/README.md` is the owner's part of the steps (runs A1 to A4, A0 and B), for EldenNet's README.
+2. **The launcher**: `--also` with `grace-spike.dll` (and `grace-standin.dll` in the S0-E runs), before or without
+   `graceui.dll` as the run says; `ELDENNET_SPIKE_DIR` naming `%APPDATA%\EldenNet\spikes\<word>-<run number>`, with
+   the words `s0e`, `s0e_alone` and `s4`; unset outside a spike run, where grace-spike does nothing.
+3. **The DLL**: no call into the game in these runs (EldenNet's "spike: no call"); the connect, the banner and F11's
+   view as usual.
+4. **The harness cases to run against the package on the fake game**: "spike" and "spike-after" (the observer and the
+   stand-in before and after GraceUI, the typing test), "menu", "menu-space", "input" and "abi".
+5. **The reader**: `python3 -I tools/grace-spike/report.py <spikes folder> --by-hand movement=yes|no`; `--json` for
+   EldenNet's spike-report to fold in.

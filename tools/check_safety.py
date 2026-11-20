@@ -20,7 +20,7 @@ tree and not looked at; the web app's node_modules/ and dist/ are never walked):
      (SetWindowLongPtr, SetWindowsHookEx), and Dear ImGui's backends only in grace-host (invariant 16): graceui-sys and
      the example mods, a mod's side, hook nothing; only grace-host's CMakeLists.txt links MinHook or Dear ImGui with
      its backends (the module graph). Dear ImGui's core alone (gu_imgui_core: no backend, D76) is linked only by the
-     example mods, and its target compiles no backend.
+     example mods and the spike observer (tools/grace-spike, a mod's side, D175), and its target compiles no backend.
   4. Only the DLL's abi files export anything (the public header declares the two exports).
   5. hooks.cpp's hook table names only functions of D102's published list, and is the only place MinHook makes a hook.
   6. No project that EldenNet's O47 and O48 exclude is named in a build file (D106).
@@ -227,7 +227,8 @@ def check_module_graph():
 
 
 def check_imgui_core():
-    """Dear ImGui's core alone is a mod's (D76): only the example mods link it, and it compiles no backend."""
+    """Dear ImGui's core alone is a mod's (D76): only the example mods and the spike observer (a test mod, D175) link it,
+    and it compiles no backend."""
     for path in project_files("CMakeLists.txt"):
         rel = path.relative_to(ROOT).as_posix()
         if rel.startswith(("build", ".claude/")):
@@ -235,8 +236,8 @@ def check_imgui_core():
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             code = line.split("#", 1)[0]
             if re.search(r"\bgu_imgui_core\b", code) and "target_link_libraries" in code and \
-                    not rel.startswith("examples/"):
-                fail(rel, number, "Dear ImGui's core linked outside the example mods (D76)")
+                    not rel.startswith(("examples/", "tools/grace-spike/")):
+                fail(rel, number, "Dear ImGui's core linked outside the example mods and the spike observer (D76)")
     third_party = (ROOT / "cmake" / "third_party.cmake").read_text(encoding="utf-8")
     block = re.search(r"add_library\(gu_imgui_core\b(.*?)\)", third_party, re.S)
     if block is None:
