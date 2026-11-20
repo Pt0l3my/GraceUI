@@ -8,7 +8,7 @@ clang-tidy rule; this is the grep). Run it with python3 -I from anywhere:
     python3 -I tools/check_safety.py --abi-self-test      # shows that check 8 refuses what it must, and nothing else
 
 The source checks, over src/ and examples/ (our own code; third-party code is fetched into the build tree and not
-looked at):
+looked at; the web app's node_modules/ and dist/ are never walked):
   1. reinterpret_cast, const_cast and std::bit_cast appear only in grace-host's abi, hooks and draw files, the DLL's
      abi files (D110), graceui-sys's headers (a mod's side: GetProcAddress's answer made a function) and grace-serve's
      Winsock file (a SOCKET made the HANDLE SetHandleInformation takes, so that no socket is inherited, §7.2 item 24),
@@ -34,6 +34,7 @@ looked at):
      of the table declared as GraceUiReservedSlot may be given its type, keeping its name and place.
 Exit status 0 when every check passes; each failure is printed with its file and line.
 """
+import os
 import pathlib
 import re
 import struct
@@ -97,6 +98,24 @@ failures = []
 
 def fail(path, line, message):
     failures.append(f"{path}:{line}: {message}")
+
+
+# Folders never walked: build trees, worktrees, and the web app's installed packages and build output (D166), which
+# are third-party code and generated files, never ours to check here.
+SKIPPED_DIRS = ("node_modules", "dist", ".git")
+
+
+def project_files(name):
+    """Every file called `name` in the repository, skipping build trees, .claude/ and the web app's node_modules/ and
+    dist/ without descending into them."""
+    found = []
+    for folder, dirs, files in os.walk(ROOT):
+        rel = pathlib.Path(folder).relative_to(ROOT).as_posix()
+        dirs[:] = sorted(d for d in dirs if d not in SKIPPED_DIRS and not (rel == "." and (d.startswith("build") or
+                                                                                         d == ".claude")))
+        if name in files:
+            found.append(pathlib.Path(folder) / name)
+    return sorted(found)
 
 
 def own_sources():
@@ -184,7 +203,7 @@ def check_sources():
 
 
 def check_module_graph():
-    for path in sorted(ROOT.rglob("CMakeLists.txt")):
+    for path in project_files("CMakeLists.txt"):
         rel = path.relative_to(ROOT).as_posix()
         if rel.startswith(("build", ".claude/")):
             continue
@@ -204,7 +223,7 @@ def check_module_graph():
 
 def check_imgui_core():
     """Dear ImGui's core alone is a mod's (D76): only the example mods link it, and it compiles no backend."""
-    for path in sorted(ROOT.rglob("CMakeLists.txt")):
+    for path in project_files("CMakeLists.txt"):
         rel = path.relative_to(ROOT).as_posix()
         if rel.startswith(("build", ".claude/")):
             continue

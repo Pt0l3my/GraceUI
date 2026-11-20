@@ -153,8 +153,37 @@ class Seeded(unittest.TestCase):
                 found = build.check_stylesheets()
             finally:
                 build.WEB_SRC, build.ROOT = old_src, old_root
+            found = [f for f in found if "looping" in f]  # a.css's 2s is also a literal duration (the next test)
             self.assertEqual(len(found), 2, found)
             self.assertTrue(found[0].startswith("a.css:1") and found[1].startswith("b.ts:1"), found)
+
+    def test_the_web_apps_stylesheets_take_tokens_only(self):
+        # D166: the web app's own CSS names colours, type sizes and durations only through tokens.css, fetches nothing,
+        # and its components set no inline style (the page's CSP refuses one).
+        with tempfile.TemporaryDirectory() as folder:
+            web = pathlib.Path(folder)
+            (web / "ok.css").write_text(
+                "/* #fff in a comment is fine */\n.a { color: var(--ink-hi); font-size: var(--type-ui-size);\n"
+                "  transition: color var(--dur-state); font: inherit; box-shadow: 0 8px 24px var(--shadow); }\n",
+                encoding="utf-8")
+            (web / "bad.css").write_text(
+                ".b { color: #E8E2D0; }\n.c { background: rgb(0 0 0 / 50%); }\n.d { font-size: 15px; }\n"
+                ".e { transition: opacity 120ms; }\n.f { background: url(https://example.invalid/x.png); }\n"
+                ".g { border-color: white; }\n@font-face { font-family: X; }\n:root { --type-ui-size: 99px; }\n",
+                encoding="utf-8")
+            (web / "c.tsx").write_text("const a = <div style={{ color: 'red' }} />;\n", encoding="utf-8")
+            old_src, old_root, old_css = build.WEB_SRC, build.ROOT, build.CSS_OUT
+            build.WEB_SRC, build.ROOT, build.CSS_OUT = web, web, web / "tokens.css"
+            try:
+                found = build.check_stylesheets()
+            finally:
+                build.WEB_SRC, build.ROOT, build.CSS_OUT = old_src, old_root, old_css
+            self.assertFalse(any(f.startswith("ok.css") for f in found), found)
+            for expected in ("bad.css:1: a colour", "bad.css:2: a colour", "bad.css:3: font-size",
+                             "bad.css:4: a duration", "bad.css:5: a url()", "bad.css:6: a colour",
+                             "bad.css: @import or @font-face", "bad.css:8: --type-ui-size redefines",
+                             "c.tsx:1: an inline style"):
+                self.assertTrue(any(f.startswith(expected) for f in found), (expected, found))
 
 
 if __name__ == "__main__":

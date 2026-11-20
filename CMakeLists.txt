@@ -95,6 +95,12 @@ if(WIN32)
   endif()
 endif()
 
+# The browser view's checks (D166): its type check, tests, build, licences and bundle scan, where Node and its
+# packages are installed.
+if(GRACEUI_UNIT_TESTS)
+  add_subdirectory(web)
+endif()
+
 # GraceUI's version file (D52): tools/release/manifest.py writes graceui.toml for a GraceUI folder and checks one.
 if(GRACEUI_UNIT_TESTS)
   find_package(Python3 3.11 COMPONENTS Interpreter)

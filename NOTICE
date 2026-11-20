@@ -382,3 +382,84 @@ SHA-256 of each file used:
     Copyright 2025 Deborah Khodanovich (RCS citation glyphs)
 
     This Font Software is licensed under the SIL Open Font License, Version 1.1.
+
+
+The browser view (web/, D166)
+=============================
+
+GraceUI's browser view, the web app served from GraceUI's web\ folder, contains the three packages below, bundled by
+its build; the bundle carries their licences again in licences.txt beside its scripts, written by tools/web/licences.py
+from the packages actually in the bundle. Each is installed from the npm registry at an exact version pinned in
+web/package-lock.json with its sha512 integrity, with install scripts off (web/.npmrc). Each licence was read in full on
+2026-11-20, with no clause on the use of AI.
+
+The web app's build and type check also use Vite 7.3.8 (MIT) and TypeScript 7.0.2 (Apache-2.0) with their dependencies:
+esbuild and its Linux binary, Rollup and its Linux binaries, PostCSS, nanoid, picocolors (ISC), source-map-js
+(BSD-3-Clause), fdir, picomatch, tinyglobby and @types/estree (all MIT unless named). None of them is in the bundle or
+in any release. tools/web/licences.py fails on any installed package whose licence is not on the reviewed allowlist.
+
+
+Preact 11.2.0
+-------------
+
+Source:    https://registry.npmjs.org/preact/-/preact-11.2.0.tgz (the Preact project, preactjs/preact)
+Integrity: sha512-/HfHI/7N84e6GrWBJ3J280z3mLaRJiDcSvj/A+y/4AbLnND/1UlGHe1sR6oYuTGwId0nP7dqDU9OnLxMPZ7xBg==
+Licence:   MIT (below); its LICENSE's SHA-256 1fe6958409c8c257a70c587a18b6f7f412b179b456630790d30b2ec9a8e4b7d4
+Used:      the renderer, its hooks and its JSX runtime, in the browser view's bundle
+
+    The MIT License (MIT)
+
+    Copyright (c) 2015-present Jason Miller
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+
+@preact/signals 2.11.4 and @preact/signals-core 1.14.5
+------------------------------------------------------
+
+Source:    https://registry.npmjs.org/@preact/signals/-/signals-2.11.4.tgz and
+           https://registry.npmjs.org/@preact/signals-core/-/signals-core-1.14.5.tgz (the Preact project,
+           preactjs/signals)
+Integrity: sha512-Rb+5RPo9gWSaHtzJeauhHxiC8KP/IF2DEPkHPEOGOnuy2wnJzRqyeLRankUCYd6ADqtxS6GnWGv6Ie343d8aYw== and
+           sha512-vcRv7Ityz5JVmeiVqIluLFzT/PDS/AlhHUpw3/aUWqcVUs6bDGIPXE/6RSC4evBNWYvnniozg5Syfj33al3gkg==
+Licence:   MIT (below, the same text in both); its LICENSE's SHA-256
+           a11fc89e4c6b118854c7a667734a0b2e6bf2af5e45c6686de31adbccc8f3ae8d
+Used:      signals and their Preact bindings, the browser view's state (G3), in its bundle
+
+    The MIT License (MIT)
+
+    Copyright (c) 2022-present Preact Team
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.

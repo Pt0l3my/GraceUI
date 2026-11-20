@@ -26,11 +26,18 @@ if(GRACEUI_UNIT_TESTS)
     add_test(NAME protocol_tool_tests
              COMMAND ${Python3_EXECUTABLE} -I -m unittest discover -s ${CMAKE_SOURCE_DIR}/tools/protocol)
   endif()
-  # The generated TypeScript type-checks under tsc --strict, where tsc is installed (the web shell brings its own, S11.2.k).
+  # The generated TypeScript type-checks under tsc --strict: with the web shell's own pinned TypeScript where its
+  # packages are installed (web/node_modules, D166), or with a tsc on the PATH.
+  find_program(GU_NODE node)
   find_program(GU_TSC tsc)
-  if(GU_TSC)
+  if(GU_NODE AND EXISTS ${CMAKE_SOURCE_DIR}/web/node_modules/typescript/bin/tsc)
+    set(GU_TSC_COMMAND ${GU_NODE} ${CMAKE_SOURCE_DIR}/web/node_modules/typescript/bin/tsc)
+  elseif(GU_TSC)
+    set(GU_TSC_COMMAND ${GU_TSC})
+  endif()
+  if(GU_TSC_COMMAND)
     add_test(NAME protocol_typescript
-             COMMAND ${GU_TSC} --strict --noEmit --target es2022 --lib es2022 ${CMAKE_SOURCE_DIR}/web/src/protocol.ts)
+             COMMAND ${GU_TSC_COMMAND} --strict --noEmit --target es2022 --lib es2022 ${CMAKE_SOURCE_DIR}/web/src/protocol.ts)
   endif()
 endif()
 

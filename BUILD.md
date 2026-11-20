@@ -184,7 +184,24 @@ at 1920 × 1080 and at 1280 × 800 and 150%, the demo's Behaviour page); after a
 them anew with `GRACE_UPDATE_GOLDEN=1 build-linux/bin/grace_view_tests` and read the diff before committing.
 `grace_draw_tests` tessellate the Menu page and pass it through grace-abi's draw-list checker, check that Grace Clear
 changes colours and nothing else, the shapes' vertices and fringes, hairlines on whole pixels, and that a second frame
-allocates nothing.
+allocates nothing. Two more goldens there are the browser view's parity references (D166): `rows-order.txt`, every
+page's rows in grace-view's focus order, and `formats.txt`, every setting's formatted value and each press's command;
+the web view's tests compare against both.
+
+## The browser view
+
+`web/` is the browser view (D166): Preact, its signals and TypeScript, built with Vite into `web/dist/`. `web/README.md`
+has every command; in short, from `web/`:
+
+```sh
+npm ci --ignore-scripts && npm audit
+npm run build && python3 -I ../tools/web/licences.py   # dist/, then the licence check and dist/licences.txt
+npm run typecheck && npm test && npm run test:dom
+```
+
+The Linux build's CTest runs the licence tool's tests always, and the type check, the logic tests, the build, the
+licence check, the bundle scan and (with the machine's own Playwright and Chromium) the DOM tests when Node and
+`web/node_modules` are present; `protocol_typescript` then uses the web app's pinned TypeScript.
 
 ## The release build: clang-cl
 

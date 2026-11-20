@@ -16,7 +16,9 @@ Before anything is written, the tokens pass four checks, each failure printed wi
   3. Motion (§3.10, invariant 14): each duration a fade, a transition, a hold or instant, 0 to 2,000 ms, instant
      exactly 0, nothing that repeats.
   4. The stylesheets (invariant 14): no CSS or script under web/src asks for a looping animation (`infinite` in an
-     animation, `iterations: Infinity`).
+     animation, `iterations: Infinity`). The web app's own CSS (D166) writes no colour, type size or duration as a
+     literal, only the tokens' custom properties, redefines no font or type token, and has no url(), @import or
+     @font-face (invariant 6); no component sets an inline style, which the page's CSP refuses.
 Exit status 0 when all pass (and, with --check, nothing has drifted).
 """
 import argparse
@@ -40,6 +42,15 @@ LOOPING = (
     re.compile(r"animation(?:-iteration-count)?\s*:[^;{}]*\binfinite\b", re.IGNORECASE),
     re.compile(r"\biterations\s*:\s*Infinity\b"),
 )
+# The web app's own stylesheets (D166): colours, type sizes and durations only through the tokens' custom properties.
+DECLARATION = re.compile(r"(--?[A-Za-z][\w-]*|[a-z-]+)\s*:\s*([^;{}]*)(?=[;}])")
+COLOUR_LITERAL = re.compile(r"#[0-9A-Fa-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color-mix|color)\(|"
+                            r"\b(?:white|black|red|green|blue|grey|gray|yellow|orange|purple|silver)\b", re.IGNORECASE)
+TYPE_PROPERTIES = ("font-size", "line-height", "letter-spacing", "font")
+MOTION_PROPERTIES = ("transition", "transition-duration", "transition-delay", "animation", "animation-duration",
+                     "animation-delay")
+TIME_LITERAL = re.compile(r"(?<![\w-])\d*\.?\d+m?s\b")
+INLINE_STYLE = re.compile(r"\sstyle=\{")
 
 
 class TokenError(Exception):
@@ -225,6 +236,13 @@ def check_motion(data):
     return failures
 
 
+def _declarations(text):
+    """A stylesheet's declarations, comments removed: (line, property, value)."""
+    text = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S)
+    for match in DECLARATION.finditer(text):
+        yield text.count("\n", 0, match.start()) + 1, match.group(1).lower(), match.group(2)
+
+
 def check_stylesheets():
     failures = []
     if not WEB_SRC.is_dir():
@@ -232,9 +250,29 @@ def check_stylesheets():
     for path in sorted(WEB_SRC.rglob("*")):
         if path.suffix not in (".css", ".ts", ".tsx", ".js") or not path.is_file():
             continue
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        rel = path.relative_to(ROOT).as_posix()
+        text = path.read_text(encoding="utf-8")
+        for number, line in enumerate(text.splitlines(), 1):
             if any(pattern.search(line) for pattern in LOOPING):
-                failures.append(f"{path.relative_to(ROOT).as_posix()}:{number}: a looping animation (invariant 14)")
+                failures.append(f"{rel}:{number}: a looping animation (invariant 14)")
+            if path.suffix == ".tsx" and INLINE_STYLE.search(line):
+                failures.append(f"{rel}:{number}: an inline style, which the page's CSP refuses (D166)")
+        if path.suffix != ".css" or path == CSS_OUT:
+            continue
+        # The web app's own stylesheets: every colour, type size and duration from tokens.css (D157, D166).
+        for number, prop, value in _declarations(text):
+            if prop.startswith("--font-") or prop.startswith("--type-"):
+                failures.append(f"{rel}:{number}: {prop} redefines a token")
+            if COLOUR_LITERAL.search(value):
+                failures.append(f"{rel}:{number}: a colour written as a literal; use a colour token")
+            if prop in TYPE_PROPERTIES and not re.fullmatch(r"\s*(var\(--type-[a-z0-9-]+\)|inherit|0)\s*", value):
+                failures.append(f"{rel}:{number}: {prop} not from a type token")
+            if prop in MOTION_PROPERTIES and TIME_LITERAL.search(re.sub(r"var\([^)]*\)", "", value)):
+                failures.append(f"{rel}:{number}: a duration written as a literal; use a dur token")
+            if "url(" in value.lower() or prop == "@import":
+                failures.append(f"{rel}:{number}: a url() in a stylesheet (invariant 6)")
+        if re.search(r"@import|@font-face", text):
+            failures.append(f"{rel}: @import or @font-face in a stylesheet (invariant 6; fonts come with the folder)")
     return failures
 
 
