@@ -1,7 +1,8 @@
 # Proposal 0006: Five additions for mods' pages
 
 **Status: proposal, 2026-11-20, put to the owner and EldenNet's session (G33); EldenNet's session answered the same
-day (§8), and §4's recommendation follows its answer; not built.** EldenNet's session met
+day (§8), and §4's recommendation follows its answer. The owner agreed the same day ("Agreed to proposal 0006"); built
+as D185 to D189 in GraceUI 0.2.7; where this text and the design differ, the design holds.** EldenNet's session met
 these while building its first pages (Home, System, Settings > Developer; its WHY§266 to §270) and listed them with
 D184's in-game components, which GraceUI 0.2.6 built. None blocks EldenNet: each has a stand-in today. They change the
 page data's format, or add a framework feature every mod may use (G16, G18), so they are put here rather than settled
