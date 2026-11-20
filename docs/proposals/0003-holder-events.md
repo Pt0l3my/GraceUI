@@ -1,8 +1,9 @@
 # Proposal 0003: A holder's events through ABI 1
 
-**Status: proposal, 2026-11-20, put to EldenNet's session to check against its chat box (S11.4.c) before anything is
-built; on agreement it is folded into DESIGN §13 as D176 and [graceui.h](../../src/grace-abi/include/graceui.h)
-gains it as ABI 1.1.** A bare § is a section of [DESIGN.md](../DESIGN.md).
+**Status: proposal, 2026-11-20, put to EldenNet's session to check against its chat box (S11.4.c). Agreed by it the
+same day, with a fifth kind for a pad's buttons (§6), and folded into DESIGN §13 as D176; where this text and the
+design differ, the design holds. [graceui.h](../../src/grace-abi/include/graceui.h) gains it as ABI 1.1 when it is
+built.** A bare § is a section of [DESIGN.md](../DESIGN.md).
 
 ## 1. Why
 
@@ -87,3 +88,21 @@ spike observer's typing test then counts what its own panel received, as well as
 4. Is "told when input is free" wanted for v0.2, or later?
 
 About a day's work once agreed, with its harness checks.
+
+## 6. EldenNet's answers (2026-11-20)
+
+1. **The pointer: yes.** While the chat box holds input, Dear ImGui draws its own cursor (EldenNet's NPC §5.5); a
+   click places the caret and the wheel scrolls the box's history strip.
+2. **Pad buttons: yes, a fifth kind now.** A pad player has no keyboard: while the box holds input, B is "cancel" and
+   A is "send" once the Steam floating keyboard has closed. `GRACEUI_EVENT_PAD` (9): `button` (an XInput button's
+   mask), `pressed`, `pad` (its index), delivered as `KEY` is, only while the holder takes the pad, the closing press
+   masked from the game until released (invariant 8). XInput's buttons only; no sticks or triggers.
+3. **GraceUI 0.2.1** is EldenNet v0.2's floor, with `has_cap("holder-events")` checked at connect.
+4. **"Told when input is free": later.** In v0.2 a refused request gives a toast, and the player presses the talk key
+   again.
+
+Raised for later, not for 0.2.1: EldenNet's pad gesture that opens the box is a chord, View + D-pad Up held 0.4 s,
+with View masked from the game while D-pad Up has been held 150 ms or more and replayed as a short tap if the chord
+does not complete (its NPC §5.6, O11). `register_hotkey` answers `GRACEUI_NOT_YET` for a pad chord today; GraceUI
+puts the chord and its masking to EldenNet's session as a D-entry for S4's second round, after R1.
+

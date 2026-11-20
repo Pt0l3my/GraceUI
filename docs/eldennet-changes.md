@@ -807,3 +807,18 @@ What we agreed, from GraceUI's side; the launcher and the DLL's side are EldenNe
    stand-in before and after GraceUI, the typing test), "menu", "menu-space", "input" and "abi".
 5. **The reader**: `python3 -I tools/grace-spike/report.py <spikes folder> --by-hand movement=yes|no`; `--json` for
    EldenNet's spike-report to fold in.
+
+## 31. A holder's events, for the chat box (2026-11-20, D176; proposal 0003)
+
+What EldenNet's chat box uses once GraceUI 0.2.1 is out (ABI 1.1):
+
+1. **Connect** with floor 0.2.1 and check `has_cap("holder-events")`; without it the box cannot take typing.
+2. **Ask with the flag**: `request_input` with `flags = GRACEUI_INPUT_EVENTS`, for the box's own panel (made with
+   `GRACEUI_PANEL_TAKES_INPUT`, shown), wanting the keyboard, the mouse and the pad.
+3. **Poll** with ABI 1.1's event size: `KEY`, `CHARACTER`, `POINTER` (in the panel's pixels), `PAD` (B as cancel, A
+   as send) and, once and last, `INPUT_ENDED` with its reason (released after the box's own `release_input`; danger,
+   which keeps the draft; no render; the player's exit). Feed them to the box's headless Dear ImGui with
+   `graceui::imgui::feed`.
+4. **The caret**: `set_caret` with the caret's rectangle in the panel's pixels, whenever it moves, for the IME.
+5. **Yours, not GraceUI's**: opening the Steam floating keyboard, and the clipboard if Ctrl+V is to paste.
+6. **Later, by D-entry**: the pad chord that opens the box (View + D-pad Up), as a hotkey with its masking.
