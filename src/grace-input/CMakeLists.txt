@@ -4,6 +4,7 @@
 add_library(grace_input STATIC
   devices.cpp
   holder.cpp
+  holder_mail.cpp
   hotkeys.cpp
   messages.cpp)
 target_include_directories(grace_input PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -16,6 +17,7 @@ if(GRACEUI_UNIT_TESTS)
     tests/chars_tests.cpp
     tests/devices_tests.cpp
     tests/holder_tests.cpp
+    tests/holder_mail_tests.cpp
     tests/hotkeys_tests.cpp
     tests/messages_tests.cpp
     tests/queue_tests.cpp)

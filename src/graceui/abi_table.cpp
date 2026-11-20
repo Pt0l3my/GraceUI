@@ -382,7 +382,9 @@ GraceUiStatus request_input(GraceUiConsumer consumer, const GraceUiInputRequest*
       return refused_argument(consumer, "request_input", "a request or answer that is null or below its first size");
     }
     GraceUiInputAnswer result{};
-    const GraceUiStatus status = grace::host::abi1::request_input(consumer, in.kind, in.wants, in.panel, result);
+    // A 1.0 request is read with flags 0: its mod hears nothing of its input, as before (D176).
+    const GraceUiStatus status =
+        grace::host::abi1::request_input(consumer, in.kind, in.wants, in.panel, in.flags, result);
     if (status == GRACEUI_OK) {
       write_out(answer, answer_size, result);
     }
@@ -420,9 +422,12 @@ GraceUiStatus set_world_state(GraceUiConsumer consumer, const GraceUiWorldState*
 constexpr std::uint32_t kHotkey10 = 48;
 constexpr std::uint32_t kEvent10 = 16;
 constexpr std::uint32_t kEvent02 = 48;       // with reply, frame, frame_capacity and frame_length (D169)
+constexpr std::uint32_t kEvent11 = 104;      // with a holder's fields, ABI 1.1 (D176)
 constexpr std::uint32_t kSpaceDesc02 = 64;   // GraceUiSpaceDesc as GraceUI 0.2 first gave it
+constexpr std::uint32_t kCaret11 = 32;       // GraceUiCaret as ABI 1.1 first gave it
 constexpr std::uint64_t kPagesMax = 1u << 20;  // a space's page data or settings description: 1 MiB (EST)
-static_assert(sizeof(GraceUiEvent) == kEvent02 && sizeof(GraceUiSpaceDesc) == kSpaceDesc02);
+static_assert(sizeof(GraceUiEvent) == kEvent11 && sizeof(GraceUiSpaceDesc) == kSpaceDesc02 &&
+              sizeof(GraceUiCaret) == kCaret11);
 
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, const GraceUiHotkeyDesc* hotkey,
                               std::uint32_t* hotkey_id) noexcept {
@@ -467,7 +472,8 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent* event) noexcept {
       out.frame = in.frame;
       out.frame_capacity = in.frame == nullptr ? 0 : in.frame_capacity;
     }
-    const GraceUiStatus status = grace::host::abi1::poll(consumer, out, protocol);
+    // ABI 1.1 (D176): an event that holds a holder's fields takes the mod's holder's events too.
+    const GraceUiStatus status = grace::host::abi1::poll(consumer, out, protocol, event_size >= kEvent11);
     if (status == GRACEUI_OK || status == GRACEUI_FULL) {
       write_out(event, event_size, out);
     }
@@ -554,6 +560,21 @@ GraceUiStatus log(GraceUiConsumer consumer, std::uint32_t, const char*, std::uin
   return not_yet(consumer, "log");
 }
 
+// ---- ABI 1.1's slot (D176).
+
+GraceUiStatus set_caret(GraceUiConsumer consumer, const GraceUiCaret* caret) noexcept {
+  try {
+    GraceUiCaret in{};
+    if (!read_in(caret, kCaret11, in)) {
+      return refused_argument(consumer, "set_caret", "a caret that is null or below its first size");
+    }
+    return grace::host::abi1::set_caret(consumer, in.panel, in.x, in.y, in.height);
+  } catch (...) {
+    grace::host::abi1::fault("set_caret");
+    return GRACEUI_FAULT;
+  }
+}
+
 constinit const GraceUiApi1 kTable = {
     sizeof(GraceUiApi1),
     GRACEUI_ABI1_MINOR,
@@ -579,6 +600,7 @@ constinit const GraceUiApi1 kTable = {
     &notice,
     &set_world_state,
     &log,
+    &set_caret,
 };
 
 }  // namespace

@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -738,6 +739,7 @@ struct GraceUi {
   decltype(&GraceUI_Test_SetWorld) set_world = nullptr;
   decltype(&GraceUI_Test_SetCaret) set_caret = nullptr;
   decltype(&GraceUI_Test_SetCodePage) set_code_page = nullptr;
+  decltype(&GraceUI_Test_Pad) pad = nullptr;
   decltype(&GraceUI_Test_GetInput) get_input = nullptr;
   decltype(&GraceUI_Test_GetChars) get_chars = nullptr;
   decltype(&GraceUI_Test_GetInputCosts) input_costs = nullptr;
@@ -774,6 +776,7 @@ struct GraceUi {
     set_world = function_of<decltype(set_world)>(module, "GraceUI_Test_SetWorld");
     set_caret = function_of<decltype(set_caret)>(module, "GraceUI_Test_SetCaret");
     set_code_page = function_of<decltype(set_code_page)>(module, "GraceUI_Test_SetCodePage");
+    pad = function_of<decltype(pad)>(module, "GraceUI_Test_Pad");
     get_input = function_of<decltype(get_input)>(module, "GraceUI_Test_GetInput");
     get_chars = function_of<decltype(get_chars)>(module, "GraceUI_Test_GetChars");
     input_costs = function_of<decltype(input_costs)>(module, "GraceUI_Test_GetInputCosts");
@@ -793,7 +796,7 @@ struct GraceUi {
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
            request_input != nullptr && release_input != nullptr && set_world != nullptr && set_caret != nullptr &&
-           set_code_page != nullptr && get_input != nullptr && get_chars != nullptr && input_costs != nullptr &&
+           set_code_page != nullptr && pad != nullptr && get_input != nullptr && get_chars != nullptr && input_costs != nullptr &&
            set_anti_cheat_names != nullptr && get_notice != nullptr && clear_notices != nullptr &&
            get_consumer != nullptr;
   }
@@ -2527,7 +2530,8 @@ void run_abi(const std::wstring& dll) {
   const bool caps_ok = api.has_cap(GRACEUI_CAP_NOTICES) && api.has_cap(GRACEUI_CAP_PANELS) &&
                        api.has_cap(GRACEUI_CAP_TEXTURES) && api.has_cap(GRACEUI_CAP_FACES) &&
                        api.has_cap(GRACEUI_CAP_INPUT) && api.has_cap(GRACEUI_CAP_WORLD_STATE) &&
-                       api.has_cap(GRACEUI_CAP_HOTKEYS) && api.has_cap(GRACEUI_CAP_PAGES) && !api.has_cap("log") &&
+                       api.has_cap(GRACEUI_CAP_HOTKEYS) && api.has_cap(GRACEUI_CAP_PAGES) &&
+                       api.has_cap(GRACEUI_CAP_HOLDER_EVENTS) && !api.has_cap("log") &&
                        !api.has_cap("Panels") &&
                        !api.has_cap("") &&
                        !api.has_cap("Notices") && table->has_cap(nullptr, 0) == 0 && table->has_cap(nullptr, 7) == 0;
@@ -2542,7 +2546,7 @@ void run_abi(const std::wstring& dll) {
             GRACEUI_API1_COVERS(table, log),
         "table",
         "%u bytes (this header's %zu), ABI 1.%u, GraceUI %u.%u.%u; every one of the 20 slots %s; majors 0, 2 and "
-        "0xFFFFFFFF %s; has_cap: notices, panels, textures, faces, input, world-state, hotkeys and pages yes, log, "
+        "0xFFFFFFFF %s; has_cap: notices, panels, textures, faces, input, world-state, hotkeys, pages and holder-events yes, log, "
         "\"Panels\", \"\", \"Notices\" and a null name %s",
         table->size, sizeof(GraceUiApi1), table->abi_minor, GRACEUI_VERSION_MAJOR(table->graceui_version),
         GRACEUI_VERSION_MINOR(table->graceui_version), GRACEUI_VERSION_PATCH(table->graceui_version),
@@ -2961,12 +2965,14 @@ struct HarnessMod {
   }
 
   GraceUiInputAnswer request(std::uint64_t panel, std::uint32_t kind, GraceUiStatus& status,
-                             std::uint32_t wants = GRACEUI_WANT_KEYBOARD | GRACEUI_WANT_MOUSE) const {
+                             std::uint32_t wants = GRACEUI_WANT_KEYBOARD | GRACEUI_WANT_MOUSE,
+                             std::uint32_t flags = 0) const {
     GraceUiInputRequest request{};
     request.size = sizeof request;
     request.kind = kind;
     request.wants = wants;
     request.panel = panel;
+    request.flags = flags;
     GraceUiInputAnswer answer{};
     answer.size = sizeof answer;
     status = table->request_input(me, &request, &answer);
@@ -4754,12 +4760,432 @@ void run_spike(const std::wstring& dll, bool tools_first) {
     const Json typing = typed.empty() ? Json::object() : typed.front();
     const Json passed = typing.value("passed", Json::array());
     const bool none_passed = passed.size() == 5 && passed[0] == 0 && passed[2] == 0 && passed[3] == 0 && passed[4] == 0;
+    // From 0.2.1 (D176) its own panel receives the holder's events: every character GraceUI's Dear ImGui counted, the
+    // keys, the pointer, and its end as GraceUI recorded it; and its own Dear ImGui takes every character feed gave it.
+    const Json received = typing.value("received", Json::array());
+    const bool panel_received = received.size() == 4 && received[0] == typing["chars"] && received[1] >= 10 &&
+                                received[2] >= 1 && typing["end_event"] == "released" &&
+                                number(typing, "dropped") == 0 && typing["imgui_chars"] == received[0];
     check(held && typed.size() == 1 && typing["end"] == "released" && number(typing, "held_ms") >= 3000 &&
-              number(typing, "chars") >= 5 && none_passed && g_seen.chars == 0 && grace.input().holder_kind == 0,
+              number(typing, "chars") >= 5 && none_passed && panel_received && g_seen.chars == 0 &&
+              grace.input().holder_kind == 0,
           "spike: the typing test",
           "F9: the observer's panel %s input; its line: %s; characters reaching the game: %d; the holder after: %u",
           held ? "took" : "DID NOT TAKE", typing.dump().c_str(), g_seen.chars, grace.input().holder_kind);
   }
+  grace.print_log();
+}
+
+// ---- A holder's events (D176): a mod that holds input with GRACEUI_INPUT_EVENTS gets what the player does through
+// poll: keys with their modifiers and repeats, characters (a surrogate pair joined, WM_UNICHAR's, an IME's result), the
+// pointer in its panel's pixels, a pad's buttons while it takes the pad, and the end of its holder with the reason, last
+// and once. A mod that asked without the flag, a request of ABI 1.0's size, and a poll of ABI 1.0's event size get none
+// of them; a mod that does not hold input gets none; set_caret places the IME's windows at the holder's caret alone.
+
+constexpr std::size_t kHolderEventsKept = 256;  // a holder's events waiting at most (graceui.h)
+
+std::vector<GraceUiEvent> poll_holder(const GraceUiApi1* table, GraceUiConsumer me,
+                                      std::uint32_t size = sizeof(GraceUiEvent)) {
+  std::vector<GraceUiEvent> got;
+  for (int i = 0; i < 1000; ++i) {
+    GraceUiEvent event{};
+    event.size = size;
+    if (table->poll(me, &event) != GRACEUI_OK || event.kind == GRACEUI_EVENT_NONE) {
+      break;
+    }
+    got.push_back(event);
+  }
+  return got;
+}
+
+std::string events_text(const std::vector<GraceUiEvent>& events) {
+  std::string text;
+  for (const GraceUiEvent& e : events) {
+    char one[96];
+    switch (e.kind) {
+      case GRACEUI_EVENT_KEY:
+        std::snprintf(one, sizeof one, "key %02X%s%s mod %u", e.key, e.pressed != 0 ? " down" : " up",
+                      e.repeat != 0 ? " repeat" : "", e.modifiers);
+        break;
+      case GRACEUI_EVENT_CHARACTER: std::snprintf(one, sizeof one, "char U+%04X", e.code_point); break;
+      case GRACEUI_EVENT_POINTER:
+        if (e.button_event != 0) {
+          std::snprintf(one, sizeof one, "button %u %s at %.0f,%.0f", e.button, e.pressed != 0 ? "down" : "up", e.x,
+                        e.y);
+        } else if (e.wheel_x != 0.0f || e.wheel_y != 0.0f) {
+          std::snprintf(one, sizeof one, "wheel %.1f,%.1f", e.wheel_x, e.wheel_y);
+        } else {
+          std::snprintf(one, sizeof one, "move %.0f,%.0f", e.x, e.y);
+        }
+        break;
+      case GRACEUI_EVENT_PAD:
+        std::snprintf(one, sizeof one, "pad %u %04X %s", e.pad, e.button, e.pressed != 0 ? "down" : "up");
+        break;
+      case GRACEUI_EVENT_INPUT_ENDED: std::snprintf(one, sizeof one, "ended %u", e.why); break;
+      default: std::snprintf(one, sizeof one, "kind %u", e.kind); break;
+    }
+    text += text.empty() ? "" : "; ";
+    text += one;
+  }
+  return text.empty() ? "none" : text;
+}
+
+bool only_ended(const std::vector<GraceUiEvent>& events, std::uint32_t why) {
+  return events.size() == 1 && events[0].kind == GRACEUI_EVENT_INPUT_ENDED && events[0].why == why;
+}
+
+void run_holder_events(const std::wstring& dll) {
+  Game game(false);
+  const HWND window = game.window();
+  cursor_into(window);
+  pump_messages();
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  // Three mods: one that asks for its events, one that asks without the flag, and one built against ABI 1.0's sizes.
+  const Connected first = connect(table, request_for("harness-mod", GRACEUI_VERSION_PACK(0, 2, 1), "Harness mod",
+                                                     "panels textures input world-state holder-events"));
+  const Connected second =
+      connect(table, request_for("plain-mod", GRACEUI_VERSION_PACK(0, 1, 0), "Plain mod", "panels textures input"));
+  const Connected third =
+      connect(table, request_for("older-mod", GRACEUI_VERSION_PACK(0, 1, 0), "Older mod", "panels textures input"));
+  HarnessMod mod{table, first.answer.consumer, 0};
+  HarnessMod plain{table, second.answer.consumer, 0};
+  HarnessMod older{table, third.answer.consumer, 0};
+  const std::uint32_t white_pixels[16] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                          0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                          0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
+  std::uint64_t field = 0, plain_field = 0, older_field = 0;
+  const bool made = mod.texture(4, 4, white_pixels, mod.white) == GRACEUI_OK &&
+                    plain.texture(4, 4, white_pixels, plain.white) == GRACEUI_OK &&
+                    older.texture(4, 4, white_pixels, older.white) == GRACEUI_OK &&
+                    mod.panel(GRACEUI_LAYER_MODAL, GRACEUI_ANCHOR_TOP_LEFT, 200, 100, 300, 120,
+                              GRACEUI_PANEL_TAKES_INPUT, field) == GRACEUI_OK &&
+                    plain.panel(GRACEUI_LAYER_MODAL, GRACEUI_ANCHOR_TOP_LEFT, 20, 20, 100, 60,
+                                GRACEUI_PANEL_TAKES_INPUT, plain_field) == GRACEUI_OK &&
+                    older.panel(GRACEUI_LAYER_MODAL, GRACEUI_ANCHOR_TOP_LEFT, 20, 200, 100, 60,
+                                GRACEUI_PANEL_TAKES_INPUT, older_field) == GRACEUI_OK;
+  mod.quad(field, 300, 120, Colour{40, 60, 90});
+  plain.quad(plain_field, 100, 60, Colour{90, 60, 40});
+  older.quad(older_field, 100, 60, Colour{60, 90, 40});
+  for (const auto& [owner, id] : {std::pair{mod.me, field}, std::pair{plain.me, plain_field},
+                                  std::pair{older.me, older_field}}) {
+    table->show_panel(owner, id);
+  }
+  start_host(game, grace);
+  frames(game, 30);
+  until_atlas(game, grace);
+  const bool cap = table->has_cap(GRACEUI_CAP_HOLDER_EVENTS, std::strlen(GRACEUI_CAP_HOLDER_EVENTS)) != 0;
+  const bool covers = GRACEUI_API1_COVERS(table, set_caret) && table->set_caret != nullptr;
+  check(made && first.status == GRACEUI_OK && second.status == GRACEUI_OK && third.status == GRACEUI_OK && cap &&
+            covers && table->abi_minor == GRACEUI_ABI1_MINOR && GRACEUI_ABI1_MINOR == 1u,
+        "holder events: the capability",
+        "three mods connected and their panels made (%s); has_cap(\"%s\") %s; the table %u bytes, minor %u, %s "
+        "set_caret",
+        made ? "yes" : "NO", GRACEUI_CAP_HOLDER_EVENTS, cap ? "yes" : "NO", table->size, table->abi_minor,
+        covers ? "covering" : "NOT COVERING");
+
+  // 1. Keys and characters. Nothing waits before the grant; then a key's press, its auto-repeat and its release, a
+  // character, a surrogate pair joined, WM_UNICHAR's and an IME's result, in order, and none of them reaches the game.
+  // A key that keeps no character (the left arrow), so that TranslateMessage adds none of its own.
+  const std::vector<GraceUiEvent> before = poll_holder(table, mod.me);
+  GraceUiStatus status = GRACEUI_FAULT;
+  const GraceUiInputAnswer granted = mod.request(field, GRACEUI_HOLDER_MODAL, status,
+                                                 GRACEUI_WANT_KEYBOARD | GRACEUI_WANT_MOUSE, GRACEUI_INPUT_EVENTS);
+  frames(game, 2);
+  g_seen = Seen{};
+  post_key(window, VK_LEFT, 0x4B, true, false);
+  post_key(window, VK_LEFT, 0x4B, true, true);
+  post_key(window, VK_LEFT, 0x4B, false, false);
+  PostMessageW(window, WM_CHAR, 'a', 1);
+  PostMessageW(window, WM_CHAR, 0xD83D, 1);
+  PostMessageW(window, WM_CHAR, 0xDE42, 1);
+  PostMessageW(window, WM_UNICHAR, 0x1F600, 0);
+  pump_messages();
+  SendMessageW(window, WM_IME_CHAR, 0x3044, 1);
+  frames(game, 2);
+  const std::vector<GraceUiEvent> typed = poll_holder(table, mod.me);
+  const auto key_is = [](const GraceUiEvent& e, std::uint32_t vk, bool pressed, bool repeat) {
+    return e.kind == GRACEUI_EVENT_KEY && e.key == vk && (e.pressed != 0) == pressed && (e.repeat != 0) == repeat &&
+           e.modifiers == 0 && e.dropped == 0;
+  };
+  const auto char_is = [](const GraceUiEvent& e, std::uint32_t code_point) {
+    return e.kind == GRACEUI_EVENT_CHARACTER && e.code_point == code_point;
+  };
+  const bool typed_ok = typed.size() == 7 && key_is(typed[0], VK_LEFT, true, false) &&
+                        key_is(typed[1], VK_LEFT, true, true) && key_is(typed[2], VK_LEFT, false, false) &&
+                        char_is(typed[3], 'a') && char_is(typed[4], 0x1F642) && char_is(typed[5], 0x1F600) &&
+                        char_is(typed[6], 0x3044);
+  check(before.empty() && status == GRACEUI_OK && granted.answer == GRACEUI_INPUT_GRANTED && typed_ok &&
+            g_seen.key_down[VK_LEFT] == 0 && g_seen.chars == 0,
+        "holder events: keys and characters",
+        "before the grant: %s; granted with the flag (%s); then: %s; keys and characters reaching the game: %d, %d",
+        events_text(before).c_str(), answer_name(granted.answer), events_text(typed).c_str(), g_seen.key_down[VK_LEFT],
+        g_seen.chars);
+
+  // 2. Modifiers, as the keyboard holds them: Ctrl+F2 injected, with Ctrl's own press and release.
+  inject_key(VK_CONTROL, 0x1D, true);
+  settle();
+  inject_key(VK_F2, 0x3C, true);
+  settle();
+  inject_key(VK_F2, 0x3C, false);
+  settle();
+  inject_key(VK_CONTROL, 0x1D, false);
+  settle();
+  frames(game, 2);
+  const std::vector<GraceUiEvent> chord = poll_holder(table, mod.me);
+  bool f2_with_ctrl = false;
+  bool ctrl_up_plain = false;
+  for (const GraceUiEvent& e : chord) {
+    f2_with_ctrl = f2_with_ctrl || (e.kind == GRACEUI_EVENT_KEY && e.key == VK_F2 && e.pressed != 0 &&
+                                    e.modifiers == GRACEUI_MOD_CTRL);
+    ctrl_up_plain = ctrl_up_plain || (e.kind == GRACEUI_EVENT_KEY && e.key == VK_CONTROL && e.pressed == 0 &&
+                                      e.modifiers == 0);
+  }
+  check(f2_with_ctrl && ctrl_up_plain && g_seen.key_down[VK_F2] == 0, "holder events: modifiers",
+        "Ctrl+F2 injected: %s; F2 reaching the game: %d", events_text(chord).c_str(), g_seen.key_down[VK_F2]);
+
+  // 3. The pointer, in the panel's own pixels (the panel at 200,100): three moves coalesced to the newest, a click
+  // where it rests, the wheel both ways, and a move outside the panel, which comes as a position outside it.
+  PostMessageW(window, WM_MOUSEMOVE, 0, MAKELPARAM(210, 110));
+  PostMessageW(window, WM_MOUSEMOVE, 0, MAKELPARAM(230, 120));
+  PostMessageW(window, WM_MOUSEMOVE, 0, MAKELPARAM(250, 130));
+  PostMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(250, 130));
+  PostMessageW(window, WM_LBUTTONUP, 0, MAKELPARAM(250, 130));
+  PostMessageW(window, WM_MOUSEWHEEL, MAKEWPARAM(0, 120), 0);
+  PostMessageW(window, WM_MOUSEHWHEEL, MAKEWPARAM(0, static_cast<WORD>(-240)), 0);
+  PostMessageW(window, WM_MOUSEMOVE, 0, MAKELPARAM(100, 50));
+  pump_messages();
+  frames(game, 2);
+  const std::vector<GraceUiEvent> pointed = poll_holder(table, mod.me);
+  const auto at = [](const GraceUiEvent& e, float x, float y) { return e.x == x && e.y == y; };
+  const bool pointer_ok =
+      pointed.size() == 6 && pointed[0].kind == GRACEUI_EVENT_POINTER && pointed[0].button_event == 0 &&
+      at(pointed[0], 50, 30) && pointed[1].button_event == 1 && pointed[1].button == GRACEUI_BUTTON_LEFT &&
+      pointed[1].pressed == 1 && at(pointed[1], 50, 30) && pointed[2].button_event == 1 && pointed[2].pressed == 0 &&
+      pointed[3].wheel_y == 1.0f && pointed[3].wheel_x == 0.0f && pointed[4].wheel_x == -2.0f &&
+      pointed[4].wheel_y == 0.0f && pointed[5].button_event == 0 && at(pointed[5], -100, -50);
+  check(pointer_ok, "holder events: the pointer", "%s", events_text(pointed).c_str());
+
+  // 4. Only the holder's mod, and only an event of ABI 1.1's size: the other two mods find nothing, and a poll of ABI
+  // 1.0's size leaves the holder's events waiting for the next poll of 1.1's size.
+  post_key(window, VK_HOME, 0x47, true, false);
+  pump_messages();
+  const std::vector<GraceUiEvent> to_plain = poll_holder(table, plain.me);
+  const std::vector<GraceUiEvent> to_older = poll_holder(table, older.me, 48);
+  const std::vector<GraceUiEvent> small_poll = poll_holder(table, mod.me, 48);
+  const std::vector<GraceUiEvent> full_poll = poll_holder(table, mod.me);
+  post_key(window, VK_HOME, 0x47, false, false);
+  pump_messages();
+  poll_holder(table, mod.me);
+  check(to_plain.empty() && to_older.empty() && small_poll.empty() && full_poll.size() == 1 &&
+            key_is(full_poll[0], VK_HOME, true, false),
+        "holder events: only the holder's, at 1.1's size",
+        "another mod polled: %s; a mod at 1.0's size: %s; the holder at 1.0's size: %s, then at 1.1's: %s",
+        events_text(to_plain).c_str(), events_text(to_older).c_str(), events_text(small_poll).c_str(),
+        events_text(full_poll).c_str());
+
+  // 5. Each way out ends with INPUT_ENDED and its reason, after the events not yet taken are discarded: released,
+  // the panel hidden, the player's exit (the menu key twice), danger and focus lost. A key waits before each.
+  const auto hold = [&] {
+    GraceUiStatus asked = GRACEUI_FAULT;
+    const GraceUiInputAnswer answer = mod.request(field, GRACEUI_HOLDER_MODAL, asked,
+                                                  GRACEUI_WANT_KEYBOARD | GRACEUI_WANT_MOUSE, GRACEUI_INPUT_EVENTS);
+    frames(game, 2);
+    post_key(window, VK_LEFT, 0x4B, true, false);
+    post_key(window, VK_LEFT, 0x4B, false, false);
+    pump_messages();
+    return asked == GRACEUI_OK && answer.answer == GRACEUI_INPUT_GRANTED;
+  };
+  bool held_each = hold();
+  table->release_input(mod.me);
+  const std::vector<GraceUiEvent> released = poll_holder(table, mod.me);
+  held_each = hold() && held_each;
+  table->hide_panel(mod.me, field);
+  const std::vector<GraceUiEvent> hidden = poll_holder(table, mod.me);
+  table->show_panel(mod.me, field);
+  frames(game, 2);
+  held_each = hold() && held_each;
+  post_key(window, VK_F5, kScanF5, true, false);
+  post_key(window, VK_F5, kScanF5, false, false);
+  pump_messages();
+  frames(game, 2);
+  post_key(window, VK_F5, kScanF5, true, false);
+  post_key(window, VK_F5, kScanF5, false, false);
+  pump_messages();
+  frames(game, 2);
+  const std::vector<GraceUiEvent> exited = poll_holder(table, mod.me);
+  held_each = hold() && held_each;
+  mod.world(GRACEUI_WORLD_DANGER);
+  frames(game, 2);
+  const std::vector<GraceUiEvent> danger = poll_holder(table, mod.me);
+  mod.world(0);
+  frames(game, 2);
+  held_each = hold() && held_each;
+  const HWND other = CreateWindowExW(0, L"GraceHarness", L"other", WS_OVERLAPPEDWINDOW, 700, 400, 200, 120, nullptr,
+                                     nullptr, GetModuleHandleW(nullptr), nullptr);
+  ShowWindow(other, SW_SHOW);
+  SetForegroundWindow(other);
+  SetFocus(other);
+  pump_messages();
+  frames(game, 3);
+  const std::vector<GraceUiEvent> unfocused = poll_holder(table, mod.me);
+  if (other != nullptr) {
+    DestroyWindow(other);
+  }
+  cursor_into(window);
+  pump_messages();
+  frames(game, 3);
+  const std::vector<GraceUiEvent> after_end = poll_holder(table, mod.me);
+  check(held_each && only_ended(released, GRACEUI_CLOSED_RELEASED) && only_ended(hidden, GRACEUI_CLOSED_RELEASED) &&
+            only_ended(exited, GRACEUI_CLOSED_PLAYER) && only_ended(danger, GRACEUI_CLOSED_DANGER) &&
+            only_ended(unfocused, GRACEUI_CLOSED_FOCUS_LOST) && after_end.empty(),
+        "holder events: each way out",
+        "each grant %s; released: %s; hidden: %s; the player's exit: %s; danger: %s; focus lost: %s; after: %s",
+        held_each ? "granted" : "NOT ALWAYS GRANTED", events_text(released).c_str(), events_text(hidden).c_str(),
+        events_text(exited).c_str(), events_text(danger).c_str(), events_text(unfocused).c_str(),
+        events_text(after_end).c_str());
+
+  // 6. Without the flag, and with a request of ABI 1.0's size (whose flags GraceUI never reads, whatever follows it in
+  // memory), a holder's mod gets none of them; a holder of the menu's is unchanged.
+  GraceUiStatus plain_status = GRACEUI_FAULT;
+  const GraceUiInputAnswer plain_granted = plain.request(plain_field, GRACEUI_HOLDER_MODAL, plain_status);
+  frames(game, 2);
+  post_key(window, VK_LEFT, 0x4B, true, false);
+  PostMessageW(window, WM_CHAR, 'b', 1);
+  post_key(window, VK_LEFT, 0x4B, false, false);
+  pump_messages();
+  const std::vector<GraceUiEvent> plain_got = poll_holder(table, plain.me);
+  table->release_input(plain.me);
+  const std::vector<GraceUiEvent> plain_end = poll_holder(table, plain.me);
+  GraceUiInputRequest old_request{};
+  old_request.size = 24;  // ABI 1.0's GraceUiInputRequest
+  old_request.kind = GRACEUI_HOLDER_MODAL;
+  old_request.wants = GRACEUI_WANT_KEYBOARD | GRACEUI_WANT_MOUSE;
+  old_request.panel = older_field;
+  old_request.flags = GRACEUI_INPUT_EVENTS;  // past its size: not read
+  GraceUiInputAnswer old_answer{};
+  old_answer.size = sizeof old_answer;
+  const GraceUiStatus old_status = table->request_input(older.me, &old_request, &old_answer);
+  frames(game, 2);
+  PostMessageW(window, WM_CHAR, 'c', 1);
+  pump_messages();
+  const std::vector<GraceUiEvent> older_got = poll_holder(table, older.me);
+  table->release_input(older.me);
+  const std::vector<GraceUiEvent> older_end = poll_holder(table, older.me);
+  check(plain_status == GRACEUI_OK && plain_granted.answer == GRACEUI_INPUT_GRANTED && plain_got.empty() &&
+            plain_end.empty() && old_status == GRACEUI_OK && old_answer.answer == GRACEUI_INPUT_GRANTED &&
+            older_got.empty() && older_end.empty(),
+        "holder events: none without the flag",
+        "a mod granted without the flag (%s) got %s, and at its end %s; a request of 1.0's size (%s) got %s, and at its "
+        "end %s",
+        answer_name(plain_granted.answer), events_text(plain_got).c_str(), events_text(plain_end).c_str(),
+        answer_name(old_answer.answer), events_text(older_got).c_str(), events_text(older_end).c_str());
+
+  // 7. A pad's buttons: none while the holder does not take the pad; one event a change while it does, by pad.
+  bool pad_held = hold();
+  poll_holder(table, mod.me);  // the key hold() leaves
+  grace.pad(0, XINPUT_GAMEPAD_A);
+  grace.pad(0, 0);
+  const std::vector<GraceUiEvent> pad_unwanted = poll_holder(table, mod.me);
+  table->release_input(mod.me);
+  poll_holder(table, mod.me);
+  GraceUiStatus pad_status = GRACEUI_FAULT;
+  pad_held = mod.request(field, GRACEUI_HOLDER_MODAL, pad_status,
+                         GRACEUI_WANT_KEYBOARD | GRACEUI_WANT_MOUSE | GRACEUI_WANT_PAD, GRACEUI_INPUT_EVENTS)
+                     .answer == GRACEUI_INPUT_GRANTED &&
+             pad_held;
+  frames(game, 2);
+  grace.pad(0, XINPUT_GAMEPAD_A);
+  grace.pad(0, XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B);
+  grace.pad(1, XINPUT_GAMEPAD_Y);
+  grace.pad(0, 0);
+  grace.pad(1, 0);
+  const std::vector<GraceUiEvent> pads = poll_holder(table, mod.me);
+  const auto pad_is = [](const GraceUiEvent& e, std::uint32_t pad, std::uint32_t button, bool pressed) {
+    return e.kind == GRACEUI_EVENT_PAD && e.pad == pad && e.button == button && (e.pressed != 0) == pressed;
+  };
+  const bool pads_ok = pads.size() == 6 && pad_is(pads[0], 0, XINPUT_GAMEPAD_A, true) &&
+                       pad_is(pads[1], 0, XINPUT_GAMEPAD_B, true) && pad_is(pads[2], 1, XINPUT_GAMEPAD_Y, true) &&
+                       pad_is(pads[3], 0, XINPUT_GAMEPAD_A, false) && pad_is(pads[4], 0, XINPUT_GAMEPAD_B, false) &&
+                       pad_is(pads[5], 1, XINPUT_GAMEPAD_Y, false);
+  table->release_input(mod.me);
+  poll_holder(table, mod.me);
+  check(pad_held && pad_unwanted.empty() && pads_ok, "holder events: a pad's buttons",
+        "a holder that does not take the pad: %s; one that does: %s", events_text(pad_unwanted).c_str(),
+        events_text(pads).c_str());
+
+  // 8. The caret: the holder's places the IME's composition window in the game window's pixels; another mod's, or one
+  // on a panel not its own, or one not finite, counts for nothing.
+  hold();
+  poll_holder(table, mod.me);
+  GraceUiCaret caret{};
+  caret.size = sizeof caret;
+  caret.panel = field;
+  caret.x = 10;
+  caret.y = 20;
+  caret.height = 18;
+  const GraceUiStatus caret_status = table->set_caret(mod.me, &caret);
+  const auto composition_at = [&](POINT& where) {
+    SendMessageW(window, WM_IME_STARTCOMPOSITION, 0, 0);
+    COMPOSITIONFORM composition{};
+    const HIMC context = ImmGetContext(window);
+    const bool read = context != nullptr && ImmGetCompositionWindow(context, &composition) != FALSE;
+    if (context != nullptr) {
+      ImmReleaseContext(window, context);
+    }
+    SendMessageW(window, WM_IME_ENDCOMPOSITION, 0, 0);
+    where = composition.ptCurrentPos;
+    return read;
+  };
+  POINT placed{};
+  const bool read_placed = composition_at(placed);
+  GraceUiCaret others = caret;
+  others.panel = plain_field;
+  others.x = 5;
+  others.y = 5;
+  const GraceUiStatus others_status = table->set_caret(plain.me, &others);  // not the holder: ignored
+  POINT after_others{};
+  const bool read_after = composition_at(after_others);
+  const GraceUiStatus not_its_panel = table->set_caret(plain.me, &caret);
+  GraceUiCaret bad = caret;
+  bad.x = std::numeric_limits<float>::quiet_NaN();
+  const GraceUiStatus not_finite = table->set_caret(mod.me, &bad);
+  table->release_input(mod.me);
+  poll_holder(table, mod.me);
+  check(caret_status == GRACEUI_OK && read_placed && placed.x == 210 && placed.y == 120 &&
+            others_status == GRACEUI_OK && read_after && after_others.x == 210 && after_others.y == 120 &&
+            not_its_panel == GRACEUI_REFUSED && not_finite == GRACEUI_REFUSED,
+        "holder events: the caret",
+        "the holder's caret at 10,20 in its panel (%s): the composition window at %ld,%ld; another mod's (%s): still at "
+        "%ld,%ld; on a panel not its own %s; not finite %s",
+        status_name(caret_status), placed.x, placed.y, status_name(others_status), after_others.x, after_others.y,
+        status_name(not_its_panel), status_name(not_finite));
+
+  // 9. A mod that polls too slowly: 300 characters, 256 kept and the rest counted on the first event it takes.
+  hold();
+  poll_holder(table, mod.me);
+  for (int i = 0; i < 300; ++i) {
+    PostMessageW(window, WM_CHAR, 'a' + i % 26, 1);
+  }
+  pump_messages();
+  const std::vector<GraceUiEvent> flood = poll_holder(table, mod.me);
+  std::uint32_t dropped = 0;
+  for (const GraceUiEvent& e : flood) {
+    dropped += e.dropped;
+  }
+  table->release_input(mod.me);
+  const std::vector<GraceUiEvent> flood_end = poll_holder(table, mod.me);
+  check(flood.size() == kHolderEventsKept && !flood.empty() && flood[0].dropped == 300 - flood.size() &&
+            dropped == flood[0].dropped && only_ended(flood_end, GRACEUI_CLOSED_RELEASED),
+        "holder events: a slow mod",
+        "300 characters waiting: %zu taken, %u dropped (counted on the first: %u); then %s", flood.size(), dropped,
+        flood.empty() ? 0u : flood[0].dropped, events_text(flood_end).c_str());
   grace.print_log();
 }
 
@@ -5191,6 +5617,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"spike-after") {
     std::printf("-- scenario: the spike observer and the stand-in overlay, loaded after GraceUI's hooks (D175)\n");
     run_spike(dll, false);
+  } else if (scenario == L"holder-events") {
+    std::printf("-- scenario: a holder's events for its mod through ABI 1.1 (D176)\n");
+    run_holder_events(dll);
   } else if (scenario == L"absent") {
     std::printf("-- scenario: graceui-sys with GraceUI not installed\n");
     run_absent();
@@ -5217,7 +5646,8 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-space", L"spike", L"spike-after"}) {
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-space", L"spike", L"spike-after",
+            L"holder-events"}) {
         run(child_scenario, dll, this_program());
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.

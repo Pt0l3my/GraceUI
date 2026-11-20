@@ -4,6 +4,7 @@
 // applies them to the session and logs, once, what a mod is refused. Nothing here reads a mod's memory: the DLL's abi
 // files copy it, through the functions they pass.
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <new>
 #include <string>
@@ -76,6 +77,59 @@ void apply_world(std::uint32_t flags) noexcept {
     // D78, D81: the browser view closes for the session; GraceUI 0.1 serves none yet.
     log_line("a world-state provider reports an anti-cheat: the browser view stays closed this session");
   }
+}
+
+// A holder's event as its mod reads it (D176): the pointer moved from the back buffer's pixels into the holding
+// panel's own, from its top-left corner.
+static_assert(static_cast<std::uint32_t>(grace::input::MailKind::key) == GRACEUI_EVENT_KEY &&
+              static_cast<std::uint32_t>(grace::input::MailKind::character) == GRACEUI_EVENT_CHARACTER &&
+              static_cast<std::uint32_t>(grace::input::MailKind::pointer) == GRACEUI_EVENT_POINTER &&
+              static_cast<std::uint32_t>(grace::input::MailKind::ended) == GRACEUI_EVENT_INPUT_ENDED &&
+              static_cast<std::uint32_t>(grace::input::MailKind::pad) == GRACEUI_EVENT_PAD);
+static_assert(static_cast<std::uint32_t>(grace::input::Closed::released) == GRACEUI_CLOSED_RELEASED &&
+              static_cast<std::uint32_t>(grace::input::Closed::menu_key) == GRACEUI_CLOSED_MENU_KEY &&
+              static_cast<std::uint32_t>(grace::input::Closed::danger) == GRACEUI_CLOSED_DANGER &&
+              static_cast<std::uint32_t>(grace::input::Closed::loading) == GRACEUI_CLOSED_LOADING &&
+              static_cast<std::uint32_t>(grace::input::Closed::focus_lost) == GRACEUI_CLOSED_FOCUS_LOST &&
+              static_cast<std::uint32_t>(grace::input::Closed::no_render) == GRACEUI_CLOSED_NO_RENDER &&
+              static_cast<std::uint32_t>(grace::input::Closed::fault) == GRACEUI_CLOSED_FAULT &&
+              static_cast<std::uint32_t>(grace::input::Closed::player) == GRACEUI_CLOSED_PLAYER);
+
+void fill_holder_event(GraceUiConsumer consumer, const grace::input::Mail& mail, std::uint32_t dropped,
+                       GraceUiEvent& out) noexcept {
+  out.kind = static_cast<std::uint32_t>(mail.kind);
+  out.key = mail.key;
+  out.modifiers = mail.modifiers;
+  out.pressed = mail.pressed;
+  out.repeat = mail.repeat;
+  out.code_point = mail.code_point;
+  out.button = mail.button;
+  out.button_event = mail.button_event;
+  out.pad = mail.pad;
+  out.why = mail.why;
+  out.dropped = dropped;
+  out.wheel_x = mail.wheel_x;
+  out.wheel_y = mail.wheel_y;
+  if (mail.kind != grace::input::MailKind::pointer) {
+    return;
+  }
+  std::uint32_t generation = 0;
+  std::uint64_t panel = 0;
+  grace::abi::PanelDesc desc;
+  std::uint32_t index = 0;
+  std::uint32_t width = 0;
+  std::uint32_t height = 0;
+  input::buffer_size(width, height);
+  float x0 = 0.0f;
+  float y0 = 0.0f;
+  if (session::input_panel(generation, panel) && generation == mail.generation &&
+      session::panels().find(consumer, panel, desc, index) == grace::abi::PanelResult::ok) {
+    const grace::abi::Rect rect = grace::abi::place(desc, static_cast<float>(width), static_cast<float>(height));
+    x0 = rect.x0;
+    y0 = rect.y0;
+  }
+  out.x = mail.x - x0;
+  out.y = mail.y - y0;
 }
 
 }  // namespace
@@ -298,7 +352,7 @@ GraceUiStatus submit(GraceUiConsumer consumer, std::uint64_t panel, const ListSh
 }
 
 GraceUiStatus request_input(GraceUiConsumer consumer, std::uint32_t kind, std::uint32_t wants, std::uint64_t panel,
-                            GraceUiInputAnswer& out) noexcept {
+                            std::uint32_t flags, GraceUiInputAnswer& out) noexcept {
   GraceUiStatus status = GRACEUI_OK;
   const std::uint32_t owner = admitted(consumer, status);
   if (owner == 0) {
@@ -309,10 +363,11 @@ GraceUiStatus request_input(GraceUiConsumer consumer, std::uint32_t kind, std::u
   std::uint32_t index = 0;
   const bool modal = kind == GRACEUI_HOLDER_MODAL;
   if ((kind != GRACEUI_HOLDER_PANEL && !modal) || wants == 0 || (wants & ~std::uint32_t{7}) != 0 ||
+      (flags & ~std::uint32_t{GRACEUI_INPUT_EVENTS}) != 0 ||
       panels.find(consumer, panel, desc, index) != grace::abi::PanelResult::ok ||
       (desc.flags & GRACEUI_PANEL_TAKES_INPUT) == 0 || modal != (desc.layer == GRACEUI_LAYER_MODAL)) {
-    refused("request_input", "a request that names no panel of the mod's that may take input, or a kind or wants "
-                             "that do not suit it");
+    refused("request_input", "a request that names no panel of the mod's that may take input, or a kind, wants or "
+                             "flags that do not suit it");
     return GRACEUI_REFUSED;
   }
   grace::abi::PanelView view;
@@ -328,6 +383,11 @@ GraceUiStatus request_input(GraceUiConsumer consumer, std::uint32_t kind, std::u
   switch (answer.answer) {
     case grace::input::Answer::granted:
       session::set_input_panel(answer.holder.generation, panel);
+      if ((flags & GRACEUI_INPUT_EVENTS) != 0) {
+        // Its holder's events go to it from now (D176); a request that ends at once below ends them too.
+        input::holder_mail()->enable(static_cast<std::uint16_t>(owner), consumer, answer.holder.generation);
+        input::holder_mail_enabled(answer.holder.generation);
+      }
       // The panel may have been hidden or removed (its mod's other thread, or its disconnect) between the check above
       // and the grant, and that thread then found no holder of it to end: asked again here, under the panels' lock.
       if (!panels.shown(consumer, panel)) {
@@ -364,6 +424,37 @@ GraceUiStatus release_input(GraceUiConsumer consumer) noexcept {
     return status;
   }
   input::release(static_cast<std::uint16_t>(owner));  // nothing if it does not hold input
+  return GRACEUI_OK;
+}
+
+GraceUiStatus set_caret(GraceUiConsumer consumer, std::uint64_t panel, float x, float y, float height) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  const std::uint32_t owner = admitted(consumer, status);
+  if (owner == 0) {
+    return status;
+  }
+  grace::abi::PanelDesc desc;
+  std::uint32_t index = 0;
+  const bool finite = std::isfinite(x) && std::isfinite(y) && std::isfinite(height) && height >= 0.0f &&
+                      std::fabs(x) < 1.0e6f && std::fabs(y) < 1.0e6f && height < 1.0e6f;
+  if (!finite || session::panels().find(consumer, panel, desc, index) != grace::abi::PanelResult::ok) {
+    refused("set_caret", "a caret that is not finite, or a panel not the mod's");
+    return GRACEUI_REFUSED;
+  }
+  if (input::capture().holder().owner != owner) {
+    return GRACEUI_OK;  // only the holder's caret counts: a mod's field has none while it does not hold input
+  }
+  if (height <= 0.0f) {
+    input::set_mod_caret(static_cast<std::uint16_t>(owner), 0, 0, 0);
+    return GRACEUI_OK;
+  }
+  std::uint32_t width = 0;
+  std::uint32_t buffer_height = 0;
+  input::buffer_size(width, buffer_height);
+  const grace::abi::Rect rect = grace::abi::place(desc, static_cast<float>(width), static_cast<float>(buffer_height));
+  input::set_mod_caret(static_cast<std::uint16_t>(owner), static_cast<std::int32_t>(std::lround(rect.x0 + x)),
+                       static_cast<std::int32_t>(std::lround(rect.y0 + y)),
+                       static_cast<std::int32_t>(std::lround(height)));
   return GRACEUI_OK;
 }
 
@@ -469,11 +560,22 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
   return added == grace::input::Added::unbound ? GRACEUI_UNBOUND : GRACEUI_OK;  // D164: the mod learns which
 }
 
-GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol) noexcept {
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder) noexcept {
   GraceUiStatus status = GRACEUI_OK;
   const std::uint32_t owner = admitted(consumer, status);
   if (owner == 0) {
     return status;
+  }
+  try {
+    grace::input::Mail mail;
+    std::uint32_t dropped = 0;
+    if (holder && input::holder_mail()->take(static_cast<std::uint16_t>(owner), consumer, mail, dropped)) {
+      fill_holder_event(consumer, mail, dropped, out);
+      return GRACEUI_OK;
+    }
+  } catch (...) {
+    fault("poll");
+    return GRACEUI_FAULT;
   }
   grace::input::Press press;
   if (input::hotkeys().take(static_cast<std::uint16_t>(owner), press)) {

@@ -51,6 +51,7 @@ grace::abi::Panels& panels() noexcept { return stores().panels; }
 grace::abi::Registry& registry() noexcept { return stores().registry; }
 grace::abi::World& world() noexcept { return stores().world; }
 void allocate() {
+  input::make_holder_mail();  // a holder's events for its mod (D176), before any mod has a table
   (void)stores();
   (void)spaces::registry();  // the mods' spaces (D169)
 }
@@ -222,7 +223,7 @@ bool log_connect_failure() noexcept {
 bool has_cap(std::string_view name) noexcept {
   return name == GRACEUI_CAP_NOTICES || name == GRACEUI_CAP_PANELS || name == GRACEUI_CAP_TEXTURES ||
          name == GRACEUI_CAP_FACES || name == GRACEUI_CAP_INPUT || name == GRACEUI_CAP_WORLD_STATE ||
-         name == GRACEUI_CAP_HOTKEYS || name == GRACEUI_CAP_PAGES;
+         name == GRACEUI_CAP_HOTKEYS || name == GRACEUI_CAP_PAGES || name == GRACEUI_CAP_HOLDER_EVENTS;
 }
 
 grace::abi::ConnectResult connect(const grace::abi::ConnectRequest& request) noexcept {

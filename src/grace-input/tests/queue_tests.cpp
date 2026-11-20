@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <thread>
+#include <vector>
 
 #include "grace/input/queue.h"
 
@@ -99,4 +100,72 @@ TEST_CASE("the newest value read while two threads write: never torn") {
   second.join();
   CHECK(torn == 0);
   CHECK(read > 0);
+}
+
+TEST_CASE("the many-to-many ring keeps order for one producer, drops the newest when full and counts them (D176)") {
+  grace::input::MpmcRing<std::uint32_t, 4> ring;
+  std::uint32_t got = 0;
+  CHECK_FALSE(ring.pop(got));
+  for (std::uint32_t i = 1; i <= 6; ++i) {
+    CHECK(ring.push(i) == (i <= 4));
+  }
+  CHECK(ring.take_dropped() == 2);
+  CHECK(ring.take_dropped() == 0);
+  for (std::uint32_t want = 1; want <= 4; ++want) {
+    REQUIRE(ring.pop(got));
+    CHECK(got == want);
+  }
+  CHECK_FALSE(ring.pop(got));
+  CHECK(ring.push(7));  // room again, the slots reused
+  REQUIRE(ring.pop(got));
+  CHECK(got == 7);
+}
+
+TEST_CASE("the many-to-many ring between three producers and two consumers: each item arrives once") {
+  grace::input::MpmcRing<std::uint32_t, 64> ring;
+  constexpr std::uint32_t kEach = 20000;
+  std::atomic<std::uint32_t> taken{0};
+  std::atomic<std::uint64_t> sum{0};
+  std::atomic<bool> producing{true};
+  std::vector<std::thread> producers;
+  for (std::uint32_t p = 0; p < 3; ++p) {
+    producers.emplace_back([&ring, p] {
+      for (std::uint32_t i = 1; i <= kEach; ++i) {
+        while (!ring.push(p * kEach + i)) {
+          std::this_thread::yield();  // full: the test waits, GraceUI never does
+        }
+      }
+    });
+  }
+  std::vector<std::thread> consumers;
+  for (int c = 0; c < 2; ++c) {
+    consumers.emplace_back([&] {
+      std::uint32_t item = 0;
+      for (;;) {
+        if (ring.pop(item)) {
+          taken.fetch_add(1);
+          sum.fetch_add(item);
+        } else if (!producing.load()) {
+          return;
+        } else {
+          std::this_thread::yield();
+        }
+      }
+    });
+  }
+  for (std::thread& t : producers) {
+    t.join();
+  }
+  producing.store(false);
+  for (std::thread& t : consumers) {
+    t.join();
+  }
+  std::uint32_t rest = 0;
+  while (ring.pop(rest)) {
+    taken.fetch_add(1);
+    sum.fetch_add(rest);
+  }
+  const std::uint64_t n = 3ull * kEach;
+  CHECK(taken.load() == n);
+  CHECK(sum.load() == n * (n + 1) / 2);
 }

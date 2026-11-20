@@ -6,8 +6,9 @@
 //   - It finds GraceUI without loading it (by name, as it is looked for every 50 ms for up to ten minutes): GraceUI may
 //     come first (the launcher's --also) or after EldenNet, which loads it itself (graceui-sys's LOAD).
 //   - It connects as a mod (notices, panels, input, hotkeys), shows one banner, and on F9 opens a typing test: a panel
-//     that takes the keyboard, the mouse and the pad for 60 s, then gives them back. What is typed reaches GraceUI's own
-//     Dear ImGui (a mod's panel takes no characters through ABI 1); only how many is counted.
+//     that takes the keyboard, the mouse and the pad for 60 s, then gives them back. From GraceUI 0.2.1 it asks for its
+//     holder's events (D176) and feeds them to its own Dear ImGui (graceui::imgui::feed), whose field shows what is
+//     typed, on screen only; the report counts what the panel received, beside what GraceUI's own Dear ImGui counted.
 //   - Every 5 s it reads the test build's counters and writes one line of its report, graceui-spike.jsonl in that
 //     folder: JSON Lines, kind "graceui_spike", schema 1, in a closed vocabulary (numbers, fixed words and our own
 //     labels; no path, no name, nothing typed), each line stamped with QueryPerformanceCounter in milliseconds, the
@@ -356,23 +357,38 @@ void write_state(const Report& report, const Counters& counters) {
 
 // ---- The typing test's panel: a few lines drawn by its own headless Dear ImGui (no backend, invariant 16).
 
-void build(graceui::imgui::DrawList& list, std::uint32_t seconds_left, std::uint32_t characters) {
+// The field's text: on screen only, never in the report; emptied at each test's start.
+char g_typed[256] = {};
+
+// `fed`, if given, gains the characters its Dear ImGui took at this frame (what feed gave it, D176).
+void build(graceui::imgui::DrawList& list, std::uint32_t seconds_left, std::uint32_t characters, bool field,
+           bool focus_field, std::uint32_t* fed = nullptr) {
   constexpr float kWidth = GRACE_SPIKE_WIDTH;
   constexpr float kHeight = GRACE_SPIKE_HEIGHT;
   ImGuiIO& io = ImGui::GetIO();
   io.DisplaySize = ImVec2(kWidth, kHeight);
-  io.DeltaTime = 0.1f;
+  io.DeltaTime = 1.0f / 30.0f;
   ImGui::NewFrame();
+  if (fed != nullptr) {
+    *fed += static_cast<std::uint32_t>(io.InputQueueCharacters.Size);
+  }
   ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
   ImGui::SetNextWindowSize(ImVec2(kWidth, kHeight));
   ImGui::Begin("grace-spike", nullptr,
                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                   ImGuiWindowFlags_NoInputs);
+                   (field ? 0 : ImGuiWindowFlags_NoInputs));
   ImGui::TextUnformatted("Typing test: type anything, W, A, S and D among it, and move the mouse.");
   ImGui::TextUnformatted("The Tarnished should not move. Hold Esc for a second to stop early.");
   ImGui::Separator();
   ImGui::Text("Seconds left: %u", seconds_left);
   ImGui::Text("Characters counted: %u", characters);
+  if (field) {
+    if (focus_field) {
+      ImGui::SetKeyboardFocusHere();
+    }
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputText("##typed", g_typed, sizeof g_typed);
+  }
   ImGui::End();
   ImGui::Render();
   list.build(*ImGui::GetDrawData(), kWidth, kHeight);
@@ -380,9 +396,31 @@ void build(graceui::imgui::DrawList& list, std::uint32_t seconds_left, std::uint
 
 struct Typing {
   bool on = false;
+  bool events = false;  // it asked for its holder's events (GraceUI 0.2.1, D176)
+  bool focus = false;   // its field takes the keyboard focus at the next frame
   std::int64_t started = 0;
   GraceUiTestInput base{};
+  std::uint32_t received[4] = {};  // what its panel received: characters, keys, pointer events, pad events
+  std::uint32_t dropped = 0;
+  std::uint32_t ended = 0;  // INPUT_ENDED's why; 0 before it came
+  std::uint32_t imgui_chars = 0;  // the characters its Dear ImGui took from what feed gave it
 };
+
+// One event of its holder's, fed to its Dear ImGui and counted.
+void take(Typing& typing, const GraceUiEvent& event) {
+  if (!graceui::imgui::feed(ImGui::GetIO(), event)) {
+    return;
+  }
+  typing.dropped += event.dropped;
+  switch (event.kind) {
+    case GRACEUI_EVENT_CHARACTER: ++typing.received[0]; break;
+    case GRACEUI_EVENT_KEY: ++typing.received[1]; break;
+    case GRACEUI_EVENT_POINTER: ++typing.received[2]; break;
+    case GRACEUI_EVENT_PAD: ++typing.received[3]; break;
+    case GRACEUI_EVENT_INPUT_ENDED: typing.ended = event.why; break;
+    default: break;
+  }
+}
 
 std::uint32_t delta(std::uint32_t now, std::uint32_t base) { return now >= base ? now - base : 0; }
 
@@ -401,6 +439,12 @@ void write_typing(const Report& report, const Counters& counters, const Typing& 
       .nums("masked_held", {delta(in.masked_keyboard_held, b.masked_keyboard_held),
                             delta(in.masked_mouse_held, b.masked_mouse_held),
                             delta(in.masked_pad_held, b.masked_pad_held)});
+  if (typing.events) {
+    line.nums("received", {typing.received[0], typing.received[1], typing.received[2], typing.received[3]})
+        .num("dropped", typing.dropped)
+        .num("imgui_chars", typing.imgui_chars)
+        .word("end_event", typing.ended == 0 ? "none" : close_word(typing.ended));
+  }
   report.write(line);
 }
 
@@ -432,7 +476,7 @@ DWORD WINAPI spike_worker(LPVOID) {
   mod.name = GRACE_SPIKE_NAME;
   mod.version = GRACEUI_VERSION_PACK(1, 0, 0);
   mod.floor = GRACEUI_VERSION_PACK(0, 2, 0);
-  mod.caps = "notices panels input hotkeys";
+  mod.caps = "notices panels input hotkeys holder-events";
   GraceUiConnectAnswer answer{};
   const GraceUiStatus connected = api ? api.connect(mod, answer) : GRACEUI_REFUSED;
   const bool test_build = api && counters.bind(found.module);
@@ -490,8 +534,13 @@ DWORD WINAPI spike_worker(LPVOID) {
   for (;;) {
     GraceUiEvent event{};
     while (drawing && api.poll(me, event) == GRACEUI_OK && event.kind != GRACEUI_EVENT_NONE) {
+      if (typing.on) {
+        take(typing, event);
+      }
       if (event.kind == GRACEUI_EVENT_HOTKEY && event.hotkey_id == hotkey && can_type && !typing.on) {
-        build(list, typing_ms / 1000, 0);
+        const bool events = api.has_cap(GRACEUI_CAP_HOLDER_EVENTS);
+        g_typed[0] = '\0';
+        build(list, typing_ms / 1000, 0, events, false);
         api.submit(me, panel, list.view());
         api.show_panel(me, panel);
         GraceUiInputRequest request{};
@@ -499,11 +548,15 @@ DWORD WINAPI spike_worker(LPVOID) {
         request.kind = GRACEUI_HOLDER_PANEL;
         request.wants = GRACEUI_WANT_KEYBOARD | GRACEUI_WANT_MOUSE | GRACEUI_WANT_PAD;
         request.panel = panel;
+        request.flags = events ? GRACEUI_INPUT_EVENTS : 0u;
         GraceUiInputAnswer granted{};
         granted.size = sizeof granted;
         api.request_input(me, request, granted);
         if (granted.answer == GRACEUI_INPUT_GRANTED) {
+          typing = Typing{};
           typing.on = true;
+          typing.events = events;
+          typing.focus = events;
           typing.started = now_ms();
           typing.base = counters.read_input();
         } else {
@@ -522,12 +575,24 @@ DWORD WINAPI spike_worker(LPVOID) {
           api.release_input(me);  // its time is up: given back through the one close routine
           Sleep(50);
         }
+        // Its end comes last, after what it has not yet taken (discarded): taken here, for the report.
+        for (int waited = 0; typing.events && typing.ended == 0 && waited < 500; waited += 10) {
+          GraceUiEvent rest{};
+          while (api.poll(me, rest) == GRACEUI_OK && rest.kind != GRACEUI_EVENT_NONE) {
+            take(typing, rest);
+          }
+          if (typing.ended == 0) {
+            Sleep(10);
+          }
+        }
         write_typing(report, counters, typing, typing_ms);
         api.hide_panel(me, panel);
         typing.on = false;
       } else {
         const std::uint32_t left = static_cast<std::uint32_t>((static_cast<std::int64_t>(typing_ms) - held) / 1000);
-        build(list, left, delta(in.chars_seen, typing.base.chars_seen));
+        build(list, left, delta(in.chars_seen, typing.base.chars_seen), typing.events, typing.focus,
+              &typing.imgui_chars);
+        typing.focus = false;
         if (!list.empty()) {
           api.submit(me, panel, list.view());
         }
@@ -537,7 +602,7 @@ DWORD WINAPI spike_worker(LPVOID) {
       write_state(report, counters);
       next_state = now_ms() + state_ms;
     }
-    Sleep(typing.on ? 100 : 50);
+    Sleep(typing.on ? 33 : 50);  // while it types, a frame of its own about 30 times a second
   }
 }
 

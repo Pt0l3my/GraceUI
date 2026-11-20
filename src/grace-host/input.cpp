@@ -51,6 +51,10 @@ constinit std::atomic<std::uint32_t> g_buffer_height{0};
 constinit std::atomic<std::int32_t> g_caret_x{0};
 constinit std::atomic<std::int32_t> g_caret_y{0};
 constinit std::atomic<std::int32_t> g_caret_height{0};
+constinit std::atomic<std::uint16_t> g_caret_owner{0};  // the mod whose caret it is (D176); 0: GraceUI's own or a test's
+constinit std::atomic<grace::input::HolderMail*> g_mail{nullptr};
+constinit std::atomic<float> g_pointer_x{0.0f};  // the pointer's last position, in the back buffer's pixels (D176)
+constinit std::atomic<float> g_pointer_y{0.0f};
 
 // The world-state providers' claims (D78) are read where they are kept, the session's World, whose combined word is
 // written under its lock: never a copy, so that the last provider to report decides, whatever order their threads run
@@ -321,10 +325,102 @@ std::int64_t now_ms() noexcept { return static_cast<std::int64_t>(GetTickCount64
 
 grace::input::Key menu_key() noexcept { return grace::input::kF5; }
 
+namespace {
+
+// The holder's event as its mod gets it (D176): a pointer's position in the back buffer's pixels, the wheel in notches.
+grace::input::Mail mail_of(const HolderEvent& event) noexcept {
+  grace::input::Mail mail;
+  mail.generation = event.generation;
+  mail.x = g_pointer_x.load(std::memory_order_relaxed);
+  mail.y = g_pointer_y.load(std::memory_order_relaxed);
+  switch (event.type) {
+    case HolderEvent::Type::key:
+      mail.kind = grace::input::MailKind::key;
+      mail.key = event.vk;
+      mail.modifiers = event.extra & 0x7u;
+      mail.pressed = event.down;
+      mail.repeat = (event.extra & kExtraRepeat) != 0 ? 1 : 0;
+      break;
+    case HolderEvent::Type::character:
+      mail.kind = grace::input::MailKind::character;
+      mail.code_point = static_cast<std::uint32_t>(event.a);
+      break;
+    case HolderEvent::Type::mouse_move: {
+      const float x = scaled(event.a, g_buffer_width.load(std::memory_order_relaxed),
+                             g_client_width.load(std::memory_order_relaxed));
+      const float y = scaled(event.b, g_buffer_height.load(std::memory_order_relaxed),
+                             g_client_height.load(std::memory_order_relaxed));
+      g_pointer_x.store(x, std::memory_order_relaxed);
+      g_pointer_y.store(y, std::memory_order_relaxed);
+      mail.kind = grace::input::MailKind::pointer;
+      mail.x = x;
+      mail.y = y;
+      break;
+    }
+    case HolderEvent::Type::mouse_button:
+      mail.kind = grace::input::MailKind::pointer;
+      mail.button_event = 1;
+      mail.button = event.key;
+      mail.pressed = event.down;
+      break;
+    case HolderEvent::Type::wheel:
+      mail.kind = grace::input::MailKind::pointer;
+      mail.wheel_y = static_cast<float>(event.a) / WHEEL_DELTA;
+      mail.wheel_x = static_cast<float>(event.b) / WHEEL_DELTA;
+      break;
+    case HolderEvent::Type::none: break;
+  }
+  return mail;
+}
+
+}  // namespace
+
 void push_event(HolderEvent event) noexcept {
   if (!g_events.push(event) && g_events.dropped() == 1) {
     log_line("the holder's input came faster than its frames: some was dropped");
   }
+  grace::input::HolderMail* mail = g_mail.load(std::memory_order_acquire);
+  if (mail != nullptr && mail->active(event.generation)) {
+    const grace::input::Mail posted = mail_of(event);
+    if (posted.kind != grace::input::MailKind::none) {
+      mail->post(posted);
+    }
+  }
+}
+
+void make_holder_mail() {
+  if (g_mail.load(std::memory_order_acquire) == nullptr) {
+    g_mail.store(new grace::input::HolderMail(), std::memory_order_release);  // never freed: GraceUI never unloads
+  }
+}
+
+grace::input::HolderMail* holder_mail() noexcept { return g_mail.load(std::memory_order_acquire); }
+
+void holder_mail_enabled(std::uint32_t generation) noexcept {
+  // The enable above, the holder below; closed() pairs with it (its close, then its end): one of the two sees the other.
+  std::atomic_thread_fence(std::memory_order_seq_cst);
+  const Holder now = g_capture.holder();
+  if (now.holds() && now.generation == generation) {
+    return;  // still holding: its close routine posts its end
+  }
+  if (grace::input::HolderMail* mail = g_mail.load(std::memory_order_acquire); mail != nullptr) {
+    const grace::input::LastClose last = g_capture.last_close();
+    const auto why = last.holder.generation == generation ? last.why : grace::input::Closed::released;
+    mail->end(generation, static_cast<std::uint32_t>(why));  // once: end() takes the holder only if it is still active
+  }
+}
+
+void buffer_size(std::uint32_t& width, std::uint32_t& height) noexcept {
+  width = g_buffer_width.load(std::memory_order_relaxed);
+  height = g_buffer_height.load(std::memory_order_relaxed);
+}
+
+void set_mod_caret(std::uint16_t owner, std::int32_t x, std::int32_t y, std::int32_t height) noexcept {
+  g_caret_height.store(0, std::memory_order_relaxed);  // never half of one caret and half of another
+  g_caret_owner.store(owner, std::memory_order_relaxed);
+  g_caret_x.store(x, std::memory_order_relaxed);
+  g_caret_y.store(y, std::memory_order_relaxed);
+  g_caret_height.store(height, std::memory_order_relaxed);
 }
 
 void set_window(HWND target, bool unicode) noexcept {
@@ -369,8 +465,9 @@ std::uint32_t code_page() noexcept {
 
 bool caret_in_client(std::int32_t& x, std::int32_t& y, std::int32_t& height) noexcept {
   const std::int32_t caret_height = g_caret_height.load(std::memory_order_relaxed);
-  if (caret_height <= 0) {
-    return false;
+  const std::uint16_t caret_owner = g_caret_owner.load(std::memory_order_relaxed);
+  if (caret_height <= 0 || (caret_owner != 0 && g_capture.holder().owner != caret_owner)) {
+    return false;  // none, or a mod's that does not hold input now (D176)
   }
   const auto to_client = [](std::int32_t value, std::uint32_t buffer, std::int32_t client) {
     return buffer > 0 && client > 0 ? static_cast<std::int32_t>(static_cast<std::int64_t>(value) * client / buffer)
@@ -427,6 +524,7 @@ bool close_holder(grace::input::Closed why, std::uint32_t generation) noexcept {
 }
 
 void set_caret(std::int32_t x, std::int32_t y, std::int32_t height) noexcept {
+  g_caret_owner.store(0, std::memory_order_relaxed);
   g_caret_x.store(x, std::memory_order_relaxed);
   g_caret_y.store(y, std::memory_order_relaxed);
   g_caret_height.store(height, std::memory_order_relaxed);
@@ -443,6 +541,14 @@ void closed(const Holder& holder) noexcept {
            last.holder.generation == holder.generation ? closed_name(last.why) : "closed");
   if (holder.kind == Kind::menu) {
     hooks::wake();  // the menu's part of the close routine runs on GraceUI's thread: it stops watching mods' topics
+  }
+  if (grace::input::HolderMail* mail = g_mail.load(std::memory_order_acquire); mail != nullptr) {
+    // Its mod hears why, after its other events (D176): the reason recorded for this holder, else released.
+    const auto why = last.holder.generation == holder.generation ? last.why : grace::input::Closed::released;
+    mail->end(holder.generation, static_cast<std::uint32_t>(why));
+  }
+  if (holder.owner != 0 && g_caret_owner.load(std::memory_order_relaxed) == holder.owner) {
+    g_caret_height.store(0, std::memory_order_relaxed);  // a mod's caret ends with its holder
   }
 }
 

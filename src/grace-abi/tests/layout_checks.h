@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /*
  * layout_checks.h: graceui.h's layout, field by field (D109): every struct's size and every field's offset, as ABI 1.0
- * fixes them for x64. Included by layout.c (compiled as C) and layout.cpp (as C++), on Linux and by both Windows
+ * fixes them for x64, and as ABI 1.1 appends to them (D176). Included by layout.c (compiled as C) and layout.cpp (as C++), on Linux and by both Windows
  * toolchains: a build that compiles them has the layout GraceUI promises. tools/check_safety.py keeps the header itself
  * append-only against the first one (D132); these keep the compilers honest about what it means.
  */
@@ -136,12 +136,14 @@ GU_AT(GraceUiDrawList, vertices, 24);
 GU_AT(GraceUiDrawList, indices, 32);
 GU_AT(GraceUiDrawList, commands, 40);
 
-GU_SIZE(GraceUiInputRequest, 24);
+GU_SIZE(GraceUiInputRequest, 32); /* 24 in ABI 1.0; flags and reserved2 appended in 1.1 (D176) */
 GU_AT(GraceUiInputRequest, size, 0);
 GU_AT(GraceUiInputRequest, kind, 4);
 GU_AT(GraceUiInputRequest, wants, 8);
 GU_AT(GraceUiInputRequest, reserved, 12);
 GU_AT(GraceUiInputRequest, panel, 16);
+GU_AT(GraceUiInputRequest, flags, 24);
+GU_AT(GraceUiInputRequest, reserved2, 28);
 
 GU_SIZE(GraceUiInputAnswer, 56);
 GU_AT(GraceUiInputAnswer, size, 0);
@@ -149,6 +151,15 @@ GU_AT(GraceUiInputAnswer, answer, 4);
 GU_AT(GraceUiInputAnswer, why, 8);
 GU_AT(GraceUiInputAnswer, holder_kind, 12);
 GU_AT(GraceUiInputAnswer, holder, 16);
+
+GU_SIZE(GraceUiCaret, 32); /* ABI 1.1 (D176) */
+GU_AT(GraceUiCaret, size, 0);
+GU_AT(GraceUiCaret, reserved, 4);
+GU_AT(GraceUiCaret, panel, 8);
+GU_AT(GraceUiCaret, x, 16);
+GU_AT(GraceUiCaret, y, 20);
+GU_AT(GraceUiCaret, height, 24);
+GU_AT(GraceUiCaret, reserved2, 28);
 
 GU_SIZE(GraceUiHotkeyDesc, 48);
 GU_AT(GraceUiHotkeyDesc, size, 0);
@@ -160,7 +171,7 @@ GU_AT(GraceUiHotkeyDesc, action_length, 24);
 GU_AT(GraceUiHotkeyDesc, name, 32);
 GU_AT(GraceUiHotkeyDesc, name_length, 40);
 
-GU_SIZE(GraceUiEvent, 48);
+GU_SIZE(GraceUiEvent, 104); /* 48 in GraceUI 0.2 (ABI 1.0); a holder's fields appended in 1.1 (D176) */
 GU_AT(GraceUiEvent, size, 0);
 GU_AT(GraceUiEvent, kind, 4);
 GU_AT(GraceUiEvent, hotkey_id, 8);
@@ -169,6 +180,20 @@ GU_AT(GraceUiEvent, reply, 16);
 GU_AT(GraceUiEvent, frame, 24);
 GU_AT(GraceUiEvent, frame_capacity, 32);
 GU_AT(GraceUiEvent, frame_length, 40);
+GU_AT(GraceUiEvent, key, 48);
+GU_AT(GraceUiEvent, modifiers, 52);
+GU_AT(GraceUiEvent, pressed, 56);
+GU_AT(GraceUiEvent, repeat, 60);
+GU_AT(GraceUiEvent, code_point, 64);
+GU_AT(GraceUiEvent, button, 68);
+GU_AT(GraceUiEvent, button_event, 72);
+GU_AT(GraceUiEvent, pad, 76);
+GU_AT(GraceUiEvent, why, 80);
+GU_AT(GraceUiEvent, dropped, 84);
+GU_AT(GraceUiEvent, x, 88);
+GU_AT(GraceUiEvent, y, 92);
+GU_AT(GraceUiEvent, wheel_x, 96);
+GU_AT(GraceUiEvent, wheel_y, 100);
 
 GU_SIZE(GraceUiSpaceDesc, 64);
 GU_AT(GraceUiSpaceDesc, size, 0);
@@ -186,8 +211,8 @@ GU_SIZE(GraceUiWorldState, 8);
 GU_AT(GraceUiWorldState, size, 0);
 GU_AT(GraceUiWorldState, flags, 4);
 
-/* The table: its four numbers, then D73's twenty slots in D73's order, 8 bytes each. */
-GU_SIZE(GraceUiApi1, 176);
+/* The table: its four numbers, then D73's twenty slots in D73's order, 8 bytes each, then ABI 1.1's one (D176). */
+GU_SIZE(GraceUiApi1, 184);
 GU_AT(GraceUiApi1, size, 0);
 GU_AT(GraceUiApi1, abi_minor, 4);
 GU_AT(GraceUiApi1, graceui_version, 8);
@@ -212,9 +237,10 @@ GU_AT(GraceUiApi1, register_hotkey, 144);
 GU_AT(GraceUiApi1, notice, 152);
 GU_AT(GraceUiApi1, set_world_state, 160);
 GU_AT(GraceUiApi1, log, 168);
+GU_AT(GraceUiApi1, set_caret, 176);
 
 /* The numbers a mod compiles in. */
-GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 0u, "ABI 1.0");
+GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 1u, "ABI 1.1");
 GU_ASSERT(GRACEUI_VERSION_PACK(1, 2, 3) == ((1u << 22) | (2u << 12) | 3u), "the version's packing");
 GU_ASSERT(GRACEUI_VERSION_MAJOR(GRACEUI_VERSION_PACK(1023, 1023, 4095)) == 1023u, "a major's ten bits");
 GU_ASSERT(GRACEUI_VERSION_MINOR(GRACEUI_VERSION_PACK(1023, 1023, 4095)) == 1023u, "a minor's ten bits");

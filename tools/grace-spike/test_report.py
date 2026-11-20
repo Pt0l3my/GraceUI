@@ -77,6 +77,19 @@ class Reader(unittest.TestCase):
         path = self.write("s4-1", [header("s4"), state(), typing(end="player", held_ms=20000), state()])
         self.assertEqual(self.results(report.judge(path, {}))["typing_60s"], "not_measured")
 
+    def test_what_the_panel_received_is_judged_when_the_typing_line_has_it(self):
+        def result(**keys):
+            path = self.write(f"s4-{len(list(self.root.iterdir())) + 1}", [header("s4"), state(), typing(**keys),
+                                                                         state()])
+            return self.results(report.judge(path, {}))["panel_received"]
+        self.assertEqual(result(), "not_measured")  # a typing line from before 0.2.1: optional
+        heard = {"received": [239, 300, 40, 0], "dropped": 0, "end_event": "released", "imgui_chars": 239}
+        self.assertEqual(result(**heard), "passed")  # one character typed as the test ended: within the slack
+        self.assertEqual(result(**{**heard, "received": [200, 300, 40, 0]}), "failed")
+        self.assertEqual(result(**{**heard, "imgui_chars": 100}), "failed")  # feed lost them
+        self.assertEqual(result(**{**heard, "end_event": "none"}), "failed")
+        self.assertEqual(result(**{**heard, "received": [0, 0, 0, 0], "chars": 0}), "not_measured")
+
     def test_s0e_with_eldennet_and_the_stand_in_passes(self):
         lines = [header("s0e", standin="patched"),
                  state(standin="patched", standin_presents=10, frames_drawn=50),

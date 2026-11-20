@@ -10,6 +10,7 @@
 
 #include "grace/input/devices.h"
 #include "grace/input/holder.h"
+#include "grace/input/holder_mail.h"
 #include "grace/input/hotkeys.h"
 #include "grace/input/messages.h"
 
@@ -37,13 +38,27 @@ struct HolderEvent {
   Type type = Type::none;
   std::uint8_t key = 0;   // a key's DIK code (grace::input::Key); a mouse button's index
   std::uint8_t down = 0;
-  std::uint8_t unused = 0;
+  std::uint8_t extra = 0;        // a key's: its modifiers (GRACEUI_MOD_*) in the low bits, kExtraRepeat for a repeat
   std::uint32_t generation = 0;  // the holder it is for
   std::uint32_t vk = 0;          // a key's virtual key
   std::int32_t a = 0;            // a character's code point; x in client pixels; the vertical wheel's delta
   std::int32_t b = 0;            // y in client pixels; the horizontal wheel's delta
 };
+inline constexpr std::uint8_t kExtraRepeat = 0x80;
+// Pushed for GraceUI's own Dear ImGui (its cursor, and its own holders) and, while the holder asked for them, posted to
+// its mod as well (D176).
 void push_event(HolderEvent event) noexcept;
+
+// ---- A holder's events for its mod (D176): made once by session::allocate, before any mod has a table; null before.
+void make_holder_mail();
+grace::input::HolderMail* holder_mail() noexcept;
+// Its events enabled for the holder `generation` (HolderMail::enable, after the grant): if another thread ended that
+// holder in between, its close routine found nothing to end, so its end is posted here, once.
+void holder_mail_enabled(std::uint32_t generation) noexcept;
+// The back buffer's size as the input half last saw it (0 before the first frame).
+void buffer_size(std::uint32_t& width, std::uint32_t& height) noexcept;
+// A mod's caret for the IME, in the back buffer's pixels: it counts only while `owner` holds input. Height 0 clears it.
+void set_mod_caret(std::uint16_t owner, std::int32_t x, std::int32_t y, std::int32_t height) noexcept;
 
 // ---- The game's window, filtered once at install (hooks_input.cpp).
 void set_window(HWND window, bool unicode) noexcept;
