@@ -92,6 +92,21 @@ count must answer without a crash or undefined behaviour, and the count never ex
 `grace_abi_layout_cpp` compile `graceui.h` as C and as C++ with a `static_assert` on every struct's size and every
 field's offset; CTest runs both on Linux, and both Windows builds compile them.
 
+## The tokens
+
+`tokens/grace.toml` is the Grace theme's one source (D157). `tools/tokens/build.py` checks it (contrast in every variant,
+the type minimums, the durations, no looping animation in `web/src`) and writes `web/src/tokens.css` and
+`src/grace-tokens/include/grace/tokens.h`, both committed; edit the TOML, never the outputs.
+
+```sh
+python3 -I tools/tokens/build.py            # check, then write both outputs
+python3 -I tools/tokens/build.py --check    # check, and fail if an output is not what the TOML builds
+python3 -I tools/tokens/build.py --table    # §3.3's contrast table, as the tokens give it
+python3 -I -m unittest discover -s tools/tokens
+```
+
+The Linux build's CTest runs `--check`, the tool's tests and the header's (`grace_tokens_tests`).
+
 ## The release build: clang-cl
 
 Built as EldenNet's engine is (its ARCH §2.6), against the CRT and SDK that [xwin](https://github.com/Jake-Shadle/xwin)

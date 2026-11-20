@@ -22,7 +22,7 @@ target_include_directories(grace_host
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(grace_host
   PUBLIC grace_abi grace_abi_rules
-  PRIVATE grace_input gu_imgui gu_minhook d3d12 dxgi user32 imm32)
+  PRIVATE grace_input grace_tokens gu_imgui gu_minhook d3d12 dxgi user32 imm32)
 target_compile_definitions(grace_host PUBLIC
   GRACEUI_BUILD_MAJOR=${PROJECT_VERSION_MAJOR}
   GRACEUI_BUILD_MINOR=${PROJECT_VERSION_MINOR}

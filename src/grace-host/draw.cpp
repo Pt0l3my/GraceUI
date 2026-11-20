@@ -38,6 +38,7 @@
 #include "draw_atlas.h"
 #include "grace/abi/panels.h"
 #include "grace/abi/registry.h"
+#include "grace/tokens.h"
 #include "imgui.h"
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
@@ -80,7 +81,7 @@ constexpr float kNoticeAccent = 3.0f;
 constexpr float kNoticePadX = 12.0f;
 constexpr float kNoticePadY = 8.0f;
 constexpr float kNoticeGap = 6.0f;
-constexpr float kNoticeRadius = 4.0f;
+constexpr float kNoticeRadius = grace::tokens::radius::card;
 constexpr float kNoticeIcon = 12.0f;
 constexpr float kNoticeIconGap = 6.0f;
 constexpr int kNoticeLines = 3;
@@ -90,12 +91,14 @@ constexpr ImU32 opaque(std::uint32_t rgb) noexcept {
   return (0xFFu << IM_COL32_A_SHIFT) | (((rgb >> 16) & 0xFFu) << IM_COL32_R_SHIFT) |
          (((rgb >> 8) & 0xFFu) << IM_COL32_G_SHIFT) | ((rgb & 0xFFu) << IM_COL32_B_SHIFT);
 }
-constexpr std::uint32_t kGround2 = 0x1D1A15;  // §3.2's ground.2, ink.hi and the three accents
-constexpr std::uint32_t kInkHigh = 0xE8E2D0;
-constexpr std::uint32_t kGold = 0xC9A65A;
-constexpr std::uint32_t kEmber = 0xDB9550;
-constexpr std::uint32_t kRot = 0xD9806F;
-constexpr std::uint32_t kRule = 0x352E1F;  // §3.2's rule: gold at 14% over ground.2
+// The Grace theme's tokens (tokens/grace.toml, D157): ground.2, ink.hi, the three accents, and rule over ground.2.
+constexpr const grace::tokens::Palette& kTokens = grace::tokens::kGrace.colour;
+constexpr std::uint32_t kGround2 = kTokens.ground_2.rgb();
+constexpr std::uint32_t kInkHigh = kTokens.ink_hi.rgb();
+constexpr std::uint32_t kGold = kTokens.gold.rgb();
+constexpr std::uint32_t kEmber = kTokens.ember.rgb();
+constexpr std::uint32_t kRot = kTokens.rot.rgb();
+constexpr std::uint32_t kRule = grace::tokens::over(kTokens.rule, kTokens.ground_2).rgb();
 constexpr ImU32 kAccents[] = {opaque(kGold), opaque(kEmber), opaque(kRot)};  // by GRACEUI_TONE_*
 
 #if defined(GRACEUI_TEST_EXPORTS)

@@ -70,7 +70,8 @@ PUBLISHED_HOOKS = {
 EXCLUDED_PROJECTS = re.compile(r"\bme3\b|fromsoftware-rs|fromsoftware_rs", re.IGNORECASE)
 
 # The pure modules and their libraries: no Win32, no Dear ImGui, no MinHook (D124, D131).
-PURE_MODULES = {"src/grace-input/": ("grace_input",), "src/grace-abi/": ("grace_abi", "grace_abi_rules")}
+PURE_MODULES = {"src/grace-input/": ("grace_input",), "src/grace-abi/": ("grace_abi", "grace_abi_rules"),
+                "src/grace-tokens/": ("grace_tokens",)}
 IMPURE_INCLUDE = re.compile(
     r'#\s*include\s*[<"](windows|winuser|windef|winbase|imm|dinput|xinput|d3d1\d|dxgi[0-9_]*|psapi|tlhelp32|'
     r'imgui[a-z_]*|MinHook)\.h[">]', re.IGNORECASE)
