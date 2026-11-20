@@ -868,3 +868,9 @@ In GraceUI 0.2.3 (no change of the ABI):
 2. **GraceUI's own notices always show** (the player's exit, why the menu cannot open, a too-old mod).
 3. **The switch is kept** between sessions in `Game\GraceUI\user\settings.json` (`"quiet_mods"`, mods' ids only); a
    release must still not carry a `user\` folder.
+
+## 35. The menu by mouse (2026-11-20, D182)
+
+In GraceUI 0.2.4 (no change of the ABI): the in-game menu takes the mouse on every space's pages, EldenNet's included:
+a click does what Enter does, a slider follows a held button, the wheel scrolls. Nothing for EldenNet to do; its
+pages' settings and actions arrive as the same commands as from the keys.
