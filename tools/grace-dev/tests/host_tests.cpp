@@ -41,6 +41,19 @@ struct Host {
     std::lock_guard lock(mutex);
     return lines;
   }
+  // `line` printed, within `limit`.
+  bool said_within(std::string_view line, Millis limit) {
+    const Clock::time_point end = Clock::now() + limit;
+    do {
+      for (const std::string& one : said()) {
+        if (one == line) {
+          return true;
+        }
+      }
+      std::this_thread::sleep_for(5ms);
+    } while (Clock::now() < end);
+    return false;
+  }
   std::uint16_t port() const { return host.port(); }
 };
 
@@ -208,11 +221,7 @@ TEST_CASE("the settings topic comes from the space's settings store; settings.se
   const std::uint32_t again = view.cmd("demo", "settings.set", set("lantern.shield", "on"));
   CHECK((*view.result(again))["ok"] == true);
   CHECK(view.quiet(100ms));
-  bool printed = false;
-  for (const std::string& line : dev->said()) {
-    printed = printed || line == "demo: settings.set lantern.brightness: ok, 1 changed";
-  }
-  CHECK(printed);
+  CHECK(dev->said_within("demo: settings.set lantern.brightness: ok, 1 changed", 1s));
 }
 
 TEST_CASE("each refusal is the store's: its code, and its words in the result's body") {
@@ -308,11 +317,7 @@ TEST_CASE("fixture states, and a stream's rows from the oldest held, in order") 
   // A topic with no fixture publishes nothing (absence is silent), and grace-dev says so once.
   view.sub("graceui", "graceui.about");
   CHECK(view.quiet(150ms));
-  bool told = false;
-  for (const std::string& line : dev->said()) {
-    told = told || line == "graceui: graceui.about is watched, but has no fixture state: it publishes nothing";
-  }
-  CHECK(told);
+  CHECK(dev->said_within("graceui: graceui.about is watched, but has no fixture state: it publishes nothing", 1s));
 }
 
 TEST_CASE("an author's space folder: its fixtures, its scripted steps near their times, and its reaction's refusal") {
@@ -352,11 +357,8 @@ TEST_CASE("an author's space folder: its fixtures, its scripted steps near their
   CHECK(later["body"]["tiles"][0]["value"] == "A finger's width");
   CHECK(frames[3].second >= 950ms);
   CHECK(frames[3].second <= 3000ms);
-  bool ended = false;
-  for (const std::string& line : dev->said()) {
-    ended = ended || line == "tidepool: the scenario has played to its end";
-  }
-  CHECK(ended);
+  // Said on grace-dev's thread once its last step is out, which may be just after the view has the step's frame.
+  CHECK(dev->said_within("tidepool: the scenario has played to its end", 1s));
 
   const std::optional<Json> refused = view.result(view.cmd("tidepool", "pool.count"));
   REQUIRE(refused.has_value());
