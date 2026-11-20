@@ -837,3 +837,22 @@ its sizes at 1.0. Check those sizes against the new default; if any was tuned to
 rather than ignore the scale. EldenNet's pages in the browser are a quarter larger by default too (one setting for both
 views, §3.13). The Steam Deck's first-run 1.35 (G6) is unchanged.
 
+## 33. The display, and GraceUI's settings kept (2026-11-20, D179, D180; proposal 0004)
+
+In GraceUI 0.2.2 (ABI 1.2):
+
+1. **Connect** with floor 0.2.2 and check `has_cap("display")`. The answer now says `ui_scale` (the player's, kept
+   from the last session) and `ui_scale_default`, and the display's size once the game's swap chain is bound (usually
+   0 at your connect).
+2. **Faces**: register the subtitles', the chat box's and the call-out box's faces with `GRACEUI_FACE_SCALED` and
+   their design size at 1080 lines and the default Menu size. GraceUI bakes each at warm-up at that size times the
+   content scale, `(H / 1080) × ui.scale / its default`, rounded to a whole pixel: your O93 rule, with no constant.
+   The glyph table gives the baked size.
+3. **Poll** with ABI 1.2's event size: `GRACEUI_EVENT_DISPLAY` comes once after warm-up and after each change of the
+   size or `ui.scale`, with `content_scale` (your NPC §10.7 scale) and `faces_scale` (what your scaled faces were baked
+   at). Lay your text out at `content_scale`; after a change, draw your scaled faces' glyphs scaled by
+   `content_scale / faces_scale` until the next session (the atlas is baked once, invariant 11). graceui-sys's
+   `Api::poll` asks at the full size already.
+4. **Settings**: Menu size, the theme and GraceUI's other settings are kept in `Game\GraceUI\user\settings.json`
+   between sessions; nothing for EldenNet to do, but a release must not carry a `user\` folder (the manifest skips it).
+
