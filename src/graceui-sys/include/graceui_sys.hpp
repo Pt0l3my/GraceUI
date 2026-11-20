@@ -150,9 +150,22 @@ class Api {
     return table_->register_hotkey(consumer, &in, &id);
   }
   // The mod's next event: GRACEUI_OK with one, its kind GRACEUI_EVENT_NONE once nothing is waiting. Never waits.
-  // Hotkeys only: with no buffer, the space's events wait for a poll that has one (below).
+  // Hotkeys, and from GraceUI 0.2.1 a holder's events (D176): with no buffer, the space's events wait for a poll that
+  // has one (below). GraceUI gives a holder's events and hotkeys before a space's, so a space's event that needs a
+  // buffer (GRACEUI_FULL, kept) means nothing else waits.
   GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& event) const noexcept {
-    return poll(consumer, event, nullptr, 0);
+    if (!has_cap(GRACEUI_CAP_HOLDER_EVENTS)) {
+      return poll(consumer, event, nullptr, 0);
+    }
+    event = GraceUiEvent{};
+    event.size = sizeof event;
+    const GraceUiStatus status = table_->poll(consumer, &event);
+    if (status == GRACEUI_FULL) {
+      event = GraceUiEvent{};
+      event.size = sizeof event;
+      return GRACEUI_OK;  // kind GRACEUI_EVENT_NONE: the space's event waits for a poll with a buffer
+    }
+    return status;
   }
   // The same, with `buffer` for a space's event's frame (D169): GRACEUI_FRAME_FROM_PAGE_MAX bytes always suffice;
   // GRACEUI_FULL with event.frame_length the size needed when they do not, the event kept for the next call.

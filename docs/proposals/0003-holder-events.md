@@ -5,6 +5,10 @@ same day, with a fifth kind for a pad's buttons (§6), and folded into DESIGN §
 design differ, the design holds. [graceui.h](../../src/grace-abi/include/graceui.h) gains it as ABI 1.1 when it is
 built.** A bare § is a section of [DESIGN.md](../DESIGN.md).
 
+**Built, 2026-11-20, in GraceUI 0.2.1** (D176's as-built note): `flags` is appended after `reserved` rather than
+replacing it, as ABI 1's append-only rule requires; a pointer event carries `button_event`; a set_caret from a mod
+that does not hold input is ignored; §2's "a pad's buttons: a later kind" was overtaken by §6's answer.
+
 ## 1. Why
 
 A mod's panel that takes the controls (`request_input`, D142) gets nothing of what the player types: the window

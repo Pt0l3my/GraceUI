@@ -183,6 +183,13 @@ GRACEUI_API void GraceUI_Test_SetCodePage(uint32_t code_page) {
   }
 }
 
+GRACEUI_API void GraceUI_Test_Pad(uint32_t user, uint32_t buttons) {
+  try {
+    grace::host::test_pad(user, static_cast<std::uint16_t>(buttons));
+  } catch (...) {
+  }
+}
+
 GRACEUI_API uint32_t GraceUI_Test_GetInput(GraceUiTestInput* out) {
   try {
     if (out == nullptr || out->size < sizeof(GraceUiTestInput)) {

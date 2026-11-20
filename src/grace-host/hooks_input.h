@@ -4,6 +4,8 @@
 
 #include <windows.h>
 
+#include <cstdint>
+
 namespace grace::host::hooks_input {
 
 // XInput is hooked in every one of these DLLs that is already loaded at install, found by name, so GraceUI reads no
@@ -39,6 +41,11 @@ bool filter_window(HWND window) noexcept;
 // Windows filtered so far (at most kWindowFilters, EST): the first found, then any bound swap chain's that differed.
 inline constexpr int kWindowFilters = 4;
 int windows_filtered() noexcept;
+
+#if defined(GRACEUI_TEST_EXPORTS)
+// A pad's state as an XInput read would give it, through the same filter as the detour's (a harness has no pad).
+void test_pad(std::uint32_t user, std::uint16_t buttons) noexcept;
+#endif
 
 // Pins the module that holds `address`, so that it is never unloaded under a hook (GraceUI never unhooks, D107).
 void pin_module_of(void* address) noexcept;

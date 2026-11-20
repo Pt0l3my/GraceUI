@@ -73,18 +73,22 @@ using CopyList = void (*)(const void* context, grace::abi::DrawListData& out);
 GraceUiStatus submit(GraceUiConsumer consumer, std::uint64_t panel, const ListShape& shape, CopyList copy,
                      const void* context) noexcept;
 
+// `flags`: GRACEUI_INPUT_EVENTS, or 0 (ABI 1.1, D176); another flag is refused.
 GraceUiStatus request_input(GraceUiConsumer consumer, std::uint32_t kind, std::uint32_t wants, std::uint64_t panel,
-                            GraceUiInputAnswer& out) noexcept;
+                            std::uint32_t flags, GraceUiInputAnswer& out) noexcept;
 GraceUiStatus release_input(GraceUiConsumer consumer) noexcept;
 GraceUiStatus set_world_state(GraceUiConsumer consumer, std::uint32_t flags) noexcept;
 // A hotkey (D155): `key` a virtual key, the strings already copied; `id` set with GRACEUI_OK.
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::uint32_t modifiers,
                               std::uint32_t pad_chord, std::string_view action, std::string_view name,
                               std::uint32_t& id) noexcept;
-// The mod's next event (D155, D169): hotkey presses first, then, with `protocol` (the mod's event is large enough), its
-// space's events, written into out.frame (the mod's buffer, out.frame_capacity bytes); `out` is GraceUI's own, zeroed
-// by the caller but for those two. GRACEUI_FULL with out.frame_length the size needed when the buffer is too small.
-GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol) noexcept;
+// The mod's next event (D155, D169, D176): with `holder` (the mod's event is ABI 1.1's), its holder's events first;
+// then hotkey presses; then, with `protocol` (the mod's event is large enough), its space's events, written into
+// out.frame (the mod's buffer, out.frame_capacity bytes); `out` is GraceUI's own, zeroed by the caller but for those
+// two. GRACEUI_FULL with out.frame_length the size needed when the buffer is too small.
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder) noexcept;
+// The caret of the mod's field in its panel (D176), for the IME.
+GraceUiStatus set_caret(GraceUiConsumer consumer, std::uint64_t panel, float x, float y, float height) noexcept;
 // The mod's space (D169): its JSON already copied or seen whole within the call.
 GraceUiStatus register_pages(GraceUiConsumer consumer, std::uint32_t views, std::uint32_t version,
                              std::string_view pages, std::string_view settings, std::string_view increment) noexcept;
@@ -113,6 +117,7 @@ bool test_release_input(std::uint32_t owner) noexcept;
 void test_set_world(std::uint32_t flags) noexcept;
 void test_set_caret(std::int32_t x, std::int32_t y, std::int32_t height) noexcept;
 void test_set_code_page(std::uint32_t code_page) noexcept;
+void test_pad(std::uint32_t user, std::uint16_t buttons) noexcept;
 void test_fill_input(GraceUiTestInput& out) noexcept;
 std::uint32_t test_copy_chars(std::uint32_t* out, std::uint32_t capacity) noexcept;
 std::uint32_t test_copy_input_costs(std::uint32_t kind, std::uint32_t* out, std::uint32_t capacity) noexcept;

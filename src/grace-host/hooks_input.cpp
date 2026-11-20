@@ -179,7 +179,9 @@ void push_whole_character(WPARAM wparam) noexcept {
   push_code_points(points, g_pairer.push_whole(point, points), generation);
 }
 
-void push_key(Key key, std::uint32_t vk, bool down) noexcept {
+std::uint8_t modifiers_now() noexcept;
+
+void push_key(Key key, std::uint32_t vk, bool down, bool repeat) noexcept {
   if (const grace::input::Holder holder = input::capture().holder();
       holder.kind == grace::input::Kind::menu && holder.owner == 0) {
     // The menu's keys go to GraceUI's thread as the page view's inputs (D167), never to Dear ImGui; its modifiers are
@@ -195,6 +197,11 @@ void push_key(Key key, std::uint32_t vk, bool down) noexcept {
   event.vk = vk;
   event.down = down ? 1 : 0;
   event.generation = input::capture().holder().generation;
+  // Its modifiers and whether it repeats, read only while a mod takes its holder's events (D176): GetKeyState can cost
+  // a call into Wine's server.
+  if (const grace::input::HolderMail* mail = input::holder_mail(); mail != nullptr && mail->active(event.generation)) {
+    event.extra = static_cast<std::uint8_t>(modifiers_now() | (repeat ? input::kExtraRepeat : 0));
+  }
   input::push_event(event);
 }
 
@@ -302,7 +309,7 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
       const Decision decision = rules.key(key, vk, down, system, repeat, now, modifiers);
       handled(decision);
       if (decision.to_holder) {
-        push_key(key, vk, down);
+        push_key(key, vk, down, repeat);
       }
       out.route = decision.route;
       out.device = grace::input::want_keyboard;
@@ -607,6 +614,13 @@ void filter_pad(DWORD user, XINPUT_STATE* state, DWORD result) noexcept {
         pad.right_x = gamepad.sThumbRX;
         pad.right_y = gamepad.sThumbRY;
         std::uint32_t packet = state->dwPacketNumber;
+        if (grace::input::HolderMail* mail = input::holder_mail(); mail != nullptr) {
+          // The pad's own buttons, before the ledger masks them: their changes go to a holder's mod that takes the pad
+          // and asked for its events (D176).
+          const grace::input::Holder holder = input::capture().holder();
+          mail->pad(user, pad.buttons, holder.generation,
+                    holder.phase == grace::input::Phase::active && holder.takes(grace::input::want_pad));
+        }
 #if defined(GRACEUI_TEST_EXPORTS)
         const grace::input::Pad before = pad;
 #endif
@@ -658,6 +672,15 @@ LONG_PTR filter_for(int slot) noexcept {
 static_assert(kWindowFilters == 4, "filter_for lists one filter per slot");
 
 }  // namespace
+
+#if defined(GRACEUI_TEST_EXPORTS)
+void test_pad(std::uint32_t user, std::uint16_t buttons) noexcept {
+  XINPUT_STATE state{};
+  state.dwPacketNumber = static_cast<DWORD>(input::now_ms());
+  state.Gamepad.wButtons = buttons;
+  filter_pad(user, &state, ERROR_SUCCESS);
+}
+#endif
 
 void pin_module_of(void* address) noexcept {
   HMODULE module = nullptr;

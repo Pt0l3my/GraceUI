@@ -53,8 +53,9 @@ With EldenNet, injected early.
 
 1. Load a save and stand somewhere safe, away from enemies.
 2. Press F9: the typing test opens in the middle of the screen and takes the keyboard, the mouse and the pad.
-3. For 60 seconds, type anything (W, A, S and D among it, and some held down) and move the mouse about. The test
-   closes by itself after 60 seconds; holding Esc for a second stops it early.
+3. For 60 seconds, type anything (W, A, S and D among it, and some held down) and move the mouse about. What you type
+   shows in the test's own field (GraceUI 0.2.1 and later), on screen only: the report counts it and never keeps it.
+   The test closes by itself after 60 seconds; holding Esc for a second stops it early.
 4. Note whether the Tarnished moved or the camera turned at any time while the test was open.
 5. Hold W so the Tarnished walks, press F5 while still holding it, let W go, then press F5 again: the Tarnished must
    stand still once the menu is open, and must not start walking again when it closes.

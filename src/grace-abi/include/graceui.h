@@ -49,7 +49,7 @@ extern "C" {
 
 /* The ABI major this header describes, and its minor: the number of the newest appends (0: the first table). */
 #define GRACEUI_ABI_MAJOR 1u
-#define GRACEUI_ABI1_MINOR 0u
+#define GRACEUI_ABI1_MINOR 1u /* 1: a holder's events and set_caret (GraceUI 0.2.1, D176) */
 
 /*
  * GraceUI's own version (GRACEUI_VERSION_PACK). Needs no start: callable from any thread, at any time after the DLL is
@@ -139,6 +139,8 @@ typedef uint32_t GraceUiStatus;
 #define GRACEUI_CAP_WORLD_STATE "world-state" /* set_world_state: since GraceUI 0.1 */
 #define GRACEUI_CAP_HOTKEYS "hotkeys" /* register_hotkey, and poll's hotkey events: since GraceUI 0.1 (D155) */
 #define GRACEUI_CAP_PAGES "pages"     /* register_pages, publish, answer, and poll's protocol events: since 0.2 (D169) */
+#define GRACEUI_CAP_HOLDER_EVENTS "holder-events" /* GRACEUI_INPUT_EVENTS, poll's holder events, set_caret: since
+                                                    0.2.1, ABI 1.1 (D176) */
 
 /* A connected mod's handle, which every slot after connect takes; 0 is none. */
 typedef uint64_t GraceUiConsumer;
@@ -327,6 +329,11 @@ typedef struct GraceUiDrawList {
 #define GRACEUI_NOT_NOW_LOADING 3u
 #define GRACEUI_NOT_NOW_GAME_MENU 4u
 
+/* A request's flags (ABI 1.1, D176): with GRACEUI_INPUT_EVENTS the holder's input comes to its mod through poll (its
+ * keys, characters, pointer and pad buttons, and why its holder ended), never to another mod. Without it, as for every
+ * ABI 1.0 mod, the input is taken from the game and the mod hears nothing of it. */
+#define GRACEUI_INPUT_EVENTS 1u
+
 typedef struct GraceUiInputRequest {
   uint32_t size;
   uint32_t kind;      /* GRACEUI_HOLDER_PANEL or GRACEUI_HOLDER_MODAL */
@@ -335,6 +342,9 @@ typedef struct GraceUiInputRequest {
   uint64_t panel;     /* the panel whose view takes the input (create_panel's id): the mod's own, shown, made with
                          GRACEUI_PANEL_TAKES_INPUT, on the modal layer for GRACEUI_HOLDER_MODAL and on another for
                          GRACEUI_HOLDER_PANEL */
+  /* ABI 1.1 (D176): */
+  uint32_t flags;     /* GRACEUI_INPUT_EVENTS, or 0; an unknown flag is refused */
+  uint32_t reserved2; /* 0 */
 } GraceUiInputRequest;
 
 typedef struct GraceUiInputAnswer {
@@ -344,6 +354,17 @@ typedef struct GraceUiInputAnswer {
   uint32_t holder_kind;  /* with GRACEUI_INPUT_REFUSED: the holder's GRACEUI_HOLDER_* */
   char holder[40];       /* with GRACEUI_INPUT_REFUSED: the holder's mod id, NUL-terminated ("graceui": the menu) */
 } GraceUiInputAnswer;
+
+/* A text caret (ABI 1.1, D176): its rectangle in the panel's own pixels, from its top-left corner. */
+typedef struct GraceUiCaret {
+  uint32_t size;
+  uint32_t reserved;  /* 0 */
+  uint64_t panel;     /* the mod's panel that holds the field (create_panel's id) */
+  float x;            /* the caret's left edge */
+  float y;            /* its top */
+  float height;       /* its height; 0: no caret */
+  float reserved2;    /* 0 */
+} GraceUiCaret;
 
 /* ---- Hotkeys (D77, D155): an action with a default key and modifiers or a pad chord; GraceUI's Hotkeys page rebinds it.
  *
@@ -378,6 +399,31 @@ typedef struct GraceUiHotkeyDesc {
 #define GRACEUI_EVENT_WATCHED 2u   /* a view now watches a topic of the mod's space: `frame` holds its sub frame (D169) */
 #define GRACEUI_EVENT_UNWATCHED 3u /* no view watches the topic now: `frame` holds its unsub frame; stop building it */
 #define GRACEUI_EVENT_COMMAND 4u   /* a view's command: `frame` holds its cmd frame, `reply` the handle answer takes */
+/* A holder's events (ABI 1.1, D176), for the mod that holds input and asked with GRACEUI_INPUT_EVENTS, only while it
+ * holds it, in the order they happened; an event smaller than ABI 1.1's never gets them. */
+#define GRACEUI_EVENT_KEY 5u         /* a key's press, auto-repeat or release: key, modifiers, pressed, repeat */
+#define GRACEUI_EVENT_CHARACTER 6u   /* one character typed: code_point (a surrogate pair joined, an IME's result) */
+#define GRACEUI_EVENT_POINTER 7u     /* with GRACEUI_WANT_MOUSE: x and y in the panel's own pixels (moves coalesced to
+                                        the newest); a button's press or release (button, pressed); the wheel */
+#define GRACEUI_EVENT_INPUT_ENDED 8u /* the mod's holder ended: why; once, after its other events */
+#define GRACEUI_EVENT_PAD 9u         /* with GRACEUI_WANT_PAD: a pad button's press or release (button, pressed, pad) */
+
+/* Why a holder ended (GRACEUI_EVENT_INPUT_ENDED's `why`). */
+#define GRACEUI_CLOSED_RELEASED 1u   /* release_input, the holding panel hidden, or its mod gone */
+#define GRACEUI_CLOSED_MENU_KEY 2u
+#define GRACEUI_CLOSED_DANGER 3u
+#define GRACEUI_CLOSED_LOADING 4u
+#define GRACEUI_CLOSED_FOCUS_LOST 5u
+#define GRACEUI_CLOSED_NO_RENDER 6u  /* no overlay frame for 2 s */
+#define GRACEUI_CLOSED_FAULT 7u
+#define GRACEUI_CLOSED_PLAYER 8u     /* the player's exit: Escape held 1 s, or the menu key twice */
+
+/* A pointer event's button (GRACEUI_EVENT_POINTER with button_event 1). */
+#define GRACEUI_BUTTON_LEFT 0u
+#define GRACEUI_BUTTON_RIGHT 1u
+#define GRACEUI_BUTTON_MIDDLE 2u
+#define GRACEUI_BUTTON_X1 3u
+#define GRACEUI_BUTTON_X2 4u
 
 typedef struct GraceUiEvent {
   uint32_t size;       /* set by the caller to sizeof(GraceUiEvent) */
@@ -389,6 +435,21 @@ typedef struct GraceUiEvent {
   char* frame;             /* the mod's buffer, which GraceUI writes the event's frame into (UTF-8 JSON, no NUL) */
   uint64_t frame_capacity; /* its size in bytes: GRACEUI_FRAME_FROM_PAGE_MAX always suffices */
   uint64_t frame_length;   /* the frame's length; with GRACEUI_FULL, the size needed */
+  /* From ABI 1.1 (D176): a holder's events. An event smaller than this never gets them. */
+  uint32_t key;          /* GRACEUI_EVENT_KEY: its virtual key (VK_*) */
+  uint32_t modifiers;    /* GRACEUI_EVENT_KEY: GRACEUI_MOD_* held with it */
+  uint32_t pressed;      /* KEY, PAD, and a POINTER button: 1 pressed, 0 released */
+  uint32_t repeat;       /* GRACEUI_EVENT_KEY: 1 for an auto-repeat of a held key */
+  uint32_t code_point;   /* GRACEUI_EVENT_CHARACTER: one Unicode scalar value */
+  uint32_t button;       /* POINTER: GRACEUI_BUTTON_*; PAD: one XInput button's mask (XINPUT_GAMEPAD_*) */
+  uint32_t button_event; /* POINTER: 1 for a button's press or release, 0 for a move or the wheel */
+  uint32_t pad;          /* GRACEUI_EVENT_PAD: the pad's index, 0 to 3 */
+  uint32_t why;          /* GRACEUI_EVENT_INPUT_ENDED: GRACEUI_CLOSED_* */
+  uint32_t dropped;      /* this holder's events lost before this one (the mod polled too slowly; 256 wait at most) */
+  float x;               /* GRACEUI_EVENT_POINTER: in the panel's own pixels, from its top-left corner (outside it */
+  float y;               /*   when the pointer is) */
+  float wheel_x;         /* GRACEUI_EVENT_POINTER: wheel notches, rightwards */
+  float wheel_y;         /*   and away from the player */
 } GraceUiEvent;
 
 /* ---- A space (D75, D81, D169): the mod's pages, topics and commands, as the bridge protocol's frames (§6). The same
@@ -444,7 +505,7 @@ typedef GraceUiStatus (*GraceUiReservedSlot)(GraceUiConsumer consumer, const voi
  * GRACEUI_NOT_YET where this GraceUI does not provide it. GraceUI 0.1 provides every slot but three of the bridge
  * protocol's four (register_pages, publish, answer) and log, and its poll gives hotkey events alone (D155); GraceUI 0.2
  * provides the protocol's three and poll's protocol events (D169), and log is declared for the increment that builds
- * it.
+ * it; GraceUI 0.2.1 (ABI 1.1) adds set_caret and poll's holder events (D176).
  */
 typedef struct GraceUiApi1 {
   uint32_t size;             /* the table's size in this GraceUI: a slot exists only if it ends within it */
@@ -522,6 +583,15 @@ typedef struct GraceUiApi1 {
    * any provider's danger or loading ends the input holder (invariant 9). GRACEUI_OK or _REFUSED (an unknown flag). */
   GraceUiStatus (*set_world_state)(GraceUiConsumer consumer, const GraceUiWorldState* state);
   GraceUiStatus (*log)(GraceUiConsumer consumer, uint32_t level, const char* text, uint64_t text_length);
+
+  /* ---- ABI 1.1 (GraceUI 0.2.1, D176). */
+
+  /* Where the text caret of the mod's field is, so that GraceUI places the IME's composition and candidate windows at
+   * it while the mod holds input (§5.6): GRACEUI_OK; _REFUSED (a panel not the mod's, or a caret not finite). Height 0
+   * clears it. Only the holder's caret counts: one set while the mod does not hold input is answered OK and ignored,
+   * and the caret ends with its holder, so a mod sets it while it holds (each frame its field has the caret). Since
+   * GraceUI 0.2.1 (GRACEUI_CAP_HOLDER_EVENTS). */
+  GraceUiStatus (*set_caret)(GraceUiConsumer consumer, const GraceUiCaret* caret);
 } GraceUiApi1;
 
 /* Whether `api`'s size covers `slot` (a member of GraceUiApi1): call a slot only then. */

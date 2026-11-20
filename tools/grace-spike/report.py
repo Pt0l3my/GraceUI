@@ -23,6 +23,7 @@ SCHEMA = 1
 FILE = "graceui-spike.jsonl"
 TYPING_MS = 60000
 ATLAS_LIMIT = 4096  # DESIGN §3.16: within 4096 x 4096 at 4K or 150%
+RECEIVED_SLACK = 2  # characters typed as a test ends, discarded with its holder before its panel took them (D176)
 HAND_RULES = ("movement", "steam_overlay", "steam_keyboard", "proton")
 
 PASSED, FAILED, NOT_MEASURED = "passed", "failed", "not_measured"
@@ -147,6 +148,7 @@ def s4_rules(header, states, typings, hand):
                           f"{masked[1]} mouse)", optional=True))
     else:
         rules.append(rule("nothing_passed", NOT_MEASURED, "no typing test"))
+    rules.append(received_rule(typings))
     rules.append(hand_rule("movement", hand, "EldenNet's recording measures it once R1 has its task"))
     scaled = [state for state in states if state.get("ui_scale_x100", 0) >= 150]
     if scaled:
@@ -158,6 +160,31 @@ def s4_rules(header, states, typings, hand):
     rules.append(hand_rule("steam_keyboard", hand, "the Steam floating keyboard", optional=True))
     rules.append(hand_rule("proton", hand, "Proton", optional=True))
     return rules
+
+
+def received_rule(typings):
+    """What the observer's own panel received through its holder's events (GraceUI 0.2.1, D176), beside what GraceUI's
+    own Dear ImGui counted, and whether it heard its holder end as GraceUI recorded it."""
+    with_events = [t for t in typings if "received" in t]
+    if not with_events:
+        return rule("panel_received", NOT_MEASURED, "no typing test with its holder's events (before GraceUI 0.2.1)",
+                    optional=True)
+    got = [sum(t.get("received", [0] * 4)[i] for t in with_events) for i in range(4)]
+    counted = sum(t.get("chars", 0) for t in with_events)
+    dropped = sum(t.get("dropped", 0) for t in with_events)
+    fed = sum(t.get("imgui_chars", 0) for t in with_events)
+    ends = [f"{t.get('end_event')} (GraceUI: {t.get('end')})" for t in with_events]
+    detail = (f"its panel received {got[0]} characters, {got[1]} keys, {got[2]} pointer and {got[3]} pad events "
+              f"({dropped} dropped: its own polling), and its Dear ImGui took {fed} characters from feed; GraceUI's "
+              f"own Dear ImGui counted {counted} characters; its end heard as {', '.join(ends)}")
+    slack = RECEIVED_SLACK * len(with_events)
+    lost = got[0] + slack < counted or fed + slack < got[0]
+    misheard = any(t.get("end_event") != t.get("end") for t in with_events)
+    if lost or misheard:
+        return rule("panel_received", FAILED, detail)
+    if counted == 0 and got[0] == 0:
+        return rule("panel_received", NOT_MEASURED, detail)
+    return rule("panel_received", PASSED, detail)
 
 
 def hand_rule(name, hand, what, optional=False):
