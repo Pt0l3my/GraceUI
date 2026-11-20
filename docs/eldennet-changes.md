@@ -753,3 +753,40 @@ pages.json and settings.json EldenNet's page build writes (and, if it likes, a t
 scenario.json of timed steps, invented content only). grace-dev checks them as `register_pages` does, and
 `grace-dev --dump eldennet <page> --size 1920x1080` prints a page's in-game structure.
 
+
+## 27. The menu shows mods' spaces (2026-11-20, D171)
+
+1. **EldenNet's pages in game, through GraceUI's menu**: a space registered with `GRACEUI_VIEW_GAME` is shown by F5's
+   menu, first on the session's first open, with GraceUI's own categories at its rail's foot. EldenNet's space needs
+   nothing new for it: the same `register_pages`, `poll`, `publish` and `answer` as for the browser.
+2. **The menu is a view of the `settings` topic**: while it shows EldenNet's space it watches `settings`, so EldenNet
+   hears WATCHED when the menu or a browser starts watching and UNWATCHED when neither does (the menu's close included).
+   Its state's `values` (and `inherited`, for tri-states that inherit) set the rows; publish every value, or the menu
+   shows a value missing from it as its default.
+3. **Commands from the menu** come as any view's do, with a reply handle and the same 10 s deadline; a refusal's words
+   (the result's own `detail`, protocol 1.1, §28) are shown under the row, and the row shows the last published value
+   again.
+4. **Component blocks** (status tiles, feeds) read "Shown in the browser view." in game (G16); only their settings are
+   drawn there in 0.2.
+
+## 28. Protocol 1.1 (2026-11-20, D172)
+
+1. **A refusal's words in `result.detail`**: optional, at most 256 bytes, a sentence a player reads ("Not now: the
+   ritual is under way."), shown under the row in both views in place of the error code's words. Put EldenNet's in
+   `detail`, not in `body`; nothing personal, no value, no path (PV rules, §6.7).
+2. **Clearing a stream**: publish an empty `rows` batch whose `from_seq` is past the next row (skip one number), and
+   every view clears that stream at once; the next rows follow on from that `from_seq`. A batch past a gap with rows in
+   it starts the stream over there, as before.
+3. **Nothing breaks**: 1.0 frames are still taken (GraceUI checks the major only); `hello` may say "1.1".
+
+## 29. D166's follow-ups and GraceUI 0.2.0 (2026-11-20, D173, D174)
+
+1. **Destructive commands arrive confirmed**: a command one of EldenNet's destructive actions sends (tone
+   `destructive`) reaches EldenNet's space only with `"confirm": true` in its args; GraceUI refuses one without it
+   `confirm_required`, from the browser and the in-game menu alike. EldenNet may rely on it, and keeps its own checks.
+2. **Pages by increment**: a page whose `increment` is later than the increment EldenNet registers is absent from both
+   views (rail, Page Up and Page Down, search, related links, shortcuts). Register the increment EldenNet's release
+   is, and give each page the increment it ships in; a page with none (a later-version statement page) always shows.
+3. **Words**: a secret reads Set or Missing; availability badges read "Waits on a game check", "Takes effect in
+   v1.5", "Off because … is off" (for `requires:<key>` while that key is off) and "No effect in this version" (inert).
+4. **GraceUI 0.2.0**: the `pages` capability and protocol 1.1 come with it; a floor of 0.2.0 asks for both.
