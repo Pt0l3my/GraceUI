@@ -619,3 +619,24 @@ after GraceUI.
 3. **Opening and closing**: on each `GRACEUI_EVENT_HOTKEY` for F11 with an odd count, the view toggles: to open, one
    list submitted and then `show_panel`, so it never shows empty; to close, `hide_panel`. The F11 view takes no input
    in 0.1 (no `request_input`): its keys and pointer reach a holder only with §6's protocol (D142).
+
+## 19. EldenNet's pages in GraceUI's page format (S11.2.h, 2026-11-20, D160)
+
+What S11.2.h settles for EldenNet's pages, which are EldenNet's since G20 (S11.4.a builds them). None of it is folded
+into EldenNet's design yet.
+
+1. **One file per space**: EldenNet's page data is a TOML file in GraceUI's format, as GraceUI's own space and the demo
+   space are (`src/grace-pages/spaces/*/space.toml` in GraceUI): `[space]` (its id `eldennet`, name, settings schema
+   number, commands), `[[topic]]` (each topic of §6.5 with its shape, a stream with its ring), `[[category]]`,
+   `[[setting]]` (§6.9's fields) and `[[page]]` with its sections or tabs, blocks and actions. GraceUI's demo space shows
+   every part of it.
+2. **The lint**: EldenNet's CI runs `python3 -I tools/pages/build.py --lint <EldenNet's space.toml>` from a pinned
+   GraceUI. It checks, among the rest, that every setting appears on exactly one settings block on its home page
+   (invariant 12), that a secret's default is empty, that each component draws a declared topic of its shape, and that
+   each action's command is one EldenNet declares. A link to one of GraceUI's own pages is written `graceui/<page id>`
+   (`graceui/graceui.menu`, D115).
+3. **Into the DLL**: EldenNet turns its TOML into the protocol's JSON (`space_pages` and `settings_description`), as the
+   tool does for GraceUI's built-in spaces, and hands both over at `register_pages` (S11.2.b types the slot). Its
+   settings description's hash is the first 16 hex digits of the SHA-256 of its canonical JSON.
+4. **Availability and tri-states**: a setting's availability is `live`, `later`, `inert`, `check:<id>`,
+   `version:<x.y>` or `requires:<key>`, a later one locked; a tri-state's values are `on`, `off` and `auto`.
