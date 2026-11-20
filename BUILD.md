@@ -198,6 +198,13 @@ python3 -I tools/check_safety.py --exports build-cl-rel/bin/graceui.dll
   build trees, and each binary names its PDB by file name only (`/pdbaltpath`), so no build machine's path ships.
 - `XWIN_ROOT`, a cache variable or in the environment, points elsewhere than `~/.cache/xwin`; the toolchain file
   refuses a splat whose CRT or SDK differs from the lock.
+- **The GraceUI folder** (§2.7, D165): after each build, `build-cl-rel/GraceUI/` holds `graceui.dll`, `LICENSE.txt`,
+  `NOTICE.txt` and the `graceui.toml` that lists them, each with its size and SHA-256, as `Game\GraceUI\` is installed;
+  the web app and the fonts join it once they are built. `tools/release/manifest.py` writes the file (from
+  CMakeLists.txt's version, `graceui.h`'s ABI minor and `protocol.toml`'s version and caps) and checks one
+  (`python3 -I tools/release/manifest.py check FOLDER`, which names every missing, extra or changed file); its date is
+  `SOURCE_DATE_EPOCH`'s, else today's. A test build lays out its folder the same way, test exports and all, for a
+  consumer's own tests to install from; it is never a release.
 
 ## The test build and the harness
 

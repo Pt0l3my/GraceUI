@@ -91,3 +91,12 @@ if(WIN32)
     add_subdirectory(tools/grace-harness)
   endif()
 endif()
+
+# GraceUI's version file (D52): tools/release/manifest.py writes graceui.toml for a GraceUI folder and checks one.
+if(GRACEUI_UNIT_TESTS)
+  find_package(Python3 3.11 COMPONENTS Interpreter)
+  if(Python3_FOUND)
+    add_test(NAME manifest_tool_tests
+             COMMAND ${Python3_EXECUTABLE} -I -m unittest discover -s ${CMAKE_SOURCE_DIR}/tools/release)
+  endif()
+endif()

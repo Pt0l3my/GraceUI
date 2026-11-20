@@ -664,3 +664,8 @@ yet.
    brings these; every struct keeps its size field.
 4. **Imports of a consumer's Dear ImGui core**: built with `/Zc:threadSafeInit-`, the core does not import the
    runtime's thread-safe statics; `ReadConsoleW` comes with `sscanf` either way.
+5. **GraceUI's build writes `graceui.toml`** (D165): every Windows build of GraceUI lays out `GraceUI/` beside `bin/`
+   (`graceui.dll`, `LICENSE.txt`, `NOTICE.txt` and the `graceui.toml` listing them), so EldenNet's harness installs
+   that folder and drops its own writer. The format is D52's: `graceui`, `abi`, `protocol`, `caps` (empty for now),
+   `released` and `[files]`, names relative with `/`. EldenNet's release job checks the carried folder with
+   `python3 -I tools/release/manifest.py check FOLDER` from GraceUI's tag, or its own reader of the same subset.
