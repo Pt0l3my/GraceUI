@@ -143,7 +143,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       const outside = requests.filter((url) => !url.startsWith(origin + "/") && !url.startsWith(origin.replace("http:", "ws:") + "/") &&
                                                 !url.startsWith("data:"));
       assert.deepEqual(outside, [], "nothing is requested outside the origin");
-      assert.ok(requests.some((url) => url.endsWith("/ws")), "the socket is on the origin");
+      assert.ok(requests.some((url) => url.endsWith("/api/ws")), "the socket is on the origin");
     } finally {
       await close();
     }

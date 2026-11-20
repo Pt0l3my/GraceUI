@@ -2,7 +2,7 @@
 // fake-host.ts: a small stand-in for grace-serve, for the DOM tests only (grace-dev, DESIGN §9.2, comes later and
 // links the real server). It serves the built dist/ with §7.2 item 10's headers, exactly its CSP among them, only the
 // files the build wrote, the session cookie on a page load, a ticket by a same-origin POST that carries it, and one
-// WebSocket at /ws whose first frame must be hello with that ticket; then it plays the fixture spaces as the fixture
+// WebSocket at /api/ws whose first frame must be hello with that ticket; then it plays the fixture spaces as the fixture
 // transport does, with the same FixtureSpace. It checks Host, Origin and Fetch Metadata as the server does, and records
 // every request and frame for the tests. Loopback only.
 import { createHash, randomBytes } from "node:crypto";
@@ -179,7 +179,7 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
   server.on("upgrade", (req, socket: Socket) => {
     requests.push(`UPGRADE ${req.url ?? ""}`);
     const key = req.headers["sec-websocket-key"];
-    if (req.url !== "/ws" || req.headers.host !== host || req.headers.origin !== origin || !hasCookie(req) ||
+    if (req.url !== "/api/ws" || req.headers.host !== host || req.headers.origin !== origin || !hasCookie(req) ||
         typeof key !== "string") {
       socket.end("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
       return;

@@ -43,7 +43,7 @@ export interface WebSocketOptions {
 
 const OPEN = 1;
 export const DEFAULT_TICKET_PATH = "/api/ticket";
-export const DEFAULT_SOCKET_PATH = "/ws";
+export const DEFAULT_SOCKET_PATH = "/api/ws";  // grace-serve's route (D161)
 
 /** A path on this origin: starts with one "/", and names no other host or scheme. */
 export function samePath(path: string): boolean {

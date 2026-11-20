@@ -725,3 +725,14 @@ GraceUI 0.2's table provides `register_pages`, `publish` and `answer`, and `poll
 6. **In game**, EldenNet's pages appear in GraceUI's menu once the menu shows a mod's space (D169's "not yet"), through
    the same events: nothing more to do on EldenNet's side.
 
+## 24. The browser view's web shell (2026-11-20, D166)
+
+1. **The status lamp** shows only when a space publishes a state topic `status`, whose body is
+   `{"word": …, "tone": …, "reason": …, "page": …}` (the word in the top bar, its tone, the reason on hover and focus,
+   the page a click opens). EldenNet's L1 to L4 words and its Paused and Dormant (§4.2.3) map onto it.
+2. **Its pages and settings** reach the browser as registered (D169): GraceUI's server answers each space's `pages`
+   topic itself; EldenNet publishes its `settings` topic (a settings body: description, values, changed, inherited)
+   and answers `settings.set` and `settings.reset` at its one entry point.
+3. **Destructive commands** will carry `confirm: true` from both views (§7.3), and GraceUI will refuse one without it
+   `confirm_required`: EldenNet's destructive commands need not check it themselves, but may.
+

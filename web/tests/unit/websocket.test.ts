@@ -112,18 +112,18 @@ test("the handshake: a same-origin POST for the ticket, the socket on this origi
   assert.equal(request?.init.credentials, "same-origin");
   assert.equal(request?.init.body, "{}");
   assert.deepEqual(request?.init.headers, { "Content-Type": "application/json" });
-  assert.equal(socket.url, "ws://127.0.0.1:8642/ws");
+  assert.equal(socket.url, "ws://127.0.0.1:8642/api/ws");
   assert.deepEqual(socket.frames()[0], { v: 1, t: "hello", protocol: "1.0", bundle: "0.2.0", caps: [], ticket: TICKET });
   assert.equal(got.welcome?.length, 1);
 });
 
 test("an https page's socket is wss, on the same host", async () => {
   const { socket } = await connected("https:");
-  assert.equal(socket.url, "wss://127.0.0.1:8642/ws");
+  assert.equal(socket.url, "wss://127.0.0.1:8642/api/ws");
 });
 
 test("only paths on this origin, never another host or scheme (invariant 6)", () => {
-  assert.equal(samePath("/ws"), true);
+  assert.equal(samePath("/api/ws"), true);
   assert.equal(samePath("/api/ticket"), true);
   for (const path of ["//evil.example/ws", "ws://evil.example/ws", "ws", "/\\evil", "/ws?x=1", ""]) {
     assert.equal(samePath(path), false, path);
