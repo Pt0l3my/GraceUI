@@ -759,6 +759,7 @@ struct GraceUi {
   decltype(&GraceUI_Test_GetSetting) get_setting = nullptr;
   decltype(&GraceUI_Test_GetTopic) get_topic = nullptr;
   decltype(&GraceUI_Test_GetMenuBounds) get_menu_bounds = nullptr;
+  decltype(&GraceUI_Test_SetAntiCheatRecheck) set_anti_cheat_recheck = nullptr;
   decltype(&GraceUI_Test_GetServer) get_server = nullptr;
 
   bool load(const std::wstring& path) {
@@ -806,9 +807,10 @@ struct GraceUi {
     get_setting = function_of<decltype(get_setting)>(module, "GraceUI_Test_GetSetting");
     get_topic = function_of<decltype(get_topic)>(module, "GraceUI_Test_GetTopic");
     get_menu_bounds = function_of<decltype(get_menu_bounds)>(module, "GraceUI_Test_GetMenuBounds");
+    set_anti_cheat_recheck = function_of<decltype(set_anti_cheat_recheck)>(module, "GraceUI_Test_SetAntiCheatRecheck");
     get_server = function_of<decltype(get_server)>(module, "GraceUI_Test_GetServer");
     return get_server != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
-           get_menu_bounds != nullptr && panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
+           get_menu_bounds != nullptr && set_anti_cheat_recheck != nullptr && panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
            request_input != nullptr && release_input != nullptr && set_world != nullptr && set_caret != nullptr &&
@@ -5361,6 +5363,94 @@ void run_settings(const std::wstring& dll) {
   DeleteFileW(settings_file_of(dll).c_str());
 }
 
+// ---- An anti-cheat found after the first request (§7.2 item 1, D81): a world-state provider's flag, or GraceUI's own
+// module re-check while the server runs, closes the browser view's server for the rest of the session, whatever a space
+// asks; the menu stays. Run from the build's GraceUI folder, as pages is, so that the server can start.
+
+void run_anti_cheat_later(const std::wstring& dll, bool recheck) {
+  using grace::protocol::Json;
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+  const grace::pages::BuiltinSpace& space = grace::pages::builtin_spaces()[1];
+  const auto describe = [&](std::uint32_t views) {
+    GraceUiSpaceDesc desc{};
+    desc.size = sizeof desc;
+    desc.views = views;
+    desc.version = GRACEUI_VERSION_PACK(1, 0, 0);
+    desc.pages = space.pages.data();
+    desc.pages_length = space.pages.size();
+    desc.settings = space.settings.data();
+    desc.settings_length = space.settings.size();
+    desc.increment = "0.2";
+    desc.increment_length = 3;
+    return desc;
+  };
+  const Connected demo = connect(table, request_for("demo", GRACEUI_VERSION_PACK(0, 1, 0), "The demo space",
+                                                    "notices pages world-state"));
+  if (recheck) {
+    grace.set_anti_cheat_recheck(200);  // before the server starts, which schedules its first re-check
+  }
+  const GraceUiSpaceDesc browser = describe(GRACEUI_VIEW_GAME | GRACEUI_VIEW_BROWSER);
+  const GraceUiStatus registered = table->register_pages(demo.answer.consumer, &browser);
+  const auto wait_server = [&](std::uint32_t running) {
+    GraceUiTestServer server = grace.server();
+    for (int i = 0; i < 150 && server.running != running; ++i) {
+      frames(game, 1);
+      Sleep(20);
+      server = grace.server();
+    }
+    return server;
+  };
+  const GraceUiTestServer started = wait_server(1);
+  const char* said = nullptr;
+  GraceUiStatus flagged = GRACEUI_OK;
+  if (recheck) {
+    grace.set_anti_cheat_names(L"grace-harness", nullptr);  // this program's own module: the re-check finds it
+    said = "GraceUI's module re-check found an anti-cheat: the browser view is closed for the rest of the session";
+  } else {
+    GraceUiWorldState state{};
+    state.size = sizeof state;
+    state.flags = GRACEUI_WORLD_ANTI_CHEAT;
+    flagged = table->set_world_state(demo.answer.consumer, &state);
+    said = "a world-state provider reports an anti-cheat: the browser view is closed for the rest of the session";
+  }
+  const GraceUiTestServer stopped = wait_server(0);
+  // Closed for the session: the flag cleared, another browser space, and time pass, and it stays closed.
+  GraceUiWorldState clear{};
+  clear.size = sizeof clear;
+  const GraceUiStatus cleared = table->set_world_state(demo.answer.consumer, &clear);
+  const Connected later = connect(table, request_for("lantern", GRACEUI_VERSION_PACK(0, 1, 0), "Lantern", "pages"));
+  GraceUiSpaceDesc again = browser;
+  std::string pages_text(space.pages);
+  const std::string from = "\"space\":\"demo\"";
+  const std::size_t at = pages_text.find(from);
+  if (at != std::string::npos) {
+    pages_text.replace(at, from.size(), "\"space\":\"lantern\"");
+  }
+  again.pages = pages_text.data();
+  again.pages_length = pages_text.size();
+  const GraceUiStatus later_registered = table->register_pages(later.answer.consumer, &again);
+  frames(game, 60);
+  const GraceUiTestServer after = grace.server();
+  press(game.window(), VK_F5, kScanF5);
+  const GraceUiTestMenu menu = menu_after(game, grace, 0);
+  check(registered == GRACEUI_OK && started.running == 1 && flagged == GRACEUI_OK && stopped.running == 0 &&
+            grace.logged(said) && cleared == GRACEUI_OK && after.running == 0 && menu.open == 1 && menu.off == 0,
+        recheck ? "anti-cheat later: the module re-check" : "anti-cheat later: a provider's flag",
+        "the server ran (%u), then %s: running %u; the log %s; the flag cleared (%s), a second browser space (%s), "
+        "60 frames: running %u; the menu still opens (%u)",
+        started.running, recheck ? "a re-check of 200 ms found this program's module" : "the provider's flag",
+        stopped.running, grace.logged(said) ? "says so" : "DOES NOT SAY SO", status_name(cleared),
+        status_name(later_registered), after.running, menu.open);
+  press(game.window(), VK_F5, kScanF5);
+  frames(game, 2);
+}
+
 // ---- The menu's mouse (§5.5): a press focuses and acts on what it is on, a held button's moves set a slider, the rail
 // takes a click; at 1920 by 1080, where the client area and the back buffer are the same size.
 
@@ -6289,6 +6379,12 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"pages") {
     std::printf("-- scenario: a mod's space across the ABI and the browser view's server (D169)\n");
     run_pages(dll);
+  } else if (scenario == L"anti-cheat-flag") {
+    std::printf("-- scenario: a provider's anti-cheat flag closes the browser view for the session (§7.2 item 1)\n");
+    run_anti_cheat_later(dll, false);
+  } else if (scenario == L"anti-cheat-recheck") {
+    std::printf("-- scenario: the module re-check closes the browser view for the session (§7.2 item 1)\n");
+    run_anti_cheat_later(dll, true);
   } else if (scenario == L"menu-mouse") {
     std::printf("-- scenario: the in-game menu by mouse (§5.5)\n");
     run_menu_mouse(dll);
@@ -6360,6 +6456,8 @@ int wmain(int argc, wchar_t** argv) {
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.
       run(L"pages", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
+      run(L"anti-cheat-flag", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
+      run(L"anti-cheat-recheck", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
       DeleteFileW(settings_file_of(folder_of_this_program() + L"..\\GraceUI\\graceui.dll").c_str());  // D179: none left
       // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in
       // GraceUI\graceui.dll, which nothing else loads.

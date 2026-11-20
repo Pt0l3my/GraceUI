@@ -169,6 +169,13 @@ GRACEUI_API uint32_t GraceUI_Test_GetSetting(const char* key, char* out, uint32_
   }
 }
 
+GRACEUI_API void GraceUI_Test_SetAntiCheatRecheck(uint32_t ms) {
+  try {
+    grace::host::test_set_recheck_ms(ms);
+  } catch (...) {
+  }
+}
+
 GRACEUI_API uint32_t GraceUI_Test_GetMenuBounds(const char* name, float* out) {
   try {
     return grace::host::test_menu_bounds(name, out);

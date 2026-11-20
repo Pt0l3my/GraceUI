@@ -38,6 +38,11 @@ void serve() noexcept;
 // Whether GraceUI's own thread should wake by itself about once a second: while the server runs (the deadlines).
 bool wants_timer() noexcept;
 
+// An anti-cheat found after the first request: a world-state provider's flag, or GraceUI's own module re-check (every
+// 60 s while the server runs). Any thread: the browser view's server stops at GraceUI's next wake and never starts
+// again this session, whatever any space asks (§7.2 item 1, D81, invariant 4). One log line names `source`.
+void close_for_anti_cheat(const char* source) noexcept;
+
 // dashboard.disconnect, from the menu: a new session cookie, every browser connection closed (§7.2 item 17).
 void disconnect_browsers() noexcept;
 
@@ -50,6 +55,8 @@ struct TestView {
   std::uint32_t failed;    // 1 if it could not start this session
 };
 void test_view(TestView& out) noexcept;
+// The module re-check's interval, for a test: 0 keeps 60 s.
+void test_set_recheck_ms(std::uint32_t ms) noexcept;
 // One of GraceUI's own topics as JSON text (GraceUI_Test_GetTopic): its length, 0 for none or if it does not fit.
 std::uint32_t test_topic(const char* topic, char* out, std::uint32_t capacity) noexcept;
 #endif

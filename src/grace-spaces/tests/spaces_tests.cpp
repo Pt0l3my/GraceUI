@@ -89,6 +89,24 @@ TEST_CASE("a registration is checked: views, its own id, decodable page data, on
   std::string broken = pages;
   broken.replace(broken.find("\"lantern.wicks\""), 15, "\"lantern.wickz\"");
   CHECK(registry.add(kMod, "demo", demo_registration(broken, settings), why) == Status::refused);
+  // A destructive action must carry the words its second press shows (§7.3, D173), whatever a mod's tools checked.
+  std::string unconfirmed = pages;
+  const std::string confirm = ",\"confirm\":\"The log's lines are removed. The journal is kept.\"";
+  REQUIRE(unconfirmed.find(confirm) != std::string::npos);
+  unconfirmed.erase(unconfirmed.find(confirm), confirm.size());
+  CHECK(registry.add(kMod, "demo", demo_registration(unconfirmed, settings), why) == Status::refused);
+  CHECK(why == "a destructive action without its confirm text");
+  // GraceUI's own space's id is not a mod's.
+  std::string own = pages;
+  own.replace(own.find("\"space\":\"demo\""), 14, "\"space\":\"graceui\"");
+  CHECK(registry.add(kMod, "graceui", demo_registration(own, settings), why) == Status::refused);
+  CHECK(why.find("GraceUI's own") != std::string::npos);
+  // The pages topic is the framework's: a space may not declare its own.
+  std::string pages_topic = pages;
+  const std::string status_topic = "{\"id\":\"lantern.status\"";
+  pages_topic.replace(pages_topic.find(status_topic), status_topic.size(), "{\"id\":\"pages\"");
+  CHECK(registry.add(kMod, "demo", demo_registration(pages_topic, settings), why) == Status::refused);
+  CHECK(why == "pages is the framework's own topic");
   CHECK(registry.add(kMod, "demo", demo_registration(pages, settings), why) == Status::ok);
   CHECK(registry.add(kMod, "demo", demo_registration(pages, settings), why) == Status::duplicate);
   CHECK(registry.add(kMod + 1, "demo", demo_registration(pages, settings), why) == Status::duplicate);
@@ -387,6 +405,17 @@ TEST_CASE("the menu's side, with no server: the space listed, a watch, its state
   CHECK(body["values"]["lantern.wicks"] == 5);
   CHECK_FALSE(registry.game_state("demo", "settings", 4, body, rev));  // nothing newer
   CHECK(wakes >= 1);
+  // The settings topic is held to the registration: a secret's value never leaves (only whether it is set), and a
+  // description other than the registered one is refused (invariants 5 and 12, as framework guards).
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"settings","rev":5,"body":{"values":{"lantern.oil_token":"Zq7-wick-tallow-99","lantern.keeper":"Ivo"}}})",
+                         why) == Status::ok);
+  REQUIRE(registry.game_state("demo", "settings", 4, body, rev));
+  CHECK(body["values"]["lantern.oil_token"] == "set");
+  CHECK(body["values"]["lantern.keeper"] == "Ivo");
+  CHECK(body.dump().find("Zq7") == std::string::npos);
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"settings","rev":6,"body":{"description":[],"values":{}}})",
+                         why) == Status::refused);
+  CHECK(why == "its settings description is not the one it registered");
 
   std::uint64_t ticket = 0;
   REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 3, "settings.set",

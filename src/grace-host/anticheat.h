@@ -19,9 +19,13 @@ enum class Clause : std::uint32_t {
 // and allocates.
 Clause check() noexcept;
 
+// The module clause alone, for the re-check while the browser view's server runs (§7.2 item 1, D81): a module of an
+// anti-cheat loaded since the first request. GraceUI's own thread; it reads the module list and allocates.
+bool module_loaded() noexcept;
+
 #if defined(GRACEUI_TEST_EXPORTS)
 // A test build compares these names instead, so that the harness simulates a hit with no anti-cheat software present.
-// Before the first request only; null or an empty name keeps the real one.
+// Before the first request, or later for the module re-check; null or an empty name keeps the real one.
 void set_names(const wchar_t* module_prefix, const wchar_t* parent) noexcept;
 #endif
 

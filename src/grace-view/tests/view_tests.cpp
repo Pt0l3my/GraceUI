@@ -715,3 +715,21 @@ TEST_CASE("the wheel scrolls the page, which stays until a key moves focus; a ta
   REQUIRE(a.kind == Action::Kind::command);
   CHECK(a.command.args == Json::object({{"id", "tide-charts"}, {"on", false}}));
 }
+
+TEST_CASE("a destructive action asks for its second press even without its confirm text (§7.3, D173)") {
+  const auto& s = test::space("demo");
+  std::string pages(s.pages);
+  const std::string confirm = ",\"confirm\":\"The log's lines are removed. The journal is kept.\"";
+  REQUIRE(pages.find(confirm) != std::string::npos);
+  pages.erase(pages.find(confirm), confirm.size());
+  PageView view;
+  std::string why;
+  REQUIRE(view.load(test::decoded<grace::protocol::SpacePages>(pages),
+                    test::decoded<grace::protocol::SettingsDescription>(s.settings), why));
+  REQUIRE(view.open("demo.log"));
+  CHECK(view.focused() == "action:clear");
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // asks first
+  const Action a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.args == Json::object({{"confirm", true}}));
+}

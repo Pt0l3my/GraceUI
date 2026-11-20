@@ -68,15 +68,12 @@ void log_list_refusal(GraceUiConsumer consumer, std::uint32_t owner, const char*
   log_line("a draw list of %s was refused: %s (logged once for this mod)", id, why);
 }
 
-constinit std::atomic<bool> g_anti_cheat_reported{false};
-
 // After the World changed: the input half reads the newest combined claims itself (never `flags`, which another
 // provider's call may already have replaced), so whichever provider settles last decides (D143, invariant 9).
 void apply_world(std::uint32_t flags) noexcept {
   input::world_changed();
-  if ((flags & GRACEUI_WORLD_ANTI_CHEAT) != 0 && !g_anti_cheat_reported.exchange(true, std::memory_order_relaxed)) {
-    // D78, D81: the browser view closes for the session; GraceUI 0.1 serves none yet.
-    log_line("a world-state provider reports an anti-cheat: the browser view stays closed this session");
+  if ((flags & GRACEUI_WORLD_ANTI_CHEAT) != 0) {
+    spaces::close_for_anti_cheat("a world-state provider reports an anti-cheat");  // D78, D81, §7.2 item 1
   }
 }
 

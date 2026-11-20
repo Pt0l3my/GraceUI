@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "anticheat.h"
 #include "display.h"
 #include "draw_atlas.h"
 #include "grace/abi/spin.h"
@@ -40,6 +41,21 @@ constinit std::uint64_t g_kept_quiet = 1;     // the quiet mods' revision last w
 constinit bool g_keep_failed = false;
 constinit std::atomic<bool> g_running{false};
 constinit std::atomic<std::uint32_t> g_port{0};
+// An anti-cheat found after the first request (§7.2 item 1, D81): the server is closed for the rest of the session.
+constinit std::atomic<bool> g_closed{false};
+constinit std::int64_t g_next_recheck_ms = 0;  // GraceUI's thread: the next module re-check, while the server runs
+constexpr std::int64_t kRecheckMs = 60'000;
+constinit std::atomic<std::uint32_t> g_test_recheck_ms{0};
+
+std::int64_t steady_ms() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+std::int64_t recheck_interval_ms() {
+  const std::uint32_t test = g_test_recheck_ms.load(std::memory_order_relaxed);
+  return test != 0 ? static_cast<std::int64_t>(test) : kRecheckMs;
+}
 
 void server_log(grace::serve::LogLevel, std::string_view line) {
   log_line("browser view: %.*s", static_cast<int>(line.size()), line.data());
@@ -47,7 +63,8 @@ void server_log(grace::serve::LogLevel, std::string_view line) {
 
 bool wanted(const grace::spaces::OwnSpace& own) {
   const protocol::Json& enabled = own.store().held("dashboard.enabled");
-  return !session::notice_only() && registry().wants_browser() && enabled.is_boolean() && enabled.get<bool>();
+  return !session::notice_only() && !g_closed.load(std::memory_order_acquire) && registry().wants_browser() &&
+         enabled.is_boolean() && enabled.get<bool>();
 }
 
 void start(const grace::spaces::OwnSpace& own) {
@@ -75,6 +92,7 @@ void start(const grace::spaces::OwnSpace& own) {
   }
   g_port.store(config.port, std::memory_order_relaxed);
   g_running.store(true, std::memory_order_release);
+  g_next_recheck_ms = steady_ms() + recheck_interval_ms();
   log_line("the browser view is served on loopback, port %u", static_cast<unsigned>(config.port));
 }
 
@@ -367,6 +385,14 @@ void serve() noexcept {
                         grace::spaces::OwnSpace::Hooks{[] { disconnect_browsers(); }, &mods_notices},
                         [] { hooks::wake(); });
     }
+    // GraceUI's own module re-check, every 60 s while the server runs (§7.2 item 1): an anti-cheat loaded since the
+    // first request closes it for the session.
+    if (g_server->running() && steady_ms() >= g_next_recheck_ms) {
+      g_next_recheck_ms = steady_ms() + recheck_interval_ms();
+      if (anticheat::module_loaded()) {
+        close_for_anti_cheat("GraceUI's module re-check found an anti-cheat");
+      }
+    }
     const bool want = wanted(*own_space);
     if (want && !g_server->running() && !g_start_failed.load(std::memory_order_relaxed)) {
       start(*own_space);
@@ -389,6 +415,13 @@ void serve() noexcept {
 
 bool wants_timer() noexcept { return g_running.load(std::memory_order_acquire); }
 
+void close_for_anti_cheat(const char* source) noexcept {
+  if (!g_closed.exchange(true, std::memory_order_acq_rel)) {
+    log_line("%s: the browser view is closed for the rest of the session", source);
+    hooks::wake();  // GraceUI's thread stops the server at once
+  }
+}
+
 void disconnect_browsers() noexcept {
   if (g_server != nullptr && g_running.load(std::memory_order_acquire)) {
     g_server->renew_session();
@@ -403,6 +436,8 @@ void test_view(TestView& out) noexcept {
   out.pending = static_cast<std::uint32_t>(registry().pending());
   out.failed = g_start_failed.load(std::memory_order_relaxed) ? 1 : 0;
 }
+
+void test_set_recheck_ms(std::uint32_t ms) noexcept { g_test_recheck_ms.store(ms, std::memory_order_relaxed); }
 
 std::uint32_t test_topic(const char* topic, char* out, std::uint32_t capacity) noexcept {
   // Read on the caller's thread while GraceUI's thread may be writing: a test reads it only once GraceUI is idle.

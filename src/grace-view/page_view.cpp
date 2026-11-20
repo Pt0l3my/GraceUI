@@ -1034,8 +1034,8 @@ Action PageView::input(const Input& in) {
       switch (f.kind) {
         case FocusKind::action: {
           const protocol::PageAction& a = (*current().actions)[f.index];
-          if (a.confirm && confirming_ != a.id) {
-            confirming_ = a.id;  // the button asks for its second press
+          if ((a.confirm || a.tone == protocol::ActionTone::destructive) && confirming_ != a.id) {
+            confirming_ = a.id;  // the button asks for its second press; a destructive one always (§7.3, D173)
             return {};
           }
           confirming_.clear();

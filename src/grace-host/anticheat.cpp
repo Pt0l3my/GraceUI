@@ -147,6 +147,14 @@ Clause check() noexcept {
   return Clause::none;
 }
 
+bool module_loaded() noexcept {
+  try {
+    return module_clause();
+  } catch (...) {
+    return false;
+  }
+}
+
 #if defined(GRACEUI_TEST_EXPORTS)
 void set_names(const wchar_t* module_prefix_text, const wchar_t* parent) noexcept {
   if (module_prefix_text != nullptr) {

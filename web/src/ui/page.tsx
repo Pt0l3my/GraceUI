@@ -259,7 +259,8 @@ export function PageView() {
               {(page.actions ?? []).map((action) => (
                 <button type="button" key={action.id} data-action={action.id}
                         class={`button button--${action.tone === "destructive" ? "danger" : action.tone}`}
-                        onClick={() => (action.confirm !== undefined ? setConfirming(action) : void run(action, false))}>
+                        onClick={() => (action.confirm !== undefined || action.tone === "destructive"
+                          ? setConfirming(action) : void run(action, false))}>
                   {action.label}
                 </button>
               ))}
