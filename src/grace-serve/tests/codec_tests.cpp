@@ -73,6 +73,37 @@ TEST_CASE("SHA-1: the RFC 3174 and FIPS vectors") {
   CHECK(sha1_of(std::string(64, 'x')) == sha1_of("x", 64));
 }
 
+TEST_CASE("SHA-256: the FIPS 180-2 vectors, whole blocks and bytes alike") {
+  const auto sha256_of = [](std::string_view text, std::size_t repeat = 1) {
+    Sha256 sha;
+    for (std::size_t i = 0; i < repeat; ++i) {
+      sha.update(text);
+    }
+    return hex(sha.finish());
+  };
+  CHECK(sha256_of("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  CHECK(sha256_of("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") ==
+        "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+  CHECK(sha256_of("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+  CHECK(sha256_of("a", 1000000) == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
+  // The span overload takes whole blocks straight from its input: the same digest at every split and length.
+  for (const std::size_t size : {55u, 56u, 63u, 64u, 65u, 127u, 128u, 1000u}) {
+    CAPTURE(size);
+    std::vector<std::uint8_t> bytes(size);
+    for (std::size_t i = 0; i < size; ++i) {
+      bytes[i] = static_cast<std::uint8_t>(i * 7 + 3);
+    }
+    const std::string expected = sha256_of(text_of(bytes));
+    Sha256 whole;
+    whole.update(bytes);
+    CHECK(hex(whole.finish()) == expected);
+    Sha256 split;
+    split.update(std::span<const std::uint8_t>(bytes).first(size / 3));
+    split.update(std::span<const std::uint8_t>(bytes).subspan(size / 3));
+    CHECK(hex(split.finish()) == expected);
+  }
+}
+
 TEST_CASE("Base64: RFC 4648's vectors, both ways") {
   CHECK(base64("") == "");
   CHECK(base64("f") == "Zg==");

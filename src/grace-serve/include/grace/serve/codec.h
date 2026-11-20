@@ -1,6 +1,7 @@
 // codec.h: the small codecs the server needs, our own and portable: SHA-1 (FIPS 180-4, for Sec-WebSocket-Accept only,
-// never for security), Base64 and base64url (RFC 4648), and a UTF-8 validator that can be fed a byte at a time (RFC
-// 3629: no overlong form, no surrogate, nothing past U+10FFFF). Pure: no allocation.
+// never for security), SHA-256 (FIPS 180-4, for the web files' check), Base64 and base64url (RFC 4648), and a UTF-8
+// validator that can be fed a byte at a time (RFC 3629: no overlong form, no surrogate, nothing past U+10FFFF). Pure: no
+// allocation.
 #pragma once
 
 #include <array>
@@ -24,6 +25,26 @@ class Sha1 {
   void take(std::uint8_t byte) noexcept;
 
   std::array<std::uint32_t, 5> state_{0x67452301u, 0xEFCDAB89u, 0x98BADCFEu, 0x10325476u, 0xC3D2E1F0u};
+  std::array<std::uint8_t, 64> buffer_{};
+  std::size_t buffered_ = 0;
+  std::uint64_t length_ = 0;  // in bytes
+};
+
+// SHA-256 (FIPS 180-4 §6.2): the web files' check against graceui.toml's sizes and hashes (§2.7, §7.2 item 15), and
+// later the upload's (item 18).
+class Sha256 {
+ public:
+  void update(std::span<const std::uint8_t> data) noexcept;
+  void update(std::string_view text) noexcept;
+  // The digest; the object is then spent.
+  std::array<std::uint8_t, 32> finish() noexcept;
+
+ private:
+  void block(const std::uint8_t* data) noexcept;
+  void take(std::uint8_t byte) noexcept;
+
+  std::array<std::uint32_t, 8> state_{0x6A09E667u, 0xBB67AE85u, 0x3C6EF372u, 0xA54FF53Au,
+                                      0x510E527Fu, 0x9B05688Cu, 0x1F83D9ABu, 0x5BE0CD19u};
   std::array<std::uint8_t, 64> buffer_{};
   std::size_t buffered_ = 0;
   std::uint64_t length_ = 0;  // in bytes

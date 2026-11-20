@@ -10,9 +10,10 @@ clang-tidy rule; this is the grep). Run it with python3 -I from anywhere:
 The source checks, over src/ and examples/ (our own code; third-party code is fetched into the build tree and not
 looked at):
   1. reinterpret_cast, const_cast and std::bit_cast appear only in grace-host's abi, hooks and draw files, the DLL's
-     abi files (D110) and graceui-sys's headers (a mod's side: GetProcAddress's answer made a function), each with a
-     "// SAFETY:" comment on its statement or in the three lines before it; a C file's pointer casts only in those files
-     too.
+     abi files (D110), graceui-sys's headers (a mod's side: GetProcAddress's answer made a function) and grace-serve's
+     Winsock file (a SOCKET made the HANDLE SetHandleInformation takes, so that no socket is inherited, §7.2 item 24),
+     each with a "// SAFETY:" comment on its statement or in the three lines before it; a C file's pointer casts only in
+     those files too.
   2. Each of those files that holds raw pointers from callers, casts or hook code carries a SAFETY comment.
   3. MinHook is included and called only in grace-host's hooks files, and so is any other way of hooking a window
      (SetWindowLongPtr, SetWindowsHookEx), and Dear ImGui's backends only in grace-host (invariant 16): graceui-sys and
@@ -24,7 +25,9 @@ looked at):
   6. No project that EldenNet's O47 and O48 exclude is named in a build file (D106).
   7. The pure modules (grace-input, grace-abi, grace-tokens and grace-serve's core) include no Windows header, no Dear
      ImGui and no MinHook, and their libraries link nothing (G15 (a), D124, D131, D158): their unit tests build on
-     Linux, which proves the first, and this check names the line.
+     Linux, which proves the first, and this check names the line. grace-serve's I/O, in src/grace-serve/io/ (its own
+     library, grace_serve), is not pure; so grace_serve_core compiles nothing from io/, and no file of the core includes
+     io/'s headers or grace_serve's own (server.h, space.h, files.h).
   8. graceui.h only grows against ABI 1.0's first header, src/grace-abi/baseline/graceui-abi1-0.h (D109, D132): every
      constant keeps its value (GRACEUI_ABI1_MINOR may only rise), every typedef and export its declaration, and every
      struct, the table GraceUiApi1 among them, keeps its members in their order, adding members only at its end; a slot
@@ -46,7 +49,8 @@ ABI_BASELINE = "src/grace-abi/baseline/graceui-abi1-0.h"
 # D110: the files where raw pointers from callers, casts and hook code may live; and graceui-sys's headers, the mod's
 # side of the boundary, whose one cast turns GetProcAddress's answer into the export's type.
 ALLOWED = re.compile(
-    r"^src/(grace-host/(abi|hooks|draw)[^/]*|graceui/abi[^/]*)\.(cpp|c|h)$|^src/graceui-sys/include/[^/]+\.(h|hpp)$")
+    r"^src/(grace-host/(abi|hooks|draw)[^/]*|graceui/abi[^/]*)\.(cpp|c|h)$|^src/graceui-sys/include/[^/]+\.(h|hpp)$"
+    r"|^src/grace-serve/io/platform_win32\.cpp$")
 HOOK_FILES = re.compile(r"^src/grace-host/hooks[^/]*\.(cpp|c|h)$")
 GRACE_HOST_FILES = re.compile(r"^src/grace-host/")
 DLL_ABI_FILES = re.compile(r"^src/graceui/abi[^/]*\.cpp$")
@@ -75,9 +79,15 @@ PURE_MODULES = {"src/grace-input/": ("grace_input",), "src/grace-abi/": ("grace_
                 "src/grace-serve/": ("grace_serve_core",), "src/grace-pages/": ("grace_pages",),
                 "src/grace-view/": ("grace_view",), "src/grace-draw/": ("grace_draw",)}
 # What a pure module may link: nlohmann/json, header-only, for grace-protocol (D159); and other pure modules, for the
-# in-game views (D162).
-PURE_MAY_LINK = {"grace_protocol": ("gu_nlohmann_json",), "grace_pages": ("grace_protocol",), "grace_view": ("grace_protocol", "grace_tokens"),
+# in-game views (D162) and a space's settings store (D167).
+PURE_MAY_LINK = {"grace_protocol": ("gu_nlohmann_json",), "grace_pages": ("grace_protocol",),
+                 "grace_view": ("grace_protocol", "grace_tokens"),
                  "grace_draw": ("grace_view", "grace_tokens", "grace_abi_rules")}
+# grace-serve's I/O (grace_serve, S11.2.i): beside its pure core, and not pure itself.
+IMPURE_PARTS = ("src/grace-serve/io/", "src/grace-serve/include/grace/serve/server.h",
+                "src/grace-serve/include/grace/serve/space.h", "src/grace-serve/include/grace/serve/files.h")
+SERVE_IO_HEADERS = re.compile(r'#\s*include\s*[<"](?:[^">]*/)?(?:platform|internal|engine)\.h[">]|'
+                              r'#\s*include\s*[<"]grace/serve/(?:server|space|files)\.h[">]')
 IMPURE_INCLUDE = re.compile(
     r'#\s*include\s*[<"](windows|winuser|windef|winbase|imm|dinput|xinput|d3d1\d|dxgi[0-9_]*|psapi|tlhelp32|'
     r'imgui[a-z_]*|MinHook)\.h[">]', re.IGNORECASE)
@@ -217,10 +227,14 @@ def check_pure_modules():
         linking = re.compile(r"target_link_libraries\s*\(\s*(" + "|".join(libraries) + r")\b(.*)")
         for path in sorted(folder.rglob("*")):
             rel = path.relative_to(ROOT).as_posix()
+            if rel.startswith(IMPURE_PARTS):
+                continue
             if path.suffix in (".cpp", ".c", ".h"):
                 for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                     if IMPURE_INCLUDE.search(line):
                         fail(rel, number, "a pure module includes Win32, Dear ImGui or MinHook (D124)")
+                    if module == "src/grace-serve/" and SERVE_IO_HEADERS.search(line):
+                        fail(rel, number, "grace-serve's pure core includes a header of its I/O (D158)")
             elif path.name == "CMakeLists.txt":
                 for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                     code = line.split("#", 1)[0]
@@ -229,6 +243,9 @@ def check_pure_modules():
                         linked = set(found.group(2).replace(")", " ").split()) - {"PUBLIC", "PRIVATE", "INTERFACE"}
                         if linked - set(PURE_MAY_LINK.get(found.group(1), ())):
                             fail(rel, number, "a pure module's library links a library (D124)")
+                core = re.search(r"add_library\(grace_serve_core\b(.*?)\)", path.read_text(encoding="utf-8"), re.S)
+                if core is not None and "io/" in core.group(1):
+                    fail(rel, 0, "grace_serve_core compiles a file of grace-serve's I/O (D158)")
 
 
 # ---- Check 8: graceui.h only grows against ABI 1.0's first header (D109, D132).

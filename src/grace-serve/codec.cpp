@@ -1,4 +1,5 @@
-// codec.cpp: SHA-1 (FIPS 180-4 §6.1), Base64 and base64url (RFC 4648 §4, §5) and UTF-8 (RFC 3629 §4), our own.
+// codec.cpp: SHA-1 (FIPS 180-4 §6.1), SHA-256 (§6.2), Base64 and base64url (RFC 4648 §4, §5) and UTF-8 (RFC 3629 §4),
+// our own.
 #include "grace/serve/codec.h"
 
 namespace grace::serve {
@@ -182,6 +183,107 @@ std::array<std::uint8_t, 20> Sha1::finish() noexcept {
   }
   std::array<std::uint8_t, 20> digest{};
   for (std::size_t i = 0; i < 5; ++i) {
+    digest[4 * i] = static_cast<std::uint8_t>(state_[i] >> 24);
+    digest[4 * i + 1] = static_cast<std::uint8_t>(state_[i] >> 16);
+    digest[4 * i + 2] = static_cast<std::uint8_t>(state_[i] >> 8);
+    digest[4 * i + 3] = static_cast<std::uint8_t>(state_[i]);
+  }
+  return digest;
+}
+
+namespace {
+
+constexpr std::uint32_t rotr(std::uint32_t value, unsigned bits) noexcept {
+  return (value >> bits) | (value << (32 - bits));
+}
+
+// FIPS 180-4 §4.2.2.
+constexpr std::array<std::uint32_t, 64> kSha256Rounds = {
+    0x428A2F98u, 0x71374491u, 0xB5C0FBCFu, 0xE9B5DBA5u, 0x3956C25Bu, 0x59F111F1u, 0x923F82A4u, 0xAB1C5ED5u,
+    0xD807AA98u, 0x12835B01u, 0x243185BEu, 0x550C7DC3u, 0x72BE5D74u, 0x80DEB1FEu, 0x9BDC06A7u, 0xC19BF174u,
+    0xE49B69C1u, 0xEFBE4786u, 0x0FC19DC6u, 0x240CA1CCu, 0x2DE92C6Fu, 0x4A7484AAu, 0x5CB0A9DCu, 0x76F988DAu,
+    0x983E5152u, 0xA831C66Du, 0xB00327C8u, 0xBF597FC7u, 0xC6E00BF3u, 0xD5A79147u, 0x06CA6351u, 0x14292967u,
+    0x27B70A85u, 0x2E1B2138u, 0x4D2C6DFCu, 0x53380D13u, 0x650A7354u, 0x766A0ABBu, 0x81C2C92Eu, 0x92722C85u,
+    0xA2BFE8A1u, 0xA81A664Bu, 0xC24B8B70u, 0xC76C51A3u, 0xD192E819u, 0xD6990624u, 0xF40E3585u, 0x106AA070u,
+    0x19A4C116u, 0x1E376C08u, 0x2748774Cu, 0x34B0BCB5u, 0x391C0CB3u, 0x4ED8AA4Au, 0x5B9CCA4Fu, 0x682E6FF3u,
+    0x748F82EEu, 0x78A5636Fu, 0x84C87814u, 0x8CC70208u, 0x90BEFFFAu, 0xA4506CEBu, 0xBEF9A3F7u, 0xC67178F2u};
+
+}  // namespace
+
+void Sha256::block(const std::uint8_t* data) noexcept {
+  std::array<std::uint32_t, 64> words{};
+  for (std::size_t i = 0; i < 16; ++i) {
+    words[i] = (std::uint32_t{data[4 * i]} << 24) | (std::uint32_t{data[4 * i + 1]} << 16) |
+               (std::uint32_t{data[4 * i + 2]} << 8) | std::uint32_t{data[4 * i + 3]};
+  }
+  for (std::size_t i = 16; i < 64; ++i) {
+    const std::uint32_t s0 = rotr(words[i - 15], 7) ^ rotr(words[i - 15], 18) ^ (words[i - 15] >> 3);
+    const std::uint32_t s1 = rotr(words[i - 2], 17) ^ rotr(words[i - 2], 19) ^ (words[i - 2] >> 10);
+    words[i] = words[i - 16] + s0 + words[i - 7] + s1;
+  }
+  std::array<std::uint32_t, 8> v = state_;
+  for (std::size_t i = 0; i < 64; ++i) {
+    const std::uint32_t s1 = rotr(v[4], 6) ^ rotr(v[4], 11) ^ rotr(v[4], 25);
+    const std::uint32_t choose = (v[4] & v[5]) ^ (~v[4] & v[6]);
+    const std::uint32_t t1 = v[7] + s1 + choose + kSha256Rounds[i] + words[i];
+    const std::uint32_t s0 = rotr(v[0], 2) ^ rotr(v[0], 13) ^ rotr(v[0], 22);
+    const std::uint32_t majority = (v[0] & v[1]) ^ (v[0] & v[2]) ^ (v[1] & v[2]);
+    const std::uint32_t t2 = s0 + majority;
+    v[7] = v[6];
+    v[6] = v[5];
+    v[5] = v[4];
+    v[4] = v[3] + t1;
+    v[3] = v[2];
+    v[2] = v[1];
+    v[1] = v[0];
+    v[0] = t1 + t2;
+  }
+  for (std::size_t i = 0; i < 8; ++i) {
+    state_[i] += v[i];
+  }
+}
+
+void Sha256::take(std::uint8_t byte) noexcept {
+  buffer_[buffered_++] = byte;
+  ++length_;
+  if (buffered_ == buffer_.size()) {
+    block(buffer_.data());
+    buffered_ = 0;
+  }
+}
+
+void Sha256::update(std::span<const std::uint8_t> data) noexcept {
+  std::size_t at = 0;
+  while (at < data.size() && buffered_ != 0) {
+    take(data[at++]);
+  }
+  // Whole blocks straight from the input: the web files are hashed at every start.
+  for (; data.size() - at >= buffer_.size(); at += buffer_.size()) {
+    block(data.data() + at);
+    length_ += buffer_.size();
+  }
+  for (; at < data.size(); ++at) {
+    take(data[at]);
+  }
+}
+
+void Sha256::update(std::string_view text) noexcept {
+  for (const char c : text) {
+    take(static_cast<std::uint8_t>(c));
+  }
+}
+
+std::array<std::uint8_t, 32> Sha256::finish() noexcept {
+  const std::uint64_t bits = length_ * 8;
+  take(0x80);
+  while (buffered_ != 56) {
+    take(0);
+  }
+  for (unsigned shift = 64; shift != 0; shift -= 8) {
+    take(static_cast<std::uint8_t>(bits >> (shift - 8)));
+  }
+  std::array<std::uint8_t, 32> digest{};
+  for (std::size_t i = 0; i < 8; ++i) {
     digest[4 * i] = static_cast<std::uint8_t>(state_[i] >> 24);
     digest[4 * i + 1] = static_cast<std::uint8_t>(state_[i] >> 16);
     digest[4 * i + 2] = static_cast<std::uint8_t>(state_[i] >> 8);

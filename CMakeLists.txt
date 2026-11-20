@@ -44,6 +44,8 @@ endif()
 if(GRACEUI_UNIT_TESTS)
   include(cmake/doctest.cmake)
   enable_testing()
+elseif(WIN32 AND GRACEUI_TEST_EXPORTS)
+  include(cmake/doctest.cmake)  # for grace-serve's suite on Windows, run under Wine (BUILD.md)
 endif()
 
 # Our own code: 0 warnings (the toolchain's /WX, or -Werror here), and casts written out by name, so that
