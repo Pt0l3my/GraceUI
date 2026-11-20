@@ -1,7 +1,7 @@
 # Proposal 0005: Pad chords for hotkeys
 
-**Status: proposal, 2026-11-20, put to the owner and to EldenNet's session for S4's second round (its NPC §5.6, O11),
-not built.** A bare § is a section of [DESIGN.md](../DESIGN.md). Figures marked EST are estimates for S4 to confirm.
+**Status: proposal, 2026-11-20, put to the owner and to EldenNet's session for S4's second round (its NPC §5.6, O11);
+EldenNet's session agreed the same day (§7); not built, waiting on the owner's decision.** A bare § is a section of [DESIGN.md](../DESIGN.md). Figures marked EST are estimates for S4 to confirm.
 
 ## 1. Why
 
@@ -84,3 +84,16 @@ A chord neither holds a key back nor fires:
 3. **For EldenNet's session:** does §2 match NPC §5.6 as you mean it (the anchor first; a key pressed within 150 ms
    not a chord; both hidden after completion until released)? And is one hotkey event enough, with EldenNet asking
    for input on it as for F11's view?
+
+## 7. EldenNet's answers (2026-11-20)
+
+1. §2 matches NPC §5.6 as EldenNet means it: the anchor, D-pad Up, always reaches the game; a key within 150 ms of it
+   is not a chord and reaches the game at once; on completion View is never delivered; a chord broken before 0.4 s
+   replays the held View as one tap, whichever button was released first. Hiding both after completion until each is
+   released is right: it keeps a long hold of D-pad Up from reading as a second spell switch.
+2. One `GRACEUI_EVENT_HOTKEY` is enough: on it EldenNet asks for input with D176's events (the pad's among them), as on
+   its talk key, and opens Steam's floating keyboard itself (its O11).
+3. Stand aside whenever `request_input` would answer `not_now` (§3), as recommended: EldenNet's own gating refuses the
+   chat box then anyway, and holding View back in a game menu would get in the way of the game's own navigation.
+
+The three times stay estimates until S4's second round measures them. The owner decides whether to build it.
