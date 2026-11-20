@@ -72,9 +72,12 @@ EXCLUDED_PROJECTS = re.compile(r"\bme3\b|fromsoftware-rs|fromsoftware_rs", re.IG
 # The pure modules and their libraries: no Win32, no Dear ImGui, no MinHook (D124, D131).
 PURE_MODULES = {"src/grace-input/": ("grace_input",), "src/grace-abi/": ("grace_abi", "grace_abi_rules"),
                 "src/grace-tokens/": ("grace_tokens",), "src/grace-protocol/": ("grace_protocol",),
-                "src/grace-serve/": ("grace_serve_core",), "src/grace-pages/": ("grace_pages",)}
-# The one library a pure module may link: nlohmann/json, header-only, for grace-protocol (D159).
-PURE_MAY_LINK = {"grace_protocol": ("gu_nlohmann_json",)}
+                "src/grace-serve/": ("grace_serve_core",), "src/grace-pages/": ("grace_pages",),
+                "src/grace-view/": ("grace_view",), "src/grace-draw/": ("grace_draw",)}
+# What a pure module may link: nlohmann/json, header-only, for grace-protocol (D159); and other pure modules, for the
+# in-game views (D162).
+PURE_MAY_LINK = {"grace_protocol": ("gu_nlohmann_json",), "grace_view": ("grace_protocol", "grace_tokens"),
+                 "grace_draw": ("grace_view", "grace_tokens", "grace_abi_rules")}
 IMPURE_INCLUDE = re.compile(
     r'#\s*include\s*[<"](windows|winuser|windef|winbase|imm|dinput|xinput|d3d1\d|dxgi[0-9_]*|psapi|tlhelp32|'
     r'imgui[a-z_]*|MinHook)\.h[">]', re.IGNORECASE)

@@ -369,6 +369,15 @@ def build_header(data, variants):
         out.append("    },")
         out.append("    {" + ", ".join(cpp_float(variant["size"][t]) for t in sizes) + "},")
         out.append("};")
+    out += ["", "// Every colour token by its role, so a laid-out view names its colours and redraws in another variant as it is.",
+            "enum class Colour : std::uint8_t {"]
+    out += [f"  {cpp_name(token)}," for token in colours]
+    out += ["};", f"inline constexpr int kColourCount = {len(colours)};", "",
+            "constexpr Rgba colour(const Palette& palette, Colour role) noexcept {", "  switch (role) {"]
+    out += [f"    case Colour::{cpp_name(token)}: return palette.{cpp_name(token)};" for token in colours]
+    out += ["  }", "  return Rgba{};", "}", "", "inline constexpr const char* kColourName[] = {"]
+    out += [f'    "{token}",' for token in colours]
+    out += ["};"]
     out += ["", "enum class Font : std::uint8_t {"]
     out += [f"  {role}," for role in data["font"]]
     out += ["};", "", "inline constexpr const char* kFontFamily[] = {"]
@@ -379,7 +388,12 @@ def build_header(data, variants):
         out.append(f"inline constexpr Type {cpp_name(token)}{{Font::{entry['font']}, {cpp_float(entry['size'])}, "
                    f"{cpp_float(entry['line'])}, {entry['weight']}, {cpp_float(entry.get('tracking', 0))}, "
                    f"{'true' if entry.get('case') == 'upper' else 'false'}}};")
-    out += ["}  // namespace type", "", "inline constexpr float kSpace[] = {"
+    out += ["}  // namespace type", "", "// Every type token by its role, in the order of kTypes.", "enum class TypeRole : std::uint8_t {"]
+    out += [f"  {cpp_name(token)}," for token in data["type"]]
+    out += ["};", f"inline constexpr int kTypeCount = {len(data['type'])};",
+            "inline constexpr Type kTypes[] = {" + ", ".join(f"type::{cpp_name(t)}" for t in data["type"]) + "};",
+            "inline constexpr const char* kTypeName[] = {" + ", ".join(f'"{t}"' for t in data["type"]) + "};"]
+    out += ["", "inline constexpr float kSpace[] = {"
             + ", ".join(cpp_float(s) for s in data["space"]["steps"]) + "};", "", "namespace size {"]
     out += [f"inline constexpr float {cpp_name(t)} = {cpp_float(v)};" for t, v in data["size"].items()]
     out += ["}  // namespace size", "", "namespace radius {"]

@@ -165,6 +165,16 @@ python3 -I -m unittest discover -s tools/pages
 The Linux build's CTest runs `--check`, the lint's tests (each rule failing on a demo space seeded to break it) and
 `grace_pages_tests` (every built-in space decoded by grace-protocol's own decoders).
 
+## The in-game views
+
+`grace_view_tests` (D162) drive GraceUI's own space and the demo space with keys and buttons as §5.3 and §5.4 give them
+and check every command, search, and the layout's structure dumps against `src/grace-view/tests/golden/` (the Menu page
+at 1920 × 1080 and at 1280 × 800 and 150%, the demo's Behaviour page); after a deliberate change to the layout, write
+them anew with `GRACE_UPDATE_GOLDEN=1 build-linux/bin/grace_view_tests` and read the diff before committing.
+`grace_draw_tests` tessellate the Menu page and pass it through grace-abi's draw-list checker, check that Grace Clear
+changes colours and nothing else, the shapes' vertices and fringes, hairlines on whole pixels, and that a second frame
+allocates nothing.
+
 ## The release build: clang-cl
 
 Built as EldenNet's engine is (its ARCH §2.6), against the CRT and SDK that [xwin](https://github.com/Jake-Shadle/xwin)

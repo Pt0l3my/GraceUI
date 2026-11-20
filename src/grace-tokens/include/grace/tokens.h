@@ -145,6 +145,107 @@ inline constexpr Variant kClear{
     {2.0f, 3.0f, 2.0f},
 };
 
+// Every colour token by its role, so a laid-out view names its colours and redraws in another variant as it is.
+enum class Colour : std::uint8_t {
+  ground_well,
+  ground_0,
+  ground_1,
+  ground_2,
+  ground_3,
+  ground_4,
+  ink_hi,
+  ink_body,
+  ink_mute,
+  ink_faint,
+  ink_off,
+  gold,
+  gold_hi,
+  gold_name,
+  gold_deep,
+  on_gold,
+  rule,
+  rule_strong,
+  edge,
+  rot,
+  rot_fill,
+  rot_edge,
+  ember,
+  moss,
+  glint,
+  tint_hover,
+  tint_select,
+  scrim,
+  shadow,
+};
+inline constexpr int kColourCount = 29;
+
+constexpr Rgba colour(const Palette& palette, Colour role) noexcept {
+  switch (role) {
+    case Colour::ground_well: return palette.ground_well;
+    case Colour::ground_0: return palette.ground_0;
+    case Colour::ground_1: return palette.ground_1;
+    case Colour::ground_2: return palette.ground_2;
+    case Colour::ground_3: return palette.ground_3;
+    case Colour::ground_4: return palette.ground_4;
+    case Colour::ink_hi: return palette.ink_hi;
+    case Colour::ink_body: return palette.ink_body;
+    case Colour::ink_mute: return palette.ink_mute;
+    case Colour::ink_faint: return palette.ink_faint;
+    case Colour::ink_off: return palette.ink_off;
+    case Colour::gold: return palette.gold;
+    case Colour::gold_hi: return palette.gold_hi;
+    case Colour::gold_name: return palette.gold_name;
+    case Colour::gold_deep: return palette.gold_deep;
+    case Colour::on_gold: return palette.on_gold;
+    case Colour::rule: return palette.rule;
+    case Colour::rule_strong: return palette.rule_strong;
+    case Colour::edge: return palette.edge;
+    case Colour::rot: return palette.rot;
+    case Colour::rot_fill: return palette.rot_fill;
+    case Colour::rot_edge: return palette.rot_edge;
+    case Colour::ember: return palette.ember;
+    case Colour::moss: return palette.moss;
+    case Colour::glint: return palette.glint;
+    case Colour::tint_hover: return palette.tint_hover;
+    case Colour::tint_select: return palette.tint_select;
+    case Colour::scrim: return palette.scrim;
+    case Colour::shadow: return palette.shadow;
+  }
+  return Rgba{};
+}
+
+inline constexpr const char* kColourName[] = {
+    "ground.well",
+    "ground.0",
+    "ground.1",
+    "ground.2",
+    "ground.3",
+    "ground.4",
+    "ink.hi",
+    "ink.body",
+    "ink.mute",
+    "ink.faint",
+    "ink.off",
+    "gold",
+    "gold.hi",
+    "gold.name",
+    "gold.deep",
+    "on.gold",
+    "rule",
+    "rule.strong",
+    "edge",
+    "rot",
+    "rot.fill",
+    "rot.edge",
+    "ember",
+    "moss",
+    "glint",
+    "tint.hover",
+    "tint.select",
+    "scrim",
+    "shadow",
+};
+
 enum class Font : std::uint8_t {
   display,
   serif,
@@ -181,6 +282,24 @@ inline constexpr Type tab{Font::sans, 13.0f, 18.0f, 600, 0.1f, true};
 inline constexpr Type eyebrow{Font::sans, 12.0f, 16.0f, 600, 0.14f, true};
 inline constexpr Type num{Font::mono, 14.0f, 20.0f, 400, 0.0f, false};
 }  // namespace type
+
+// Every type token by its role, in the order of kTypes.
+enum class TypeRole : std::uint8_t {
+  display_xl,
+  display_lg,
+  display_md,
+  title,
+  prose,
+  rail,
+  ui,
+  ui_sm,
+  tab,
+  eyebrow,
+  num,
+};
+inline constexpr int kTypeCount = 11;
+inline constexpr Type kTypes[] = {type::display_xl, type::display_lg, type::display_md, type::title, type::prose, type::rail, type::ui, type::ui_sm, type::tab, type::eyebrow, type::num};
+inline constexpr const char* kTypeName[] = {"display.xl", "display.lg", "display.md", "title", "prose", "rail", "ui", "ui.sm", "tab", "eyebrow", "num"};
 
 inline constexpr float kSpace[] = {2.0f, 4.0f, 8.0f, 12.0f, 16.0f, 20.0f, 24.0f, 32.0f, 40.0f, 48.0f, 64.0f};
 
