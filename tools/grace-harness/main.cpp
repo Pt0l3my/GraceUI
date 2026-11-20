@@ -758,6 +758,7 @@ struct GraceUi {
   decltype(&GraceUI_Test_GetMenu) get_menu = nullptr;
   decltype(&GraceUI_Test_GetSetting) get_setting = nullptr;
   decltype(&GraceUI_Test_GetTopic) get_topic = nullptr;
+  decltype(&GraceUI_Test_GetMenuBounds) get_menu_bounds = nullptr;
   decltype(&GraceUI_Test_GetServer) get_server = nullptr;
 
   bool load(const std::wstring& path) {
@@ -804,8 +805,10 @@ struct GraceUi {
     get_menu = function_of<decltype(get_menu)>(module, "GraceUI_Test_GetMenu");
     get_setting = function_of<decltype(get_setting)>(module, "GraceUI_Test_GetSetting");
     get_topic = function_of<decltype(get_topic)>(module, "GraceUI_Test_GetTopic");
+    get_menu_bounds = function_of<decltype(get_menu_bounds)>(module, "GraceUI_Test_GetMenuBounds");
     get_server = function_of<decltype(get_server)>(module, "GraceUI_Test_GetServer");
-    return get_server != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr && panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
+    return get_server != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
+           get_menu_bounds != nullptr && panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
            request_input != nullptr && release_input != nullptr && set_world != nullptr && set_caret != nullptr &&
@@ -5358,6 +5361,97 @@ void run_settings(const std::wstring& dll) {
   DeleteFileW(settings_file_of(dll).c_str());
 }
 
+// ---- The menu's mouse (§5.5): a press focuses and acts on what it is on, a held button's moves set a slider, the rail
+// takes a click; at 1920 by 1080, where the client area and the back buffer are the same size.
+
+struct MenuBounds {
+  bool found = false;
+  float row[4] = {};
+  float control[4] = {};
+};
+
+MenuBounds menu_bounds(const GraceUi& grace, const char* name) {
+  MenuBounds out;
+  float values[8] = {};
+  out.found = grace.get_menu_bounds(name, values) != 0;
+  std::copy(values, values + 4, out.row);
+  std::copy(values + 4, values + 8, out.control);
+  return out;
+}
+
+void post_mouse(HWND window, UINT message, float x, float y, WPARAM wparam = 0) {
+  PostMessageW(window, message, wparam, MAKELPARAM(static_cast<int>(x), static_cast<int>(y)));
+}
+
+void run_menu_mouse(const std::wstring& dll) {
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  const int seen_before = g_seen.mouse;
+
+  // 1. A choice: a press on its second segment chooses it.
+  const MenuBounds theme = menu_bounds(grace, "setting:ui.menu.theme");
+  const float tx = theme.control[0] + theme.control[2] * 0.75f;
+  const float ty = theme.control[1] + theme.control[3] / 2;
+  post_mouse(window, WM_MOUSEMOVE, tx, ty);
+  post_mouse(window, WM_LBUTTONDOWN, tx, ty, MK_LBUTTON);
+  post_mouse(window, WM_LBUTTONUP, tx, ty);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string chosen = grace.setting("ui.menu.theme");
+  const std::string theme_focus = menu.focused;
+  check(theme.found && chosen == "\"clear\"" && theme_focus == "setting:ui.menu.theme", "menu mouse: a choice",
+        "the theme's control %s at %.0f,%.0f %.0fx%.0f; a click on its second segment: %s, focus %s",
+        theme.found ? "drawn" : "NOT FOUND", theme.control[0], theme.control[1], theme.control[2], theme.control[3],
+        chosen.c_str(), theme_focus.c_str());
+
+  // 2. A slider: the press sets the value under it, the held button's move follows, the release lets go.
+  const MenuBounds scale = menu_bounds(grace, "setting:ui.scale");
+  const float sy = scale.control[1] + scale.control[3] / 2;
+  const float left = scale.control[0] + scale.control[2] * 0.2f;
+  const float right = scale.control[0] + scale.control[2] * 0.6f;
+  post_mouse(window, WM_MOUSEMOVE, left, sy);
+  post_mouse(window, WM_LBUTTONDOWN, left, sy, MK_LBUTTON);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string pressed = grace.setting("ui.scale");
+  post_mouse(window, WM_MOUSEMOVE, right, sy, MK_LBUTTON);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string dragged = grace.setting("ui.scale");
+  post_mouse(window, WM_LBUTTONUP, right, sy);
+  post_mouse(window, WM_MOUSEMOVE, left, sy);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string released = grace.setting("ui.scale");
+  const double at_press = std::atof(pressed.c_str());
+  const double at_drag = std::atof(dragged.c_str());
+  check(scale.found && at_press >= 0.75 && at_press < at_drag && at_drag <= 1.5 && released == dragged,
+        "menu mouse: a slider", "Menu size: pressed at 20%% of its column %s, dragged to 60%% %s, released and moved %s",
+        pressed.c_str(), dragged.c_str(), released.c_str());
+
+  // 3. The rail: a click on Installed mods opens it.
+  const MenuBounds mods = menu_bounds(grace, "rail:graceui.mods");
+  const float mx = mods.row[0] + mods.row[2] / 2;
+  const float my = mods.row[1] + mods.row[3] / 2;
+  post_mouse(window, WM_MOUSEMOVE, mx, my);
+  post_mouse(window, WM_LBUTTONDOWN, mx, my, MK_LBUTTON);
+  post_mouse(window, WM_LBUTTONUP, mx, my);
+  menu = menu_after(game, grace, menu.lists);
+  check(mods.found && std::string_view(menu.page) == "graceui.mods" && menu.refusals == 0 && menu.off == 0,
+        "menu mouse: the rail", "a click on Installed mods: page %s, focus %s; refusals %u; the game's window saw %d "
+        "mouse message(s) while the menu held the mouse",
+        menu.page, menu.focused, menu.refusals, g_seen.mouse - seen_before);
+  save_shot(game.frame_and_read(kInputColour, PresentWith::present), "menu-mouse-1920x1080.bmp");
+  press(window, VK_F5, kScanF5);
+  frames(game, 2);
+  DeleteFileW(settings_file_of(dll).c_str());  // the clicks kept a theme and a size: the next scenario starts afresh
+}
+
 // ---- Quiet notices (G32, D181): the Mods page's switch quiets a mod's notices, which are kept in its list instead of
 // drawn over the game; the mod learns nothing; GraceUI's own notices still show; the next session keeps the switch.
 
@@ -6195,6 +6289,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"pages") {
     std::printf("-- scenario: a mod's space across the ABI and the browser view's server (D169)\n");
     run_pages(dll);
+  } else if (scenario == L"menu-mouse") {
+    std::printf("-- scenario: the in-game menu by mouse (§5.5)\n");
+    run_menu_mouse(dll);
   } else if (scenario == L"menu-space") {
     std::printf("-- scenario: the in-game menu on mods' spaces, with GraceUI's at the rail's foot (D171)\n");
     run_menu_space(dll);
@@ -6257,7 +6354,7 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-space", L"spike", L"spike-after",
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"spike", L"spike-after",
             L"holder-events", L"settings", L"display", L"quiet"}) {
         run(child_scenario, dll, this_program());
       }

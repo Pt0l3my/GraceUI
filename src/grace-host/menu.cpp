@@ -10,13 +10,15 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <stdexcept>
+#include <iterator>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -57,6 +59,13 @@ struct MenuInput {
 
 constinit grace::input::SpscRing<MenuInput, 64> g_keys;  // the window procedure's
 constinit grace::input::SpscRing<MenuInput, 64> g_pad;   // the present thread's
+
+// The mouse's events for the menu (§5.5), the present thread's: a move a frame at most, in the display's pixels.
+struct MenuPointer {
+  grace::view::Pointer pointer{};
+  std::uint32_t generation = 0;  // the holder it is for
+};
+constinit grace::input::SpscRing<MenuPointer, 64> g_pointer;
 constinit std::atomic<grace::abi::DrawListBuffers*> g_lists{nullptr};  // made by GraceUI's thread, never freed
 constinit std::atomic<bool> g_off{false};
 constinit std::atomic<std::uint32_t> g_width{0};
@@ -123,6 +132,9 @@ struct State {
   grace::view::DisplayList list;
   std::string page;  // as the test exports read it, under its lock
   std::string focused;
+#if defined(GRACEUI_TEST_EXPORTS)
+  std::vector<std::pair<std::string, grace::view::PageView::Bounds>> bounds;  // the last layout's, under the same lock
+#endif
 };
 constinit State* g_state = nullptr;
 constinit grace::abi::SpinLock g_view_lock;  // the test exports' copy of page and focused
@@ -467,14 +479,9 @@ void run(State& m, const grace::protocol::Cmd& command) {
   take_topics(m);
 }
 
-void take(State& m, const MenuInput& in, bool& dirty) {
-  if (in.generation != m.generation) {
-    return;  // pressed for an earlier holder
-  }
-  const grace::view::Action action = active_view(m).input(grace::view::Input{in.key, in.shift != 0});
+// What a key, a button or the mouse did in the page view.
+void act(State& m, const grace::view::Action& action) {
   const bool on_switcher = active_view(m).focused() == "rail:switcher";
-  g_inputs.fetch_add(1, std::memory_order_relaxed);
-  dirty = true;
   switch (action.kind) {
     case grace::view::Action::Kind::command:
       run(m, action.command);
@@ -489,6 +496,28 @@ void take(State& m, const MenuInput& in, bool& dirty) {
     case grace::view::Action::Kind::none:
       break;
   }
+}
+
+void take(State& m, const MenuInput& in, bool& dirty) {
+  if (in.generation != m.generation) {
+    return;  // pressed for an earlier holder
+  }
+  const grace::view::Action action = active_view(m).input(grace::view::Input{in.key, in.shift != 0});
+  g_inputs.fetch_add(1, std::memory_order_relaxed);
+  dirty = true;
+  act(m, action);
+}
+
+void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
+  if (in.generation != m.generation) {
+    return;  // for an earlier holder
+  }
+  const grace::view::Action action = active_view(m).pointer(in.pointer);
+  if (in.pointer.kind != grace::view::Pointer::Kind::move) {
+    g_inputs.fetch_add(1, std::memory_order_relaxed);
+  }
+  dirty = true;  // a move changes what is hovered
+  act(m, action);
 }
 
 void publish(State& m) {
@@ -520,9 +549,15 @@ void publish(State& m) {
   g_indices.store(stats.indices, std::memory_order_relaxed);
   g_commands.store(stats.commands, std::memory_order_relaxed);
   g_scale.store(scale, std::memory_order_relaxed);
+#if defined(GRACEUI_TEST_EXPORTS)
+  std::vector<std::pair<std::string, grace::view::PageView::Bounds>> bounds = active_view(m).all_bounds();
+#endif
   g_view_lock.lock();
   m.page.assign(active_view(m).page());
   m.focused = active_view(m).focused();
+#if defined(GRACEUI_TEST_EXPORTS)
+  m.bounds.swap(bounds);
+#endif
   g_view_lock.unlock();
 }
 
@@ -531,6 +566,9 @@ void drain() noexcept {
   while (g_keys.pop(in)) {
   }
   while (g_pad.pop(in)) {
+  }
+  MenuPointer pointer;
+  while (g_pointer.pop(pointer)) {
   }
 }
 
@@ -550,6 +588,7 @@ void serve_menu() {
     if (m.open) {
       m.open = false;
       active_view(m).cancel_confirmation();  // the close routine's part (§5.1): changes stay, the page is kept
+      active_view(m).pointer(grace::view::Pointer{grace::view::Pointer::Kind::leave, 0, 0, 0});  // no hover, no drag
       watch(m, false);                       // a mod builds nothing the menu no longer shows
     }
     drain();
@@ -588,6 +627,10 @@ void serve_menu() {
   }
   for (int i = 0; i < 64 && g_pad.pop(in); ++i) {
     take(m, in, dirty);
+  }
+  MenuPointer pointer;
+  for (int i = 0; i < 64 && g_pointer.pop(pointer); ++i) {
+    take_pointer(m, pointer, dirty);
   }
   const std::uint32_t width = g_width.load(std::memory_order_relaxed);
   const std::uint32_t height = g_height.load(std::memory_order_relaxed);
@@ -710,6 +753,15 @@ void open_requested() noexcept {
   }
 }
 
+void pointer(std::uint8_t kind, float x, float y, float wheel, std::uint32_t generation) noexcept {
+  MenuPointer in;
+  in.pointer = grace::view::Pointer{static_cast<grace::view::Pointer::Kind>(kind), x, y, wheel};
+  in.generation = generation;
+  if (g_pointer.push(in)) {
+    hooks::wake();
+  }
+}
+
 bool key_down(std::uint32_t vk, bool shift, bool ctrl) noexcept {
   Key key{};
   switch (vk) {
@@ -803,6 +855,26 @@ void test_view(TestView& out) noexcept {
     std::snprintf(out.focused, sizeof out.focused, "%s", g_state->focused.c_str());
   }
   g_view_lock.unlock();
+}
+
+bool test_bounds(const char* name, float (&out)[8]) noexcept {
+  if (name == nullptr) {
+    return false;
+  }
+  bool found = false;
+  g_view_lock.lock();
+  if (g_state != nullptr) {
+    for (const auto& [named, b] : g_state->bounds) {
+      if (!found && named == name) {
+        const float values[8] = {b.row.x,     b.row.y,     b.row.w,     b.row.h,
+                                 b.control.x, b.control.y, b.control.w, b.control.h};
+        std::copy(std::begin(values), std::end(values), std::begin(out));
+        found = true;
+      }
+    }
+  }
+  g_view_lock.unlock();
+  return found;
 }
 
 std::uint32_t test_setting(const char* key, char* out, std::uint32_t capacity) noexcept {

@@ -22,7 +22,8 @@ hold, through `poll`, with the IME placed at its caret, so a mod's own Dear ImGu
 (ABI 1.2) keeps GraceUI's settings between sessions, draws its own pointer, and tells every mod the display: its size
 and Menu size at connect and in an event, with faces it bakes at the display's scale. **GraceUI 0.2.3** adds the Installed mods page: every mod
 connected, and a switch for each that quiets its notices, which then wait in a list on the page rather than over the
-game. Hotkeys and the log
+game. **GraceUI 0.2.4** gives the in-game menu the mouse: hover, a click that does what Enter does, a slider
+dragged, the wheel. Hotkeys and the log
 are declared for the increments that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the

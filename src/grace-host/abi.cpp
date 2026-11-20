@@ -15,10 +15,12 @@
 #endif
 #include <psapi.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <iterator>
 #include <string_view>
 #include <vector>
 
@@ -349,6 +351,15 @@ void test_fill_server(GraceUiTestServer& out) noexcept {
 
 std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capacity) noexcept {
   return menu::test_setting(key, out, capacity);
+}
+
+std::uint32_t test_menu_bounds(const char* name, float* out) noexcept {
+  float values[8] = {};
+  if (out == nullptr || !menu::test_bounds(name, values)) {
+    return 0;
+  }
+  std::copy(std::begin(values), std::end(values), out);
+  return 1;
 }
 
 std::uint32_t test_copy_topic(const char* topic, char* out, std::uint32_t capacity) noexcept {

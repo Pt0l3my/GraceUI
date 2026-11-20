@@ -134,6 +134,7 @@ std::uint64_t test_panel_published(std::uint64_t panel) noexcept;
 void test_fill_menu(GraceUiTestMenu& out) noexcept;
 std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capacity) noexcept;
 std::uint32_t test_copy_topic(const char* topic, char* out, std::uint32_t capacity) noexcept;
+std::uint32_t test_menu_bounds(const char* name, float* out) noexcept;
 void test_fill_server(GraceUiTestServer& out) noexcept;
 #endif
 

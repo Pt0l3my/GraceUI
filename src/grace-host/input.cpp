@@ -261,6 +261,37 @@ void feed(ImGuiIO& io, const HolderEvent& event, std::uint32_t width, std::uint3
   }
 }
 
+// The menu's own mouse (§5.5): the menu holder's events, in the pixels Dear ImGui is fed (the Grace pointer's), to
+// GraceUI's thread. Its last position, for a button or the wheel, which carry none: the present thread's.
+constinit float g_menu_x = -1.0f;
+constinit float g_menu_y = -1.0f;
+
+bool menu_holds(const Holder& holder) noexcept { return holder.kind == Kind::menu && holder.owner == 0; }
+
+void to_menu(const HolderEvent& event, std::uint32_t width, std::uint32_t height) noexcept {
+  switch (event.type) {
+    case HolderEvent::Type::mouse_move:
+      g_menu_x = scaled(event.a, width, g_client_width.load(std::memory_order_relaxed));
+      g_menu_y = scaled(event.b, height, g_client_height.load(std::memory_order_relaxed));
+      menu::pointer(0, g_menu_x, g_menu_y, 0.0f, event.generation);
+      return;
+    case HolderEvent::Type::mouse_button:
+      if (event.key == 0 && g_menu_x >= 0.0f) {  // the left button; the others do nothing in the menu
+        menu::pointer(event.down != 0 ? 1 : 2, g_menu_x, g_menu_y, 0.0f, event.generation);
+      }
+      return;
+    case HolderEvent::Type::wheel:
+      if (event.a != 0 && g_menu_x >= 0.0f) {
+        menu::pointer(3, g_menu_x, g_menu_y, static_cast<float>(event.a) / 120.0f, event.generation);
+      }
+      return;
+    case HolderEvent::Type::key:
+    case HolderEvent::Type::character:
+    case HolderEvent::Type::none:
+      return;
+  }
+}
+
 // The holder's pad, as XInput's detour last saw it with the opening press held back, into Dear ImGui's pad keys (its
 // Win32 backend's own gamepad code is compiled out, §5.4).
 void feed_pad(ImGuiIO& io, std::uint32_t generation) noexcept {
@@ -609,10 +640,20 @@ void before_imgui_frame(std::uint32_t width, std::uint32_t height) noexcept {
     g_fed.active = active;
     POINT cursor{};
     const HWND target = g_window.load(std::memory_order_acquire);
+    g_menu_x = -1.0f;  // a new holder: where the pointer is, the menu learns from its first move
+    g_menu_y = -1.0f;
     if (active && holder.takes(grace::input::want_mouse) && target != nullptr && GetCursorPos(&cursor) &&
         ScreenToClient(target, &cursor)) {
       io.AddMousePosEvent(scaled(cursor.x, width, g_client_width.load(std::memory_order_relaxed)),
                           scaled(cursor.y, height, g_client_height.load(std::memory_order_relaxed)));
+      if (menu_holds(holder)) {
+        HolderEvent at;
+        at.type = HolderEvent::Type::mouse_move;
+        at.a = cursor.x;
+        at.b = cursor.y;
+        at.generation = holder.generation;
+        to_menu(at, width, height);
+      }
     }
   }
   io.MouseDrawCursor = active && holder.takes(grace::input::want_mouse);  // the holder's pointer: the Grace pointer (D178)
@@ -638,13 +679,22 @@ void before_imgui_frame(std::uint32_t width, std::uint32_t height) noexcept {
     }
     if (moved) {
       feed(io, move, width, height);
+      if (menu_holds(holder)) {
+        to_menu(move, width, height);
+      }
       moved = false;
     }
     feed(io, event, width, height);
+    if (menu_holds(holder)) {
+      to_menu(event, width, height);
+    }
     ++fed;
   }
   if (moved) {
     feed(io, move, width, height);
+    if (menu_holds(holder)) {
+      to_menu(move, width, height);
+    }
   }
   if (holder.takes(grace::input::want_pad)) {
     feed_pad(io, holder.generation);

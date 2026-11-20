@@ -27,6 +27,11 @@ void open_requested() noexcept;
 // menu's keys (§5.3), which goes to GraceUI's thread. `shift` and `ctrl` held.
 bool key_down(std::uint32_t vk, bool shift, bool ctrl) noexcept;
 
+// The present thread, for the menu holder's mouse (§5.5): a move (0), a left button's press (1) or release (2), the wheel
+// (3, in notches, positive away from the player) or the pointer gone (4), at `x`, `y` in the display's pixels as Dear
+// ImGui has them, so that a press lands where the Grace pointer is drawn; to GraceUI's thread as the page view's input.
+void pointer(std::uint8_t kind, float x, float y, float wheel, std::uint32_t generation) noexcept;
+
 // The present thread, each frame: the menu's newest list for the holder of this generation if the menu holds input and
 // has published one for it, else null. Also turns the pad's new presses into the menu's inputs, and notes the display's
 // size, which a change of makes GraceUI's thread lay the page out again.
@@ -57,6 +62,9 @@ struct TestView {
 void test_view(TestView& out) noexcept;
 // A setting of GraceUI's own space as JSON text (a secret's as its status); answers its length, 0 for none.
 std::uint32_t test_setting(const char* key, char* out, std::uint32_t capacity) noexcept;
+// Where the menu's last layout drew an element, named as grace-view's focused() names it: its row and its control
+// (x, y, width, height each, in the display's pixels); false if it was not drawn.
+bool test_bounds(const char* name, float (&out)[8]) noexcept;
 #endif
 
 }  // namespace grace::host::menu
