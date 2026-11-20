@@ -490,6 +490,16 @@ void Engine::subscribe(Connection& c, const protocol::Sub& sub) {
                numbered("sub", sub.id, "not a topic of a space this view may show"));
     return;
   }
+  if (sub.topic == kPagesTopic && !port->description.pages.is_null() && port->topic_index(sub.topic) == npos) {
+    // The framework's own topic (D166, D169): the space's page data, as it registered them, from the server itself.
+    protocol::State state;
+    state.space = port->description.info.id;
+    state.topic = std::string(kPagesTopic);
+    state.rev = 1;
+    state.body = port->description.pages;
+    send_message(c, state);
+    return;
+  }
   const std::size_t topic = port->topic_index(sub.topic);
   if (topic == npos) {
     send_error(c, port.get(), protocol::ErrorCode::unknown_topic, numbered("sub", sub.id, "not a topic of this space"));
@@ -528,6 +538,10 @@ void Engine::subscribe(Connection& c, const protocol::Sub& sub) {
 
 void Engine::unsubscribe(Connection& c, const protocol::Unsub& unsub) {
   const std::shared_ptr<PortState> port = space_of(c, unsub.space);
+  if (port != nullptr && unsub.topic == kPagesTopic && !port->description.pages.is_null() &&
+      port->topic_index(unsub.topic) == npos) {
+    return;  // the framework's own topic: sent once, nothing held
+  }
   const std::size_t topic = port != nullptr ? port->topic_index(unsub.topic) : npos;
   if (topic == npos) {
     send_error(c, port.get(), protocol::ErrorCode::unknown_topic,

@@ -59,6 +59,7 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
   description.info.settings_schema = settings.schema;
   description.topics = pages.topics;
   description.commands = pages.commands;
+  description.pages = protocol::encode(pages);
   return description;
 }
 

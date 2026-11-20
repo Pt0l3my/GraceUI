@@ -23,6 +23,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "grace/protocol/messages.h"
@@ -35,7 +36,13 @@ struct SpaceDescription {
   protocol::SpaceInfo info;
   std::vector<protocol::TopicInfo> topics;
   std::vector<std::string> commands;
+  // The space's page data (space_pages), which the framework's own topic "pages" carries to a view that subscribes to
+  // it: the server answers that sub itself, from this, and the space never sees it (D166, D169). Null: no such topic.
+  protocol::Json pages;
 };
+
+// The framework's topic that carries a space's page data to a view (D166): every space has it, answered by the server.
+inline constexpr std::string_view kPagesTopic = "pages";
 
 // A description from a space's page data and settings description, as grace-pages and a mod's register_pages give them.
 SpaceDescription describe_space(const protocol::SpacePages& pages, const protocol::SettingsDescription& settings,

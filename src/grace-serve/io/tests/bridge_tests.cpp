@@ -57,6 +57,22 @@ TEST_CASE("hello with a ticket: welcome names both spaces, the protocol and an o
   CHECK(fixture.server.stats().websockets == 1);
 }
 
+TEST_CASE("the framework's pages topic: each space's page data, answered by the server, never by the space (D166)") {
+  Fixture fixture;
+  auto ws = fixture.join();
+  REQUIRE(ws != nullptr);
+  REQUIRE(ws->send_json(frame("sub", {{"space", "demo"}, {"id", 3}, {"topic", "pages"}})));
+  const auto state = ws->next_of("state");
+  REQUIRE(state);
+  CHECK((*state)["space"] == "demo");
+  CHECK((*state)["topic"] == "pages");
+  CHECK((*state)["body"]["space"] == "demo");
+  CHECK((*state)["body"]["pages"].size() == 4);
+  REQUIRE(ws->send_json(frame("unsub", {{"space", "demo"}, {"id", 4}, {"topic", "pages"}})));
+  CHECK(ws->quiet(std::chrono::milliseconds(200)));  // nothing held, nothing refused
+  CHECK(fixture.demo->watched().empty());            // the space never saw it
+}
+
 TEST_CASE("the upgrade: Origin, Fetch Metadata and the cookie first, then RFC 6455's own checks") {
   Fixture fixture;
   const std::uint16_t port = fixture.port;
