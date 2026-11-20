@@ -4233,11 +4233,15 @@ SpaceEvent poll_space(const GraceUiApi1* table, GraceUiConsumer mod, std::uint64
   return out;
 }
 
-// Polls (with frames between) until the mod has an event of its space, at most 3 s.
+// Polls (with frames between) until the mod has an event of its space, at most 3 s. The display's event (D180), which
+// every mod polling at 1.2's size gets after warm-up, is not a space's: it is passed over.
 SpaceEvent wait_space(Game& game, const GraceUiApi1* table, GraceUiConsumer mod, std::uint64_t capacity = 16384) {
   SpaceEvent event;
   for (int i = 0; i < 150; ++i) {
     event = poll_space(table, mod, capacity);
+    if (event.status == GRACEUI_OK && event.kind == GRACEUI_EVENT_DISPLAY) {
+      continue;
+    }
     if (event.status != GRACEUI_OK || event.kind != GRACEUI_EVENT_NONE) {
       return event;
     }

@@ -318,11 +318,11 @@ void bake(ImFontAtlas* fonts, std::uint32_t mod_faces, float menu_scale, float c
   for (; i < mod_faces && registry.face(i, face) && mod_count < grace::abi::kMaxFaces; ++i) {
     const ImFontConfig config = face_config();
     const std::uint32_t* ranges = face.ranges->empty() ? grace::abi::default_ranges() : face.ranges->data();
-    // SAFETY: as above; the registry keeps the face's data and ranges for the session once its table is sealed.
     // A scaled face at its pixel height times the content scale (D180); any other at its pixel height.
     const float pixels = face.scaled ? std::clamp(std::round(face.pixel_height * content_scale),
                                                   grace::abi::kFacePixelsMin, grace::abi::kFacePixelsMax)
                                      : face.pixel_height;
+    // SAFETY: as above; the registry keeps the face's data and ranges for the session once its table is sealed.
     ImFont* font = fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(face.data->data()),
                                                static_cast<int>(face.data->size()), pixels, &config, ranges);
     if (font == nullptr) {
