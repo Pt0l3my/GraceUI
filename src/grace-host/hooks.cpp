@@ -906,6 +906,10 @@ void run_init() noexcept {
     give_up("no window of this process appeared within 120 s");
     return;
   }
+  if (!grace_host_bind_d3d()) {
+    give_up("Direct3D 12, DXGI or the shader compiler (d3dcompiler_47.dll) could not be found in System32");
+    return;
+  }
   grace_host_fn render[kRenderHooks] = {};
   if (!grace_host_read_hook_targets(render)) {
     give_up("the hook targets could not be read from a Direct3D 12 swap chain of GraceUI's own");

@@ -218,7 +218,8 @@ python3 -I tools/check_safety.py --exports build-cl-rel/bin/graceui.dll
 ```
 
 - `build-cl-rel/bin/graceui.dll` exports `GraceUI_Version` and `GraceUI_RequestApi` and nothing else; the check above
-  fails a release build with any other export. `hello-notice.dll` and `hello-panel.dll`, the example mods, are built
+  fails a release build with any other export, and any build whose imports leave the reviewed list (kernel32, user32,
+  gdi32, imm32, ws2_32, bcrypt, dwmapi, and MinGW's msvcrt): no Direct3D DLL is imported, as D170 says. `hello-notice.dll` and `hello-panel.dll`, the example mods, are built
   beside it, the second with Dear ImGui's core alone (`gu_imgui_core`, no backend, D144).
 - The flags: `/EHsc` (the exports' catch-all guards depend on it, D110), `/W4 /WX /permissive- /utf-8`, the static CRT
   (`/MT`) in every configuration, `/Brepro` at compile and link, no incremental link; a release build adds ThinLTO,

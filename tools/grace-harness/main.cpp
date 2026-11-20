@@ -2512,6 +2512,15 @@ void run_abi(const std::wstring& dll) {
         slots_present ? "set" : "NOT SET", only_major_1 ? "answered null" : "ANSWERED A TABLE",
         caps_ok ? "no" : "NOT AS EXPECTED");
 
+  // graceui-sys finds the loaded graceui.dll by its name, and calls it installed (D164; EldenNet's part 12 found the
+  // by-name branch left installed at 0).
+  GraceUiSysFound by_name{};
+  by_name.size = sizeof by_name;
+  const GraceUiApi1* named = graceui_sys_find(0, 0, &by_name);
+  check(named == table && by_name.how == GRACEUI_SYS_BY_NAME && by_name.installed == 1 && by_name.attempts == 1,
+        "found by name", "graceui-sys: %s, how %u, installed %u, after %u look(s)",
+        named == table ? "this table" : "ANOTHER ANSWER", by_name.how, by_name.installed, by_name.attempts);
+
   // 3. connect's answers, across versions and ids: ok, duplicate_id, too_old naming both versions, refused naming why.
   struct Case {
     const char* what;

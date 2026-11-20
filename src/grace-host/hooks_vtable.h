@@ -19,6 +19,10 @@ enum {
   GRACE_HOST_RENDER_HOOKS = 5
 };
 
+/* Binds CreateDXGIFactory1, D3D12CreateDevice and D3DCompile from the modules the game has loaded, or else System32's
+ * (D170): graceui.dll imports no Direct3D DLL. Answers 1 if all three are bound. The init thread, once the game's window
+ * exists, before grace_host_read_hook_targets. */
+int grace_host_bind_d3d(void);
 /* Fills `targets` and answers 1, or answers 0 and fills nothing it could not read. Runs on the init thread only. */
 int grace_host_read_hook_targets(grace_host_fn targets[GRACE_HOST_RENDER_HOOKS]);
 

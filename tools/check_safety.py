@@ -3,7 +3,8 @@
 clang-tidy rule; this is the grep). Run it with python3 -I from anywhere:
 
     python3 -I tools/check_safety.py                      # the source checks
-    python3 -I tools/check_safety.py --exports DLL        # and a release build's export table: the two exports only
+    python3 -I tools/check_safety.py --exports DLL        # and a release build's export table: the two exports only;
+                                                          # and its imports, against the reviewed list (D170)
     python3 -I tools/check_safety.py --exports DLL --test # a test build's: those two and GraceUI_Test_* only
     python3 -I tools/check_safety.py --abi-self-test      # shows that check 8 refuses what it must, and nothing else
 
@@ -443,6 +444,52 @@ def check_hook_table():
         fail("src/grace-host/hooks.cpp", 1, "hooks are created somewhere other than the one loop over the table")
 
 
+# graceui.dll's imports (invariant 16, D170), reviewed: the system's own DLLs a windowed process has loaded, the
+# server's sockets and random source, Dear ImGui's Win32 backend's dwmapi, and MinGW's C runtime. No Direct3D DLL:
+# CreateDXGIFactory1, D3D12CreateDevice and D3DCompile are bound at run time on the init thread, after the game's window,
+# since loading dxgi.dll early can hang Wine's loader (D170).
+IMPORTS_ALLOWED = {"kernel32.dll", "user32.dll", "gdi32.dll", "imm32.dll", "ws2_32.dll", "bcrypt.dll", "dwmapi.dll",
+                   "msvcrt.dll"}
+
+
+def pe_sections(data):
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    if data[pe:pe + 4] != b"PE\0\0":
+        raise ValueError("not a PE file")
+    sections = struct.unpack_from("<H", data, pe + 6)[0]
+    optional_size = struct.unpack_from("<H", data, pe + 20)[0]
+    optional = pe + 24
+    if struct.unpack_from("<H", data, optional)[0] != 0x20B:
+        raise ValueError("not a PE32+ (x64) file")
+    table = optional + optional_size
+    spans = [struct.unpack_from("<IIII", data, table + 40 * i + 8) for i in range(sections)]
+
+    def offset(rva):
+        for size, address, raw_size, raw_offset in spans:
+            if address <= rva < address + max(size, raw_size):
+                return rva - address + raw_offset
+        raise ValueError("an address outside every section")
+
+    return optional, offset
+
+
+def imported_dlls(dll):
+    data = pathlib.Path(dll).read_bytes()
+    optional, offset = pe_sections(data)
+    import_rva = struct.unpack_from("<I", data, optional + 120)[0]
+    if import_rva == 0:
+        return []
+    names = []
+    entry = offset(import_rva)
+    while True:
+        name_rva = struct.unpack_from("<I", data, entry + 12)[0]
+        if name_rva == 0:
+            return names
+        start = offset(name_rva)
+        names.append(data[start:data.index(b"\0", start)].decode("ascii"))
+        entry += 20
+
+
 def exported_names(dll):
     data = pathlib.Path(dll).read_bytes()
     pe = struct.unpack_from("<I", data, 0x3C)[0]
@@ -489,6 +536,11 @@ def check_exports(dll, test_build):
     if test_build and not test_only:
         fail(dll, 0, "a test build without its test exports")
     print(f"{pathlib.Path(dll).name} exports: {', '.join(sorted(names))}")
+    imports = imported_dlls(dll)
+    unreviewed = sorted(name for name in imports if name.lower() not in IMPORTS_ALLOWED)
+    if unreviewed:
+        fail(dll, 0, f"imports DLLs outside the reviewed list (invariant 16, D170): {unreviewed}")
+    print(f"{pathlib.Path(dll).name} imports: {', '.join(sorted(imports, key=str.lower))}")
 
 
 def main(argv):
