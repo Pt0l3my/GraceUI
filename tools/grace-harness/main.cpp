@@ -4293,6 +4293,45 @@ void run_pages(const std::wstring& dll) {
         "settings.set ui.scale 1.1 from the browser: %s; the menu's store holds %s", set ? set->dump().c_str() : "NONE",
         scale.c_str());
 
+  // With GRACE_HOLD_S set, the mod stays for that many seconds and answers as the demo space would, so that a real
+  // browser can be pointed at the server meanwhile (BUILD.md): fixture states on watched, ok to every command.
+  char hold_text[16] = {};
+  const DWORD hold_length = GetEnvironmentVariableA("GRACE_HOLD_S", hold_text, sizeof hold_text);
+  const int hold_s = hold_length > 0 && hold_length < sizeof hold_text ? std::atoi(hold_text) : 0;
+  if (hold_s > 0) {
+    std::printf("   (holding %d s: the browser view is at http://127.0.0.1:%u/)\n", hold_s, server.port);
+    std::fflush(stdout);
+    const Json fixtures = Json::parse(R"({"lantern.status":{"tiles":[{"label":"Flame","value":"Steady"},)"
+                                      R"({"label":"Oil","value":"62%"}],"sentence":"The lantern burns steady amber."},)"
+                                      R"("settings":null})");
+    std::uint64_t rev = 10;
+    const DWORD until = GetTickCount() + static_cast<DWORD>(hold_s) * 1000u;
+    while (GetTickCount() < until) {
+      const SpaceEvent event = poll_space(table, demo.answer.consumer);
+      if (event.kind == GRACEUI_EVENT_WATCHED) {
+        const Json sub = Json::parse(event.frame);
+        const std::string topic = sub["topic"].get<std::string>();
+        Json body;
+        if (topic == "settings") {
+          body = {{"schema", Json::parse(space.settings)["schema"]}, {"description", Json::parse(space.settings)["settings"]},
+                  {"values", Json::object()}, {"changed", Json::array()}};
+        } else if (fixtures.contains(topic)) {
+          body = fixtures[topic];
+        }
+        if (!body.is_null()) {
+          const std::string frame_text =
+              Json{{"v", 1}, {"t", "state"}, {"space", "demo"}, {"topic", topic}, {"rev", ++rev}, {"body", body}}.dump();
+          table->publish(demo.answer.consumer, frame_text.data(), frame_text.size());
+        }
+      } else if (event.kind == GRACEUI_EVENT_COMMAND) {
+        const std::string done = R"({"v":1,"t":"result","space":"demo","id":0,"ok":true})";
+        table->answer(demo.answer.consumer, event.reply, done.data(), done.size());
+      }
+      game.frame(kInputColour, PresentWith::present);
+      Sleep(15);
+    }
+  }
+
   // 6. The mod disconnects: its space goes, the server stops, the view is told and closed.
   table->disconnect(demo.answer.consumer);
   table->disconnect(other.answer.consumer);
