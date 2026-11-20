@@ -39,6 +39,7 @@
 
 #include "graceui_sys.hpp"
 #include "graceui_test.h"
+#include "hello_debug_view.h"
 #include "hello_panel.h"
 
 namespace {
@@ -4019,6 +4020,146 @@ int run_child(const std::wstring& dll, const wchar_t* scenario, std::wstring pro
   return static_cast<int>(code);
 }
 
+// ---- S10.4.d: two example mods at once, each way round (D156): hello-notice and hello-debug-view, the one loaded
+// before GraceUI and the other after it, then the other way round in a second process. The debug view is EldenNet's
+// banner and F11 view in miniature: a banner notice under its own key, and a panel on its own headless Dear ImGui that
+// GraceUI's hotkey F11 opens and closes, its presses taken through poll.
+
+constexpr Colour kExamplesColour{28, 34, 30};
+constexpr Colour kDebugGround{HELLO_DEBUG_GROUND_R, HELLO_DEBUG_GROUND_G, HELLO_DEBUG_GROUND_B};
+
+std::wstring debug_view_path() { return folder_of_this_program() + L"hello-debug-view.dll"; }
+
+// The debug view's connection and banner as GraceUI holds them ("" if it has none).
+bool debug_view_connected(const GraceUi& grace, std::string& banner) {
+  for (const GraceUiTestConsumer& consumer : grace.consumers()) {
+    if (std::string_view(consumer.id) != HELLO_DEBUG_ID) {
+      continue;
+    }
+    for (const GraceUiTestNotice& notice : grace.notices()) {
+      if (notice.owner == consumer.owner) {
+        banner = notice.text;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+void run_examples(const std::wstring& dll, bool notice_first) {
+  Game game(false);
+  const HWND window = game.window();
+  const char* first_name = notice_first ? "hello-notice" : HELLO_DEBUG_ID;
+  const char* second_name = notice_first ? HELLO_DEBUG_ID : "hello-notice";
+  const std::wstring first_path = notice_first ? example_path() : debug_view_path();
+  const std::wstring second_path = notice_first ? debug_view_path() : example_path();
+  const auto connected = [&](const GraceUi& grace, const char* name) {
+    std::string text;
+    std::uint32_t owner = 0;
+    return std::string_view(name) == "hello-notice" ? example_connected(grace, text, owner)
+                                                    : debug_view_connected(grace, text);
+  };
+
+  // The first, loaded before GraceUI: it looks for GraceUI every 250 ms and finds it once it is loaded, and its request
+  // starts the host. The second, loaded once the hooks are in, finds GraceUI at its first look.
+  if (LoadLibraryW(first_path.c_str()) == nullptr) {
+    fatal("the first example did not load");
+  }
+  present_until(&game, kExamplesColour, 600, [] { return false; });
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const bool first_seen = present_until(&game, kExamplesColour, 10000, [&] { return connected(grace, first_name); });
+  start_host(game, grace);
+  if (LoadLibraryW(second_path.c_str()) == nullptr) {
+    fatal("the second example did not load");
+  }
+  const bool second_seen = present_until(&game, kExamplesColour, 10000, [&] { return connected(grace, second_name); });
+  std::string banner;
+  std::string notice_text;
+  std::uint32_t notice_owner = 0;
+  debug_view_connected(grace, banner);
+  example_connected(grace, notice_text, notice_owner);
+  const std::vector<GraceUiTestConsumer> consumers = grace.consumers();
+  check(first_seen && second_seen && consumers.size() == 2 && banner == HELLO_DEBUG_BANNER_CLOSED &&
+            notice_text.find("GraceUI 0.1.0") != std::string::npos,
+        "two examples",
+        "%s, loaded before GraceUI, %s; %s, loaded after the hooks, %s; %zu mods connected; the debug view's banner "
+        "\"%s\"; hello-notice's notice \"%s\"",
+        first_name, first_seen ? "connected" : "DID NOT CONNECT", second_name,
+        second_seen ? "connected" : "DID NOT CONNECT", consumers.size(), banner.c_str(), notice_text.c_str());
+
+  // Both notices are drawn, and nothing else: the debug view's panel stays hidden until F11.
+  Frame frame;
+  std::string why;
+  bool both = false;
+  for (int i = 0; i < 60 && !both; ++i) {
+    frame = game.frame_and_read(kExamplesColour, PresentWith::present);
+    both = notices_drawn(frame, kExamplesColour, {GRACEUI_TONE_NORMAL, GRACEUI_TONE_NORMAL}, false, why);
+  }
+  check(both, "both notices", "the banner and hello-notice's notice, the view still closed: %s", why.c_str());
+
+  // F11 opens the view: GraceUI's hotkey, the press kept from the game; the mod takes it through poll, shows its panel,
+  // anchored at the bottom left, and replaces its banner's text in place.
+  cursor_into(window);
+  GameInput reads;
+  reads.open(window);
+  reads.keys();
+  g_seen = Seen{};
+  inject_key(VK_F11, 0x57, true);
+  settle();
+  const bool f11_read = (reads.keys()[DIK_F11] & 0x80) != 0;
+  inject_key(VK_F11, 0x57, false);
+  settle();
+  bool opened = false;
+  for (int i = 0; i < 100 && !opened; ++i) {
+    frame = game.frame_and_read(kExamplesColour, PresentWith::present);
+    debug_view_connected(grace, banner);
+    opened = frame.height > HELLO_DEBUG_Y + 20 &&
+             close_to(frame.at(HELLO_DEBUG_X + 240, frame.height - HELLO_DEBUG_Y - 10), kDebugGround, 3) &&
+             banner == HELLO_DEBUG_BANNER_OPEN;
+    Sleep(10);
+  }
+  const UINT top = frame.height - HELLO_DEBUG_Y - HELLO_DEBUG_HEIGHT;
+  const int ground = count_near(frame, HELLO_DEBUG_X, top, HELLO_DEBUG_X + HELLO_DEBUG_WIDTH,
+                                frame.height - HELLO_DEBUG_Y, kDebugGround, 3);
+  const int ink = count_near(frame, HELLO_DEBUG_X, top, HELLO_DEBUG_X + HELLO_DEBUG_WIDTH,
+                             frame.height - HELLO_DEBUG_Y, Colour{255, 255, 255}, 40);
+  const bool outside_clear = close_to(frame.at(HELLO_DEBUG_X - 2, top + 10), kExamplesColour, 0) &&
+                             close_to(frame.at(HELLO_DEBUG_X + 10, top - 2), kExamplesColour, 0) &&
+                             close_to(frame.at(HELLO_DEBUG_X + HELLO_DEBUG_WIDTH + 1, top + 10), kExamplesColour, 0);
+  const std::size_t boxes_open = notice_boxes(frame).size();
+  const int f11_messages = g_seen.key_down[VK_F11] + g_seen.key_up[VK_F11];
+  check(opened && ground >= HELLO_DEBUG_WIDTH * HELLO_DEBUG_HEIGHT / 2 && ink >= 100 && outside_clear &&
+            boxes_open == 2 && !f11_read && f11_messages == 0,
+        "debug view opened",
+        "F11 injected: the game's DirectInput %s it, its messages reaching the game %d; the panel %s at the bottom "
+        "left (%d pixels of its ground, %d of its text's ink, the edges outside it %s); the banner \"%s\"; %zu "
+        "notices drawn",
+        f11_read ? "SAW" : "did not see", f11_messages, opened ? "drawn" : "NOT DRAWN", ground, ink,
+        outside_clear ? "clear" : "NOT CLEAR", banner.c_str(), boxes_open);
+
+  // F11 again closes it: the panel gone, the banner as it was, both notices drawn and nothing else.
+  g_seen = Seen{};
+  inject_key(VK_F11, 0x57, true);
+  settle();
+  inject_key(VK_F11, 0x57, false);
+  settle();
+  bool closed = false;
+  for (int i = 0; i < 100 && !closed; ++i) {
+    frame = game.frame_and_read(kExamplesColour, PresentWith::present);
+    debug_view_connected(grace, banner);
+    closed = banner == HELLO_DEBUG_BANNER_CLOSED &&
+             notices_drawn(frame, kExamplesColour, {GRACEUI_TONE_NORMAL, GRACEUI_TONE_NORMAL}, false, why);
+    Sleep(10);
+  }
+  check(closed && g_seen.key_down[VK_F11] == 0, "debug view closed",
+        "F11 again: the banner \"%s\"; %s; F11's messages reaching the game %d", banner.c_str(), why.c_str(),
+        g_seen.key_down[VK_F11]);
+  grace.print_log();
+}
+
 }  // namespace
 
 int wmain(int argc, wchar_t** argv) {
@@ -4073,6 +4214,12 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"device-change") {
     std::printf("-- scenario: the game moves to a new device\n");
     run_device_change(dll);
+  } else if (scenario == L"examples") {
+    std::printf("-- scenario: hello-notice before GraceUI, hello-debug-view after\n");
+    run_examples(dll, true);
+  } else if (scenario == L"examples-reversed") {
+    std::printf("-- scenario: hello-debug-view before GraceUI, hello-notice after\n");
+    run_examples(dll, false);
   } else if (scenario == L"long-name") {
     std::printf("-- scenario: a second copy with a long name\n");
     run_long_name(dll);
@@ -4089,7 +4236,8 @@ int wmain(int argc, wchar_t** argv) {
       };
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
-            L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change"}) {
+            L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
+            L"examples", L"examples-reversed"}) {
         run(child_scenario, dll, this_program());
       }
       // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in

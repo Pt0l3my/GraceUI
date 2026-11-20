@@ -7,27 +7,24 @@
 //   - In its registration window, before its first submit: a face for GraceUI's shared atlas (before the overlay's
 //     warm-up), its own Dear ImGui atlas as a texture of its own (built once: no texture changes during play), and a
 //     second texture.
-//   - A panel, shown; then, every 10 ms, a frame of its own Dear ImGui turned into one draw list of GraceUI's: each
-//     ImDrawList's vertices and indices appended, each command keeping its vertex offset, clip rectangles in the
-//     panel's own pixels. Once the atlas is baked, a line laid out from the shared atlas's glyph table joins it.
+//   - A panel, shown; then, every 10 ms, a frame of its own Dear ImGui turned into one draw list of GraceUI's by
+//     graceui_imgui.hpp (D156): each ImDrawList's vertices and indices appended, each command keeping its vertex offset,
+//     clip rectangles in the panel's own pixels. Once the atlas is baked, a line laid out from the shared atlas's glyph
+//     table joins it.
 //
 // tools/grace-harness loads it and reads what it drew back from the game's frame (hello_panel.h).
 #include <windows.h>
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <vector>
 
+#include "graceui_imgui.hpp"
 #include "graceui_sys.hpp"
 #include "hello_panel.h"
 #include "imgui.h"
-#include "imgui_internal.h"  // ImFontAtlasBuildMain: a backend-less Dear ImGui builds its atlas once, itself
 
 namespace {
-
-static_assert(sizeof(ImDrawVert) == sizeof(GraceUiDrawVert) && sizeof(ImDrawIdx) == sizeof(std::uint16_t),
-              "D76's layout is Dear ImGui's default one: no conversion is needed");
 
 constexpr float kWidth = HELLO_PANEL_WIDTH;
 constexpr float kHeight = HELLO_PANEL_HEIGHT;
@@ -96,13 +93,7 @@ const GraceUiGlyph* glyph_of(const GraceUiGlyphTable& table, std::uint32_t c) {
 }
 
 // One frame of its own Dear ImGui, then its draw data as one list of GraceUI's.
-struct Frame {
-  std::vector<GraceUiDrawVert> vertices;
-  std::vector<std::uint16_t> indices;
-  std::vector<GraceUiDrawCommand> commands;
-};
-
-void build(Frame& frame, std::uint64_t checker, const GraceUiGlyphTable* glyphs) {
+void build(graceui::imgui::DrawList& frame, std::uint64_t checker, const GraceUiGlyphTable* glyphs) {
   ImGuiIO& io = ImGui::GetIO();
   io.DisplaySize = ImVec2(kWidth, kHeight);  // the panel's own pixels: GraceUI puts it where its anchor says
   io.DeltaTime = 0.01f;
@@ -147,36 +138,7 @@ void build(Frame& frame, std::uint64_t checker, const GraceUiGlyphTable* glyphs)
   ImGui::PopStyleColor();
   ImGui::Render();
 
-  // Every ImDrawList appended into one list: each command keeps its own vertex offset, its indices relative to it.
-  frame.vertices.clear();
-  frame.indices.clear();
-  frame.commands.clear();
-  const ImDrawData* data = ImGui::GetDrawData();
-  for (const ImDrawList* list : data->CmdLists) {
-    const std::uint32_t vertex_base = static_cast<std::uint32_t>(frame.vertices.size());
-    const std::uint32_t index_base = static_cast<std::uint32_t>(frame.indices.size());
-    frame.vertices.resize(vertex_base + static_cast<std::size_t>(list->VtxBuffer.Size));
-    std::memcpy(frame.vertices.data() + vertex_base, list->VtxBuffer.Data,
-                static_cast<std::size_t>(list->VtxBuffer.Size) * sizeof(ImDrawVert));
-    frame.indices.insert(frame.indices.end(), list->IdxBuffer.Data, list->IdxBuffer.Data + list->IdxBuffer.Size);
-    for (const ImDrawCmd& cmd : list->CmdBuffer) {
-      if (cmd.UserCallback != nullptr || cmd.ElemCount == 0) {
-        continue;
-      }
-      GraceUiDrawCommand command{};
-      command.clip_x0 = std::clamp(cmd.ClipRect.x - data->DisplayPos.x, 0.0f, kWidth);
-      command.clip_y0 = std::clamp(cmd.ClipRect.y - data->DisplayPos.y, 0.0f, kHeight);
-      command.clip_x1 = std::clamp(cmd.ClipRect.z - data->DisplayPos.x, command.clip_x0, kWidth);
-      command.clip_y1 = std::clamp(cmd.ClipRect.w - data->DisplayPos.y, command.clip_y0, kHeight);
-      command.texture = cmd.GetTexID();
-      command.vertex_offset = vertex_base + cmd.VtxOffset;
-      command.vertex_count = std::min<std::uint32_t>(static_cast<std::uint32_t>(list->VtxBuffer.Size) - cmd.VtxOffset,
-                                                     65536u);
-      command.index_offset = index_base + cmd.IdxOffset;
-      command.index_count = cmd.ElemCount;
-      frame.commands.push_back(command);
-    }
-  }
+  frame.build(*ImGui::GetDrawData(), kWidth, kHeight, glyphs != nullptr ? glyphs->generation : 0);
 }
 
 DWORD WINAPI hello_worker(LPVOID) {
@@ -212,19 +174,11 @@ DWORD WINAPI hello_worker(LPVOID) {
   // Its own Dear ImGui, headless: no backend, no platform; its atlas built once and registered as its own texture.
   ImGui::CreateContext();
   ImGuiIO& io = ImGui::GetIO();
-  io.IniFilename = nullptr;
-  io.LogFilename = nullptr;
-  io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;  // GraceUI draws each command with its vertex offset
+  graceui::imgui::prepare(io);  // GraceUI draws each command with its vertex offset
   io.Fonts->AddFontDefaultBitmap();
-  ImFontAtlasBuildMain(io.Fonts);
-  ImTextureData* atlas = io.Fonts->TexData;
-  const std::uint64_t atlas_id = register_rgba(api, me, static_cast<std::uint32_t>(atlas->Width),
-                                               static_cast<std::uint32_t>(atlas->Height), atlas->Pixels);
-  if (atlas_id == 0) {
+  if (graceui::imgui::register_atlas(api, me, io) == 0) {
     return 0;
   }
-  atlas->SetTexID(atlas_id);
-  atlas->SetStatus(ImTextureStatus_OK);
 
   // Its checker, in two colours.
   std::vector<std::uint32_t> checker(HELLO_CHECKER_SIZE * HELLO_CHECKER_SIZE);
@@ -255,23 +209,13 @@ DWORD WINAPI hello_worker(LPVOID) {
   // Its frames, from this thread: the first submit ends its registration window.
   GraceUiGlyphTable glyphs{};
   bool have_glyphs = false;
-  Frame frame;
+  graceui::imgui::DrawList frame;
   for (;;) {
     if (face != 0 && !have_glyphs) {
       have_glyphs = api.glyph_table(me, face, glyphs) == GRACEUI_OK;  // GRACEUI_NOT_READY until warm-up
     }
     build(frame, checker_id, have_glyphs ? &glyphs : nullptr);
-    GraceUiDrawList list{};
-    list.size = sizeof list;
-    list.atlas_generation = have_glyphs ? glyphs.generation : 0;
-    list.vertex_count = static_cast<std::uint32_t>(frame.vertices.size());
-    list.index_count = static_cast<std::uint32_t>(frame.indices.size());
-    list.command_count = static_cast<std::uint32_t>(frame.commands.size());
-    list.command_size = sizeof(GraceUiDrawCommand);
-    list.vertices = frame.vertices.data();
-    list.indices = frame.indices.data();
-    list.commands = frame.commands.data();
-    if (api.submit(me, panel, list) == GRACEUI_NOT_CONNECTED) {
+    if (api.submit(me, panel, frame.view()) == GRACEUI_NOT_CONNECTED) {
       return 0;
     }
     Sleep(10);

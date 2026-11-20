@@ -127,6 +127,7 @@ cmake -S . -B build-cl-test -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/clang-cl-xwin.
   -DGRACEUI_TEST_EXPORTS=ON
 cmake --build build-cl-test
 python3 -I tools/check_safety.py --exports build-cl-test/bin/graceui.dll --test
+unset TMPDIR    # Wine 9.0's wineserver aborts at start with TMPDIR set ("free(): invalid pointer"): see below
 export WINEPREFIX=<a prefix of its own> WINEDEBUG=-all LC_ALL=C.UTF-8
 wine64 reg add 'HKCU\Software\Wine\Direct3D' /v renderer /t REG_SZ /d vulkan /f    # once per prefix: see below
 xvfb-run -a -s "-screen 0 1280x720x24" wine64 build-cl-test/bin/grace-harness.exe
@@ -137,8 +138,12 @@ server stays bound to a display that has gone, so the harness can't open its win
 `wineserver -k` (Debian keeps it in `/usr/lib/wine`); with that, three runs in a row of each build passed all 82 checks
 (2026-11-16, S10.4.c). Frame-cost checks then failed now and then under another build's load (a p99 of 1.0 to 1.6 ms
 against 1 ms, with no allocation, its median as usual), and one functional check raced the example's thread; since
-D154 and the refusals check's fix, ten runs in a row of each build passed all 95 checks (2026-11-16) (96 since D155's hotkeys check, which a full run passed on 2026-11-17) at a load average
+D154 and the refusals check's fix, ten runs in a row of each build passed all 95 checks (2026-11-16) (96 since D155's hotkeys check, which a full run passed on 2026-11-17; 106 since D156's two example
+scenarios, which a full run passed on 2026-11-20) at a load average
 of 1.3 to 10.5 on four cores, a frame-cost check taking a second window in 6 of the 80 checks run, a third in none.
+Wine 9.0's wineserver (Ubuntu's 9.0~repack-4build3) aborts as it starts, with "free(): invalid pointer", whenever
+`TMPDIR` is set, even to `/tmp`: it frees the variable's own string (a backtrace, 2026-11-20). Every Wine command
+fails with it, `wineserver -k` among them, so unset it first; `/tmp` is where Wine puts its server's folder anyway.
 The long-name scenario names a folder in Unicode, which Wine can do only in a UTF-8 locale: hence `LC_ALL=C.UTF-8`
 above; without it that scenario fails, saying so. On a new prefix, run `xvfb-run -a wine64 wineboot -u` once first. Debian's Wine packages keep `wine64`
 in `/usr/lib/wine`: put it on the `PATH` first.
@@ -156,14 +161,16 @@ wined3d. It plays the game's part: it presents frames of a known clear colour, l
 `GraceUI_RequestApi(1)` and reads each checked frame back after GraceUI drew on it. A different clear colour for each
 check keeps a stale frame from passing for a new one.
 
-It runs sixteen scenarios, each in a process of its own: the render half's checks ("main"); two direct queues; the input
+It runs eighteen scenarios, each in a process of its own: the render half's checks ("main"); two direct queues; the input
 half ("input"), in a process whose game loads three XInput DLLs before GraceUI starts; the input half on an ANSI window
 ("input-ansi"); ABI 1 ("abi"), whose first request is the example mod's; panels and the rest of S10.4.c ("panels"),
 whose warm-up comes after the second example mod and a mod of the harness's own have registered their faces and
 textures, since nothing is presented until they have; two copies asked at once ("copies"); the
 example finding a copy under another name ("found-by-scan") and GraceUI's own folder ("found-by-path", which runs a copy
 of the harness from `bin\by-path`, beside the example and `GraceUI\graceui.dll`, as a game's folder); and a simulated
-anti-cheat hit by each clause ("anti-cheat", "anti-cheat-parent"); and five from the host's review: a larger window
+anti-cheat hit by each clause ("anti-cheat", "anti-cheat-parent"); two example mods at once, `hello-notice` and
+`hello-debug-view`, the one loaded before GraceUI and the other after the hooks, and the other way round ("examples",
+"examples-reversed", D156); and five from the host's review: a larger window
 found before the game's ("decoy-window"), the shared atlas running out of room ("atlas-full"), a request made while
 the first is still running ("slow-first"), a second copy with a long name ("long-name") and the game moving to a new
 device ("device-change"). Each scenario whose first `GraceUI_RequestApi`
@@ -254,6 +261,10 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | providers | One provider's danger ends the holder and a request is not now (danger); another's game menu, the first clear: two providers, a request not now (game menu); an unknown flag refused; the second disconnected: its claims gone, a request granted |
 | panel frames | Over 300 frames with seven panels shown while the example publishes a list every 10 ms from its thread, the GPU idle before each (in up to three windows, D154): every frame draws panels, no allocation and no free on the present thread (nor over the 300 frames run as a game runs them), and GraceUI's own work within 1 ms at p99 |
 | disconnect | The harness's mod disconnects: its panels leave the frame, its textures are released after their last frame, the example's stay; its id connects again with a new budget and window |
+| two examples | (the examples and examples-reversed scenarios, D156) The example loaded before GraceUI finds it by name and starts the host; the other, loaded after the hooks, finds it at its first look; both connect, the debug view's banner shows its closed text |
+| both notices | The banner and `hello-notice`'s notice are drawn, in the order they connected, and nothing else: the debug view is hidden |
+| debug view opened | Injected F11 reaches neither DirectInput nor the game's window; the debug view takes it through `poll`, and its panel is drawn at the bottom left (its ground and its own font's ink, the edges outside it clear), its banner's text replaced in place |
+| debug view closed | F11 again: the panel gone, the banner as it was, both notices drawn and nothing else |
 | two copies at once | (the copies scenario) Of two copies asked at once from two threads, exactly one answers a table; the other idles, and the active one names it once |
 | found by scan | (found-by-scan) With no module named `graceui.dll`, the example finds a copy named `grace-renamed.dll` by its scan, at its first look |
 | found by path | (found-by-path) With no copy loaded, the example loads `GraceUI\graceui.dll` from the game's folder |
@@ -291,6 +302,7 @@ running thread's runtime a tick late and sees nothing of a virtual machine's sto
 cmake -S . -B build-mingw-test -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release \
   -DGRACEUI_TEST_EXPORTS=ON
 cmake --build build-mingw-test
+unset TMPDIR    # as for the test build above
 WINEPREFIX=<dir> WINEDEBUG=-all xvfb-run -a -s "-screen 0 1280x720x24" wine64 build-mingw-test/bin/grace-harness.exe
 ```
 

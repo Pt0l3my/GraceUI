@@ -598,3 +598,24 @@ None of it is folded into EldenNet's design yet.
 4. **ARCH**: F11's row moves from EldenNet's own input to GraceUI's hotkey (`hotkeys.debug_view`'s home is GraceUI's
    Hotkeys page from GraceUI 0.6, D115); EldenNet's §14 item 4 above (F11 waiting on `register_hotkey`) is settled by
    this.
+
+## 18. The banner and the F11 view as part 12 builds them (S10.4.d, 2026-11-20, D156)
+
+What S10.4.d gives EldenNet's part 12; none of it is folded into EldenNet's design yet. `examples/hello-debug-view` is
+the whole of it in miniature, with invented content, and the harness runs it beside a second mod, each loaded before and
+after GraceUI.
+
+1. **The banner** (D134): one notice under EldenNet's own key with a duration of 0, its text replaced in place by a
+   later `notice` under the same key and withdrawn by an empty text. It needs only the cap `notices`, and it works in
+   the anti-cheat's notice-only mode, after `connect` answered inactive (anti-cheat) with a handle.
+2. **The F11 view on Dear ImGui's core** (D156): EldenNet compiles Dear ImGui 1.93.0's core with no backend (as
+   `gu_imgui_core` does) and includes `graceui_imgui.hpp` from `graceui-sys`. On T1, after `connect` with the caps
+   `notices panels textures hotkeys`: `ImGui::CreateContext()`, `graceui::imgui::prepare(io)`, its fonts added, then
+   `graceui::imgui::register_atlas(api, me, io)` before its first `submit` (its registration window); a panel of its
+   own, hidden, made with `create_panel`; F11 registered (§17). Each frame of its own, on its own thread: build the
+   view with `io.DisplaySize` set to the panel's size, `ImGui::Render()`, then `list.build(*ImGui::GetDrawData(),
+   width, height)` and, if it answered true, `api.submit(me, panel, list.view())`. A frame past ABI 1's bounds (256 KiB
+   of vertices or indices, 64 commands) is not built; the view then keeps its last list.
+3. **Opening and closing**: on each `GRACEUI_EVENT_HOTKEY` for F11 with an odd count, the view toggles: to open, one
+   list submitted and then `show_panel`, so it never shows empty; to close, `hide_panel`. The F11 view takes no input
+   in 0.1 (no `request_input`): its keys and pointer reach a holder only with §6's protocol (D142).
