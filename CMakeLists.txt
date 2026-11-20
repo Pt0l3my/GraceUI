@@ -97,6 +97,7 @@ if(WIN32)
   add_subdirectory(src/graceui-sys)
   add_subdirectory(examples)
   if(GRACEUI_TEST_EXPORTS)
+    add_subdirectory(tools/grace-spike)
     add_subdirectory(tools/grace-harness)
   endif()
 endif()
@@ -113,5 +114,8 @@ if(GRACEUI_UNIT_TESTS)
   if(Python3_FOUND)
     add_test(NAME manifest_tool_tests
              COMMAND ${Python3_EXECUTABLE} -I -m unittest discover -s ${CMAKE_SOURCE_DIR}/tools/release)
+    # The in-game spikes' reader (D175): its pass rules, on invented reports.
+    add_test(NAME spike_reader_tests
+             COMMAND ${Python3_EXECUTABLE} -I -m unittest discover -s ${CMAKE_SOURCE_DIR}/tools/grace-spike)
   endif()
 endif()

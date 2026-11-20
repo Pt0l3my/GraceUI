@@ -21,6 +21,8 @@ void wake() noexcept;
 // Installed hook `index`, in install order: its name in D102's published list, and the DLL it was found in where that
 // is one of several (XInput's); false past the last.
 bool installed_hook(std::uint32_t index, const char*& name, const char*& module) noexcept;
+// Present's first bytes as GraceUI found them at install (GRACEUI_TEST_PROLOGUE_*; D86, D175).
+std::uint32_t present_prologue() noexcept;
 #endif
 
 }  // namespace grace::host::hooks

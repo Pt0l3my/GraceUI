@@ -72,6 +72,18 @@ const char* name_of(HookName name) noexcept { return kHookNames[static_cast<int>
 // What install() made, in order, the window procedure's filter last: for the log and the test exports.
 constinit Hook g_installed[kMaxHooks + 1] = {};
 constinit std::atomic<int> g_installed_count{0};
+constinit std::atomic<std::uint32_t> g_present_prologue{0};  // 0 unknown, 1 plain, 2 a jump (D86)
+
+// Whether a function's first bytes already hold a jump: another hook's, most likely (D86: a cue, never a refusal).
+bool starts_with_jump(const void* target) noexcept {
+  // SAFETY: the first 13 bytes of a function's code in a loaded module, read as MinHook itself reads them.
+  const auto* b = static_cast<const std::uint8_t*>(target);
+  return b[0] == 0xE9 || b[0] == 0xEB ||                                              // jmp rel32, jmp rel8
+         (b[0] == 0xFF && b[1] == 0x25) ||                                           // jmp [rip+disp32]
+         (b[0] == 0x48 && b[1] == 0xB8 && b[10] == 0xFF && b[11] == 0xE0) ||         // mov rax, imm64; jmp rax
+         (b[0] == 0x49 && b[1] == 0xBB && b[10] == 0x41 && b[11] == 0xFF && b[12] == 0xE3) ||  // mov r11; jmp r11
+         (b[0] == 0x68 && b[5] == 0xC3);                                             // push imm32; ret
+}
 
 using PresentFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
 using Present1Fn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain1*, UINT, UINT, const DXGI_PRESENT_PARAMETERS*);
@@ -797,6 +809,16 @@ void install(const grace_host_fn (&render)[kRenderHooks], const hooks_input::Tar
       }
     }
   }
+  for (int i = 0; i < count; ++i) {
+    if (table[i].name == HookName::present) {
+      const bool jump = starts_with_jump(table[i].target);
+      g_present_prologue.store(jump ? 2u : 1u, std::memory_order_relaxed);
+      if (jump) {
+        log_line("Present already starts with a jump: another overlay may have hooked it first (D86); GraceUI hooks "
+                 "it all the same");
+      }
+    }
+  }
   if (MH_Initialize() != MH_OK) {
     give_up("MinHook could not start");
     return;
@@ -951,6 +973,8 @@ bool installed_hook(std::uint32_t index, const char*& name, const char*& module)
   module = g_installed[index].module;
   return true;
 }
+
+std::uint32_t present_prologue() noexcept { return g_present_prologue.load(std::memory_order_relaxed); }
 #endif
 
 }  // namespace grace::host::hooks

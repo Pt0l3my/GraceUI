@@ -288,7 +288,7 @@ wined3d. It plays the game's part: it presents frames of a known clear colour, l
 `GraceUI_RequestApi(1)` and reads each checked frame back after GraceUI drew on it. A different clear colour for each
 check keeps a stale frame from passing for a new one.
 
-It runs twenty-one scenarios, each in a process of its own: the render half's checks ("main"); two direct queues; the input
+It runs twenty-four scenarios, each in a process of its own: the render half's checks ("main"); two direct queues; the input
 half ("input"), in a process whose game loads three XInput DLLs before GraceUI starts; the input half on an ANSI window
 ("input-ansi"); ABI 1 ("abi"), whose first request is the example mod's; panels and the rest of S10.4.c ("panels"),
 whose warm-up comes after the second example mod and a mod of the harness's own have registered their faces and
@@ -297,7 +297,7 @@ example finding a copy under another name ("found-by-scan") and GraceUI's own fo
 of the harness from `bin\by-path`, beside the example and `GraceUI\graceui.dll`, as a game's folder); and a simulated
 anti-cheat hit by each clause ("anti-cheat", "anti-cheat-parent"); two example mods at once, `hello-notice` and
 `hello-debug-view`, the one loaded before GraceUI and the other after the hooks, and the other way round ("examples",
-"examples-reversed", D156); graceui-sys with GraceUI not installed ("absent", D164); the in-game menu at 1920 by 1080 ("menu", D167); a mod's space across the ABI with the browser view's server, run from the build's GraceUI folder ("pages", D169); and five from the host's review: a larger window
+"examples-reversed", D156); graceui-sys with GraceUI not installed ("absent", D164); the in-game menu at 1920 by 1080 ("menu", D167); a mod's space across the ABI with the browser view's server, run from the build's GraceUI folder ("pages", D169); the menu on mods' spaces, with GraceUI's at the rail's foot ("menu-space", D171); the in-game spikes' observer and the stand-in for another overlay, loaded before GraceUI with the typing test, and after its hooks ("spike", "spike-after", D175; `tools/grace-spike/README.md`); and five from the host's review: a larger window
 found before the game's ("decoy-window"), the shared atlas running out of room ("atlas-full"), a request made while
 the first is still running ("slow-first"), a second copy with a long name ("long-name") and the game moving to a new
 device ("device-change"). Each scenario whose first `GraceUI_RequestApi`

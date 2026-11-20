@@ -43,6 +43,7 @@
 #include "graceui_sys.hpp"
 #include "graceui_test.h"
 #include "hello_debug_view.h"
+#include "grace_spike.h"
 #include "hello_panel.h"
 
 namespace {
@@ -1160,6 +1161,9 @@ void run_main(const std::wstring& dll) {
         "warm-up", "present queue: %s; renderer ready %u; atlas %ux%u uploaded %u",
         method_name(state.queue_method), state.renderer_ready, state.atlas_width, state.atlas_height,
         state.atlas_ready);
+  check(state.present_prologue == GRACEUI_TEST_PROLOGUE_PLAIN, "present prologue",
+        "with no other overlay, Present's first bytes held no jump at install (D86's cue: %u, 1 plain)",
+        state.present_prologue);
 
   // 2. The test panel through Present.
   grace.set_panel(1);
@@ -1753,6 +1757,15 @@ void run_input(const std::wstring& dll) {
         a_really_down ? "yes" : "NO", none_down(keys) ? "nothing" : "KEYS", held_mouse.lX, held_mouse.lY,
         held_mouse.rgbButtons[0],
         pads_still ? "untouched" : "CHANGED", g_seen.key_down['A'], input.imgui_keys_down, input.imgui_draws_cursor);
+  // The spikes' counters (D175) say the same: nothing passed to the game while held, and DirectInput's reads masked.
+  check(input.passed_presses == 0 && input.passed_characters == 0 && input.passed_mouse == 0 &&
+            input.passed_raw == 0 && input.masked_keyboard_held >= 1 && input.masked_mouse_held >= 1,
+        "spike counters: held",
+        "passed to the game while held: %u presses, %u characters, %u mouse, %u raw; DirectInput reads masked: %u of "
+        "the keyboard, %u of the mouse",
+        input.passed_presses, input.passed_characters, input.passed_mouse, input.passed_raw, input.masked_keyboard_held,
+        input.masked_mouse_held);
+  const GraceUiTestInput before_close = input;
 
   // 4. The closing press (invariant 8): the holder ends with A and the left button still held; the game reads neither
   // until each is released, and never sees the press that began while the holder had input.
@@ -1781,6 +1794,12 @@ void run_input(const std::wstring& dll) {
   reads.keys();
   reads.mouse();
   input = grace.input();
+  check(input.masked_keyboard_free > before_close.masked_keyboard_free &&
+            input.masked_mouse_free > before_close.masked_mouse_free && input.passed_presses == 0,
+        "spike counters: closing press",
+        "after the close, DirectInput reads masked until the press was released: %u of the keyboard, %u of the mouse",
+        input.masked_keyboard_free - before_close.masked_keyboard_free,
+        input.masked_mouse_free - before_close.masked_mouse_free);
   check(closed && masked && still_masked && games_again && g_seen.key_down['A'] == 1 && g_seen.key_up['A'] == 1 &&
             input.last_close_reason == GRACEUI_TEST_CLOSED_RELEASED && input.holder_owner == 0,
         "closing press",
@@ -4584,6 +4603,166 @@ void run_menu_space(const std::wstring& dll) {
   grace.print_log();
 }
 
+// ---- The in-game spikes' tools (D175): grace-spike.dll, the observer EldenNet's launcher loads in a spike run, and
+// grace-standin.dll, a stand-in for another overlay that patches Present's vtable slot with its own code. "spike" loads
+// both before GraceUI (the stand-in's patch first, so GraceUI hooks the stand-in's Present), opens the typing test with
+// F9 and types into it; "spike-after" loads both once GraceUI's hooks are in. Each reads back the report the observer
+// wrote: its header, its state lines and the typing test's line.
+
+std::vector<grace::protocol::Json> read_report(const std::wstring& path) {
+  std::vector<grace::protocol::Json> lines;
+  const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return lines;
+  }
+  std::string text;
+  char buffer[4096];
+  DWORD got = 0;
+  while (ReadFile(file, buffer, sizeof buffer, &got, nullptr) && got > 0) {
+    text.append(buffer, got);
+  }
+  CloseHandle(file);
+  std::size_t start = 0;
+  for (std::size_t end = text.find('\n'); end != std::string::npos; end = text.find('\n', start)) {
+    const grace::protocol::Json line = grace::protocol::Json::parse(text.substr(start, end - start), nullptr, false);
+    if (!line.is_discarded()) {
+      lines.push_back(line);
+    }
+    start = end + 1;
+  }
+  return lines;
+}
+
+std::vector<grace::protocol::Json> lines_of(const std::vector<grace::protocol::Json>& lines, const char* kind) {
+  std::vector<grace::protocol::Json> out;
+  for (const grace::protocol::Json& line : lines) {
+    if (line.value("k", std::string()) == kind) {
+      out.push_back(line);
+    }
+  }
+  return out;
+}
+
+using StandInPatched = LONG (*)();
+
+// Loads the stand-in and the observer from the harness's folder, and waits (presenting) until the stand-in has patched
+// Present's slot, at most 5 s.
+bool load_spike_tools(Game& game) {
+  const HMODULE standin = LoadLibraryW((folder_of_this_program() + GRACE_STANDIN_FILE).c_str());
+  const HMODULE spike = LoadLibraryW((folder_of_this_program() + L"grace-spike.dll").c_str());
+  const FARPROC found = standin != nullptr ? GetProcAddress(standin, "GraceStandIn_Patched") : nullptr;
+  if (spike == nullptr || found == nullptr) {
+    return false;
+  }
+  // SAFETY: standin.c gives the export of that name this type.
+  const auto patched = reinterpret_cast<StandInPatched>(reinterpret_cast<void (*)(void)>(found));
+  for (int i = 0; i < 250 && patched() == 0; ++i) {
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+  }
+  return patched() == 1;
+}
+
+void run_spike(const std::wstring& dll, bool tools_first) {
+  using grace::protocol::Json;
+  const std::wstring parent = folder_of_this_program() + (tools_first ? L"spike-first" : L"spike-after");
+  const std::wstring folder = parent + L"\\s4-1";
+  const std::wstring path = folder + L"\\" + GRACE_SPIKE_FILE;
+  CreateDirectoryW(parent.c_str(), nullptr);
+  DeleteFileW(path.c_str());
+  SetEnvironmentVariableW(GRACE_SPIKE_DIR_VARIABLE, folder.c_str());
+  SetEnvironmentVariableW(L"GRACE_SPIKE_TYPING_MS", L"3000");
+  SetEnvironmentVariableW(L"GRACE_SPIKE_STATE_MS", L"300");
+  Game game(false);
+  const HWND window = game.window();
+  cursor_into(window);
+  bool loaded = tools_first ? load_spike_tools(game) : true;
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  if (!tools_first) {
+    loaded = load_spike_tools(game);
+  }
+  std::vector<Json> report;
+  for (int i = 0; i < 300 && (lines_of(report, "typing_ready").empty() || lines_of(report, "state").size() < 3); ++i) {
+    frames(game, 1);
+    Sleep(20);
+    report = read_report(path);
+  }
+
+  // 1. The header: the run's word from its folder, the GraceUI found by name without loading it, and nothing else's.
+  const std::vector<Json> headers = lines_of(report, "header");
+  const Json header = headers.empty() ? Json::object() : headers.front();
+  const Json version = Json::array({GRACE_BUILD_MAJOR, GRACE_BUILD_MINOR, GRACE_BUILD_PATCH});
+  check(loaded && headers.size() == 1 && header["report"] == "graceui_spike" && header["schema"] == 1 &&
+            header["spike"] == "s4" && header["graceui"] == version && header["build"] == "test" &&
+            header["found"] == "by_name" && header["connect"] == "ok" && header["eldennet_at_find"] == "absent" &&
+            header["steam_overlay"] == "absent",
+        "spike: the report's header",
+        "the stand-in and the observer %s, %s GraceUI; the header: %s", loaded ? "loaded" : "NOT LOADED",
+        tools_first ? "before" : "after", header.dump().c_str());
+
+  // 2. Both overlays draw: the stand-in's Present counts frames, and GraceUI draws them, whichever came first.
+  const std::vector<Json> states = lines_of(report, "state");
+  const Json first = states.empty() ? Json::object() : states.front();
+  const Json last = states.empty() ? Json::object() : states.back();
+  const auto number = [](const Json& line, const char* key) { return line.value(key, std::uint64_t{0}); };
+  check(states.size() >= 3 && last["standin"] == "patched" &&
+            number(last, "standin_presents") > number(first, "standin_presents") &&
+            number(last, "frames_drawn") > 0 && number(last, "install_runs") == 1 && number(last, "hooks") >= 6 &&
+            last["host"] == "hooked" && last["prologue"] != "unknown" && number(last, "lists_refused") == 0,
+        "spike: both overlays draw",
+        "%zu state lines; the stand-in %s, its Present called %llu times between the first and the last; GraceUI "
+        "%s with %llu hooks from %llu install run(s), %llu frames drawn, Present's prologue %s",
+        states.size(), last.value("standin", std::string("?")).c_str(),
+        static_cast<unsigned long long>(number(last, "standin_presents") - number(first, "standin_presents")),
+        last.value("host", std::string("?")).c_str(), static_cast<unsigned long long>(number(last, "hooks")),
+        static_cast<unsigned long long>(number(last, "install_runs")),
+        static_cast<unsigned long long>(number(last, "frames_drawn")),
+        last.value("prologue", std::string("?")).c_str());
+
+  // 3. The typing test (with the tools first): F9 opens it, letters and the mouse go to it and none reaches the game,
+  // and it gives the controls back when its time is up.
+  if (tools_first) {
+    press(window, VK_F9, 0x43);
+    GraceUiTestInput input = grace.input();
+    for (int i = 0; i < 150 && input.holder_kind != GRACEUI_TEST_KIND_PANEL; ++i) {
+      frames(game, 1);
+      Sleep(20);
+      input = grace.input();
+    }
+    const bool held = input.holder_kind == GRACEUI_TEST_KIND_PANEL;
+    g_seen = Seen{};
+    for (const char letter : {'w', 'a', 's', 'd', 'x'}) {
+      const UINT vk = static_cast<UINT>(letter - 'a' + 'A');
+      post_key(window, vk, 0, true, false);
+      PostMessageW(window, WM_CHAR, static_cast<WPARAM>(letter), 1);
+      post_key(window, vk, 0, false, false);
+      frames(game, 2);
+    }
+    inject_mouse(30, 10, MOUSEEVENTF_MOVE);
+    std::vector<Json> typed;
+    for (int i = 0; i < 300 && typed.empty(); ++i) {
+      frames(game, 1);
+      Sleep(20);
+      typed = lines_of(read_report(path), "typing");
+    }
+    const Json typing = typed.empty() ? Json::object() : typed.front();
+    const Json passed = typing.value("passed", Json::array());
+    const bool none_passed = passed.size() == 5 && passed[0] == 0 && passed[2] == 0 && passed[3] == 0 && passed[4] == 0;
+    check(held && typed.size() == 1 && typing["end"] == "released" && number(typing, "held_ms") >= 3000 &&
+              number(typing, "chars") >= 5 && none_passed && g_seen.chars == 0 && grace.input().holder_kind == 0,
+          "spike: the typing test",
+          "F9: the observer's panel %s input; its line: %s; characters reaching the game: %d; the holder after: %u",
+          held ? "took" : "DID NOT TAKE", typing.dump().c_str(), g_seen.chars, grace.input().holder_kind);
+  }
+  grace.print_log();
+}
+
 void run_absent() {
   GraceUiSysFound found{};
   found.size = sizeof found;
@@ -5006,6 +5185,12 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"menu-space") {
     std::printf("-- scenario: the in-game menu on mods' spaces, with GraceUI's at the rail's foot (D171)\n");
     run_menu_space(dll);
+  } else if (scenario == L"spike") {
+    std::printf("-- scenario: the spike observer and the stand-in overlay, loaded before GraceUI (D175)\n");
+    run_spike(dll, true);
+  } else if (scenario == L"spike-after") {
+    std::printf("-- scenario: the spike observer and the stand-in overlay, loaded after GraceUI's hooks (D175)\n");
+    run_spike(dll, false);
   } else if (scenario == L"absent") {
     std::printf("-- scenario: graceui-sys with GraceUI not installed\n");
     run_absent();
@@ -5032,7 +5217,7 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-space"}) {
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-space", L"spike", L"spike-after"}) {
         run(child_scenario, dll, this_program());
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.
