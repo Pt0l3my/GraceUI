@@ -65,6 +65,8 @@ std::uint32_t test_setting(const char* key, char* out, std::uint32_t capacity) n
 // Where the menu's last layout drew an element, named as grace-view's focused() names it: its row and its control
 // (x, y, width, height each, in the display's pixels); false if it was not drawn.
 bool test_bounds(const char* name, float (&out)[8]) noexcept;
+// Whether the menu's last layout draws `text` (within one of its texts).
+bool test_shows(const char* text) noexcept;
 #endif
 
 }  // namespace grace::host::menu

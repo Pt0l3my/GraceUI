@@ -355,6 +355,8 @@ std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capaci
 
 void test_set_recheck_ms(std::uint32_t ms) noexcept { spaces::test_set_recheck_ms(ms); }
 
+std::uint32_t test_menu_shows(const char* text) noexcept { return menu::test_shows(text) ? 1 : 0; }
+
 std::uint32_t test_menu_bounds(const char* name, float* out) noexcept {
   float values[8] = {};
   if (out == nullptr || !menu::test_bounds(name, values)) {

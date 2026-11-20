@@ -546,10 +546,10 @@ TEST_CASE("a table in game (D181): its rows, a switch a row by its key, turned t
                                             {"uses", "Pages, notices"}, {"notices", "Shown"}},
                                            {{"id", "quiet-camp"}, {"mod", "Quiet Camp"}, {"version", "2.1.0"},
                                             {"uses", "Notices"}, {"notices", "Quiet"}}})}};
-  // Without its body the table is the browser's, and no row takes focus.
+  // Without its body the table holds nothing yet (invariant 2), and no row takes focus.
   DisplayList before;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), before);
-  CHECK(before.dump().find("Shown in the browser view.") != std::string::npos);
+  CHECK(before.dump().find("Nothing to show yet.") != std::string::npos);
   CHECK(view.focused().rfind("cell:", 0) != 0);
 
   view.set_topic("graceui.mods", mods);
@@ -588,7 +588,7 @@ TEST_CASE("a table in game (D181): its rows, a switch a row by its key, turned t
   view.set_topic("graceui.notices", Json{{"columns", Json::array()}, {"rows", Json::array()}});
   DisplayList empty;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), empty);
-  CHECK(empty.dump().find("Nothing here yet.") != std::string::npos);
+  CHECK(empty.dump().find("Nothing to show yet.") != std::string::npos);
   // A refused switch: the space's reason under its row, focus on it; a new body of the table takes the line away.
   view.refused("graceui.mods/quiet-camp", "That mod is not connected now.");
   CHECK(view.focused() == "cell:graceui.mods/quiet-camp");
@@ -732,4 +732,49 @@ TEST_CASE("a destructive action asks for its second press even without its confi
   const Action a = press(view, Key::activate);
   REQUIRE(a.kind == Action::Kind::command);
   CHECK(a.command.args == Json::object({{"confirm", true}}));
+}
+
+TEST_CASE("a space's state components in game (D184): a key-value list, a check list, tiles and a sentence") {
+  PageView about = loaded("graceui", "graceui.about");
+  CHECK(about.component_topics() == std::vector<std::string>{"graceui.about"});
+  DisplayList list;
+  about.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("Nothing to show yet.") != std::string::npos);  // nothing published yet (invariant 2)
+  about.set_topic("graceui.about", Json{{"items", Json::array({{{"label", "Version"}, {"value", "GraceUI 9.9.9"}},
+                                                               {{"label", "Licence"}, {"value", "MIT"}},
+                                                               {{"label", "No value"}}})}});
+  about.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  std::string dump = list.dump();
+  CHECK(dump.find("\"Version\"") != std::string::npos);
+  CHECK(dump.find("\"GraceUI 9.9.9\"") != std::string::npos);
+  CHECK(dump.find("\"No value\"") == std::string::npos);  // an item without its value is left out, as the browser does
+  CHECK(dump.find("Nothing to show yet.") == std::string::npos);
+
+  PageView compatibility = loaded("graceui", "graceui.compatibility");
+  compatibility.set_topic("graceui.compatibility",
+                          Json{{"checks", Json::array({{{"state", "pass"}, {"label", "One copy"}},
+                                                       {{"state", "fail"}, {"label", "Old mod"}, {"detail", "Built for ABI 2."}},
+                                                       {{"state", "odd"}, {"label", "Unknown"}}})}});
+  compatibility.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  dump = list.dump();
+  CHECK(dump.find("moss") != std::string::npos);
+  CHECK(dump.find("\"Passed\"") != std::string::npos);
+  CHECK(dump.find("\"Failed\"") != std::string::npos);
+  CHECK(dump.find("\"Built for ABI 2.\"") != std::string::npos);
+  CHECK(dump.find("\"Waiting\"") != std::string::npos);  // a state it does not know reads as waiting, as the browser's
+
+  // The demo's overview: tiles and a sentence from one topic; its streams' page shows them in the browser alone.
+  PageView overview = loaded("demo", "demo.overview");
+  CHECK(overview.component_topics() == std::vector<std::string>{"lantern.status"});
+  overview.set_topic("lantern.status",
+                     Json{{"tiles", Json::array({{{"label", "Oil"}, {"value", 62}, {"unit", "%"}}})},
+                          {"sentence", "The lantern burns steady."}});
+  overview.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  dump = list.dump();
+  CHECK(dump.find("\"62 %\"") != std::string::npos);
+  CHECK(dump.find("\"The lantern burns steady.\"") != std::string::npos);
+  PageView log = loaded("demo", "demo.log");
+  CHECK(log.component_topics().empty());  // a live feed and a log tail: streams, the browser's for now
+  log.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("Shown in the browser view.") != std::string::npos);
 }

@@ -332,6 +332,46 @@ void PageView::set_topic(std::string_view topic, const Json& body) {
   }
 }
 
+bool PageView::drawn_in_game(protocol::Component component) {
+  switch (component) {
+    case protocol::Component::table:
+    case protocol::Component::key_value_list:
+    case protocol::Component::check_list:
+    case protocol::Component::stat_tiles:
+    case protocol::Component::computed_sentence:
+      return true;
+    default:
+      return false;  // the streams (a live feed, a log tail) and anything newer: the browser view's for now
+  }
+}
+
+const Json* PageView::body_of(const protocol::PageBlock& block) const {
+  if (!block.topic) {
+    return nullptr;
+  }
+  const auto found = topics_.find(*block.topic);
+  return found != topics_.end() && found->second.is_object() ? &found->second : nullptr;
+}
+
+std::vector<std::string> PageView::component_topics() const {
+  std::vector<std::string> out;
+  const auto add = [&](const std::vector<protocol::PageBlock>& blocks) {
+    for (const protocol::PageBlock& block : blocks) {
+      if (block.kind == protocol::BlockKind::component && block.topic && block.component && drawn_in_game(*block.component) &&
+          std::find(out.begin(), out.end(), *block.topic) == out.end()) {
+        out.push_back(*block.topic);
+      }
+    }
+  };
+  for (const protocol::PageSection& section : sections()) {
+    add(section.blocks);
+    if (section.advanced) {
+      add(*section.advanced);
+    }
+  }
+  return out;
+}
+
 const Json* PageView::table_of(const protocol::PageBlock& block) const {
   if (block.kind != protocol::BlockKind::component || block.component != protocol::Component::table || !block.topic) {
     return nullptr;
@@ -1331,11 +1371,124 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const auto draw_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
         for (const protocol::PageBlock& block : blocks) {
           if (block.kind == protocol::BlockKind::component) {
+            const float inner_x = x0 + card_pad;
+            const float inner_w = content_w - 2 * card_pad;
+            const auto one_line = [&](const std::string& words, Colour ink) {
+              c.text(words, TypeRole::ui_sm, inner_x, y + std::round(12 * s), inner_w, ink);
+              y += row_h;
+            };
+            if (block.component == protocol::Component::statement) {
+              // A statement: its own words, from the page data (§2.5).
+              const Json* props = block.props ? &*block.props : nullptr;
+              if (props != nullptr && props->is_object() && props->contains("text") && (*props)["text"].is_string()) {
+                c.text((*props)["text"].get<std::string>(), TypeRole::ui, inner_x, y + std::round(10 * s), inner_w,
+                       Colour::ink_body);
+                y += row_h;
+              }
+              continue;
+            }
+            if (!block.component || !drawn_in_game(*block.component)) {
+              one_line("Shown in the browser view.", Colour::ink_mute);
+              continue;
+            }
+            const Json* body = body_of(block);
+            if (block.component != protocol::Component::table) {
+              // A component of a state topic (D184): what its topic's body holds, as the browser view draws it, or
+              // the empty state while it holds nothing (invariant 2).
+              const auto objects = [&](const char* field) {
+                std::vector<const Json*> out;
+                if (body != nullptr && body->contains(field) && (*body)[field].is_array()) {
+                  for (const Json& item : (*body)[field]) {
+                    if (item.is_object()) {
+                      out.push_back(&item);
+                    }
+                  }
+                }
+                return out;
+              };
+              const auto words = [](const Json& item, const char* field) { return cell_words(item, field); };
+              if (block.component == protocol::Component::computed_sentence) {
+                const std::string sentence = body != nullptr ? cell_words(*body, "sentence") : std::string();
+                one_line(sentence.empty() ? "Nothing to show yet." : sentence,
+                         sentence.empty() ? Colour::ink_mute : Colour::ink_body);
+                continue;
+              }
+              if (block.component == protocol::Component::stat_tiles) {
+                std::vector<const Json*> tiles;
+                for (const Json* t : objects("tiles")) {
+                  if (!words(*t, "label").empty() && !words(*t, "value").empty()) {
+                    tiles.push_back(t);
+                  }
+                }
+                if (tiles.empty()) {
+                  one_line("Nothing to show yet.", Colour::ink_mute);
+                  continue;
+                }
+                const float gap = std::round(12 * s);
+                const float tile_w = std::floor((inner_w - gap * static_cast<float>(tiles.size() - 1)) /
+                                                static_cast<float>(tiles.size()));
+                const float tile_h = std::round(84 * s);
+                for (std::size_t i = 0; i < tiles.size(); ++i) {
+                  const Rect tile{inner_x + (tile_w + gap) * static_cast<float>(i), y + std::round(6 * s), tile_w,
+                                  tile_h - std::round(12 * s)};
+                  c.fill(tile, Colour::ground_3, std::round(tokens::radius::control * s));
+                  const float pad = std::round(12 * s);
+                  c.text(words(*tiles[i], "label"), TypeRole::ui_sm, tile.x + pad, tile.y + std::round(8 * s),
+                         tile.w - 2 * pad, Colour::ink_mute);
+                  std::string value = words(*tiles[i], "value");
+                  if (const std::string unit = words(*tiles[i], "unit"); !unit.empty()) {
+                    value += " " + unit;
+                  }
+                  c.text(value, TypeRole::display_md, tile.x + pad,
+                         tile.y + std::round(8 * s) + line_height(TypeRole::ui_sm, s), tile.w - 2 * pad, Colour::ink_hi);
+                }
+                y += tile_h;
+                continue;
+              }
+              const bool checks = block.component == protocol::Component::check_list;
+              std::vector<const Json*> rows;
+              for (const Json* item : objects(checks ? "checks" : "items")) {
+                if (!words(*item, "label").empty() && (checks || !words(*item, "value").empty())) {
+                  rows.push_back(item);
+                }
+              }
+              if (rows.empty()) {
+                one_line("Nothing to show yet.", Colour::ink_mute);
+                continue;
+              }
+              for (const Json* item : rows) {
+                c.line(inner_x, y, inner_w, Colour::rule);
+                const float text_y = y + std::round((row_h - line_height(TypeRole::ui, s)) / 2);
+                const float small_y = y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2);
+                if (checks) {
+                  // A check: its state in words and its colour, its label, and its detail after them.
+                  const std::string state = words(*item, "state");
+                  const char* word = state == "pass" ? "Passed" : state == "warn" ? "Warning" : state == "fail" ? "Failed"
+                                                                                                                 : "Waiting";
+                  const Colour ink = state == "pass" ? Colour::moss : state == "warn" ? Colour::ember
+                                     : state == "fail" ? Colour::rot : Colour::ink_faint;
+                  const float word_w = std::round(110 * s);
+                  c.text(word, TypeRole::ui_sm, inner_x, small_y, word_w - std::round(8 * s), ink);
+                  const float label_w = c.text(words(*item, "label"), TypeRole::ui, inner_x + word_w, text_y,
+                                               inner_w - word_w, Colour::ink_body);
+                  if (const std::string detail = words(*item, "detail"); !detail.empty()) {
+                    const float dx = inner_x + word_w + label_w + std::round(16 * s);
+                    c.text(detail, TypeRole::ui_sm, dx, small_y, std::max(0.0f, inner_x + inner_w - dx), Colour::ink_mute);
+                  }
+                } else {
+                  // A key and its value: the label at the left, the value after the first third.
+                  c.text(words(*item, "label"), TypeRole::ui, inner_x, text_y, inner_w / 3 - std::round(12 * s),
+                         Colour::ink_hi);
+                  c.text(words(*item, "value"), TypeRole::ui_sm, inner_x + inner_w / 3, small_y, inner_w * 2 / 3,
+                         Colour::ink_body);
+                }
+                y += row_h;
+              }
+              continue;
+            }
             const Json* table = table_of(block);
             if (table == nullptr) {
-              c.text("Shown in the browser view.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
-                     content_w - 2 * card_pad, Colour::ink_mute);
-              y += row_h;
+              one_line("Nothing to show yet.", Colour::ink_mute);
               continue;
             }
             // A table in game (D181): a row a row, its first column's words, the others' after them, and a switch
@@ -1357,7 +1510,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             const Json& rows = (*table)["rows"];
             if (rows.empty()) {
               c.line(x0 + card_pad, y, content_w - 2 * card_pad, Colour::rule);
-              c.text("Nothing here yet.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
+              c.text("Nothing to show yet.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
                      content_w - 2 * card_pad, Colour::ink_mute);
               y += row_h;
               continue;

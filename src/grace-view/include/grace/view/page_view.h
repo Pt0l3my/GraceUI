@@ -128,6 +128,9 @@ class PageView {
   // (the column's command, with the row's key and "on"). Any other component, or a table without its body, is shown in
   // the browser view. Focus stays on the row it was on.
   void set_topic(std::string_view topic, const protocol::Json& body);
+  // The state topics of the open page's components that the view draws in game (a table, a key-value list, a check
+  // list, stat tiles, a computed sentence; D184): what the host watches while the page is open.
+  std::vector<std::string> component_topics() const;
   // Focus on the rail, as a link from another space's rail leaves it: on the switcher, or on the open page's entry, as
   // opening a category leaves it (D171).
   void focus_rail(bool switcher);
@@ -185,6 +188,8 @@ class PageView {
   Action open_index(std::size_t index, Scope scope);
   // A table component's body, if the view has its topic's and it has columns and rows; and its switch column, if any.
   const protocol::Json* table_of(const protocol::PageBlock& block) const;
+  static bool drawn_in_game(protocol::Component component);
+  const protocol::Json* body_of(const protocol::PageBlock& block) const;
   Action toggle_cell(const Focus& focus) const;
   // Where the pointer acts (§5.5): each focusable element as the last layout drew it, the page's within its clip.
   struct Hit {

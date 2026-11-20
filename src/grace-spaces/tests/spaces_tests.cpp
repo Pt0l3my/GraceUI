@@ -455,8 +455,17 @@ TEST_CASE("the menu's watch and the browser's merge: one WATCHED, one UNWATCHED,
   REQUIRE(view != nullptr);
   REQUIRE(view->send_json(frame("sub", {{"space", "demo"}, {"id", 1}, {"topic", "lantern.status"}})));
   REQUIRE(wait_event(registry).kind == EventKind::watched);
+  // Published while only the browser watches: the menu, watching it later, has it at once (D184), for the mod
+  // publishes again only on a change.
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.status","rev":1,"body":{"tiles":[]}})",
+                         why) == Status::ok);
+  REQUIRE(view->next_of("state"));
   registry.game_watch("demo", "lantern.status", true);  // the mod builds it already
   CHECK(poll(registry).kind == EventKind::none);
+  Json first;
+  std::uint64_t first_rev = 0;
+  CHECK(registry.game_state("demo", "lantern.status", 0, first, first_rev));
+  CHECK(first_rev == 1);
   // A state goes to both: the browser's view, and the menu's copy.
   CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.status","rev":2,"body":{"tiles":[]}})",
                          why) == Status::ok);
