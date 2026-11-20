@@ -71,7 +71,9 @@ EXCLUDED_PROJECTS = re.compile(r"\bme3\b|fromsoftware-rs|fromsoftware_rs", re.IG
 
 # The pure modules and their libraries: no Win32, no Dear ImGui, no MinHook (D124, D131).
 PURE_MODULES = {"src/grace-input/": ("grace_input",), "src/grace-abi/": ("grace_abi", "grace_abi_rules"),
-                "src/grace-tokens/": ("grace_tokens",)}
+                "src/grace-tokens/": ("grace_tokens",), "src/grace-protocol/": ("grace_protocol",)}
+# The one library a pure module may link: nlohmann/json, header-only, for grace-protocol (D159).
+PURE_MAY_LINK = {"grace_protocol": ("gu_nlohmann_json",)}
 IMPURE_INCLUDE = re.compile(
     r'#\s*include\s*[<"](windows|winuser|windef|winbase|imm|dinput|xinput|d3d1\d|dxgi[0-9_]*|psapi|tlhelp32|'
     r'imgui[a-z_]*|MinHook)\.h[">]', re.IGNORECASE)
@@ -170,7 +172,7 @@ def check_sources():
 def check_module_graph():
     for path in sorted(ROOT.rglob("CMakeLists.txt")):
         rel = path.relative_to(ROOT).as_posix()
-        if rel.startswith("build"):
+        if rel.startswith(("build", ".claude/")):
             continue
         text = path.read_text(encoding="utf-8")
         for number, line in enumerate(text.splitlines(), 1):
@@ -190,7 +192,7 @@ def check_imgui_core():
     """Dear ImGui's core alone is a mod's (D76): only the example mods link it, and it compiles no backend."""
     for path in sorted(ROOT.rglob("CMakeLists.txt")):
         rel = path.relative_to(ROOT).as_posix()
-        if rel.startswith("build"):
+        if rel.startswith(("build", ".claude/")):
             continue
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             code = line.split("#", 1)[0]
@@ -208,7 +210,7 @@ def check_imgui_core():
 def check_pure_modules():
     for module, libraries in PURE_MODULES.items():
         folder = ROOT / module
-        linking = re.compile(r"target_link_libraries\s*\(\s*(" + "|".join(libraries) + r")\b")
+        linking = re.compile(r"target_link_libraries\s*\(\s*(" + "|".join(libraries) + r")\b(.*)")
         for path in sorted(folder.rglob("*")):
             rel = path.relative_to(ROOT).as_posix()
             if path.suffix in (".cpp", ".c", ".h"):
@@ -218,8 +220,11 @@ def check_pure_modules():
             elif path.name == "CMakeLists.txt":
                 for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                     code = line.split("#", 1)[0]
-                    if linking.search(code):
-                        fail(rel, number, "a pure module's library links a library (D124)")
+                    found = linking.search(code)
+                    if found:
+                        linked = set(found.group(2).replace(")", " ").split()) - {"PUBLIC", "PRIVATE", "INTERFACE"}
+                        if linked - set(PURE_MAY_LINK.get(found.group(1), ())):
+                            fail(rel, number, "a pure module's library links a library (D124)")
 
 
 # ---- Check 8: graceui.h only grows against ABI 1.0's first header (D109, D132).

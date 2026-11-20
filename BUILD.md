@@ -107,6 +107,30 @@ python3 -I -m unittest discover -s tools/tokens
 
 The Linux build's CTest runs `--check`, the tool's tests and the header's (`grace_tokens_tests`).
 
+## The protocol
+
+`src/grace-protocol/protocol.toml` is the bridge protocol's one schema (D159). `tools/protocol/generate.py` checks it
+and writes the C++ types and decoders (`src/grace-protocol/include/grace/protocol/messages.h`,
+`src/grace-protocol/messages.cpp`) and the web app's types (`web/src/protocol.ts`), all committed; edit the schema,
+never the outputs.
+
+```sh
+python3 -I tools/protocol/generate.py          # check the schema, then write the three outputs
+python3 -I tools/protocol/generate.py --check  # fail if an output is not what the schema generates
+python3 -I -m unittest discover -s tools/protocol
+```
+
+The Linux build's CTest runs `--check`, the generator's tests, `grace_protocol_tests` (the golden frames in
+`src/grace-protocol/tests/golden/frames.jsonl`, round trips, refusals, the largest frame's cost, printed) and, where
+`tsc` is installed, `tsc --strict` on the TypeScript. nlohmann/json 3.12.0 is fetched pinned by SHA-256
+(`cmake/nlohmann_json.cmake`). The frame parser's fuzzer, as grace-abi's:
+
+```sh
+CC=clang-18 CXX=clang++-18 cmake -S . -B build-linux-fuzz -G Ninja -DGRACEUI_FUZZ=ON -DGRACEUI_SANITIZE=address,undefined
+cmake --build build-linux-fuzz --target grace_frame_fuzz
+build-linux-fuzz/bin/grace_frame_fuzz -max_total_time=60 -max_len=20000 <a corpus folder: the golden frames, one a file>
+```
+
 ## The release build: clang-cl
 
 Built as EldenNet's engine is (its ARCH §2.6), against the CRT and SDK that [xwin](https://github.com/Jake-Shadle/xwin)

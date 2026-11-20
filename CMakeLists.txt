@@ -73,6 +73,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # The pure modules (no Win32, no Dear ImGui): built everywhere, and the only targets on Linux (D106). grace-abi's header
 # is the public ABI, its layout checked in C and C++ by every build (D109); its rules are pure (D131).
 add_subdirectory(src/grace-tokens)
+add_subdirectory(src/grace-protocol)
 add_subdirectory(src/grace-input)
 add_subdirectory(src/grace-abi)
 
