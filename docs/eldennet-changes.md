@@ -746,3 +746,10 @@ GraceUI 0.2's table provides `register_pages`, `publish` and `answer`, and `poll
    launcher with --also) that loads graceui.dll early no longer meets Wine's loader hang through GraceUI. Nothing for
    EldenNet to change.
 
+## 26. grace-dev, for EldenNet's pages (2026-11-20, D168)
+
+EldenNet's pages can be previewed without the game: `grace-dev --space-dir DIR --web web/dist`, with DIR holding the
+pages.json and settings.json EldenNet's page build writes (and, if it likes, a topics.json of fixture states and a
+scenario.json of timed steps, invented content only). grace-dev checks them as `register_pages` does, and
+`grace-dev --dump eldennet <page> --size 1920x1080` prints a page's in-game structure.
+
