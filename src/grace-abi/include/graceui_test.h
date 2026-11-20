@@ -266,6 +266,33 @@ GRACEUI_API void GraceUI_Test_SetAtlasLimit(uint32_t side);
 #define GRACEUI_TEST_NOTICE_LINE 22
 #define GRACEUI_TEST_NOTICE_LINE_FALLBACK 17
 
+/* ---- The in-game menu (D167): GraceUI's own space, drawn by the host as the input holder of kind menu, opened by the
+ * menu key (F5). */
+typedef struct GraceUiTestMenu {
+  uint32_t size;        /* set by the caller to sizeof(GraceUiTestMenu) */
+  uint32_t open;        /* 1 while the menu holds input */
+  uint32_t generation;  /* its holder's generation, while open */
+  uint32_t inputs;      /* keys and buttons the page view took */
+  uint64_t lists;       /* lists laid out and published, on GraceUI's own thread */
+  uint64_t frames;      /* frames that drew the menu's list */
+  uint32_t refusals;    /* commands GraceUI's settings store refused */
+  uint32_t layout_us;   /* the last layout and tessellation, in microseconds */
+  uint32_t vertices;    /* of the last list */
+  uint32_t indices;
+  uint32_t commands;
+  uint32_t off;         /* 1 once a fault turned the menu off for the session */
+  float scale;          /* the effective scale of the last layout: (H / 1080) x ui.scale */
+  uint32_t faces;       /* the menu's faces in the atlas: one a type role (11), or 0 if they were left out */
+  char page[64];        /* the open page's id */
+  char focused[96];     /* the focused element, as grace-view names it ("setting:ui.scale") */
+} GraceUiTestMenu;
+
+/* Fills *out (out->size set by the caller); answers 1, or 0 if the size is too small. */
+GRACEUI_API uint32_t GraceUI_Test_GetMenu(GraceUiTestMenu* out);
+/* A setting of GraceUI's own space as JSON text ("1.05", "\"clear\""), NUL-terminated; answers its length, or 0 before
+ * the menu has first opened or for no such key. Read it while the menu is idle. */
+GRACEUI_API uint32_t GraceUI_Test_GetSetting(const char* key, char* out, uint32_t capacity);
+
 #ifdef __cplusplus
 }
 #endif

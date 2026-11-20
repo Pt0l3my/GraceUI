@@ -74,6 +74,9 @@ class PageView {
   Action input(const Input& input);
   // A command the space refused: the reason, in words, under its control, focus back on it (§5.7).
   void refused(std::string_view key, std::string_view reason);
+  // The menu's close routine (§5.1): a destructive action waiting for its second press asks again at the next open; the
+  // page, tab and focused row stay for the next open in the session.
+  void cancel_confirmation() noexcept { confirming_.clear(); }
 
   // Settings whose label, synonyms or key hold `query`, without case (§4.3's settings part).
   std::vector<SearchHit> search(std::string_view query) const;

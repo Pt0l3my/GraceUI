@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstring>
 #include <cwchar>
 #include <string_view>
 #include <vector>
@@ -31,6 +32,7 @@
 #include "hooks_input.h"
 #include "input.h"
 #include "log.h"
+#include "menu.h"
 #include "session.h"
 #include "state.h"
 
@@ -312,6 +314,30 @@ void test_set_first_request_delay(std::uint32_t ms) noexcept {
 void test_turn_off_render() noexcept { draw::test_turn_off(); }
 
 void test_set_atlas_limit(std::uint32_t side) noexcept { atlas::test_set_limit(side); }
+
+void test_fill_menu(GraceUiTestMenu& out) noexcept {
+  menu::TestView view;
+  menu::test_view(view);
+  out.open = view.open;
+  out.generation = view.generation;
+  out.inputs = view.inputs;
+  out.lists = view.lists;
+  out.frames = view.frames;
+  out.refusals = view.refusals;
+  out.layout_us = view.layout_us;
+  out.vertices = view.vertices;
+  out.indices = view.indices;
+  out.commands = view.commands;
+  out.off = view.off;
+  out.scale = view.scale;
+  out.faces = view.faces;
+  std::memcpy(out.page, view.page, sizeof out.page);
+  std::memcpy(out.focused, view.focused, sizeof out.focused);
+}
+
+std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capacity) noexcept {
+  return menu::test_setting(key, out, capacity);
+}
 
 std::uint64_t test_panel_published(std::uint64_t panel) noexcept {
   grace::abi::Panels& panels = session::panels();

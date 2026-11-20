@@ -251,7 +251,7 @@ wined3d. It plays the game's part: it presents frames of a known clear colour, l
 `GraceUI_RequestApi(1)` and reads each checked frame back after GraceUI drew on it. A different clear colour for each
 check keeps a stale frame from passing for a new one.
 
-It runs nineteen scenarios, each in a process of its own: the render half's checks ("main"); two direct queues; the input
+It runs twenty scenarios, each in a process of its own: the render half's checks ("main"); two direct queues; the input
 half ("input"), in a process whose game loads three XInput DLLs before GraceUI starts; the input half on an ANSI window
 ("input-ansi"); ABI 1 ("abi"), whose first request is the example mod's; panels and the rest of S10.4.c ("panels"),
 whose warm-up comes after the second example mod and a mod of the harness's own have registered their faces and
@@ -260,7 +260,7 @@ example finding a copy under another name ("found-by-scan") and GraceUI's own fo
 of the harness from `bin\by-path`, beside the example and `GraceUI\graceui.dll`, as a game's folder); and a simulated
 anti-cheat hit by each clause ("anti-cheat", "anti-cheat-parent"); two example mods at once, `hello-notice` and
 `hello-debug-view`, the one loaded before GraceUI and the other after the hooks, and the other way round ("examples",
-"examples-reversed", D156); graceui-sys with GraceUI not installed ("absent", D164); and five from the host's review: a larger window
+"examples-reversed", D156); graceui-sys with GraceUI not installed ("absent", D164); the in-game menu at 1920 by 1080 ("menu", D167); and five from the host's review: a larger window
 found before the game's ("decoy-window"), the shared atlas running out of room ("atlas-full"), a request made while
 the first is still running ("slow-first"), a second copy with a long name ("long-name") and the game moving to a new
 device ("device-change"). Each scenario whose first `GraceUI_RequestApi`
@@ -355,6 +355,7 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | both notices | The banner and `hello-notice`'s notice are drawn, in the order they connected, and nothing else: the debug view is hidden |
 | debug view opened | Injected F11 reaches neither DirectInput nor the game's window; the debug view takes it through `poll`, and its panel is drawn at the bottom left (its ground and its own font's ink, the edges outside it clear), its banner's text replaced in place |
 | debug view closed | F11 again: the panel gone, the banner as it was, both notices drawn and nothing else |
+| the menu | (the menu scenario, D167) F5 opens GraceUI › Menu as the holder of kind menu: its first list laid out on GraceUI's thread and drawn over the game, the page and focus as expected; → raises `ui.scale` by its step and the page is laid out again at the new scale; ↓ → chooses Grace Clear and the frame's colours change; R resets each; with the menu open, the present thread's own work is held to p99 1 ms at 640 by 360 (and measured at 1920 by 1080) with nothing allocated; Esc twice, F5 and danger each end it through the one close routine, F5 then says why it does not open, and no press reaches the game. With `GRACE_SHOTS` set to a folder (a Windows path, `Z:\...` under Wine), it keeps two screenshots there as BMP for the owner's look review |
 | not installed | (the absent scenario, D164) With no GraceUI loaded and no `GraceUI\graceui.dll`, `graceui_sys_find` with `GRACEUI_SYS_STOP_IF_ABSENT` answers null after one look, `installed` 0; without the flag it looks until its time is up |
 | two copies at once | (the copies scenario) Of two copies asked at once from two threads, exactly one answers a table; the other idles, and the active one names it once |
 | found by scan | (found-by-scan) With no module named `graceui.dll`, the example finds a copy named `grace-renamed.dll` by its scan, at its first look |

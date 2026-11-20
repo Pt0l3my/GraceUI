@@ -24,6 +24,7 @@
 #include <xinput.h>
 
 #include <algorithm>
+#include <cmath>
 #include <array>
 #include <atomic>
 #include <cstdarg>
@@ -371,7 +372,8 @@ enum class PresentWith { present, present1 };
 
 class Game {
  public:
-  explicit Game(bool second_queue) {
+  // `width` by `height`: the window's client area and the swap chain's buffers (640 by 360 unless a scenario asks).
+  explicit Game(bool second_queue, UINT width = 640, UINT height = 360) : width_(width), height_(height) {
     create_window(0);
     require(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory_)), "CreateDXGIFactory2");
     require(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device_)), "D3D12CreateDevice");
@@ -383,7 +385,8 @@ class Game {
   }
 
   // A second window, with a swap chain of its own on `shared`'s device and queue.
-  explicit Game(Game& shared) : factory_(shared.factory_), device_(shared.device_), queue_(shared.queue_) {
+  explicit Game(Game& shared)
+      : factory_(shared.factory_), device_(shared.device_), queue_(shared.queue_), width_(640), height_(360) {
     factory_->AddRef();
     device_->AddRef();
     queue_->AddRef();
@@ -396,7 +399,7 @@ class Game {
   Game& operator=(const Game&) = delete;
 
   void create_window(int x) {
-    RECT rect{0, 0, 640, 360};
+    RECT rect{0, 0, static_cast<LONG>(width_), static_cast<LONG>(height_)};
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
     if (g_ansi) {
       WNDCLASSEXA window_class{};
@@ -473,8 +476,8 @@ class Game {
   // Flip-sequential, so that a presented buffer keeps its content for the copy that reads it back.
   void create_swap_chain() {
     DXGI_SWAP_CHAIN_DESC1 desc{};
-    desc.Width = 640;
-    desc.Height = 360;
+    desc.Width = width_;
+    desc.Height = height_;
     desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     desc.SampleDesc.Count = 1;
     desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
@@ -652,7 +655,7 @@ class Game {
   ID3D12Device* device() const { return device_; }
 
  private:
-  static constexpr UINT64 kReadbackBytes = 1024ull * 1024 * 4;
+  static constexpr UINT64 kReadbackBytes = 1920ull * 1088 * 4;  // a 1920 x 1080 frame, its rows aligned
 
   void transition(ID3D12Resource* resource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after) {
     D3D12_RESOURCE_BARRIER barrier{};
@@ -728,6 +731,8 @@ struct GraceUi {
   decltype(&GraceUI_Test_TurnOffRender) turn_off_render = nullptr;
   decltype(&GraceUI_Test_SetAtlasLimit) set_atlas_limit = nullptr;
   decltype(&GraceUI_Test_GetPanelPublished) panel_published = nullptr;
+  decltype(&GraceUI_Test_GetMenu) get_menu = nullptr;
+  decltype(&GraceUI_Test_GetSetting) get_setting = nullptr;
 
   bool load(const std::wstring& path) {
     module = LoadLibraryW(path.c_str());
@@ -766,7 +771,9 @@ struct GraceUi {
     turn_off_render = function_of<decltype(turn_off_render)>(module, "GraceUI_Test_TurnOffRender");
     set_atlas_limit = function_of<decltype(set_atlas_limit)>(module, "GraceUI_Test_SetAtlasLimit");
     panel_published = function_of<decltype(panel_published)>(module, "GraceUI_Test_GetPanelPublished");
-    return panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
+    get_menu = function_of<decltype(get_menu)>(module, "GraceUI_Test_GetMenu");
+    get_setting = function_of<decltype(get_setting)>(module, "GraceUI_Test_GetSetting");
+    return get_menu != nullptr && get_setting != nullptr && panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
            request_input != nullptr && release_input != nullptr && set_world != nullptr && set_caret != nullptr &&
@@ -820,6 +827,21 @@ struct GraceUi {
       fatal("GraceUI_Test_GetState refused");
     }
     return out;
+  }
+
+  GraceUiTestMenu menu() const {
+    GraceUiTestMenu out{};
+    out.size = sizeof out;
+    if (get_menu(&out) == 0) {
+      fatal("GraceUI_Test_GetMenu refused");
+    }
+    return out;
+  }
+
+  // A setting of GraceUI's own space, as JSON text, or "" if the menu has not opened yet.
+  std::string setting(const char* key) const {
+    char text[256];
+    return get_setting(key, text, sizeof text) != 0 ? std::string(text) : std::string();
   }
 
   GraceUiTestInput input() const {
@@ -1346,6 +1368,12 @@ void run_two_queues(const std::wstring& dll) {
         method_name(state.queue_method), why.c_str());
 
   const HRESULT result = game.resize1(2, game.width(), game.height());
+  // The queue named, warm-up bakes the atlas on GraceUI's own thread (the menu's faces among its faces, D167): the
+  // panel is drawn once it is on the GPU.
+  for (int i = 0; i < 150 && grace.state().atlas_ready == 0; ++i) {
+    game.frame(kPresent, PresentWith::present);
+    Sleep(20);
+  }
   for (int i = 0; i < 6; ++i) {
     frame = game.frame_and_read(kPresent, PresentWith::present);
   }
@@ -1496,6 +1524,15 @@ void frames(Game& game, int count) {
   }
 }
 
+// Frames until the atlas is on the GPU, at most 3 s: a holder is granted, and the menu opens, only once the overlay can
+// draw, and warm-up's bake takes its time on GraceUI's own thread (the menu's eleven faces among its faces, D167).
+void until_atlas(Game& game, const GraceUi& grace) {
+  for (int i = 0; i < 150 && grace.state().atlas_ready == 0; ++i) {
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+  }
+}
+
 std::vector<std::uint32_t> chars_of(const GraceUi& grace) {
   std::vector<std::uint32_t> chars(1024);
   chars.resize(grace.get_chars(chars.data(), static_cast<std::uint32_t>(chars.size())));
@@ -1587,23 +1624,36 @@ void run_input(const std::wstring& dll) {
   start_host(game, grace);
   grace.set_panel(1);
   frames(game, 30);
+  until_atlas(game, grace);
   std::string why;
   bool ok = hooks_as_expected(grace, static_cast<std::uint32_t>(pads.size()), why);
   check(ok, "input hooks", "%s", why.c_str());
 
-  // 1. No holder: the game's reads pass untouched, but for the menu key, which never reaches the game (§5.1).
+  // 1. No holder: the game's reads pass untouched, but for the menu key, which never reaches the game (§5.1): it opens
+  // GraceUI's menu, and a second press closes it (D167).
   g_seen = Seen{};
   inject_key('A', kScanA, true);
   settle();
   std::array<std::uint8_t, 256> keys = reads.keys();
   const bool key_passes = (keys[DIK_A] & 0x80) != 0;
-  inject_key(VK_F5, kScanF5, true);
-  settle();
-  keys = reads.keys();
-  const bool menu_key_hidden = keys[DIK_F5] == 0 && (keys[DIK_A] & 0x80) != 0;
-  inject_key(VK_F5, kScanF5, false);
   inject_key('A', kScanA, false);
   settle();
+  reads.keys();
+  inject_key(VK_F5, kScanF5, true);
+  settle();
+  frames(game, 2);
+  keys = reads.keys();
+  const bool menu_opened = grace.menu().open == 1;
+  bool menu_key_hidden = keys[DIK_F5] == 0;
+  inject_key(VK_F5, kScanF5, false);
+  settle();
+  inject_key(VK_F5, kScanF5, true);
+  settle();
+  menu_key_hidden = menu_key_hidden && reads.keys()[DIK_F5] == 0;
+  inject_key(VK_F5, kScanF5, false);
+  settle();
+  frames(game, 2);
+  const bool menu_closed = grace.menu().open == 0;
   const bool released = none_down(reads.keys());
   cursor_into(window);
   reads.mouse();
@@ -1617,12 +1667,15 @@ void run_input(const std::wstring& dll) {
   settle();
   reads.mouse();
   const bool pads_untouched = read_pads(pads) == pads_before;
-  check(key_passes && menu_key_hidden && released && move.lX != 0 && button.rgbButtons[0] == 0x80 && pads_untouched &&
-            g_seen.key_down['A'] == 1 && g_seen.key_down[VK_F5] == 0 && g_seen.key_up[VK_F5] == 0,
+  check(key_passes && menu_key_hidden && menu_opened && menu_closed && released && move.lX != 0 &&
+            button.rgbButtons[0] == 0x80 && pads_untouched && g_seen.key_down['A'] == 1 &&
+            g_seen.key_down[VK_F5] == 0 && g_seen.key_up[VK_F5] == 0,
         "pass-through",
-        "with no holder: A read %s, F5 read %s and its messages kept from the game (%d down, %d up), A's messages "
-        "the game's (%d down); mouse moved %ld,%ld and its button read 0x%02x; XInputGetState %s",
-        key_passes ? "down" : "UP", menu_key_hidden ? "up" : "DOWN", g_seen.key_down[VK_F5], g_seen.key_up[VK_F5],
+        "with no holder: A read %s; F5 %s the menu and again %s it, read %s and its messages kept from the game (%d "
+        "down, %d up), A's messages the game's (%d down); mouse moved %ld,%ld and its button read 0x%02x; "
+        "XInputGetState %s",
+        key_passes ? "down" : "UP", menu_opened ? "opened" : "DID NOT OPEN", menu_closed ? "closed" : "DID NOT CLOSE",
+        menu_key_hidden ? "up" : "DOWN", g_seen.key_down[VK_F5], g_seen.key_up[VK_F5],
         g_seen.key_down['A'], move.lX, move.lY, button.rgbButtons[0],
         pads_untouched ? "answered as before GraceUI" : "ANSWERED OTHERWISE");
 
@@ -2157,6 +2210,7 @@ void run_input_ansi(const std::wstring& dll) {
   start_host(game, grace);
   grace.set_panel(1);
   frames(game, 30);
+  until_atlas(game, grace);
   GraceUiTestInput input = grace.input();
   const bool ansi = input.window_filter == 1 && input.window_unicode == 0 && IsWindowUnicode(window) == FALSE;
   const bool granted = take(grace, game, 1, kPanelKind);
@@ -3583,6 +3637,10 @@ void run_decoy_window(const std::wstring& dll) {
     game.frame(kInputColour, PresentWith::present);
     Sleep(20);
   }
+  for (int i = 0; i < 150 && grace.state().atlas_ready == 0; ++i) {  // the menu opens once its faces are baked
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+  }
   frames(game, 10);
   const GraceUiTestInput input = grace.input();
   const bool moved = input.window == reinterpret_cast<std::uintptr_t>(game.window()) && input.windows_filtered == 2 &&
@@ -3594,14 +3652,19 @@ void run_decoy_window(const std::wstring& dll) {
   post_key(game.window(), VK_F5, kScanF5, true, false);
   post_key(game.window(), VK_F5, kScanF5, false, false);
   frames(game, 3);
+  const bool menu_opened = grace.menu().open == 1;  // the game's window's F5 opens GraceUI's menu (D167)
+  post_key(game.window(), VK_F5, kScanF5, true, false);
+  post_key(game.window(), VK_F5, kScanF5, false, false);
+  frames(game, 3);
   const GraceUiTestAnswer granted = grace.request(1, GRACEUI_TEST_KIND_PANEL, GRACEUI_TEST_WANT_KEYBOARD);
   grace.release_input(1);
-  check(moved && g_decoy_f5 == 1 && g_seen.key_down[VK_F5] == 0 && granted.answer == GRACEUI_TEST_GRANTED,
+  check(moved && g_decoy_f5 == 1 && g_seen.key_down[VK_F5] == 0 && menu_opened &&
+            granted.answer == GRACEUI_TEST_GRANTED,
         "window followed",
         "the decoy found first, then the filter moved to the bound swap chain's window: %s (%u windows filtered); F5 "
-        "reaching the decoy's procedure: %d, the game's: %d; a request %s",
+        "reaching the decoy's procedure: %d, the game's: %d, where it %s GraceUI's menu; a request %s",
         moved ? "yes" : "NO", input.windows_filtered, g_decoy_f5, g_seen.key_down[VK_F5],
-        granted.answer == GRACEUI_TEST_GRANTED ? "granted" : "not granted");
+        menu_opened ? "opened" : "DID NOT OPEN", granted.answer == GRACEUI_TEST_GRANTED ? "granted" : "not granted");
   grace.print_log();
 }
 
@@ -3823,6 +3886,223 @@ void run_copies(const std::wstring& dll) {
 // The example finds a copy of GraceUI under another file name by its scan of the loaded modules (D70).
 // ---- graceui-sys with GraceUI not installed (D164): nothing answers, no module is named graceui.dll and the folder
 // holds no GraceUI\graceui.dll, so a look says so and GRACEUI_SYS_STOP_IF_ABSENT stops at once, not after 30 s.
+// ---- The in-game menu (D167): GraceUI › Menu drawn by the host on F5, as the input holder of kind menu, at 1920 by
+// 1080; its keys go to GraceUI's own thread, which answers its settings at its one entry point and lays the page out
+// again; the present thread draws the newest list, allocating nothing; the one close routine ends it on every path.
+// Set GRACE_SHOTS to a folder to keep two screenshots there for the owner's look review (BMP, the frame as presented).
+
+void save_shot(const Frame& frame, const char* name) {
+  char folder[1024];
+  const DWORD length = GetEnvironmentVariableA("GRACE_SHOTS", folder, sizeof folder);
+  if (length == 0 || length >= sizeof folder) {
+    return;
+  }
+  const std::string path = std::string(folder) + "\\" + name;
+  const std::uint32_t row = (frame.width * 3 + 3) & ~3u;
+  const std::uint32_t bytes = row * frame.height;
+  std::vector<unsigned char> out(54 + static_cast<std::size_t>(bytes), 0);
+  const auto put32 = [&](std::size_t at, std::uint32_t value) {
+    for (std::size_t i = 0; i < 4; ++i) {
+      out[at + i] = static_cast<unsigned char>(value >> (8 * i));
+    }
+  };
+  out[0] = 'B';
+  out[1] = 'M';
+  put32(2, 54 + bytes);
+  put32(10, 54);
+  put32(14, 40);
+  put32(18, frame.width);
+  put32(22, frame.height);
+  out[26] = 1;
+  out[28] = 24;
+  put32(34, bytes);
+  std::size_t at = 54;
+  for (UINT y = frame.height; y-- > 0;) {  // bottom-up, BGR
+    for (UINT x = 0; x < frame.width; ++x) {
+      const std::uint32_t pixel = frame.at(x, y);
+      out[at + x * 3 + 0] = static_cast<unsigned char>(channel(pixel, 16));
+      out[at + x * 3 + 1] = static_cast<unsigned char>(channel(pixel, 8));
+      out[at + x * 3 + 2] = static_cast<unsigned char>(channel(pixel, 0));
+    }
+    at += row;
+  }
+  const HANDLE file = CreateFileA(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  DWORD written = 0;
+  const bool ok = file != INVALID_HANDLE_VALUE &&
+                  WriteFile(file, out.data(), static_cast<DWORD>(out.size()), &written, nullptr) && written == out.size();
+  if (file != INVALID_HANDLE_VALUE) {
+    CloseHandle(file);
+  }
+  if (!ok) {
+    std::printf("   (could not write %s)\n", name);
+    return;
+  }
+  std::printf("   (saved %s)\n", name);
+}
+
+// Frames until the menu has published more than `lists` lists and drawn one of them, at most 3 s.
+GraceUiTestMenu menu_after(Game& game, const GraceUi& grace, std::uint64_t lists) {
+  GraceUiTestMenu menu = grace.menu();
+  for (int i = 0; i < 150 && (menu.lists <= lists || menu.frames == 0); ++i) {
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+    menu = grace.menu();
+  }
+  frames(game, 2);
+  return grace.menu();
+}
+
+void press(HWND window, UINT vk, UINT scan) {
+  post_key(window, vk, scan, true, false);
+  post_key(window, vk, scan, false, false);
+}
+
+void run_menu(const std::wstring& dll) {
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  for (int i = 0; i < 150 && grace.state().atlas_ready == 0; ++i) {
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+  }
+  const GraceUiTestState warm = grace.state();
+  const GraceUiTestMenu faces = grace.menu();
+  check(warm.atlas_ready == 1 && warm.faces_baked == 1 && faces.faces == 11, "menu's faces",
+        "the atlas, %ux%u, holds the notices' face and the menu's %u, one a type role, baked at the effective scale "
+        "(1080 / 1080 x ui.scale 1.00)",
+        warm.atlas_width, warm.atlas_height, faces.faces);
+
+  // 1. F5 opens the menu: the menu holds input (GraceUI's, owner 0), its first list is laid out on GraceUI's thread and
+  // drawn; the Menu page, focus on its first control; the press never reaches the game.
+  g_seen = Seen{};
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  GraceUiTestInput input = grace.input();
+  const Frame grace_shot = game.frame_and_read(kInputColour, PresentWith::present);
+  check(menu.open == 1 && input.holder_kind == GRACEUI_TEST_KIND_MENU && input.holder_owner == 0 && menu.frames > 0 &&
+            std::strcmp(menu.page, "graceui.menu") == 0 && std::strcmp(menu.focused, "setting:ui.scale") == 0 &&
+            g_seen.key_down[VK_F5] + g_seen.key_up[VK_F5] == 0,
+        "menu opens",
+        "F5: the menu %s input (holder kind %u, owner %u); %llu lists laid out, %llu frames drawn; page %s, focus %s; "
+        "the last layout took %u us on GraceUI's thread, %u vertices, %u indices, %u commands; F5's messages reaching "
+        "the game: %d",
+        menu.open != 0 ? "holds" : "DOES NOT HOLD", input.holder_kind, input.holder_owner,
+        static_cast<unsigned long long>(menu.lists), static_cast<unsigned long long>(menu.frames), menu.page,
+        menu.focused, menu.layout_us, menu.vertices, menu.indices, menu.commands,
+        g_seen.key_down[VK_F5] + g_seen.key_up[VK_F5]);
+  // The page drew: the rail's ground at the left, the page's at the right, neither the game's clear colour.
+  const int game_left = count_near(grace_shot, 20, 400, 200, 600, Colour{kInputColour.r, kInputColour.g, kInputColour.b}, 4);
+  const int game_right = count_near(grace_shot, 900, 600, 1500, 900, Colour{kInputColour.r, kInputColour.g, kInputColour.b}, 4);
+  check(game_left < 20 && game_right < 60, "menu drawn",
+        "the rail and the page cover the game (pixels near the game's own colour, text's edges among them: %d of "
+        "36000 in the rail, %d of 180000 in the page)",
+        game_left, game_right);
+  save_shot(grace_shot, "menu-grace-1920x1080.bmp");
+
+  // 2. → raises ui.scale by its step: GraceUI's store takes it, and the page is laid out again at the new scale.
+  press(window, VK_RIGHT, 0x4D);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string scale = grace.setting("ui.scale");
+  check(scale == "1.05" && std::fabs(menu.scale - 1.05f) < 0.001f && menu.refusals == 0, "menu: a slider",
+        "→ on Interface scale: ui.scale %s, laid out again at %.2f", scale.c_str(), menu.scale);
+
+  // 3. ↓ and → choose Grace Clear: its colours replace Grace's in the next frame; R resets it, and the scale too.
+  press(window, VK_DOWN, 0x50);
+  press(window, VK_RIGHT, 0x4D);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string clear = grace.setting("ui.menu.theme");
+  const Frame clear_shot = game.frame_and_read(kInputColour, PresentWith::present);
+  int changed_pixels = 0;
+  for (std::size_t i = 0; i < clear_shot.pixels.size() && i < grace_shot.pixels.size(); ++i) {
+    changed_pixels += clear_shot.pixels[i] != grace_shot.pixels[i] ? 1 : 0;
+  }
+  const bool colours_changed = changed_pixels > 10000;
+  save_shot(clear_shot, "menu-clear-1920x1080.bmp");
+  press(window, 'R', 0x13);
+  press(window, VK_UP, 0x48);
+  press(window, 'R', 0x13);
+  menu = menu_after(game, grace, menu.lists);
+  check(clear == "\"clear\"" && colours_changed && grace.setting("ui.menu.theme") == "\"grace\"" &&
+            grace.setting("ui.scale") == "1.0" && std::strcmp(menu.focused, "setting:ui.scale") == 0,
+        "menu: a choice and reset",
+        "→ on Theme: %s, %d pixels redrawn in Grace Clear; R reset it to %s and, on Interface scale, ui.scale to %s",
+        clear.c_str(), changed_pixels, grace.setting("ui.menu.theme").c_str(), grace.setting("ui.scale").c_str());
+
+  // 4. Its frames cost the present thread little and allocate nothing (invariant 10): the list is lent, never copied.
+  // At 1920 by 1080 Mesa's software renderer fills the screen on the machine's own cores, which the present thread
+  // shares, so the budget is held at the other scenarios' 640 by 360; the full size is measured and printed.
+  const CostWindows full = cost_windows(grace, 1000.0, [&] { frames(game, 120); });
+  const GraceUiTestMenu counted = grace.menu();
+  game.resize(640, 360);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const CostWindows compact = cost_windows(grace, 1000.0, [&] { frames(game, 120); });
+  check(compact.best().costs.own.p99_us <= 1000.0 && compact.allocations() == 0 && full.allocations() == 0 &&
+            compact.every([](const CostWindow& run) { return run.after.frames_drawn > run.before.frames_drawn; }),
+        "menu frame cost",
+        "with the menu open, own work median / p99 in us: at 640x360 %s (budget: p99 1000 us, the least window's); at "
+        "1920x1080 %s (measured); allocations and frees on the present thread: %llu; the list at 1920x1080: %u "
+        "vertices, %u indices, %u commands, laid out in %u us on GraceUI's thread",
+        compact.text().c_str(), full.text().c_str(),
+        static_cast<unsigned long long>(compact.allocations() + full.allocations()), counted.vertices, counted.indices,
+        counted.commands, counted.layout_us);
+  game.resize(1920, 1080);
+  menu = menu_after(game, grace, grace.menu().lists);
+
+  // 5. Every way out ends it through the one close routine: Esc to the rail and Esc again (released); F5 (the menu
+  // key); a provider's danger (invariant 9), after which F5 opens nothing and says why. It reopens where it was.
+  press(window, VK_ESCAPE, kScanEscape);
+  press(window, VK_ESCAPE, kScanEscape);
+  frames(game, 4);
+  for (int i = 0; i < 50 && grace.menu().open != 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  const GraceUiTestInput escaped = grace.input();
+  press(window, VK_F5, kScanF5);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const std::string reopened_on = menu.page;
+  press(window, VK_F5, kScanF5);
+  frames(game, 3);
+  const GraceUiTestInput by_key = grace.input();
+  press(window, VK_F5, kScanF5);
+  menu = menu_after(game, grace, grace.menu().lists);
+  grace.set_world(GRACEUI_TEST_WORLD_DANGER);
+  frames(game, 3);
+  const GraceUiTestInput by_danger = grace.input();
+  const std::uint32_t notices_before = static_cast<std::uint32_t>(grace.notices().size());
+  press(window, VK_F5, kScanF5);
+  frames(game, 3);
+  std::string why_not;
+  for (const GraceUiTestNotice& notice : grace.notices()) {
+    if (notice.owner == 0 && std::strstr(notice.text, "Not now") != nullptr) {
+      why_not = notice.text;
+    }
+  }
+  const GraceUiTestMenu after_danger = grace.menu();
+  grace.set_world(0);
+  frames(game, 2);
+  check(escaped.holder_kind == 0 && escaped.last_close_reason == GRACEUI_TEST_CLOSED_RELEASED &&
+            reopened_on == "graceui.menu" && by_key.holder_kind == 0 &&
+            by_key.last_close_reason == GRACEUI_TEST_CLOSED_MENU_KEY && by_danger.holder_kind == 0 &&
+            by_danger.last_close_reason == GRACEUI_TEST_CLOSED_DANGER && after_danger.open == 0 &&
+            why_not == "Not now: you are in danger." && g_seen.key_down[VK_F5] + g_seen.key_up[VK_F5] == 0 &&
+            g_seen.key_down[VK_ESCAPE] + g_seen.key_up[VK_ESCAPE] == 0,
+        "menu closes",
+        "Esc, Esc: %s; F5 reopened it on %s and F5 closed it (%s); danger closed it (%s), and F5 then said \"%s\" "
+        "(%u notices before); F5's and Esc's messages reaching the game: %d",
+        reason_name(escaped.last_close_reason), reopened_on.c_str(), reason_name(by_key.last_close_reason),
+        reason_name(by_danger.last_close_reason), why_not.c_str(), notices_before,
+        g_seen.key_down[VK_F5] + g_seen.key_up[VK_F5] + g_seen.key_down[VK_ESCAPE] + g_seen.key_up[VK_ESCAPE]);
+  check(grace.menu().off == 0 && grace.state().render_off == 0, "menu: still on", "no fault in the menu or the render "
+        "path after every check");
+  grace.print_log();
+}
+
 void run_absent() {
   GraceUiSysFound found{};
   found.size = sizeof found;
@@ -4236,6 +4516,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"device-change") {
     std::printf("-- scenario: the game moves to a new device\n");
     run_device_change(dll);
+  } else if (scenario == L"menu") {
+    std::printf("-- scenario: the in-game menu, GraceUI's own space drawn by the host on F5 (D167)\n");
+    run_menu(dll);
   } else if (scenario == L"absent") {
     std::printf("-- scenario: graceui-sys with GraceUI not installed\n");
     run_absent();
@@ -4262,7 +4545,7 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent"}) {
+            L"examples", L"examples-reversed", L"absent", L"menu"}) {
         run(child_scenario, dll, this_program());
       }
       // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in

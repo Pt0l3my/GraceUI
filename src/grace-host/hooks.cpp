@@ -30,6 +30,7 @@
 #include "hooks_vtable.h"
 #include "input.h"
 #include "log.h"
+#include "menu.h"
 #include "state.h"
 
 namespace grace::host::hooks {
@@ -888,6 +889,7 @@ void move_filter() noexcept {
     log_drain();
     draw::serve_bake();
     move_filter();
+    menu::serve();  // the menu's layout and commands (D167)
     log_drain();
   }
 }

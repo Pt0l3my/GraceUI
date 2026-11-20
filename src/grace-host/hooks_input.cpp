@@ -31,6 +31,7 @@
 #include "hooks_vtable.h"
 #include "input.h"
 #include "log.h"
+#include "menu.h"
 
 namespace grace::host::hooks_input {
 namespace {
@@ -175,6 +176,15 @@ void push_whole_character(WPARAM wparam) noexcept {
 }
 
 void push_key(Key key, std::uint32_t vk, bool down) noexcept {
+  if (const grace::input::Holder holder = input::capture().holder();
+      holder.kind == grace::input::Kind::menu && holder.owner == 0) {
+    // The menu's keys go to GraceUI's thread as the page view's inputs (D167), never to Dear ImGui; its modifiers are
+    // read only for its own presses.
+    if (down) {
+      menu::key_down(vk, (GetKeyState(VK_SHIFT) & 0x8000) != 0, (GetKeyState(VK_CONTROL) & 0x8000) != 0);
+    }
+    return;
+  }
   HolderEvent event;
   event.type = HolderEvent::Type::key;
   event.key = key;

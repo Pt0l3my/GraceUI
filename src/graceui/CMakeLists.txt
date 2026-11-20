@@ -8,9 +8,9 @@ gu_own_code(graceui)
 gu_dll_module(graceui)
 
 # The GraceUI folder as it is installed (§2.7), laid out beside bin/ after each build: graceui.dll, LICENSE.txt,
-# NOTICE.txt and the graceui.toml that lists them (D52), for a consumer's own tests to install from. A test build's
-# folder carries the test exports and is never a release; the release job lays out its folder the same way, with the
-# web app and the fonts once they are built.
+# NOTICE.txt, fonts/ and the graceui.toml that lists them (D52), for a consumer's own tests to install from. A test
+# build's folder carries the test exports and is never a release; the release job lays out its folder the same way,
+# with the web app once it is built.
 find_package(Python3 3.11 COMPONENTS Interpreter)
 if(Python3_FOUND)
   set(GU_FOLDER ${CMAKE_BINARY_DIR}/GraceUI)
@@ -19,6 +19,7 @@ if(Python3_FOUND)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:graceui> ${GU_FOLDER}/graceui.dll
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/LICENSE ${GU_FOLDER}/LICENSE.txt
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/NOTICE ${GU_FOLDER}/NOTICE.txt
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/bin/fonts ${GU_FOLDER}/fonts
     COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/release/manifest.py write ${GU_FOLDER}
     VERBATIM)
 endif()

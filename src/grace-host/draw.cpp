@@ -46,6 +46,7 @@
 #include "hooks.h"
 #include "input.h"
 #include "log.h"
+#include "menu.h"
 #include "session.h"
 
 #if defined(GRACEUI_TEST_EXPORTS)
@@ -200,6 +201,7 @@ constinit Renderer g{};
 // Warm-up's own: one ImDrawList for each panel slot, which lends itself a panel's newest list each frame, and the
 // frame's draw data, which orders every list by layer. Made once, never freed.
 constinit ImDrawList* g_panel_lists[grace::abi::kMaxPanels] = {};
+constinit ImDrawList* g_menu_list = nullptr;  // the menu's (D167), lent its list as a panel's is
 constinit ImDrawData* g_frame = nullptr;
 
 // Set by the resize detours, from any thread, before ResizeBuffers replaces the bound swap chain's buffers; the render
@@ -596,20 +598,26 @@ bool bake_atlas() {
 #endif
   IMGUI_CHECKVERSION();
   make_context();
+  LARGE_INTEGER started{};
+  QueryPerformanceCounter(&started);
   std::uint32_t mod_faces = session::registry().faces();
+  float scale = menu::bake_scale(g.height);  // the menu's faces at the effective scale (§3.13, D167)
   for (;;) {
     try {
-      atlas::bake(ImGui::GetIO().Fonts, mod_faces);
+      atlas::bake(ImGui::GetIO().Fonts, mod_faces, scale);
       break;
     } catch (const ImGuiAssertion& failed) {
-      log_line("the shared atlas could not be baked with %u of the mods' faces (a Dear ImGui assertion at line %d: "
+      log_line("the shared atlas could not be baked with %u of the mods' faces%s (a Dear ImGui assertion at line %d: "
                "%.60s)",
-               mod_faces, failed.line, failed.expression);
-      if (mod_faces == 0) {
+               mod_faces, scale > 0.0f ? " and the menu's" : "", failed.line, failed.expression);
+      if (mod_faces == 0 && scale == 0.0f) {
         return false;
       }
       abandon_context();
       make_context();
+      if (mod_faces == 0) {
+        scale = 0.0f;  // the last try leaves the menu's faces out: notices before the menu (D167)
+      }
       mod_faces /= 2;
     }
   }
@@ -623,6 +631,13 @@ bool bake_atlas() {
   // The pixels are in the upload buffer: the CPU copy is freed here rather than kept for the session (Dear ImGui's
   // own call for an atlas a renderer without its texture path has uploaded).
   fonts->ClearTexData();
+  LARGE_INTEGER done{};
+  LARGE_INTEGER frequency{};
+  QueryPerformanceCounter(&done);
+  QueryPerformanceFrequency(&frequency);
+  log_line("the shared atlas was baked in %lld ms on GraceUI's own thread",
+           frequency.QuadPart > 0 ? static_cast<long long>((done.QuadPart - started.QuadPart) * 1000 / frequency.QuadPart)
+                                  : 0LL);
   return true;
 }
 
@@ -957,6 +972,38 @@ int layer_index(std::uint32_t layer) noexcept {
   return layer == GRACEUI_LAYER_HUD ? 0 : layer == GRACEUI_LAYER_PANEL ? 1 : 2;
 }
 
+// Lends `data`'s arrays to `list` for this frame, its commands' clips moved by (x0, y0) and kept within `bounds`
+// (x0, y0, x1, y1): false if nothing of it is to be drawn.
+bool lend(ImDrawList* list, grace::abi::DrawListData& data, float x0, float y0, const ImVec4& bounds) noexcept {
+  list->CmdBuffer.resize(0);  // within the room reserved at warm-up: no allocation
+  for (const GraceUiDrawCommand& command : data.commands) {
+    const ImTextureID texture = texture_of(command.texture);
+    if (command.index_count == 0 || texture == ImTextureID{0}) {
+      continue;  // nothing to draw, or a texture not yet on the GPU
+    }
+    ImDrawCmd cmd;
+    cmd.ClipRect = ImVec4(std::max(command.clip_x0 + x0, bounds.x), std::max(command.clip_y0 + y0, bounds.y),
+                          std::min(command.clip_x1 + x0, bounds.z), std::min(command.clip_y1 + y0, bounds.w));
+    if (cmd.ClipRect.z <= cmd.ClipRect.x || cmd.ClipRect.w <= cmd.ClipRect.y) {
+      continue;
+    }
+    cmd.TexRef = ImTextureRef(texture);
+    cmd.VtxOffset = command.vertex_offset;  // the backend honours it (ImGuiBackendFlags_RendererHasVtxOffset)
+    cmd.IdxOffset = command.index_offset;
+    cmd.ElemCount = command.index_count;
+    list->CmdBuffer.push_back(cmd);
+  }
+  if (list->CmdBuffer.Size == 0) {
+    return false;
+  }
+  // SAFETY: rule (4) above: the list's arrays, lent for this frame's RenderDrawData only.
+  list->VtxBuffer.Data = reinterpret_cast<ImDrawVert*>(data.vertices.data());
+  list->VtxBuffer.Size = list->VtxBuffer.Capacity = static_cast<int>(data.vertices.size());
+  list->IdxBuffer.Data = data.indices.data();
+  list->IdxBuffer.Size = list->IdxBuffer.Capacity = static_cast<int>(data.indices.size());
+  return true;
+}
+
 void gather_panels(PanelLayers& layers) noexcept {
   layers.counts[0] = layers.counts[1] = layers.counts[2] = 0;
   if (session::notice_only() || g_panel_lists[0] == nullptr) {
@@ -987,52 +1034,32 @@ void gather_panels(PanelLayers& layers) noexcept {
       data.placed_x = rect.x0;
       data.placed_y = rect.y0;
     }
-    const float bound_x0 = std::max(rect.x0, 0.0f);
-    const float bound_y0 = std::max(rect.y0, 0.0f);
-    const float bound_x1 = std::min(rect.x1, display_width);
-    const float bound_y1 = std::min(rect.y1, display_height);
     ImDrawList* list = g_panel_lists[i];
-    list->CmdBuffer.resize(0);  // within the room reserved at warm-up: no allocation
-    for (const GraceUiDrawCommand& command : data.commands) {
-      const ImTextureID texture = texture_of(command.texture);
-      if (command.index_count == 0 || texture == ImTextureID{0}) {
-        continue;  // nothing to draw, or a texture not yet on the GPU
-      }
-      ImDrawCmd cmd;
-      cmd.ClipRect = ImVec4(std::max(command.clip_x0 + rect.x0, bound_x0), std::max(command.clip_y0 + rect.y0, bound_y0),
-                            std::min(command.clip_x1 + rect.x0, bound_x1), std::min(command.clip_y1 + rect.y0, bound_y1));
-      if (cmd.ClipRect.z <= cmd.ClipRect.x || cmd.ClipRect.w <= cmd.ClipRect.y) {
-        continue;
-      }
-      cmd.TexRef = ImTextureRef(texture);
-      cmd.VtxOffset = command.vertex_offset;  // the backend honours it (ImGuiBackendFlags_RendererHasVtxOffset)
-      cmd.IdxOffset = command.index_offset;
-      cmd.ElemCount = command.index_count;
-      list->CmdBuffer.push_back(cmd);
-    }
-    if (list->CmdBuffer.Size == 0) {
+    if (!lend(list, data, rect.x0, rect.y0,
+              ImVec4(std::max(rect.x0, 0.0f), std::max(rect.y0, 0.0f), std::min(rect.x1, display_width),
+                     std::min(rect.y1, display_height)))) {
       continue;
     }
-    // SAFETY: rule (4) above: the list's arrays, lent for this frame's RenderDrawData only.
-    list->VtxBuffer.Data = reinterpret_cast<ImDrawVert*>(data.vertices.data());
-    list->VtxBuffer.Size = list->VtxBuffer.Capacity = static_cast<int>(data.vertices.size());
-    list->IdxBuffer.Data = data.indices.data();
-    list->IdxBuffer.Size = list->IdxBuffer.Capacity = static_cast<int>(data.indices.size());
     const int layer = layer_index(view.desc.layer);
     layers.lists[layer][layers.counts[layer]++] = list;
   }
 }
 
-// Takes back every array lent to a panel's list (SAFETY (4)), so that no ImDrawList of GraceUI's points into a buffer.
+// Takes back every array lent to a list (SAFETY (4)), so that no ImDrawList of GraceUI's points into a buffer.
+void take_back(ImDrawList* list) noexcept {
+  if (list != nullptr) {
+    list->VtxBuffer.Data = nullptr;
+    list->VtxBuffer.Size = list->VtxBuffer.Capacity = 0;
+    list->IdxBuffer.Data = nullptr;
+    list->IdxBuffer.Size = list->IdxBuffer.Capacity = 0;
+  }
+}
+
 void take_back_panels() noexcept {
   for (ImDrawList* list : g_panel_lists) {
-    if (list != nullptr) {
-      list->VtxBuffer.Data = nullptr;
-      list->VtxBuffer.Size = list->VtxBuffer.Capacity = 0;
-      list->IdxBuffer.Data = nullptr;
-      list->IdxBuffer.Size = list->IdxBuffer.Capacity = 0;
-    }
+    take_back(list);
   }
+  take_back(g_menu_list);
 }
 
 // Warm-up's last step (D134): one frame of Dear ImGui's, built and never submitted, which makes the foreground and
@@ -1055,6 +1082,8 @@ void prime_frame() {
     list = IM_NEW(ImDrawList)(ImGui::GetDrawListSharedData());
     list->CmdBuffer.reserve(static_cast<int>(grace::abi::kDrawCommandsMax));
   }
+  g_menu_list = IM_NEW(ImDrawList)(ImGui::GetDrawListSharedData());
+  g_menu_list->CmdBuffer.reserve(static_cast<int>(grace::abi::kDrawCommandsMax));
   g_frame = IM_NEW(ImDrawData)();
   g_frame->CmdLists.reserve(kFrameLists);
   g.qpc_last = qpc_now();
@@ -1109,6 +1138,12 @@ ImDrawData* build_frame(const grace::abi::NoticeList& notices, std::int64_t now_
     } else {
       add_list(list);
     }
+  }
+  // GraceUI's menu, in GraceUI's own layer (D167): its newest list for the holder now, when the menu holds input.
+  if (grace::abi::DrawListData* menu_list = menu::frame(g.width, g.height);
+      menu_list != nullptr && g_menu_list != nullptr &&
+      lend(g_menu_list, *menu_list, 0.0f, 0.0f, ImVec4(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y))) {
+    add_list(g_menu_list);
   }
   for (int i = 0; i < layers.counts[2]; ++i) {
     add_list(layers.lists[2][i]);

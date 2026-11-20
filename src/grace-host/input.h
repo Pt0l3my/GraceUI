@@ -79,7 +79,7 @@ void fault(const char* why) noexcept;
 // capture is never on and every detour and the filter are pure pass-through, the menu key included.
 void turn_off(const char* why) noexcept;
 bool off() noexcept;
-void note_menu_key(grace::input::MenuKey what) noexcept;  // "‹Mod› has the controls", or the menu GraceUI 0.1 lacks
+void note_menu_key(grace::input::MenuKey what) noexcept;  // "‹Mod› has the controls", or the menu opens (D167)
 
 // ---- The present thread (draw.cpp).
 bool wants_frames() noexcept;  // a holder has input: its frames run, its cursor drawn

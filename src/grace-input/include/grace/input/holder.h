@@ -78,7 +78,7 @@ using ReadConditions = Conditions (*)(const void* context) noexcept;
 // What a fresh press of the menu key did.
 enum class MenuKey : std::uint8_t {
   nothing = 0,
-  open_menu = 1,    // no holder: the menu opens (S10.4.c; GraceUI 0.1 has no menu yet)
+  open_menu = 1,    // no holder: the menu opens (D167)
   closed_menu = 2,  // the menu held input: it closed
   notice = 3,       // another holder has input: "‹Mod› has the controls", and the 2 s for the player's exit start
   player_exit = 4,  // the second press within 2 s: the player's exit

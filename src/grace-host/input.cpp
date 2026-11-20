@@ -10,6 +10,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"  // ImGuiContext's input queues: emptied between holders and reserved at warm-up
 #include "log.h"
+#include "menu.h"
 #include "session.h"
 #include "state.h"
 
@@ -468,7 +469,7 @@ void note_menu_key(grace::input::MenuKey what) noexcept {
       return;
     }
     case grace::input::MenuKey::open_menu:
-      // The menu comes with S10.4.c; the key is masked from the game all the same (§5.1).
+      menu::open_requested();  // the menu (D167); the key is masked from the game whatever it answers (§5.1)
       return;
     default: return;
   }
