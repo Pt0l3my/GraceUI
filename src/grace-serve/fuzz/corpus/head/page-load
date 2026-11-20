@@ -1,0 +1,7 @@
+GET /index.html HTTP/1.1
+Host: 127.0.0.1:8642
+Sec-Fetch-Site: none
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Dest: document
+Accept: text/html
+

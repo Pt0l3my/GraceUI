@@ -1,0 +1,9 @@
+POST /api/ticket HTTP/1.1
+Host: 127.0.0.1:8642
+Origin: http://127.0.0.1:8642
+Sec-Fetch-Site: same-origin
+Content-Type: application/json
+Cookie: a=1; en_session=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+Content-Length: 2
+
+{}

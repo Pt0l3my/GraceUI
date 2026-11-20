@@ -22,9 +22,9 @@ looked at):
   4. Only the DLL's abi files export anything (the public header declares the two exports).
   5. hooks.cpp's hook table names only functions of D102's published list, and is the only place MinHook makes a hook.
   6. No project that EldenNet's O47 and O48 exclude is named in a build file (D106).
-  7. The pure modules (grace-input, grace-abi) include no Windows header, no Dear ImGui and no MinHook, and their
-     libraries link nothing (G15 (a), D124, D131): their unit tests build on Linux, which proves the first, and this
-     check names the line.
+  7. The pure modules (grace-input, grace-abi, grace-tokens and grace-serve's core) include no Windows header, no Dear
+     ImGui and no MinHook, and their libraries link nothing (G15 (a), D124, D131, D158): their unit tests build on
+     Linux, which proves the first, and this check names the line.
   8. graceui.h only grows against ABI 1.0's first header, src/grace-abi/baseline/graceui-abi1-0.h (D109, D132): every
      constant keeps its value (GRACEUI_ABI1_MINOR may only rise), every typedef and export its declaration, and every
      struct, the table GraceUiApi1 among them, keeps its members in their order, adding members only at its end; a slot
@@ -71,7 +71,8 @@ EXCLUDED_PROJECTS = re.compile(r"\bme3\b|fromsoftware-rs|fromsoftware_rs", re.IG
 
 # The pure modules and their libraries: no Win32, no Dear ImGui, no MinHook (D124, D131).
 PURE_MODULES = {"src/grace-input/": ("grace_input",), "src/grace-abi/": ("grace_abi", "grace_abi_rules"),
-                "src/grace-tokens/": ("grace_tokens",), "src/grace-protocol/": ("grace_protocol",)}
+                "src/grace-tokens/": ("grace_tokens",), "src/grace-protocol/": ("grace_protocol",),
+                "src/grace-serve/": ("grace_serve_core",)}
 # The one library a pure module may link: nlohmann/json, header-only, for grace-protocol (D159).
 PURE_MAY_LINK = {"grace_protocol": ("gu_nlohmann_json",)}
 IMPURE_INCLUDE = re.compile(

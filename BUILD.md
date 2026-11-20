@@ -92,6 +92,23 @@ count must answer without a crash or undefined behaviour, and the count never ex
 `grace_abi_layout_cpp` compile `graceui.h` as C and as C++ with a `static_assert` on every struct's size and every
 field's offset; CTest runs both on Linux, and both Windows builds compile them.
 
+`grace-serve`'s 48 cases (`grace_serve_tests`, D158) cover the head parser's every refusal with its status and the
+order of its decisions; the caps at and past their limits; the Host, Origin, Fetch Metadata and cookie checks (an
+`en_session` of a narrower Path, a flood of cookies); the response writer's headers on every status; the redirect's
+Location; the RFC 3174, RFC 4648 and RFC 6455 vectors; every frame failure with its close code; UTF-8 across fragments;
+Ping, Pong and Close in a session; a chunking differential (whole, byte by byte, random splits); and no allocation. Its
+head parser and frame decoder have libFuzzer targets, `grace_head_fuzz` and `grace_frame_fuzz`, built as the protocol's
+fuzzer below (`--target grace_head_fuzz grace_frame_fuzz`), each run with a corpus folder of its own and the committed
+seeds as a second, read-only one:
+
+```sh
+build-linux-fuzz/bin/grace_head_fuzz -max_total_time=60 -max_len=16640 -dict=src/grace-serve/fuzz/head.dict \
+  <corpus> src/grace-serve/fuzz/corpus/head
+build-linux-fuzz/bin/grace_frame_fuzz -max_total_time=60 -max_len=49152 <corpus> src/grace-serve/fuzz/corpus/frame
+```
+
+`-len_control=0` reaches the caps sooner. On 2026-11-20 they ran 384,505 and 395,309 times in 60 s, none failing.
+
 ## The tokens
 
 `tokens/grace.toml` is the Grace theme's one source (D157). `tools/tokens/build.py` checks it (contrast in every variant,

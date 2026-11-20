@@ -19,7 +19,7 @@ else()
   set(_gu_unit_tests_default ON)
 endif()
 option(GRACEUI_UNIT_TESTS "The pure modules' unit tests (doctest under CTest, D106)" ${_gu_unit_tests_default})
-option(GRACEUI_FUZZ "Linux and Clang only: the draw-list checker's libFuzzer target (BUILD.md)" OFF)
+option(GRACEUI_FUZZ "Linux and Clang only: the libFuzzer targets of grace-abi and grace-serve (BUILD.md)" OFF)
 set(GRACEUI_SANITIZE "" CACHE STRING
   "Linux only: the sanitizers for the unit tests, as -fsanitize takes them (address,undefined or thread)")
 
@@ -71,11 +71,13 @@ endfunction()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # The pure modules (no Win32, no Dear ImGui): built everywhere, and the only targets on Linux (D106). grace-abi's header
-# is the public ABI, its layout checked in C and C++ by every build (D109); its rules are pure (D131).
+# is the public ABI, its layout checked in C and C++ by every build (D109); its rules are pure (D131). grace-serve's pure
+# core is the server's protocol code (G30, §7.6, D158).
 add_subdirectory(src/grace-tokens)
 add_subdirectory(src/grace-protocol)
 add_subdirectory(src/grace-input)
 add_subdirectory(src/grace-abi)
+add_subdirectory(src/grace-serve)
 
 if(WIN32)
   add_subdirectory(src/grace-host)
