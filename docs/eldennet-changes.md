@@ -669,3 +669,36 @@ yet.
    that folder and drops its own writer. The format is D52's: `graceui`, `abi`, `protocol`, `caps` (empty for now),
    `released` and `[files]`, names relative with `/`. EldenNet's release job checks the carried folder with
    `python3 -I tools/release/manifest.py check FOLDER` from GraceUI's tag, or its own reader of the same subset.
+
+## 21. The in-game menu (2026-11-20, D167, S11.2.b)
+
+GraceUI's menu now opens on F5, drawn by the host: GraceUI's own space, with GraceUI › Menu (`ui.scale`,
+`ui.menu.theme`) as S4's page. What it means for EldenNet:
+
+1. **F5 is GraceUI's.** With no holder, F5 opens GraceUI's menu (the holder of kind menu that GraceUI asks for, owner
+   0). EldenNet's launcher, harness and documentation should expect that: a test that presses F5 with no holder now
+   finds the menu holding input until a second F5 or Esc from the rail.
+2. **The fonts folder holds eight faces** (`Game\GraceUI\fonts\`): Noto Sans Regular and SemiBold, Noto Sans Mono
+   Regular, Cinzel Regular and Bold, EB Garamond Regular, Medium and SemiBold, with `OFL.txt` (Noto's),
+   `Cinzel-OFL.txt` and `EBGaramond-OFL.txt`. GraceUI's build lays them out in `GraceUI/fonts/`, listed in
+   `graceui.toml` (D165): install that folder as it is.
+3. **The atlas is larger**: GraceUI's own faces take more of it (1024 × 2048 at 1080p with no mod's faces, measured
+   under Wine). EldenNet's eight faces (D139) still fit; should a bake run out of room, the mods' faces go first, then
+   the menu's, so notices keep their face.
+4. **S4's measurements** (EldenNet's roadmap S11.2.c) come from the harness's "menu" scenario until the game: frame cost,
+   atlas size and screenshots (with `GRACE_SHOTS` set). The owner's look review (S11.2.d) has the two screenshots.
+
+## 22. grace-serve for EldenNet's launcher (2026-11-20, D161, G29 (a))
+
+The server library is built (S11.2.i). What EldenNet's launcher does with it, off game:
+
+1. It links `grace_serve` and makes its own `Server`, from ordinary code, never DllMain; `start` and `stop` are plain
+   calls, and `stop` joins both of the server's threads.
+2. It hands EldenNet's space over with `add_space(describe_space(pages, settings, version, increment))`, from EldenNet's
+   page data and settings description (GraceUI's format, D160), and serves the web files of GraceUI's folder
+   (`graceui.toml`, checked, D165) or files it hands in from memory.
+3. On its `SpacePort` it answers each command exactly once (ok or an error); on `watched` it publishes the state, or a
+   stream from its oldest row, since the server keeps nothing for a topic nobody watches.
+4. It uses only the routes `/api/ticket` and `/api/ws`, and loopback only (§7.2 item 26).
+5. The page paces bursts: every message counts against 20 a second before it is parsed, subscriptions included.
+
