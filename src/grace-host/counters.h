@@ -80,6 +80,21 @@ inline void record_char(std::uint32_t code_point) noexcept {
   }
 }
 
+// The input half as the in-game spikes read it (S0-E's input half, S4; D175): input of a device the holder takes that
+// still reached the game, by kind (a press, a release the game saw begin, a character, the mouse, raw input), and the
+// DirectInput and XInput reads GraceUI changed, while a holder held and after it closed (the closing press, until it
+// is released).
+enum Passed : std::uint32_t { press, release, character, mouse, raw, kPassedKinds };
+enum Masked : std::uint32_t { dinput_keyboard, dinput_mouse, xinput, kMaskedKinds };
+inline constinit std::atomic<std::uint32_t> passed_held[kPassedKinds]{};
+inline constinit std::atomic<std::uint32_t> masked_held[kMaskedKinds]{};
+inline constinit std::atomic<std::uint32_t> masked_after[kMaskedKinds]{};
+
+inline void count_passed(Passed kind) noexcept { passed_held[kind].fetch_add(1, std::memory_order_relaxed); }
+inline void count_masked(Masked kind, bool held) noexcept {
+  (held ? masked_held : masked_after)[kind].fetch_add(1, std::memory_order_relaxed);
+}
+
 #else
 
 class CountingScope {

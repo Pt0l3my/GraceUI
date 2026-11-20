@@ -89,6 +89,9 @@ typedef uint32_t GraceUiStatus;
                                     atlas is baked at the overlay's warm-up) */
 #define GRACEUI_TOO_LATE 10u     /* past its time: a texture after the mod's registration window (its first submit),
                                     a face after warm-up */
+#define GRACEUI_UNBOUND 11u      /* register_hotkey: the hotkey is registered, with its id, but its default is taken (by
+                                    another hotkey or the menu key) or it has none: it fires nothing until the player
+                                    binds it (D164) */
 
 /* Why connect answered GRACEUI_INACTIVE. */
 #define GRACEUI_INACTIVE_ANTI_CHEAT 1u  /* an anti-cheat was found before GraceUI hooked: notices only (D88) */
@@ -135,6 +138,7 @@ typedef uint32_t GraceUiStatus;
 #define GRACEUI_CAP_INPUT "input"     /* request_input, release_input: since GraceUI 0.1 */
 #define GRACEUI_CAP_WORLD_STATE "world-state" /* set_world_state: since GraceUI 0.1 */
 #define GRACEUI_CAP_HOTKEYS "hotkeys" /* register_hotkey, and poll's hotkey events: since GraceUI 0.1 (D155) */
+#define GRACEUI_CAP_PAGES "pages"     /* register_pages, publish, answer, and poll's protocol events: since 0.2 (D169) */
 
 /* A connected mod's handle, which every slot after connect takes; 0 is none. */
 typedef uint64_t GraceUiConsumer;
@@ -369,15 +373,46 @@ typedef struct GraceUiHotkeyDesc {
 /* ---- poll's events (D155): what GraceUI has for a mod, one at a time, on the mod's own thread. GraceUI 0.1 gives
  * hotkey presses; the bridge protocol (§6, GraceUI 0.2) adds its own kinds, and their fields after these. */
 
-#define GRACEUI_EVENT_NONE 0u   /* nothing is waiting */
-#define GRACEUI_EVENT_HOTKEY 1u /* a hotkey of the mod's was pressed */
+#define GRACEUI_EVENT_NONE 0u      /* nothing is waiting */
+#define GRACEUI_EVENT_HOTKEY 1u    /* a hotkey of the mod's was pressed */
+#define GRACEUI_EVENT_WATCHED 2u   /* a view now watches a topic of the mod's space: `frame` holds its sub frame (D169) */
+#define GRACEUI_EVENT_UNWATCHED 3u /* no view watches the topic now: `frame` holds its unsub frame; stop building it */
+#define GRACEUI_EVENT_COMMAND 4u   /* a view's command: `frame` holds its cmd frame, `reply` the handle answer takes */
 
 typedef struct GraceUiEvent {
   uint32_t size;       /* set by the caller to sizeof(GraceUiEvent) */
   uint32_t kind;       /* GRACEUI_EVENT_* */
   uint32_t hotkey_id;  /* with GRACEUI_EVENT_HOTKEY: register_hotkey's id */
   uint32_t count;      /* with GRACEUI_EVENT_HOTKEY: its presses since its last event, 1 or more */
+  /* From GraceUI 0.2 (D169): an event smaller than this never gets the protocol's kinds, so a 0.1 mod sees hotkeys. */
+  uint64_t reply;          /* with GRACEUI_EVENT_COMMAND: the handle answer takes */
+  char* frame;             /* the mod's buffer, which GraceUI writes the event's frame into (UTF-8 JSON, no NUL) */
+  uint64_t frame_capacity; /* its size in bytes: GRACEUI_FRAME_FROM_PAGE_MAX always suffices */
+  uint64_t frame_length;   /* the frame's length; with GRACEUI_FULL, the size needed */
 } GraceUiEvent;
+
+/* ---- A space (D75, D81, D169): the mod's pages, topics and commands, as the bridge protocol's frames (§6). The same
+ * JSON frames as the browser's WebSocket cross the ABI, so a space has one code path for both views. GraceUI routes and
+ * checks; the space validates its own commands (invariant 3). Each of register_pages, publish, poll and answer may be
+ * called from any thread of the mod's, during GraceUI's warm-up too, but never from DllMain; none waits for a view. */
+#define GRACEUI_VIEW_GAME 1u    /* the in-game menu shows the space */
+#define GRACEUI_VIEW_BROWSER 2u /* the browser view serves it: GraceUI's server runs while a space asks (§7.2 item 1) */
+#define GRACEUI_FRAME_FROM_PAGE_MAX 16384u /* a frame from a view: a sub, an unsub or a cmd, at most this many bytes */
+#define GRACEUI_FRAME_TO_PAGE_MAX 262144u  /* a frame to a view: a state, rows or a result, at most this many bytes */
+#define GRACEUI_ANSWER_DEADLINE_MS 10000u  /* a command unanswered this long is answered internal by GraceUI */
+
+typedef struct GraceUiSpaceDesc {
+  uint32_t size;      /* set by the caller to sizeof(GraceUiSpaceDesc) */
+  uint32_t views;     /* GRACEUI_VIEW_*, one or both */
+  uint32_t version;   /* the space's version, GRACEUI_VERSION_PACK, named in welcome */
+  uint32_t reserved;  /* 0 */
+  const char* pages;  /* its page data, space_pages as UTF-8 JSON (D160): its "space" is the mod's id */
+  uint64_t pages_length;
+  const char* settings; /* its settings description, settings_description as UTF-8 JSON (§6.9) */
+  uint64_t settings_length;
+  const char* increment; /* the increment the space is at ("0.2"), named in welcome */
+  uint64_t increment_length;
+} GraceUiSpaceDesc;
 
 /* ---- World-state providers (D78): every claim of every provider is combined. */
 
@@ -407,8 +442,9 @@ typedef GraceUiStatus (*GraceUiReservedSlot)(GraceUiConsumer consumer, const voi
  * ABI 1's table (D73, D131), in D73's order. Each slot answers GRACEUI_NOT_CONNECTED for a handle that names no
  * connected mod, then GRACEUI_INACTIVE while GraceUI is inactive (notice excepted in notice-only mode), then
  * GRACEUI_NOT_YET where this GraceUI does not provide it. GraceUI 0.1 provides every slot but three of the bridge
- * protocol's four (register_pages, publish, answer) and log, which are declared for the increments that build them;
- * its poll gives hotkey events alone (D155).
+ * protocol's four (register_pages, publish, answer) and log, and its poll gives hotkey events alone (D155); GraceUI 0.2
+ * provides the protocol's three and poll's protocol events (D169), and log is declared for the increment that builds
+ * it.
  */
 typedef struct GraceUiApi1 {
   uint32_t size;             /* the table's size in this GraceUI: a slot exists only if it ends within it */
@@ -427,12 +463,25 @@ typedef struct GraceUiApi1 {
   /* The handle's mod is no longer connected: its notices are withdrawn, and its id is free again. */
   GraceUiStatus (*disconnect)(GraceUiConsumer consumer);
 
-  GraceUiReservedSlot register_pages; /* the bridge protocol's (§6), from GraceUI 0.2 */
-  GraceUiReservedSlot publish;
+  /* The mod's one space (above), copied before it returns: GRACEUI_OK; _REFUSED (its JSON fails the protocol's
+   * decoders, its pages and settings disagree or a default fails, its "space" is not the mod's id, no known view);
+   * _DUPLICATE_ID (the mod, or another mod, has registered this space already); _FULL (16 spaces); _INACTIVE in the
+   * notice-only mode, where no server runs beside an anti-cheat. Since GraceUI 0.2 (GRACEUI_CAP_PAGES). */
+  GraceUiStatus (*register_pages)(GraceUiConsumer consumer, const GraceUiSpaceDesc* space);
+  /* A state or rows frame of the mod's own space ({"v":1,"t":"state","space":…,"topic":…,"rev":…,"body":{…}}), at
+   * most GRACEUI_FRAME_TO_PAGE_MAX bytes, copied: GRACEUI_OK (dropped if no view watches the topic); _REFUSED (another
+   * space's, a topic it does not declare or not of its shape, too long, not a frame); _NOT_YET before register_pages. */
+  GraceUiStatus (*publish)(GraceUiConsumer consumer, const char* frame, uint64_t frame_length);
   /* The mod's next event, at once: GRACEUI_OK with one (GRACEUI_EVENT_NONE if nothing is waiting), or _REFUSED for an
-   * event that is null or below its first size. Call it until it gives GRACEUI_EVENT_NONE; it never waits (D155). */
+   * event that is null or below its first size. Call it until it gives GRACEUI_EVENT_NONE; it never waits (D155).
+   * Hotkeys come first, then the space's events (D169), each frame written into the event's buffer; a buffer too small
+   * answers GRACEUI_FULL with frame_length the size needed, and the event waits for the next call. */
   GraceUiStatus (*poll)(GraceUiConsumer consumer, GraceUiEvent* event);
-  GraceUiReservedSlot answer;
+  /* The result frame of the command `reply` names ({"v":1,"t":"result","space":…,"id":…,"ok":true}, or with "error"
+   * and an optional "body", whose "detail" gives the reason in words, never a secret): GraceUI sets its space and id
+   * and routes it to the one view that asked. GRACEUI_OK; _REFUSED (not a result with ok or an error, too long, or a
+   * reply that is unknown, answered already or past GRACEUI_ANSWER_DEADLINE_MS, which GraceUI answered internal). */
+  GraceUiStatus (*answer)(GraceUiConsumer consumer, uint64_t reply, const char* frame, uint64_t frame_length);
 
   /* A texture, in the mod's registration window: GRACEUI_OK with its id, _REFUSED (a format, size or row length
    * GraceUI does not take), _FULL (over the mod's budget or the session's) or _TOO_LATE (after its first submit). */
@@ -458,7 +507,7 @@ typedef struct GraceUiApi1 {
                                  GraceUiInputAnswer* answer);
   /* Gives input back if the mod holds it; GRACEUI_OK either way. */
   GraceUiStatus (*release_input)(GraceUiConsumer consumer);
-  /* A hotkey (above): GRACEUI_OK with its id, bound or, if its default is taken, unbound; _REFUSED (a reserved key, an
+  /* A hotkey (above): GRACEUI_OK with its id, bound; GRACEUI_UNBOUND with its id, registered but unbound (D164); _REFUSED (a reserved key, an
    * unknown modifier, Alt+F4, an action that is not an id or already the mod's, a name that is not 1 to 64 bytes of
    * UTF-8, a key with no place on the keyboard); _FULL (GRACEUI_HOTKEYS_PER_MOD, or the session's); _NOT_YET for a pad
    * chord. */

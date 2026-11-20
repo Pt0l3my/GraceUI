@@ -1,0 +1,16 @@
+{
+  "scenario": 1,
+  "space": "demo",
+  "about": "A scenario that fails its check: its second step names a topic the demo space does not have.",
+  "steps": [
+    {
+      "at": 1000,
+      "rows": "lantern.log",
+      "add": [
+        {"time": "19:41", "line": "A gust rattled the door."}
+      ]
+    },
+
+    {"at": 2000, "rows": "lantern.wick", "add": [{"time": "19:42", "line": "This topic does not exist."}]}
+  ]
+}

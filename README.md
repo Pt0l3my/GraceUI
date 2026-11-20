@@ -12,8 +12,12 @@ DirectInput and XInput, and keeps the game from the input of whoever holds it. M
 until GraceUI 1.1 (`src/grace-abi/include/graceui.h`): they find it with `graceui-sys`, connect, show notices in the
 Grace look, register textures and faces before their first frames, and draw panels on five layers with checked draw
 lists, built with GraceUI's shared atlas or a headless Dear ImGui of their own; a panel can take the controls, and the
-player can always take them back; any mod can report danger, which ends the view that holds input. The bridge
-protocol's slots, hotkeys and the log are declared for the increments that build them. Before it hooks anything,
+player can always take them back; any mod can report danger, which ends the view that holds input. **GraceUI 0.2.0**
+adds the pages: a mod registers its space (its page data and settings description) and speaks the bridge protocol
+across the ABI; F5 opens GraceUI's menu in game, drawn by the host, on every mod's space and GraceUI's own; and the
+browser view (a Preact app served by GraceUI's own server on loopback) shows the same pages from the same data, with
+`grace-dev` to preview a space's pages without the game. Hotkeys and the log are declared for the increments that
+build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the
 rules by unit tests on Linux ([BUILD.md](BUILD.md)). The design is in [docs/DESIGN.md](docs/DESIGN.md),

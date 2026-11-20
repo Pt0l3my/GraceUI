@@ -4,7 +4,7 @@
 # (cmake/mingw-w64.cmake), the harness run under Wine here. On Linux the pure modules and their unit tests build alone.
 # BUILD.md says how.
 cmake_minimum_required(VERSION 3.20)
-project(GraceUI VERSION 0.1.0 LANGUAGES C CXX)
+project(GraceUI VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,7 +19,7 @@ else()
   set(_gu_unit_tests_default ON)
 endif()
 option(GRACEUI_UNIT_TESTS "The pure modules' unit tests (doctest under CTest, D106)" ${_gu_unit_tests_default})
-option(GRACEUI_FUZZ "Linux and Clang only: the draw-list checker's libFuzzer target (BUILD.md)" OFF)
+option(GRACEUI_FUZZ "Linux and Clang only: the libFuzzer targets of grace-abi and grace-serve (BUILD.md)" OFF)
 set(GRACEUI_SANITIZE "" CACHE STRING
   "Linux only: the sanitizers for the unit tests, as -fsanitize takes them (address,undefined or thread)")
 
@@ -44,6 +44,8 @@ endif()
 if(GRACEUI_UNIT_TESTS)
   include(cmake/doctest.cmake)
   enable_testing()
+elseif(WIN32 AND GRACEUI_TEST_EXPORTS)
+  include(cmake/doctest.cmake)  # for grace-serve's suite on Windows, run under Wine (BUILD.md)
 endif()
 
 # Our own code: 0 warnings (the toolchain's /WX, or -Werror here), and casts written out by name, so that
@@ -71,9 +73,23 @@ endfunction()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # The pure modules (no Win32, no Dear ImGui): built everywhere, and the only targets on Linux (D106). grace-abi's header
-# is the public ABI, its layout checked in C and C++ by every build (D109); its rules are pure (D131).
+# is the public ABI, its layout checked in C and C++ by every build (D109); its rules are pure (D131). grace-serve's pure
+# core is the server's protocol code (G30, §7.6, D158).
+add_subdirectory(src/grace-tokens)
+add_subdirectory(src/grace-protocol)
+add_subdirectory(src/grace-pages)
+add_subdirectory(src/grace-view)
+add_subdirectory(src/grace-draw)
 add_subdirectory(src/grace-input)
 add_subdirectory(src/grace-abi)
+add_subdirectory(src/grace-serve)
+add_subdirectory(src/grace-spaces)
+
+# grace-dev, the fake host (§9.2, D168): a developer's tool, on Linux and in the Windows test builds; never in a release
+# build, and not in the fuzzing build, whose grace-serve core carries the fuzzers' instrumentation.
+if(NOT GRACEUI_FUZZ AND (NOT WIN32 OR GRACEUI_TEST_EXPORTS))
+  add_subdirectory(tools/grace-dev)
+endif()
 
 if(WIN32)
   add_subdirectory(src/grace-host)
@@ -81,6 +97,25 @@ if(WIN32)
   add_subdirectory(src/graceui-sys)
   add_subdirectory(examples)
   if(GRACEUI_TEST_EXPORTS)
+    add_subdirectory(tools/grace-spike)
     add_subdirectory(tools/grace-harness)
+  endif()
+endif()
+
+# The browser view's checks (D166): its type check, tests, build, licences and bundle scan, where Node and its
+# packages are installed.
+if(GRACEUI_UNIT_TESTS)
+  add_subdirectory(web)
+endif()
+
+# GraceUI's version file (D52): tools/release/manifest.py writes graceui.toml for a GraceUI folder and checks one.
+if(GRACEUI_UNIT_TESTS)
+  find_package(Python3 3.11 COMPONENTS Interpreter)
+  if(Python3_FOUND)
+    add_test(NAME manifest_tool_tests
+             COMMAND ${Python3_EXECUTABLE} -I -m unittest discover -s ${CMAKE_SOURCE_DIR}/tools/release)
+    # The in-game spikes' reader (D175): its pass rules, on invented reports.
+    add_test(NAME spike_reader_tests
+             COMMAND ${Python3_EXECUTABLE} -I -m unittest discover -s ${CMAKE_SOURCE_DIR}/tools/grace-spike)
   endif()
 endif()

@@ -7,9 +7,11 @@
 #include "counters.h"
 #include "grace/abi/world.h"
 #include "grace/input/queue.h"
+#include "hooks.h"
 #include "imgui.h"
 #include "imgui_internal.h"  // ImGuiContext's input queues: emptied between holders and reserved at warm-up
 #include "log.h"
+#include "menu.h"
 #include "session.h"
 #include "state.h"
 
@@ -439,6 +441,9 @@ void closed(const Holder& holder) noexcept {
   const grace::input::LastClose last = g_capture.last_close();
   log_line("%s no longer holds input: %s", kind_name(holder.kind),
            last.holder.generation == holder.generation ? closed_name(last.why) : "closed");
+  if (holder.kind == Kind::menu) {
+    hooks::wake();  // the menu's part of the close routine runs on GraceUI's thread: it stops watching mods' topics
+  }
 }
 
 void tick() noexcept { closed(g_capture.tick(now_ms())); }
@@ -468,7 +473,7 @@ void note_menu_key(grace::input::MenuKey what) noexcept {
       return;
     }
     case grace::input::MenuKey::open_menu:
-      // The menu comes with S10.4.c; the key is masked from the game all the same (§5.1).
+      menu::open_requested();  // the menu (D167); the key is masked from the game whatever it answers (§5.1)
       return;
     default: return;
   }

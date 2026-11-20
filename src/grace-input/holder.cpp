@@ -148,6 +148,9 @@ LastClose Capture::last_close() const noexcept {
   LastClose last;
   last.holder = unpack(word & ~(std::uint64_t{0xFF} << 56));
   last.why = static_cast<Closed>(word >> 56);
+  // The holder as it was while it held: its phase's byte carries the reason, so a holder that closed reads active again
+  // (a decision's `closed`, which the host's close bookkeeping takes only while it holds).
+  last.holder.phase = last.why != Closed::none ? Phase::active : Phase::none;
   return last;
 }
 

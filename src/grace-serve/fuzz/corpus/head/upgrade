@@ -1,0 +1,9 @@
+GET /ws HTTP/1.1
+Host: 127.0.0.1:8642
+Origin: http://127.0.0.1:8642
+Upgrade: websocket
+Connection: keep-alive, Upgrade
+Sec-WebSocket-Version: 13
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+Cookie: en_session=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+

@@ -1,0 +1,31 @@
+{
+  "schema": {"number": 1, "hash": "74696465706f6f6c"},
+  "settings": [
+    {
+      "key": "pool.watching",
+      "type": "bool",
+      "default": true,
+      "label": "Watching",
+      "help": "Whether the watcher keeps notes at all.",
+      "home": "tidepool.watch",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "pool.every_s",
+      "type": "duration_s",
+      "default": 30.0,
+      "min": 5.0,
+      "max": 300.0,
+      "step": 5.0,
+      "unit": "s",
+      "label": "A note every",
+      "help": "How long the watcher waits between two notes.",
+      "home": "tidepool.watch",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    }
+  ]
+}

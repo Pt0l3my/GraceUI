@@ -137,6 +137,38 @@ GRACEUI_API uint64_t GraceUI_Test_GetPanelPublished(uint64_t panel) {
   }
 }
 
+GRACEUI_API uint32_t GraceUI_Test_GetMenu(GraceUiTestMenu* out) {
+  try {
+    if (out == nullptr || out->size < sizeof(GraceUiTestMenu)) {
+      return 0;
+    }
+    grace::host::test_fill_menu(*out);
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_GetServer(GraceUiTestServer* out) {
+  try {
+    if (out == nullptr || out->size < sizeof(GraceUiTestServer)) {
+      return 0;
+    }
+    grace::host::test_fill_server(*out);
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_GetSetting(const char* key, char* out, uint32_t capacity) {
+  try {
+    return grace::host::test_copy_setting(key, out, capacity);
+  } catch (...) {
+    return 0;
+  }
+}
+
 GRACEUI_API void GraceUI_Test_SetAtlasLimit(uint32_t side) {
   try {
     grace::host::test_set_atlas_limit(side);

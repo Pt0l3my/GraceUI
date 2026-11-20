@@ -1,0 +1,12 @@
+{
+  "scenario": 1,
+  "space": "tidepool",
+  "about": "The tests' own scenario: a note soon after the start, then one more; counting the crabs is refused.",
+  "steps": [
+    {"at": 1000, "rows": "pool.notes", "add": [{"line": "A gull looked in and left."}]},
+    {"at": 2000, "state": "pool.status", "body": {"tiles": [{"label": "Depth", "value": "A finger's width"}]}}
+  ],
+  "reactions": [
+    {"on": "pool.count", "answer": {"error": "not_now", "detail": "The crabs are hiding; count them at low water."}}
+  ]
+}

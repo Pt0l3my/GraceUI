@@ -12,10 +12,14 @@
 #include <algorithm>
 #include <atomic>
 #include <iterator>
+#include <span>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
 #include "grace/abi/registry.h"
+#include "grace/tokens.h"
+#include "grace/view/text.h"
 #include "imgui.h"
 #include "imgui_internal.h"  // ImFontAtlasBuildMain, ImFontBaked's glyphs
 #include "log.h"
@@ -31,6 +35,41 @@ constexpr std::uint32_t kMaxTables = 1 + grace::abi::kMaxFaces;
 constexpr DWORD kPathUnits = 32768;
 constexpr wchar_t kNoticeFile[] = L"fonts\\NotoSans-Regular.ttf";
 constexpr char kNoticeFileName[] = "fonts\\NotoSans-Regular.ttf";  // as logged: relative to GraceUI's folder (PV5)
+
+// The menu's files (§3.4, D167), by family and weight; Cinzel publishes no static 500 or 600, so Regular and Bold serve.
+enum MenuFile : std::uint8_t {
+  noto_regular, noto_semibold, noto_mono, cinzel_regular, cinzel_bold, garamond_regular, garamond_medium,
+  garamond_semibold, kMenuFiles
+};
+constexpr const wchar_t* kMenuPaths[kMenuFiles] = {
+    L"fonts\\NotoSans-Regular.ttf",    L"fonts\\NotoSans-SemiBold.ttf",   L"fonts\\NotoSansMono-Regular.ttf",
+    L"fonts\\Cinzel-Regular.ttf",      L"fonts\\Cinzel-Bold.ttf",         L"fonts\\EBGaramond-Regular.ttf",
+    L"fonts\\EBGaramond-Medium.ttf",   L"fonts\\EBGaramond-SemiBold.ttf"};
+constexpr const char* kMenuNames[kMenuFiles] = {  // as logged: relative to GraceUI's folder (PV5)
+    "fonts\\NotoSans-Regular.ttf",    "fonts\\NotoSans-SemiBold.ttf",   "fonts\\NotoSansMono-Regular.ttf",
+    "fonts\\Cinzel-Regular.ttf",      "fonts\\Cinzel-Bold.ttf",         "fonts\\EBGaramond-Regular.ttf",
+    "fonts\\EBGaramond-Medium.ttf",   "fonts\\EBGaramond-SemiBold.ttf"};
+
+MenuFile file_of(const grace::tokens::Type& type) noexcept {
+  using grace::tokens::Font;
+  switch (type.font) {
+    case Font::display: return type.weight >= 600 ? cinzel_bold : cinzel_regular;
+    case Font::serif: return type.weight >= 600 ? garamond_semibold : type.weight >= 500 ? garamond_medium : garamond_regular;
+    case Font::sans: return type.weight >= 600 ? noto_semibold : noto_regular;
+    case Font::mono: return noto_mono;
+  }
+  return noto_regular;
+}
+
+// The menu's characters: the default ranges and the arrows of its key hints and Related links, which Noto Sans and
+// Cinzel lack: those faces take the four arrows from Noto Sans Mono, merged in (EB Garamond and the mono have them).
+constexpr ImWchar kMenuRanges[] = {0x0020, 0x007E, 0x00A0, 0x00FF, 0x0100, 0x017F, 0x2000, 0x206F,
+                                   0x2190, 0x2193, 0xFFFD, 0xFFFD, 0};
+constexpr ImWchar kArrowRanges[] = {0x2190, 0x2193, 0};
+
+bool has_arrows(MenuFile file) noexcept {
+  return file == noto_mono || file == garamond_regular || file == garamond_medium || file == garamond_semibold;
+}
 
 struct Table {
   std::uint32_t face_id;
@@ -48,6 +87,13 @@ constinit std::uint32_t g_table_count = 0;
 constinit std::atomic<std::uint32_t> g_generation{0};
 constinit ImFont* g_notice_font = nullptr;
 constinit bool g_notice_grace = false;
+constinit std::vector<unsigned char>* g_menu_data[kMenuFiles] = {};  // the init thread's, then read-only
+constinit std::atomic<bool> g_menu_loaded{false};
+constinit grace::view::Fonts* g_menu_fonts = nullptr;  // made at the bake, never changed or freed after it
+constinit grace::view::Face* g_menu_faces = nullptr;   // kTypeCount of them
+constinit float g_white_u = 0.0f;
+constinit float g_white_v = 0.0f;
+constinit float g_menu_scale = 0.0f;
 
 // GraceUI's folder (the folder of graceui.dll), with its last separator.
 bool own_folder(std::vector<wchar_t>& path, DWORD& length) {
@@ -124,6 +170,52 @@ void add_table(ImFont* font, std::uint32_t face_id) {
   table.glyphs = glyphs;
 }
 
+// A menu face from its bake, for grace-view's text layout: its glyphs copied once, sorted by code point.
+void make_menu_face(ImFont* font, grace::view::Face& face) {
+  ImFontBaked* baked = font != nullptr ? font->GetFontBaked(font->LegacySize) : nullptr;
+  if (baked == nullptr) {
+    return;
+  }
+  auto* glyphs = new std::vector<grace::view::Glyph>();
+  glyphs->reserve(static_cast<std::size_t>(baked->Glyphs.Size));
+  for (const ImFontGlyph& glyph : baked->Glyphs) {
+    glyphs->push_back(grace::view::Glyph{glyph.Codepoint, glyph.AdvanceX, glyph.X0, glyph.Y0, glyph.X1, glyph.Y1,
+                                         glyph.U0, glyph.V0, glyph.U1, glyph.V1});
+  }
+  std::stable_sort(glyphs->begin(), glyphs->end(), [](const grace::view::Glyph& a, const grace::view::Glyph& b) {
+    return a.code_point < b.code_point;
+  });
+  glyphs->erase(std::unique(glyphs->begin(), glyphs->end(),
+                            [](const grace::view::Glyph& a, const grace::view::Glyph& b) {
+                              return a.code_point == b.code_point;
+                            }),
+                glyphs->end());
+  face.pixel_height = baked->Size;
+  face.ascent = baked->Ascent;
+  face.descent = baked->Descent;
+  face.texture = grace::abi::kAtlasTexture;
+  face.glyphs = std::span<const grace::view::Glyph>(glyphs->data(), glyphs->size());
+}
+
+void load_menu_fonts(const std::vector<wchar_t>& folder_path, DWORD folder) {
+  bool any = false;
+  for (int i = 0; i < kMenuFiles; ++i) {
+    std::vector<wchar_t> path(folder_path.begin(), folder_path.begin() + folder);
+    const std::wstring_view name(kMenuPaths[i]);
+    path.insert(path.end(), name.begin(), name.end());
+    path.push_back(L'\0');
+    auto* data = new std::vector<unsigned char>();
+    if (!read_font_file(path.data(), *data) || !grace::abi::valid_font(data->data(), data->size())) {
+      delete data;
+      log_line("%s is missing or not a font: the menu draws its roles in Noto Sans Regular", kMenuNames[i]);
+      continue;
+    }
+    g_menu_data[i] = data;
+    any = true;
+  }
+  g_menu_loaded.store(any, std::memory_order_release);
+}
+
 }  // namespace
 
 void load_own_fonts() noexcept {
@@ -135,6 +227,7 @@ void load_own_fonts() noexcept {
       return;
     }
     path.resize(folder);
+    load_menu_fonts(path, folder);
     path.insert(path.end(), std::begin(kNoticeFile), std::end(kNoticeFile));  // with its terminating NUL
     auto* data = new std::vector<unsigned char>();
     if (!read_font_file(path.data(), *data) || !grace::abi::valid_font(data->data(), data->size())) {
@@ -156,7 +249,7 @@ constinit std::atomic<std::uint32_t> g_test_limit{0};
 void test_set_limit(std::uint32_t side) noexcept { g_test_limit.store(side, std::memory_order_relaxed); }
 #endif
 
-void bake(ImFontAtlas* fonts, std::uint32_t mod_faces) {
+void bake(ImFontAtlas* fonts, std::uint32_t mod_faces, float menu_scale) {
   grace::abi::Registry& registry = session::registry();  // sealed by the present thread before this runs (D80)
   // A fresh start: an earlier attempt that failed left nothing GraceUI keeps.
   g_table_count = 0;
@@ -179,6 +272,36 @@ void bake(ImFontAtlas* fonts, std::uint32_t mod_faces) {
   }
   if (g_notice_font == nullptr) {
     g_notice_font = fonts->AddFontDefaultBitmap();
+  }
+
+  // The menu's faces (D167): one for each type role, at its size times the effective scale, each from its file, or from
+  // Noto Sans Regular where its own is missing; left out when the menu's faces are not asked for or not loaded.
+  ImFont* menu_fonts[grace::tokens::kTypeCount] = {};
+  const bool menu = menu_scale > 0.0f && g_menu_loaded.load(std::memory_order_acquire) &&
+                    (g_menu_data[noto_regular] != nullptr || g_notice_loaded.load(std::memory_order_acquire));
+  if (menu) {
+    for (int role = 0; role < grace::tokens::kTypeCount; ++role) {
+      const grace::tokens::Type& type = grace::tokens::kTypes[role];
+      MenuFile file = file_of(type);
+      const std::vector<unsigned char>* data = g_menu_data[file];
+      if (data == nullptr) {
+        data = g_menu_data[noto_regular] != nullptr ? g_menu_data[noto_regular] : g_notice_data;
+        file = noto_regular;
+      }
+      const ImFontConfig config = face_config();
+      const float pixels = std::clamp(type.size * menu_scale, 6.0f, 128.0f);
+      // SAFETY: as above: GraceUI's own file, read by the init thread and kept for the session.
+      menu_fonts[role] = fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(data->data()),
+                                                     static_cast<int>(data->size()), pixels, &config, kMenuRanges);
+      if (const std::vector<unsigned char>* mono = g_menu_data[noto_mono];
+          menu_fonts[role] != nullptr && !has_arrows(file) && mono != nullptr) {
+        ImFontConfig merge = face_config();
+        merge.MergeMode = true;
+        // SAFETY: as above.
+        fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(mono->data()), static_cast<int>(mono->size()), pixels,
+                                    &merge, kArrowRanges);
+      }
+    }
   }
 
   // The mods' faces, in registration order. A file Dear ImGui cannot parse is a mod's error, not GraceUI's: while they
@@ -216,9 +339,30 @@ void bake(ImFontAtlas* fonts, std::uint32_t mod_faces) {
   for (std::uint32_t i = 0; i < mod_count; ++i) {
     add_table(mod_fonts[i], mod_ids[i]);
   }
+  g_white_u = fonts->TexUvWhitePixel.x;
+  g_white_v = fonts->TexUvWhitePixel.y;
+  if (menu) {
+    if (g_menu_faces == nullptr) {
+      g_menu_faces = new grace::view::Face[grace::tokens::kTypeCount]();
+      g_menu_fonts = new grace::view::Fonts();
+    }
+    bool whole = true;
+    for (int role = 0; role < grace::tokens::kTypeCount; ++role) {
+      g_menu_faces[role] = grace::view::Face{};
+      make_menu_face(menu_fonts[role], g_menu_faces[role]);
+      whole = whole && !g_menu_faces[role].glyphs.empty();
+      g_menu_fonts->by_role[static_cast<std::size_t>(role)] = &g_menu_faces[role];
+    }
+    g_menu_fonts->generation = 1;
+    g_menu_scale = whole ? menu_scale : 0.0f;
+    if (!whole) {
+      log_line("the menu's faces could not all be baked: the menu cannot open this session");
+    }
+  }
   g_generation.store(1, std::memory_order_release);
-  log_line("the atlas holds %u faces: %s and %u of mods'", g_table_count,
-           g_notice_grace ? "GraceUI's notices' face" : "Dear ImGui's own font for notices", mod_count);
+  log_line("the atlas holds %s, %s and %u of the mods' faces",
+           g_notice_grace ? "GraceUI's notices' face" : "Dear ImGui's own font for notices",
+           g_menu_scale > 0.0f ? "the menu's eleven" : "none of the menu's", mod_count);
 }
 
 std::uint32_t generation() noexcept { return g_generation.load(std::memory_order_acquire); }
@@ -248,5 +392,30 @@ bool glyph_table(std::uint32_t face_id, GraceUiGlyphTable& out) noexcept {
 ImFont* notice_font() noexcept { return g_notice_font; }
 bool notice_face_is_grace() noexcept { return g_generation.load(std::memory_order_acquire) != 0 && g_notice_grace; }
 std::uint32_t faces_baked() noexcept { return g_generation.load(std::memory_order_acquire) != 0 ? g_table_count : 0; }
+
+bool own_folder(std::wstring& out) noexcept {
+  try {
+    std::vector<wchar_t> path;
+    DWORD length = 0;
+    if (!own_folder(path, length)) {
+      return false;
+    }
+    out.assign(path.data(), length);
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+const grace::view::Fonts* menu_fonts() noexcept {
+  return g_generation.load(std::memory_order_acquire) != 0 && g_menu_scale > 0.0f ? g_menu_fonts : nullptr;
+}
+
+void white_pixel(float& u, float& v) noexcept {
+  u = g_white_u;
+  v = g_white_v;
+}
+
+float menu_scale() noexcept { return g_generation.load(std::memory_order_acquire) != 0 ? g_menu_scale : 0.0f; }
 
 }  // namespace grace::host::atlas

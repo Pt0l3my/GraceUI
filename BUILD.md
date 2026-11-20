@@ -92,6 +92,125 @@ count must answer without a crash or undefined behaviour, and the count never ex
 `grace_abi_layout_cpp` compile `graceui.h` as C and as C++ with a `static_assert` on every struct's size and every
 field's offset; CTest runs both on Linux, and both Windows builds compile them.
 
+`grace-serve`'s 49 cases (`grace_serve_tests`, D158) cover the head parser's every refusal with its status and the
+order of its decisions; the caps at and past their limits; the Host, Origin, Fetch Metadata and cookie checks (an
+`en_session` of a narrower Path, a flood of cookies); the response writer's headers on every status; the redirect's
+Location; the RFC 3174, RFC 4648 and RFC 6455 vectors; every frame failure with its close code; UTF-8 across fragments;
+Ping, Pong and Close in a session; a chunking differential (whole, byte by byte, random splits); and no allocation. Its
+head parser and frame decoder have libFuzzer targets, `grace_head_fuzz` and `grace_ws_frame_fuzz`, built as the protocol's
+fuzzer below (`--target grace_head_fuzz grace_ws_frame_fuzz`), each run with a corpus folder of its own and the committed
+seeds as a second, read-only one:
+
+```sh
+build-linux-fuzz/bin/grace_head_fuzz -max_total_time=60 -max_len=16640 -dict=src/grace-serve/fuzz/head.dict \
+  <corpus> src/grace-serve/fuzz/corpus/head
+build-linux-fuzz/bin/grace_ws_frame_fuzz -max_total_time=60 -max_len=49152 <corpus> src/grace-serve/fuzz/corpus/frame
+```
+
+`-len_control=0` reaches the caps sooner. On 2026-11-20 they ran 384,505 and 395,309 times in 60 s, none failing.
+
+`grace_spaces_tests` (D169) take a mod's space across the ABI end to end through the real server: registration's checks, sub, state, cmd, answer once, a buffer too small, the 10 s deadline, a disconnect, and GraceUI's own space's settings shared by both views; CTest runs them on Linux (TSan included), and the Windows test builds build `bin/grace_spaces_tests.exe` for Wine.
+
+`grace_serve_io_tests` is the server security suite (§9.1, D161): 35 cases over real loopback sockets with GraceUI's own
+space and the demo space, in seconds, through short deadlines. CTest runs it in every Linux build, and TSan covers its
+threads. The Windows test builds (`-DGRACEUI_TEST_EXPORTS=ON`, clang-cl and MinGW-w64) build
+`bin/grace_serve_io_tests.exe`: run it with `unset TMPDIR; WINEPREFIX=<dir> WINEDEBUG=-all wine64
+build-.../bin/grace_serve_io_tests.exe`; it needs no Xvfb, and exercises the Winsock code (WSAPoll, the self-connected
+UDP wake, `SO_EXCLUSIVEADDRUSE`, non-inheritable handles, BCryptGenRandom). On Linux the server never sets
+`SO_REUSEADDR`, so a restart on the same port within TIME_WAIT reports the port taken; the suite takes a fresh port each
+time. Where the system has no IPv6, the `::1` listener's test skips itself.
+
+## The tokens
+
+`tokens/grace.toml` is the Grace theme's one source (D157). `tools/tokens/build.py` checks it (contrast in every variant,
+the type minimums, the durations, no looping animation in `web/src`) and writes `web/src/tokens.css` and
+`src/grace-tokens/include/grace/tokens.h`, both committed; edit the TOML, never the outputs.
+
+```sh
+python3 -I tools/tokens/build.py            # check, then write both outputs
+python3 -I tools/tokens/build.py --check    # check, and fail if an output is not what the TOML builds
+python3 -I tools/tokens/build.py --table    # §3.3's contrast table, as the tokens give it
+python3 -I -m unittest discover -s tools/tokens
+```
+
+The Linux build's CTest runs `--check`, the tool's tests and the header's (`grace_tokens_tests`).
+
+## The protocol
+
+`src/grace-protocol/protocol.toml` is the bridge protocol's one schema (D159). `tools/protocol/generate.py` checks it
+and writes the C++ types and decoders (`src/grace-protocol/include/grace/protocol/messages.h`,
+`src/grace-protocol/messages.cpp`) and the web app's types (`web/src/protocol.ts`), all committed; edit the schema,
+never the outputs.
+
+```sh
+python3 -I tools/protocol/generate.py          # check the schema, then write the three outputs
+python3 -I tools/protocol/generate.py --check  # fail if an output is not what the schema generates
+python3 -I -m unittest discover -s tools/protocol
+```
+
+The Linux build's CTest runs `--check`, the generator's tests, `grace_protocol_tests` (the golden frames in
+`src/grace-protocol/tests/golden/frames.jsonl`, round trips, refusals, the largest frame's cost, printed) and, where
+`tsc` is installed, `tsc --strict` on the TypeScript. nlohmann/json 3.12.0 is fetched pinned by SHA-256
+(`cmake/nlohmann_json.cmake`). The frame parser's fuzzer, as grace-abi's:
+
+```sh
+CC=clang-18 CXX=clang++-18 cmake -S . -B build-linux-fuzz -G Ninja -DGRACEUI_FUZZ=ON -DGRACEUI_SANITIZE=address,undefined
+cmake --build build-linux-fuzz --target grace_frame_fuzz
+build-linux-fuzz/bin/grace_frame_fuzz -max_total_time=60 -max_len=20000 <a corpus folder: the golden frames, one a file>
+```
+
+## The page descriptions
+
+GraceUI's built-in spaces, its own and the demo space, are `src/grace-pages/spaces/<id>/space.toml` (D160).
+`tools/pages/build.py` checks each against the protocol's schema and by the page lint, then writes
+`fixtures/<id>/pages.json`, `fixtures/<id>/settings.json` and `src/grace-pages/builtin.cpp`, all committed; edit the
+TOML, never the outputs. `--lint` checks another project's spaces against this GraceUI's rules.
+
+```sh
+python3 -I tools/pages/build.py                  # check the spaces, then write their outputs
+python3 -I tools/pages/build.py --check          # fail if an output is not what the spaces build
+python3 -I tools/pages/build.py --lint <space.toml>...
+python3 -I -m unittest discover -s tools/pages
+```
+
+The Linux build's CTest runs `--check`, the lint's tests (each rule failing on a demo space seeded to break it) and
+`grace_pages_tests` (every built-in space decoded by grace-protocol's own decoders).
+
+## The in-game views
+
+`grace_view_tests` (D162) drive GraceUI's own space and the demo space with keys and buttons as §5.3 and §5.4 give them
+and check every command, search, and the layout's structure dumps against `src/grace-view/tests/golden/` (the Menu page
+at 1920 × 1080 and at 1280 × 800 and 150%, the demo's Behaviour page); after a deliberate change to the layout, write
+them anew with `GRACE_UPDATE_GOLDEN=1 build-linux/bin/grace_view_tests` and read the diff before committing.
+`grace_draw_tests` tessellate the Menu page and pass it through grace-abi's draw-list checker, check that Grace Clear
+changes colours and nothing else, the shapes' vertices and fringes, hairlines on whole pixels, and that a second frame
+allocates nothing. Two more goldens there are the browser view's parity references (D166): `rows-order.txt`, every
+page's rows in grace-view's focus order, and `formats.txt`, every setting's formatted value and each press's command;
+the web view's tests compare against both.
+
+## The browser view
+
+`web/` is the browser view (D166): Preact, its signals and TypeScript, built with Vite into `web/dist/`. `web/README.md`
+has every command; in short, from `web/`:
+
+```sh
+npm ci --ignore-scripts && npm audit
+npm run build && python3 -I ../tools/web/licences.py   # dist/, then the licence check and dist/licences.txt
+npm run typecheck && npm test && npm run test:dom
+```
+
+The Linux build's CTest runs the licence tool's tests always, and the type check, the logic tests, the build, the
+licence check, the bundle scan and (with the machine's own Playwright and Chromium) the DOM tests when Node and
+`web/node_modules` are present; `protocol_typescript` then uses the web app's pinned TypeScript.
+
+## The fake host: grace-dev
+
+`grace-dev` (D168, `tools/grace-dev/`) serves spaces from page data and fixtures on the real server, plays scripted time,
+and dumps a page's in-game structure; it is built with the Linux unit tests and in the Windows test builds.
+`tools/grace-dev/README.md` has its command line, the space folder's and the scenario's formats, and how its tests run
+under Wine. With the web app built, `build-linux/bin/grace-dev --space demo --space graceui --web web/dist --loop` serves
+the browser view at `http://127.0.0.1:8642/`.
+
 ## The release build: clang-cl
 
 Built as EldenNet's engine is (its ARCH §2.6), against the CRT and SDK that [xwin](https://github.com/Jake-Shadle/xwin)
@@ -107,7 +226,8 @@ python3 -I tools/check_safety.py --exports build-cl-rel/bin/graceui.dll
 ```
 
 - `build-cl-rel/bin/graceui.dll` exports `GraceUI_Version` and `GraceUI_RequestApi` and nothing else; the check above
-  fails a release build with any other export. `hello-notice.dll` and `hello-panel.dll`, the example mods, are built
+  fails a release build with any other export, and any build whose imports leave the reviewed list (kernel32, user32,
+  gdi32, imm32, ws2_32, bcrypt, dwmapi, and MinGW's msvcrt): no Direct3D DLL is imported, as D170 says. `hello-notice.dll` and `hello-panel.dll`, the example mods, are built
   beside it, the second with Dear ImGui's core alone (`gu_imgui_core`, no backend, D144).
 - The flags: `/EHsc` (the exports' catch-all guards depend on it, D110), `/W4 /WX /permissive- /utf-8`, the static CRT
   (`/MT`) in every configuration, `/Brepro` at compile and link, no incremental link; a release build adds ThinLTO,
@@ -115,6 +235,13 @@ python3 -I tools/check_safety.py --exports build-cl-rel/bin/graceui.dll
   build trees, and each binary names its PDB by file name only (`/pdbaltpath`), so no build machine's path ships.
 - `XWIN_ROOT`, a cache variable or in the environment, points elsewhere than `~/.cache/xwin`; the toolchain file
   refuses a splat whose CRT or SDK differs from the lock.
+- **The GraceUI folder** (§2.7, D165): after each build, `build-cl-rel/GraceUI/` holds `graceui.dll`, `LICENSE.txt`,
+  `NOTICE.txt` and the `graceui.toml` that lists them, each with its size and SHA-256, as `Game\GraceUI\` is installed;
+  the web app and the fonts join it once they are built. `tools/release/manifest.py` writes the file (from
+  CMakeLists.txt's version, `graceui.h`'s ABI minor and `protocol.toml`'s version and caps) and checks one
+  (`python3 -I tools/release/manifest.py check FOLDER`, which names every missing, extra or changed file); its date is
+  `SOURCE_DATE_EPOCH`'s, else today's. A test build lays out its folder the same way, test exports and all, for a
+  consumer's own tests to install from; it is never a release.
 
 ## The test build and the harness
 
@@ -127,6 +254,7 @@ cmake -S . -B build-cl-test -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/clang-cl-xwin.
   -DGRACEUI_TEST_EXPORTS=ON
 cmake --build build-cl-test
 python3 -I tools/check_safety.py --exports build-cl-test/bin/graceui.dll --test
+unset TMPDIR    # Wine 9.0's wineserver aborts at start with TMPDIR set ("free(): invalid pointer"): see below
 export WINEPREFIX=<a prefix of its own> WINEDEBUG=-all LC_ALL=C.UTF-8
 wine64 reg add 'HKCU\Software\Wine\Direct3D' /v renderer /t REG_SZ /d vulkan /f    # once per prefix: see below
 xvfb-run -a -s "-screen 0 1280x720x24" wine64 build-cl-test/bin/grace-harness.exe
@@ -137,8 +265,12 @@ server stays bound to a display that has gone, so the harness can't open its win
 `wineserver -k` (Debian keeps it in `/usr/lib/wine`); with that, three runs in a row of each build passed all 82 checks
 (2026-11-16, S10.4.c). Frame-cost checks then failed now and then under another build's load (a p99 of 1.0 to 1.6 ms
 against 1 ms, with no allocation, its median as usual), and one functional check raced the example's thread; since
-D154 and the refusals check's fix, ten runs in a row of each build passed all 95 checks (2026-11-16) (96 since D155's hotkeys check, which a full run passed on 2026-11-17) at a load average
+D154 and the refusals check's fix, ten runs in a row of each build passed all 95 checks (2026-11-16) (96 since D155's hotkeys check, which a full run passed on 2026-11-17; 106 since D156's two example
+scenarios, which a full run passed on 2026-11-20) at a load average
 of 1.3 to 10.5 on four cores, a frame-cost check taking a second window in 6 of the 80 checks run, a third in none.
+Wine 9.0's wineserver (Ubuntu's 9.0~repack-4build3) aborts as it starts, with "free(): invalid pointer", whenever
+`TMPDIR` is set, even to `/tmp`: it frees the variable's own string (a backtrace, 2026-11-20). Every Wine command
+fails with it, `wineserver -k` among them, so unset it first; `/tmp` is where Wine puts its server's folder anyway.
 The long-name scenario names a folder in Unicode, which Wine can do only in a UTF-8 locale: hence `LC_ALL=C.UTF-8`
 above; without it that scenario fails, saying so. On a new prefix, run `xvfb-run -a wine64 wineboot -u` once first. Debian's Wine packages keep `wine64`
 in `/usr/lib/wine`: put it on the `PATH` first.
@@ -156,14 +288,16 @@ wined3d. It plays the game's part: it presents frames of a known clear colour, l
 `GraceUI_RequestApi(1)` and reads each checked frame back after GraceUI drew on it. A different clear colour for each
 check keeps a stale frame from passing for a new one.
 
-It runs sixteen scenarios, each in a process of its own: the render half's checks ("main"); two direct queues; the input
+It runs twenty-four scenarios, each in a process of its own: the render half's checks ("main"); two direct queues; the input
 half ("input"), in a process whose game loads three XInput DLLs before GraceUI starts; the input half on an ANSI window
 ("input-ansi"); ABI 1 ("abi"), whose first request is the example mod's; panels and the rest of S10.4.c ("panels"),
 whose warm-up comes after the second example mod and a mod of the harness's own have registered their faces and
 textures, since nothing is presented until they have; two copies asked at once ("copies"); the
 example finding a copy under another name ("found-by-scan") and GraceUI's own folder ("found-by-path", which runs a copy
 of the harness from `bin\by-path`, beside the example and `GraceUI\graceui.dll`, as a game's folder); and a simulated
-anti-cheat hit by each clause ("anti-cheat", "anti-cheat-parent"); and five from the host's review: a larger window
+anti-cheat hit by each clause ("anti-cheat", "anti-cheat-parent"); two example mods at once, `hello-notice` and
+`hello-debug-view`, the one loaded before GraceUI and the other after the hooks, and the other way round ("examples",
+"examples-reversed", D156); graceui-sys with GraceUI not installed ("absent", D164); the in-game menu at 1920 by 1080 ("menu", D167); a mod's space across the ABI with the browser view's server, run from the build's GraceUI folder ("pages", D169); the menu on mods' spaces, with GraceUI's at the rail's foot ("menu-space", D171); the in-game spikes' observer and the stand-in for another overlay, loaded before GraceUI with the typing test, and after its hooks ("spike", "spike-after", D175; `tools/grace-spike/README.md`); and five from the host's review: a larger window
 found before the game's ("decoy-window"), the shared atlas running out of room ("atlas-full"), a request made while
 the first is still running ("slow-first"), a second copy with a long name ("long-name") and the game moving to a new
 device ("device-change"). Each scenario whose first `GraceUI_RequestApi`
@@ -254,6 +388,13 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | providers | One provider's danger ends the holder and a request is not now (danger); another's game menu, the first clear: two providers, a request not now (game menu); an unknown flag refused; the second disconnected: its claims gone, a request granted |
 | panel frames | Over 300 frames with seven panels shown while the example publishes a list every 10 ms from its thread, the GPU idle before each (in up to three windows, D154): every frame draws panels, no allocation and no free on the present thread (nor over the 300 frames run as a game runs them), and GraceUI's own work within 1 ms at p99 |
 | disconnect | The harness's mod disconnects: its panels leave the frame, its textures are released after their last frame, the example's stay; its id connects again with a new budget and window |
+| two examples | (the examples and examples-reversed scenarios, D156) The example loaded before GraceUI finds it by name and starts the host; the other, loaded after the hooks, finds it at its first look; both connect, the debug view's banner shows its closed text |
+| both notices | The banner and `hello-notice`'s notice are drawn, in the order they connected, and nothing else: the debug view is hidden |
+| debug view opened | Injected F11 reaches neither DirectInput nor the game's window; the debug view takes it through `poll`, and its panel is drawn at the bottom left (its ground and its own font's ink, the edges outside it clear), its banner's text replaced in place |
+| debug view closed | F11 again: the panel gone, the banner as it was, both notices drawn and nothing else |
+| a mod's space | (the pages scenario, D169) A mod registers the demo space for both views (again: duplicate_id; another mod's id, or no view: refused) and GraceUI's server starts on port 8642; the harness, a browser through the server suite's client, takes the cookie from the GraceUI folder's page, a ticket and a WebSocket whose welcome names GraceUI's space and the demo's; a sub reaches the mod as a sub frame and its state reaches the view; a command reaches it with a reply handle (an 8-byte buffer answers full, with the size needed), and its answer the view, once; a setting the browser changes is the menu's too; when the mod disconnects the server stops and the view is closed. With `GRACE_HOLD_S` set, the mod stays that many seconds first, answering as the demo space, so that a real browser on this machine can open `http://127.0.0.1:8642/` (graceui.dll's server under Wine, serving the web app the build laid out in its GraceUI folder) |
+| the menu | (the menu scenario, D167) F5 opens GraceUI › Menu as the holder of kind menu: its first list laid out on GraceUI's thread and drawn over the game, the page and focus as expected; → raises `ui.scale` by its step and the page is laid out again at the new scale; ↓ → chooses Grace Clear and the frame's colours change; R resets each; with the menu open, the present thread's own work is held to p99 1 ms at 640 by 360 (and measured at 1920 by 1080) with nothing allocated; Esc twice, F5 and danger each end it through the one close routine, F5 then says why it does not open, and no press reaches the game. With `GRACE_SHOTS` set to a folder (a Windows path, `Z:\...` under Wine), it keeps two screenshots there as BMP for the owner's look review |
+| not installed | (the absent scenario, D164) With no GraceUI loaded and no `GraceUI\graceui.dll`, `graceui_sys_find` with `GRACEUI_SYS_STOP_IF_ABSENT` answers null after one look, `installed` 0; without the flag it looks until its time is up |
 | two copies at once | (the copies scenario) Of two copies asked at once from two threads, exactly one answers a table; the other idles, and the active one names it once |
 | found by scan | (found-by-scan) With no module named `graceui.dll`, the example finds a copy named `grace-renamed.dll` by its scan, at its first look |
 | found by path | (found-by-path) With no copy loaded, the example loads `GraceUI\graceui.dll` from the game's folder |
@@ -291,6 +432,7 @@ running thread's runtime a tick late and sees nothing of a virtual machine's sto
 cmake -S . -B build-mingw-test -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release \
   -DGRACEUI_TEST_EXPORTS=ON
 cmake --build build-mingw-test
+unset TMPDIR    # as for the test build above
 WINEPREFIX=<dir> WINEDEBUG=-all xvfb-run -a -s "-screen 0 1280x720x24" wine64 build-mingw-test/bin/grace-harness.exe
 ```
 

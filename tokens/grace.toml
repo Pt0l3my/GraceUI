@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: MIT
+# tokens/grace.toml: the Grace theme's tokens (GraceUI DESIGN §3, D108, D157), the one source for both views
+# (invariant 13). tools/tokens/build.py writes web/src/tokens.css (CSS custom properties) and
+# src/grace-tokens/include/grace/tokens.h (a C++ header) from it, checks every readable text against its grounds (4.5:1,
+# §3.3) and every duration against invariant 14 (no looping animation); `--check` fails when either output is no longer
+# what this file builds. Edit this file, never the outputs. Every value is ours (§3.17).
+
+schema = 1
+
+# ---- Colours (§3.2), by role. A colour is "#RRGGBB", or a mix: another token at an alpha, drawn over whatever ground is
+# under it (both views composite it the same way).
+
+[variant.grace]
+name = "Grace"
+
+[variant.grace.colour]
+"ground.well" = "#0B0A08"   # inputs, meter tracks, key caps
+"ground.0" = "#100E0B"      # rail, outer frame, scrim base
+"ground.1" = "#161410"      # page ground
+"ground.2" = "#1D1A15"      # cards, detail pane, settings panel, notices
+"ground.3" = "#26221B"      # selected row, raised button, active chip, tag
+"ground.4" = "#2F2A21"      # pressed, hover on raised, tooltip
+"ink.hi" = "#E8E2D0"        # titles, names, active items
+"ink.body" = "#CFC6B1"      # table text, prose, values
+"ink.mute" = "#A69D89"      # inactive rail items and tabs, secondary facts
+"ink.faint" = "#9A927F"     # eyebrows, column heads, counts: the floor for readable text
+"ink.off" = "#5F584B"       # disabled only; never information
+"gold" = "#C9A65A"          # accent bar, underline, primary fill, meters
+"gold.hi" = "#E3C579"       # active text, focus ring, active icon
+"gold.name" = "#C8B27A"     # speaker names
+"gold.deep" = "#8C6F35"     # strong rule, selected card border, the lozenge; never text
+"on.gold" = "#15120C"       # text on gold fills
+"rule" = { mix = "gold", alpha = 0.14 }         # hairlines, row separators (decorative)
+"rule.strong" = { mix = "gold", alpha = 0.28 }  # under column heads and page titles
+"edge" = "#7E7460"          # borders that identify a control
+"rot" = "#D9806F"           # danger text and icons
+"rot.fill" = "#8F3A2F"      # danger button fill
+"rot.edge" = "#9E3B32"      # danger borders; never text
+"ember" = "#DB9550"         # warnings, always with an icon (D25)
+"moss" = "#A3B37E"          # success, on, healthy
+"glint" = "#94B6D2"         # information, system and provider events
+"tint.hover" = { mix = "gold", alpha = 0.05 }
+"tint.select" = { mix = "gold", alpha = 0.10 }
+"scrim" = { mix = "ground.0", alpha = 0.70 }    # the modal scrim (§3.6)
+"shadow" = { mix = "#000000", alpha = 0.50 }    # the one soft shadow (§3.6)
+
+[variant.grace.size]
+"edge.width" = 1            # a control's border
+"focus.width" = 2           # the focus ring
+"focus.offset" = 2          # off the element, on the ground (§3.3)
+
+# Grace Clear, the high-contrast variant (§3.3, §3.15): what differs from Grace. It has no faint level: ink.faint is
+# ink.mute's value.
+[variant.clear]
+name = "Grace Clear"
+base = "grace"
+
+[variant.clear.colour]
+"ground.well" = "#000000"
+"ink.hi" = "#F4EFE2"
+"ink.mute" = "#C2BAA6"
+"ink.faint" = "#C2BAA6"
+
+[variant.clear.size]
+"edge.width" = 2
+"focus.width" = 3
+
+# ---- What the contrast check holds (§3.3, U7): every text token on every ground at 4.5:1 or better, edge at 3:1, and
+# the pairs named. Tokens never used for text are listed, and nothing may use them for text.
+
+[contrast]
+text = ["ink.hi", "ink.body", "ink.mute", "ink.faint", "gold", "gold.hi", "gold.name", "rot", "ember", "moss", "glint"]
+grounds = ["ground.well", "ground.0", "ground.1", "ground.2", "ground.3", "ground.4"]
+text_min = 4.5
+edges = ["edge"]
+edge_min = 3.0
+pairs = [["on.gold", "gold"], ["ink.hi", "rot.fill"]]
+never_text = ["rot.edge", "gold.deep", "ink.off", "rule", "rule.strong", "tint.hover", "tint.select"]
+
+# ---- Fonts (§3.4): families by role; the files are fetched pinned with their OFL.txt (cmake/fonts.cmake).
+
+[font]
+display = "Cinzel"
+serif = "EB Garamond"
+sans = "Noto Sans"
+mono = "Noto Sans Mono"
+
+# ---- Type scale (§3.5): CSS px at 1080p and scale 100%; tracking in em; case "none" or "upper".
+
+[type]
+"display.xl" = { font = "display", size = 40, line = 44, weight = 500, tracking = 0.04 }
+"display.lg" = { font = "display", size = 30, line = 36, weight = 500, tracking = 0.03 }
+"display.md" = { font = "display", size = 22, line = 28, weight = 600, tracking = 0.02 }
+"title" = { font = "serif", size = 19, line = 26, weight = 600 }
+"prose" = { font = "serif", size = 17, line = 26, weight = 400 }
+"rail" = { font = "serif", size = 17, line = 24, weight = 500 }
+"ui" = { font = "sans", size = 15, line = 22, weight = 400 }
+"ui.sm" = { font = "sans", size = 13.5, line = 20, weight = 400 }
+"tab" = { font = "sans", size = 13, line = 18, weight = 600, tracking = 0.10, case = "upper" }
+"eyebrow" = { font = "sans", size = 12, line = 16, weight = 600, tracking = 0.14, case = "upper" }
+"num" = { font = "mono", size = 14, line = 20, weight = 400 }
+
+# The minimums (D23), which every type token and every size a page asks for keeps.
+[type_min]
+prose = 16
+ui = 13.5
+eyebrow = 12
+tag = 11
+
+# ---- Spacing, frame, radii (§3.6), in px at 1080p and 100%.
+
+[space]
+steps = [2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64]
+
+[size]
+"rail" = 240
+"rail.collapsed" = 56
+"rail.padding" = 24
+"rail.category" = 40
+"rail.page" = 32
+"topbar" = 44
+"gutter" = 32
+"pane.min" = 360
+"pane.max" = 420
+"content.max" = 1600
+"row" = 44
+"row.compact" = 36
+"row.head" = 32
+"settings.row" = 48
+"settings.control" = 280
+
+[radius]
+"control" = 2
+"card" = 4
+"row" = 0
+
+# ---- Motion (§3.10), in ms. Each is a fade, a transition, a hold, or instant; none loops (invariant 14). With reduced
+# motion every one becomes 0, but a fade, which becomes at most `reduced_fade_max`.
+
+[dur]
+reduced_fade_max = 60
+"open" = { ms = 120, kind = "fade" }
+"close" = { ms = 200, kind = "fade" }
+"close.danger" = { ms = 0, kind = "instant" }
+"page" = { ms = 120, kind = "fade" }
+"reveal" = { ms = 100, kind = "fade" }
+"state" = { ms = 100, kind = "transition" }
+"row.tint" = { ms = 1000, kind = "hold" }
+"row.fade" = { ms = 300, kind = "fade" }

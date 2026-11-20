@@ -1,0 +1,284 @@
+{
+  "space": "demo",
+  "name": "Demo space",
+  "minor": 1,
+  "categories": [
+    {
+      "id": "lanterns",
+      "name": "Lanterns",
+      "pages": [
+        "demo.overview",
+        "demo.behaviour"
+      ]
+    },
+    {
+      "id": "records",
+      "name": "Records",
+      "pages": [
+        "demo.log",
+        "demo.festival"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "demo.overview",
+      "category": "lanterns",
+      "name": "Overview",
+      "description": "The lantern at a glance: its flame, its oil and its last trim.",
+      "help": {
+        "purpose": "See how the north lantern is burning right now.",
+        "steps": [
+          "Read the tiles: flame, oil and the time since the last trim.",
+          "Trim the wick from the header when the flame gutters.",
+          "Adjust its brightness here, or everything else on Behaviour."
+        ]
+      },
+      "related": [
+        "demo.behaviour",
+        "demo.log"
+      ],
+      "increment": "0.2",
+      "actions": [
+        {
+          "id": "trim",
+          "label": "Trim the wick",
+          "command": "lantern.trim",
+          "tone": "primary"
+        }
+      ],
+      "sections": [
+        {
+          "id": "now",
+          "title": "Now",
+          "blocks": [
+            {
+              "kind": "component",
+              "component": "stat_tiles",
+              "topic": "lantern.status"
+            },
+            {
+              "kind": "component",
+              "component": "computed_sentence",
+              "topic": "lantern.status"
+            },
+            {
+              "kind": "shortcuts",
+              "keys": [
+                "lantern.brightness"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo.behaviour",
+      "category": "lanterns",
+      "name": "Behaviour",
+      "description": "How the lantern burns, how often it flickers, and who keeps it.",
+      "help": {
+        "purpose": "Set how the lantern burns and who keeps it.",
+        "steps": [
+          "Choose the flame on the Light tab.",
+          "Set its rhythm on the Timing tab; rare settings are under Advanced.",
+          "Name the keeper and the trimming key on the Keeper tab."
+        ]
+      },
+      "related": [
+        "demo.overview",
+        "demo.festival"
+      ],
+      "increment": "0.2",
+      "tabs": [
+        {
+          "id": "light",
+          "name": "Light",
+          "sections": [
+            {
+              "id": "flame",
+              "title": "Flame",
+              "blocks": [
+                {
+                  "kind": "settings",
+                  "keys": [
+                    "lantern.enabled",
+                    "lantern.brightness",
+                    "lantern.colour",
+                    "lantern.mode",
+                    "lantern.shield"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "timing",
+          "name": "Timing",
+          "sections": [
+            {
+              "id": "rhythm",
+              "title": "Rhythm",
+              "description": "How the flame moves.",
+              "blocks": [
+                {
+                  "kind": "settings",
+                  "keys": [
+                    "lantern.gap_s",
+                    "lantern.wicks"
+                  ]
+                }
+              ],
+              "advanced": [
+                {
+                  "kind": "settings",
+                  "keys": [
+                    "lantern.night_only"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "keeper",
+          "name": "Keeper",
+          "sections": [
+            {
+              "id": "keeper",
+              "title": "Keeper",
+              "blocks": [
+                {
+                  "kind": "settings",
+                  "keys": [
+                    "lantern.keeper",
+                    "lantern.trim_key",
+                    "lantern.oil_token"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo.log",
+      "category": "records",
+      "name": "Log",
+      "description": "What the lantern did, as it happens, and the keeper's journal.",
+      "help": {
+        "purpose": "Follow the lantern's log as it is written, and read the keeper's journal.",
+        "steps": [
+          "Watch new lines arrive at the top of the log.",
+          "Read older entries in the journal below.",
+          "Clear the log from the header; the journal stays."
+        ]
+      },
+      "related": [
+        "demo.overview"
+      ],
+      "increment": "0.2",
+      "actions": [
+        {
+          "id": "clear",
+          "label": "Clear the log",
+          "command": "lantern.clear_log",
+          "tone": "destructive",
+          "confirm": "The log's lines are removed. The journal is kept."
+        }
+      ],
+      "sections": [
+        {
+          "id": "log",
+          "title": "Log",
+          "blocks": [
+            {
+              "kind": "component",
+              "component": "live_feed",
+              "topic": "lantern.log"
+            }
+          ]
+        },
+        {
+          "id": "journal",
+          "title": "Journal",
+          "collapsed": true,
+          "blocks": [
+            {
+              "kind": "component",
+              "component": "log_tail",
+              "topic": "lantern.journal"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo.festival",
+      "category": "records",
+      "name": "Festival",
+      "description": "Festival lights, in a later version.",
+      "help": {
+        "purpose": "A later version strings small lights about the lantern for the festival.",
+        "steps": [
+          "Read what the later version adds.",
+          "Until then, the lantern burns as Behaviour sets it.",
+          "Its one setting stays off and locked here."
+        ]
+      },
+      "related": [
+        "demo.behaviour"
+      ],
+      "tag": "later",
+      "sections": [
+        {
+          "id": "festival",
+          "title": "Festival",
+          "blocks": [
+            {
+              "kind": "component",
+              "component": "statement",
+              "props": {
+                "text": "A later version strings small lights about the lantern for the festival. This version keeps the lantern alone."
+              }
+            },
+            {
+              "kind": "settings",
+              "keys": [
+                "lantern.festival"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "topics": [
+    {
+      "id": "settings",
+      "shape": "state"
+    },
+    {
+      "id": "lantern.status",
+      "shape": "state"
+    },
+    {
+      "id": "lantern.log",
+      "shape": "stream",
+      "ring": 200
+    },
+    {
+      "id": "lantern.journal",
+      "shape": "stream",
+      "ring": 500
+    }
+  ],
+  "commands": [
+    "settings.set",
+    "settings.reset",
+    "lantern.trim",
+    "lantern.clear_log"
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "space": "tidepool",
+  "name": "Tide pool",
+  "minor": 0,
+  "categories": [{"id": "pool", "name": "Pool", "pages": ["tidepool.today", "tidepool.watch"]}],
+  "pages": [
+    {
+      "id": "tidepool.today",
+      "category": "pool",
+      "name": "Today",
+      "description": "The pool as this tide leaves it: its depth and what lives in it.",
+      "help": {
+        "purpose": "See the tide pool as the sea leaves it.",
+        "steps": "Read the tiles, then follow the notes."
+      },
+      "related": ["tidepool.watch"],
+      "increment": "0.2",
+      "actions": [{"id": "count", "label": "Count the crabs", "command": "pool.count", "tone": "primary"}],
+      "sections": [
+        {"id": "now", "title": "Now", "blocks": [{"kind": "component", "component": "stat_tiles", "topic": "pool.status"}]},
+        {"id": "notes", "title": "Notes", "blocks": [{"kind": "component", "component": "live_feed", "topic": "pool.notes"}]}
+      ]
+    },
+    {
+      "id": "tidepool.watch",
+      "category": "pool",
+      "name": "Watch",
+      "description": "How the watcher keeps the pool's notes.",
+      "help": {
+        "purpose": "Set how the watcher keeps notes.",
+        "steps": ["Turn the watch on or off.", "Choose how long the watcher waits between notes.", "Read the notes on Today."]
+      },
+      "related": ["tidepool.today"],
+      "increment": "0.2",
+      "sections": [
+        {"id": "watch", "title": "Watch", "blocks": [{"kind": "settings", "keys": ["pool.watching", "pool.every_s"]}]}
+      ]
+    }
+  ],
+  "topics": [
+    {"id": "settings", "shape": "state"},
+    {"id": "pool.status", "shape": "state"},
+    {"id": "pool.notes", "shape": "stream", "ring": 4}
+  ],
+  "commands": ["settings.set", "settings.reset", "pool.count"]
+}

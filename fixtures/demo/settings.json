@@ -1,0 +1,218 @@
+{
+  "schema": {
+    "number": 1,
+    "hash": "823a58aeb0307df3"
+  },
+  "settings": [
+    {
+      "key": "lantern.enabled",
+      "type": "bool",
+      "default": true,
+      "label": "Lantern lit",
+      "help": "Whether the north lantern burns at all.",
+      "synonyms": [
+        "on",
+        "off",
+        "light"
+      ],
+      "home": "demo.behaviour",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "lantern.brightness",
+      "type": "number",
+      "default": 0.8,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05,
+      "label": "Brightness",
+      "help": "How brightly the lantern burns, from a glimmer to its full flame.",
+      "synonyms": [
+        "light",
+        "glow",
+        "flame"
+      ],
+      "home": "demo.behaviour",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "lantern.colour",
+      "type": "choice",
+      "default": "amber",
+      "choices": [
+        {
+          "value": "amber",
+          "label": "Amber"
+        },
+        {
+          "value": "white",
+          "label": "White"
+        },
+        {
+          "value": "blue",
+          "label": "Blue"
+        }
+      ],
+      "label": "Flame colour",
+      "help": "The colour of the flame behind the glass.",
+      "synonyms": [
+        "color",
+        "tint"
+      ],
+      "home": "demo.behaviour",
+      "effect": "next_moment",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "lantern.mode",
+      "type": "tri_state",
+      "default": "auto",
+      "label": "Shutters",
+      "help": "Open, closed, or left to the keeper's judgement.",
+      "synonyms": [
+        "shutter",
+        "cover"
+      ],
+      "home": "demo.behaviour",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "lantern.shield",
+      "type": "tri_state",
+      "default": "inherit",
+      "third": "inherit",
+      "label": "Wind shield",
+      "help": "On, off, or as the lighthouse's own setting has it.",
+      "synonyms": [
+        "wind",
+        "shield",
+        "glass"
+      ],
+      "home": "demo.behaviour",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "lantern.gap_s",
+      "type": "duration_s",
+      "default": 2.5,
+      "min": 0.5,
+      "max": 10.0,
+      "step": 0.5,
+      "unit": "s",
+      "label": "Time between flickers",
+      "help": "The shortest pause between two flickers of the flame.",
+      "synonyms": [
+        "gap",
+        "delay",
+        "flicker"
+      ],
+      "home": "demo.behaviour",
+      "effect": "next_moment",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "lantern.wicks",
+      "type": "integer",
+      "default": 3,
+      "min": 1,
+      "max": 8,
+      "step": 1,
+      "label": "Wicks",
+      "help": "How many wicks the lantern holds.",
+      "synonyms": [
+        "wick",
+        "candles"
+      ],
+      "home": "demo.behaviour",
+      "effect": "next_request",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "lantern.night_only",
+      "type": "bool",
+      "default": false,
+      "label": "Only at night",
+      "help": "Lights the lantern only after dusk. It waits on the keeper's sundial.",
+      "synonyms": [
+        "night",
+        "dusk"
+      ],
+      "home": "demo.behaviour",
+      "effect": "now",
+      "availability": "check:sundial",
+      "locked": false
+    },
+    {
+      "key": "lantern.keeper",
+      "type": "text",
+      "default": "The north keeper",
+      "label": "Keeper's name",
+      "help": "The name the log gives the keeper.",
+      "synonyms": [
+        "name",
+        "keeper"
+      ],
+      "home": "demo.behaviour",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "lantern.trim_key",
+      "type": "key_name",
+      "default": "F9",
+      "label": "Trim the wick",
+      "help": "The key that trims the wick at once.",
+      "synonyms": [
+        "trim",
+        "hotkey"
+      ],
+      "home": "demo.behaviour",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "lantern.oil_token",
+      "type": "secret",
+      "default": "",
+      "label": "Oil merchant's token",
+      "help": "The token the oil merchant asked for. It is never shown again once saved.",
+      "synonyms": [
+        "token",
+        "key",
+        "merchant"
+      ],
+      "home": "demo.behaviour",
+      "effect": "next_request",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "lantern.festival",
+      "type": "bool",
+      "default": false,
+      "label": "Festival lights",
+      "help": "Strings of small lights for the festival, in a later version.",
+      "synonyms": [
+        "festival",
+        "garland"
+      ],
+      "home": "demo.festival",
+      "effect": "now",
+      "availability": "later",
+      "locked": true
+    }
+  ]
+}

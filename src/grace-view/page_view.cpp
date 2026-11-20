@@ -1,0 +1,1314 @@
+// SPDX-License-Identifier: MIT
+// page_view.cpp: one space's menu in game (page_view.h).
+#include "grace/view/page_view.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+
+namespace grace::view {
+namespace {
+
+using protocol::Json;
+using protocol::Setting;
+using protocol::SettingType;
+using tokens::Colour;
+using tokens::TypeRole;
+namespace size = tokens::size;
+
+bool numeric(SettingType type) {
+  return type == SettingType::integer || type == SettingType::number || type == SettingType::duration_s;
+}
+
+// Decimals a step shows: 0.05 two, 0.5 one, 1 none.
+int decimals_of(double step) {
+  int d = 0;
+  while (d < 4 && std::fabs(step * std::pow(10.0, d) - std::round(step * std::pow(10.0, d))) > 1e-9) {
+    ++d;
+  }
+  return d;
+}
+
+std::string lower(std::string_view text) {
+  std::string out(text);
+  for (char& c : out) {
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+  }
+  return out;
+}
+
+// A tri-state's three values, its third auto or inherit (D163), and their labels.
+const char* tri_value(const Setting& s, int i) {
+  if (i < 2) {
+    return i == 0 ? "on" : "off";
+  }
+  return s.third.value_or(protocol::TriThird::auto_) == protocol::TriThird::inherit ? "inherit" : "auto";
+}
+const char* tri_label(const Setting& s, int i) {
+  if (i < 2) {
+    return i == 0 ? "On" : "Off";
+  }
+  return s.third.value_or(protocol::TriThird::auto_) == protocol::TriThird::inherit ? "Inherit" : "Auto";
+}
+
+// The layout's running state: where the next row goes, and the focused element's rectangle once it is placed.
+struct Cursor {
+  DisplayList& out;
+  const Fonts& fonts;
+  float s;
+  std::uint16_t clip = 0;
+  Rect focus{};
+  bool focus_found = false;
+
+  void fill(Rect r, Colour c, float radius = 0, std::uint8_t alpha = 255) {
+    Item item;
+    item.shape = Shape::fill;
+    item.colour = c;
+    item.alpha = alpha;
+    item.clip = clip;
+    item.rect = r;
+    item.radius = radius;
+    out.items.push_back(item);
+  }
+  void stroke(Rect r, Colour c, float width, float radius = 0, std::uint8_t alpha = 255) {
+    Item item;
+    item.shape = Shape::stroke;
+    item.colour = c;
+    item.alpha = alpha;
+    item.clip = clip;
+    item.rect = r;
+    item.radius = radius;
+    item.width = width;
+    out.items.push_back(item);
+  }
+  void line(float x, float y, float w, Colour c) {
+    Item item;
+    item.shape = Shape::line;
+    item.colour = c;
+    item.clip = clip;
+    item.rect = Rect{x, y, w, 1};
+    out.items.push_back(item);
+  }
+  void circle(Rect r, Colour c, std::uint8_t alpha = 255) {
+    Item item;
+    item.shape = Shape::circle;
+    item.colour = c;
+    item.alpha = alpha;
+    item.clip = clip;
+    item.rect = r;
+    out.items.push_back(item);
+  }
+  void diamond(Rect r, Colour c) {
+    Item item;
+    item.shape = Shape::diamond;
+    item.colour = c;
+    item.clip = clip;
+    item.rect = r;
+    item.width = std::max(1.0f, std::round(s));
+    out.items.push_back(item);
+  }
+  float text(std::string_view t, TypeRole role, float x, float y, float max_width, Colour c, std::uint8_t alpha = 255) {
+    return place_text(out, fonts, role, s, t, x, y, max_width, c, alpha, clip);
+  }
+  float width(std::string_view t, TypeRole role) const { return measure(fonts, role, s, t); }
+  void focused(Rect r) {
+    focus = r;
+    focus_found = true;
+  }
+};
+
+}  // namespace
+
+// ---- Loading and focus.
+
+bool PageView::load(const protocol::SpacePages& pages, const protocol::SettingsDescription& settings, std::string& why) {
+  pages_ = pages;
+  settings_ = settings.settings;
+  by_key_.clear();
+  for (std::size_t i = 0; i < settings_.size(); ++i) {
+    by_key_.emplace(settings_[i].key, i);
+  }
+  if (pages_.pages.empty()) {
+    why = "the space has no page";
+    return false;
+  }
+  for (const protocol::Page& page : pages_.pages) {
+    const auto check_sections = [&](const std::vector<protocol::PageSection>& list) {
+      for (const protocol::PageSection& section : list) {
+        if (section.collapsed.value_or(false)) {
+          collapsed_.insert(page.id + "/" + section.id);
+        }
+        for (const auto* blocks : {&section.blocks, section.advanced ? &*section.advanced : nullptr}) {
+          if (blocks == nullptr) {
+            continue;
+          }
+          for (const protocol::PageBlock& block : *blocks) {
+            for (const std::string& key : block.keys.value_or(std::vector<std::string>{})) {
+              if (by_key_.find(key) == by_key_.end()) {
+                why = page.id + " names " + key + ", which is not a setting of the space";
+                return false;
+              }
+            }
+          }
+        }
+      }
+      return true;
+    };
+    if (page.sections && !check_sections(*page.sections)) {
+      return false;
+    }
+    for (const protocol::PageTab& tab : page.tabs.value_or(std::vector<protocol::PageTab>{})) {
+      if (!check_sections(tab.sections)) {
+        return false;
+      }
+    }
+  }
+  page_ = 0;
+  tab_ = 0;
+  scope_ = Scope::page;
+  rebuild();
+  focus_first_control();
+  return true;
+}
+
+void PageView::set_inherited(const std::vector<protocol::InheritedValue>& inherited) {
+  inherited_.clear();
+  for (const protocol::InheritedValue& one : inherited) {
+    inherited_[one.key] = one;
+  }
+}
+
+void PageView::set_values(const Json& values) {
+  if (values.is_object()) {
+    for (auto it = values.begin(); it != values.end(); ++it) {
+      values_[it.key()] = it.value();
+    }
+  }
+}
+
+namespace {
+
+// "0.6" as (0, 6); false for anything else.
+bool parse_increment(std::string_view text, std::pair<unsigned, unsigned>& out) {
+  const std::size_t dot = text.find('.');
+  if (dot == std::string_view::npos || dot == 0 || dot + 1 >= text.size() || text.size() > 16) {
+    return false;
+  }
+  unsigned parts[2] = {0, 0};
+  for (int part = 0; part < 2; ++part) {
+    const std::string_view digits = part == 0 ? text.substr(0, dot) : text.substr(dot + 1);
+    for (const char ch : digits) {
+      if (ch < '0' || ch > '9') {
+        return false;
+      }
+      parts[part] = parts[part] * 10 + static_cast<unsigned>(ch - '0');
+    }
+  }
+  out = {parts[0], parts[1]};
+  return true;
+}
+
+}  // namespace
+
+void PageView::set_increment(std::string_view increment) {
+  absent_.clear();
+  std::pair<unsigned, unsigned> running{};
+  if (parse_increment(increment, running)) {
+    for (const protocol::Page& page : pages_.pages) {
+      std::pair<unsigned, unsigned> ships{};
+      if (page.increment && parse_increment(*page.increment, ships) && ships > running) {
+        absent_.insert(page.id);
+      }
+    }
+  }
+  if (!pages_.pages.empty() && !present(pages_.pages[page_].id)) {
+    for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
+      if (present(pages_.pages[p].id)) {
+        page_ = p;  // the open page has gone: the first present one
+        tab_ = 0;
+        page_focus_ = 0;
+        break;
+      }
+    }
+  }
+  rebuild();
+}
+
+bool PageView::present(std::string_view page_id) const { return absent_.find(page_id) == absent_.end(); }
+
+bool PageView::open(std::string_view page_id) {
+  for (std::size_t i = 0; i < pages_.pages.size(); ++i) {
+    if (pages_.pages[i].id == page_id && present(page_id)) {
+      page_ = i;
+      tab_ = 0;
+      page_focus_ = 0;
+      scroll_ = 0;
+      confirming_.clear();
+      rebuild();
+      focus_first_control();
+      return true;
+    }
+  }
+  return false;
+}
+
+std::string_view PageView::page() const noexcept {
+  return pages_.pages.empty() ? std::string_view() : std::string_view(pages_.pages[page_].id);
+}
+
+const std::vector<protocol::PageSection>& PageView::sections() const {
+  const protocol::Page& page = current();
+  if (page.tabs && tab_ < page.tabs->size()) {
+    return (*page.tabs)[tab_].sections;
+  }
+  return page.sections ? *page.sections : no_sections_;
+}
+
+const Setting* PageView::setting(std::string_view key) const {
+  const auto it = by_key_.find(key);
+  return it == by_key_.end() ? nullptr : &settings_[it->second];
+}
+
+const Json& PageView::value(std::string_view key) const {
+  const auto it = values_.find(key);
+  if (it != values_.end()) {
+    return *it;
+  }
+  const Setting* s = setting(key);
+  return s != nullptr ? s->default_ : null_;
+}
+
+void PageView::set_rail(RailContext context) {
+  context_ = std::move(context);
+  rebuild();
+  rail_focus_ = rail_index_of_page();
+}
+
+void PageView::focus_rail(bool switcher) {
+  scope_ = Scope::rail;
+  rail_focus_ = rail_index_of_page();
+  if (switcher && !rail_.empty() && rail_[0].kind == RailEntry::Kind::switcher) {
+    rail_focus_ = 0;
+  }
+}
+
+Action PageView::follow(const RailLink& link) const {
+  Action action;
+  if (!link.space.empty()) {
+    action.kind = Action::Kind::switch_space;
+    action.space = link.space;
+    action.page = link.page;
+  }
+  return action;
+}
+
+void PageView::rebuild() {
+  using Kind = RailEntry::Kind;
+  rail_.clear();
+  if (!context_.switcher.empty()) {
+    rail_.push_back({Kind::switcher, 0});
+  }
+  for (std::size_t h = 0; h < context_.head.size(); ++h) {
+    rail_.push_back({Kind::head, h});
+  }
+  const std::string& category = current().category;
+  for (std::size_t c = 0; c < pages_.categories.size(); ++c) {
+    const auto& listed = pages_.categories[c].pages;
+    if (std::none_of(listed.begin(), listed.end(), [&](const std::string& id) { return present(id); })) {
+      continue;  // every page of it ships in a later increment
+    }
+    rail_.push_back({Kind::category, c});
+    if (pages_.categories[c].id == category) {  // the accordion: the open category's pages
+      for (const std::string& id : pages_.categories[c].pages) {
+        for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
+          if (pages_.pages[p].id == id && present(id)) {
+            rail_.push_back({Kind::page, p});
+          }
+        }
+      }
+    }
+  }
+  for (std::size_t f = 0; f < context_.foot.size(); ++f) {
+    rail_.push_back({Kind::foot, f});
+  }
+  focus_.clear();
+  const protocol::Page& page = current();
+  for (std::size_t a = 0; page.actions && a < page.actions->size(); ++a) {
+    focus_.push_back({FocusKind::action, (*page.actions)[a].id, a});
+  }
+  for (std::size_t t = 0; page.tabs && t < page.tabs->size(); ++t) {
+    focus_.push_back({FocusKind::tab, (*page.tabs)[t].id, t});
+  }
+  const auto& list = sections();
+  for (std::size_t i = 0; i < list.size(); ++i) {
+    const protocol::PageSection& section = list[i];
+    focus_.push_back({FocusKind::section, section.id, i});
+    if (collapsed_.count(page.id + "/" + section.id) != 0) {
+      continue;
+    }
+    const auto add_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
+      for (const protocol::PageBlock& block : blocks) {
+        for (const std::string& key : block.keys.value_or(std::vector<std::string>{})) {
+          if (block.kind == protocol::BlockKind::shortcuts && !present(settings_[by_key_.at(key)].home)) {
+            continue;  // a shortcut to a page of a later increment
+          }
+          focus_.push_back({block.kind == protocol::BlockKind::shortcuts ? FocusKind::shortcut : FocusKind::setting, key,
+                            by_key_.at(key)});
+        }
+      }
+    };
+    add_blocks(section.blocks);
+    if (section.advanced && !section.advanced->empty()) {
+      focus_.push_back({FocusKind::advanced, section.id, i});
+      if (advanced_open_.count(page.id + "/" + section.id) != 0) {
+        add_blocks(*section.advanced);
+      }
+    }
+  }
+  for (std::size_t r = 0; r < page.related.size(); ++r) {
+    if (!present(page.related[r])) {
+      continue;
+    }
+    focus_.push_back({FocusKind::related, page.related[r], r});
+  }
+  page_focus_ = std::min(page_focus_, focus_.empty() ? std::size_t{0} : focus_.size() - 1);
+  rail_focus_ = std::min(rail_focus_, rail_.empty() ? std::size_t{0} : rail_.size() - 1);
+}
+
+void PageView::focus_first_control() {
+  page_focus_ = 0;
+  for (std::size_t i = 0; i < focus_.size(); ++i) {
+    if (focus_[i].kind != FocusKind::section && focus_[i].kind != FocusKind::tab) {
+      page_focus_ = i;
+      return;
+    }
+  }
+}
+
+std::size_t PageView::rail_index_of_page() const {
+  for (std::size_t i = 0; i < rail_.size(); ++i) {
+    if (rail_[i].own_page() && rail_[i].index == page_) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+std::string PageView::focused() const {
+  if (scope_ == Scope::top) {
+    return "search";
+  }
+  if (scope_ == Scope::rail) {
+    if (rail_.empty()) {
+      return "rail:";
+    }
+    const RailEntry& e = rail_[rail_focus_];
+    switch (e.kind) {
+      case RailEntry::Kind::category: return "rail:" + pages_.categories[e.index].id;
+      case RailEntry::Kind::page: return "rail:" + pages_.pages[e.index].id;
+      case RailEntry::Kind::head: return "rail:" + context_.head[e.index].space + "/" + context_.head[e.index].page;
+      case RailEntry::Kind::foot: return "rail:" + context_.foot[e.index].space + "/" + context_.foot[e.index].page;
+      case RailEntry::Kind::switcher: return "rail:switcher";
+    }
+    return "rail:";
+  }
+  if (focus_.empty()) {
+    return "";
+  }
+  static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related"};
+  const Focus& f = focus_[page_focus_];
+  return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
+}
+
+// ---- Values.
+
+std::string PageView::format(std::string_view key, const Json& v) const {
+  const Setting* s = setting(key);
+  if (s == nullptr) {
+    return "";
+  }
+  char text[64];
+  switch (s->type) {
+    case SettingType::bool_:
+      return v.is_boolean() && v.get<bool>() ? "On" : "Off";
+    case SettingType::integer:
+    case SettingType::number:
+    case SettingType::duration_s: {
+      const double n = v.is_number() ? v.get<double>() : 0.0;
+      std::snprintf(text, sizeof text, "%.*f", decimals_of(s->step.value_or(1.0)), n);
+      std::string out = text;
+      if (s->unit) {
+        const bool word = !s->unit->empty() && (*s->unit)[0] >= 'a' && (*s->unit)[0] <= 'z';
+        out += (word ? " " : "") + *s->unit;
+      }
+      return out;
+    }
+    case SettingType::choice:
+      for (const protocol::Choice& c : s->choices.value_or(std::vector<protocol::Choice>{})) {
+        if (v.is_string() && c.value == v.get_ref<const std::string&>()) {
+          return c.label;
+        }
+      }
+      return "";
+    case SettingType::tri_state:
+      for (int i = 0; i < 3; ++i) {
+        if (v.is_string() && v.get_ref<const std::string&>() == tri_value(*s, i)) {
+          return tri_label(*s, i);
+        }
+      }
+      return "";
+    case SettingType::secret:
+      return v.is_string() && !v.get_ref<const std::string&>().empty() ? "Set" : "Missing";  // §4.2.4's words
+    case SettingType::key_name:
+    case SettingType::text:
+      return v.is_string() ? v.get<std::string>() : "";
+  }
+  return "";
+}
+
+Action PageView::set(const Setting& s, Json v) {
+  if (s.locked) {
+    return {};
+  }
+  values_[s.key] = v;
+  refusals_.erase(s.key);
+  Action action;
+  action.kind = Action::Kind::command;
+  action.command.space = pages_.space;
+  action.command.name = "settings.set";
+  action.command.args = Json::object({{"key", s.key}, {"value", std::move(v)}});
+  return action;
+}
+
+Action PageView::change(const Setting& s, int direction, bool shift) {
+  const Json& v = value(s.key);
+  switch (s.type) {
+    case SettingType::bool_:
+      return set(s, Json(!(v.is_boolean() && v.get<bool>())));
+    case SettingType::integer:
+    case SettingType::number:
+    case SettingType::duration_s: {
+      const double step = s.step.value_or(1.0) * (shift ? 10 : 1);
+      double n = (v.is_number() ? v.get<double>() : 0.0) + direction * step;
+      n = std::clamp(n, s.min_.value_or(n), s.max_.value_or(n));
+      const double scale = std::pow(10.0, decimals_of(s.step.value_or(1.0)));
+      n = std::round(n * scale) / scale;
+      if (s.type == SettingType::integer) {
+        return set(s, Json(static_cast<std::int64_t>(std::llround(n))));
+      }
+      return set(s, Json(n));
+    }
+    case SettingType::choice: {
+      const auto& choices = s.choices.value_or(std::vector<protocol::Choice>{});
+      if (choices.empty()) {
+        return {};
+      }
+      std::size_t at = 0;
+      for (std::size_t i = 0; i < choices.size(); ++i) {
+        if (v.is_string() && choices[i].value == v.get_ref<const std::string&>()) {
+          at = i;
+        }
+      }
+      const std::size_t n = choices.size();
+      const std::size_t next = (at + (direction > 0 ? 1 : n - 1)) % n;
+      return set(s, Json(choices[next].value));
+    }
+    case SettingType::tri_state: {
+      int at = 2;
+      for (int i = 0; i < 3; ++i) {
+        if (v.is_string() && v.get_ref<const std::string&>() == tri_value(s, i)) {
+          at = i;
+        }
+      }
+      return set(s, Json(tri_value(s, (at + (direction > 0 ? 1 : 2)) % 3)));
+    }
+    case SettingType::key_name:
+    case SettingType::text:
+    case SettingType::secret:
+      return {};  // GraceUI's own text field and key capture come with the in-game menu (v0.6, D57); the browser edits them
+  }
+  return {};
+}
+
+void PageView::refused(std::string_view key, std::string_view reason) {
+  refusals_[std::string(key)] = std::string(reason);
+  for (std::size_t i = 0; i < focus_.size(); ++i) {
+    if (focus_[i].kind == FocusKind::setting && focus_[i].id == key) {
+      scope_ = Scope::page;
+      page_focus_ = i;
+    }
+  }
+}
+
+std::string PageView::availability_badge(const Setting& st) const {
+  const std::string& a = st.availability;
+  if (a.rfind("check:", 0) == 0) {
+    return "Waits on a game check";
+  }
+  if (a.rfind("version:", 0) == 0) {
+    return "Takes effect in v" + a.substr(8);
+  }
+  if (a.rfind("requires:", 0) == 0) {
+    const std::string key = a.substr(9);
+    const Json& v = value(key);
+    const bool off = (v.is_boolean() && !v.get<bool>()) || (v.is_string() && v.get_ref<const std::string&>() == "off");
+    const Setting* needed = setting(key);
+    return off ? "Off because " + (needed != nullptr ? needed->label : key) + " is off" : std::string();
+  }
+  return a == "inert" ? "No effect in this version" : std::string();
+}
+
+void PageView::restore(std::string_view key, const Json& value) {
+  const std::string name(key);
+  if (value.is_null()) {
+    values_.erase(name);
+  } else {
+    values_[name] = value;
+  }
+}
+
+std::vector<SearchHit> PageView::search(std::string_view query) const {
+  std::vector<SearchHit> hits;
+  const std::string q = lower(query);
+  if (q.empty()) {
+    return hits;
+  }
+  for (const Setting& s : settings_) {
+    bool match = lower(s.label).find(q) != std::string::npos || s.key.find(q) != std::string::npos;
+    for (const std::string& synonym : s.synonyms.value_or(std::vector<std::string>{})) {
+      match = match || lower(synonym).find(q) != std::string::npos;
+    }
+    if (match) {
+      if (present(s.home)) {
+        hits.push_back({s.key, s.home, s.label});
+      }
+    }
+  }
+  std::sort(hits.begin(), hits.end(), [](const SearchHit& a, const SearchHit& b) { return a.label < b.label; });
+  return hits;
+}
+
+// ---- Input (§5.3, §5.4, §5.7).
+
+// The first control of the page's focus order: past the section labels where there is one (§5.7).
+Action PageView::open_index(std::size_t index, Scope scope) {
+  page_ = index;
+  tab_ = 0;
+  page_focus_ = 0;
+  scroll_ = 0;
+  confirming_.clear();
+  rebuild();
+  focus_first_control();
+  rail_focus_ = rail_index_of_page();
+  scope_ = scope;
+  Action action;
+  action.kind = Action::Kind::opened_page;
+  action.page = current().id;
+  return action;
+}
+
+Action PageView::input(const Input& in) {
+  if (rail_.empty() && focus_.empty()) {
+    return {};
+  }
+  // A destructive action waits for its second press; any other key lets it go.
+  const bool confirming = !confirming_.empty();
+  if (confirming && !(in.key == Key::activate && scope_ == Scope::page)) {
+    confirming_.clear();
+    if (in.key == Key::back) {
+      return {};
+    }
+  }
+  // Rail order across categories, for Page Up and Page Down.
+  std::vector<std::size_t> order;
+  for (const protocol::Category& c : pages_.categories) {
+    for (const std::string& id : c.pages) {
+      for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
+        if (pages_.pages[p].id == id && present(id)) {
+          order.push_back(p);
+        }
+      }
+    }
+  }
+  const auto at_in_order = std::find(order.begin(), order.end(), page_) - order.begin();
+  switch (in.key) {
+    case Key::previous_page:
+      if (at_in_order > 0) {
+        return open_index(order[static_cast<std::size_t>(at_in_order - 1)], scope_);
+      }
+      return {};
+    case Key::next_page:
+      if (static_cast<std::size_t>(at_in_order + 1) < order.size()) {
+        return open_index(order[static_cast<std::size_t>(at_in_order + 1)], scope_);
+      }
+      return {};
+    case Key::previous_tab:
+    case Key::next_tab: {
+      const auto& tabs = current().tabs;
+      if (!tabs || tabs->size() < 2) {
+        return {};
+      }
+      const int step = in.key == Key::next_tab ? 1 : -1;
+      const int next = static_cast<int>(tab_) + step;
+      if (next < 0 || next >= static_cast<int>(tabs->size())) {
+        return {};
+      }
+      tab_ = static_cast<std::size_t>(next);
+      rebuild();
+      page_focus_ = 0;
+      for (std::size_t i = 0; i < focus_.size(); ++i) {
+        if (focus_[i].kind == FocusKind::tab && focus_[i].index == tab_) {
+          page_focus_ = i;
+        }
+      }
+      return {};
+    }
+    default:
+      break;
+  }
+  if (scope_ == Scope::rail) {
+    switch (in.key) {
+      case Key::up:
+        rail_focus_ = rail_focus_ > 0 ? rail_focus_ - 1 : 0;
+        return {};
+      case Key::down:
+        rail_focus_ = std::min(rail_focus_ + 1, rail_.size() - 1);
+        return {};
+      case Key::left:
+        if (rail_[rail_focus_].kind == RailEntry::Kind::switcher) {
+          return follow(context_.previous);
+        }
+        return {};
+      case Key::right:
+      case Key::next:
+        if (in.key == Key::right && rail_[rail_focus_].kind == RailEntry::Kind::switcher) {
+          return follow(context_.next);
+        }
+        scope_ = in.key == Key::next ? Scope::top : Scope::page;
+        return {};
+      case Key::activate: {
+        const RailEntry e = rail_[rail_focus_];
+        switch (e.kind) {
+          case RailEntry::Kind::switcher: return follow(context_.next);
+          case RailEntry::Kind::head: return follow(context_.head[e.index]);
+          case RailEntry::Kind::foot: return follow(context_.foot[e.index]);
+          case RailEntry::Kind::category:
+          case RailEntry::Kind::page: break;
+        }
+        if (e.category()) {
+          // The accordion: open the category and go to its first page, focus staying on the rail.
+          for (const std::string& id : pages_.categories[e.index].pages) {
+            for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
+              if (pages_.pages[p].id == id && present(id)) {
+                return open_index(p, Scope::rail);
+              }
+            }
+          }
+          return {};
+        }
+        return open_index(e.index, Scope::page);
+      }
+      case Key::back: {
+        Action action;
+        action.kind = Action::Kind::close;
+        return action;
+      }
+      default:
+        return {};
+    }
+  }
+  if (scope_ == Scope::top) {
+    switch (in.key) {
+      case Key::next:
+      case Key::down:
+        scope_ = Scope::page;
+        return {};
+      case Key::previous:
+      case Key::back:
+        scope_ = Scope::rail;
+        rail_focus_ = rail_index_of_page();
+        return {};
+      default:
+        return {};  // search's text field comes with GraceUI's own field (D57)
+    }
+  }
+  // The page.
+  if (focus_.empty()) {
+    if (in.key == Key::back || in.key == Key::left || in.key == Key::previous) {
+      scope_ = Scope::rail;
+      rail_focus_ = rail_index_of_page();
+    }
+    return {};
+  }
+  const Focus f = focus_[page_focus_];
+  const Setting* s = f.kind == FocusKind::setting ? &settings_[f.index] : nullptr;
+  switch (in.key) {
+    case Key::up:
+    case Key::previous:
+      if (page_focus_ > 0) {
+        --page_focus_;
+      } else if (in.key == Key::previous) {
+        scope_ = Scope::top;
+      }
+      return {};
+    case Key::down:
+    case Key::next:
+      page_focus_ = std::min(page_focus_ + 1, focus_.size() - 1);
+      return {};
+    case Key::left:
+    case Key::right:
+      if (s != nullptr && s->type != SettingType::key_name && s->type != SettingType::text &&
+          s->type != SettingType::secret) {
+        return change(*s, in.key == Key::right ? 1 : -1, in.shift);
+      }
+      if (in.key == Key::left) {
+        scope_ = Scope::rail;  // ← at the page's left edge goes back to the rail
+        rail_focus_ = rail_index_of_page();
+      }
+      return {};
+    case Key::back:
+      scope_ = Scope::rail;
+      rail_focus_ = rail_index_of_page();
+      return {};
+    case Key::reset:
+      if (s != nullptr && !s->locked) {
+        values_[s->key] = s->default_;
+        refusals_.erase(s->key);
+        Action action;
+        action.kind = Action::Kind::command;
+        action.command.space = pages_.space;
+        action.command.name = "settings.reset";
+        action.command.args = Json::object({{"scope", "key"}, {"target", s->key}});
+        return action;
+      }
+      return {};
+    case Key::activate:
+      switch (f.kind) {
+        case FocusKind::action: {
+          const protocol::PageAction& a = (*current().actions)[f.index];
+          if (a.confirm && confirming_ != a.id) {
+            confirming_ = a.id;  // the button asks for its second press
+            return {};
+          }
+          confirming_.clear();
+          Action action;
+          action.kind = Action::Kind::command;
+          action.command.space = pages_.space;
+          action.command.name = a.command;
+          // A destructive action's command carries its confirmation, after the second press (§7.3, D173).
+          action.command.args = a.tone == protocol::ActionTone::destructive ? Json::object({{"confirm", true}})
+                                                                            : Json::object();
+          return action;
+        }
+        case FocusKind::tab:
+          tab_ = f.index;
+          rebuild();
+          return {};
+        case FocusKind::section: {
+          const std::string id = current().id + "/" + f.id;
+          if (!collapsed_.erase(id)) {
+            collapsed_.insert(id);
+          }
+          rebuild();
+          return {};
+        }
+        case FocusKind::advanced: {
+          const std::string id = current().id + "/" + f.id;
+          if (!advanced_open_.erase(id)) {
+            advanced_open_.insert(id);
+          }
+          rebuild();
+          return {};
+        }
+        case FocusKind::setting:
+          if (s->type == SettingType::bool_ || s->type == SettingType::choice || s->type == SettingType::tri_state) {
+            return change(*s, 1, false);
+          }
+          return {};
+        case FocusKind::shortcut:
+        case FocusKind::related: {
+          const std::string target = f.kind == FocusKind::shortcut ? settings_[f.index].home : f.id;
+          for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
+            if (pages_.pages[p].id == target && present(target)) {
+              Action action = open_index(p, Scope::page);
+              if (f.kind == FocusKind::shortcut) {  // the row focused on its home page
+                for (std::size_t i = 0; i < focus_.size(); ++i) {
+                  if (focus_[i].kind == FocusKind::setting && focus_[i].id == f.id) {
+                    page_focus_ = i;
+                  }
+                }
+              }
+              return action;
+            }
+          }
+          return {};  // another space's page: the host follows a "<space>/<page>" link
+        }
+      }
+      return {};
+    default:
+      return {};
+  }
+}
+
+// ---- Layout (§3.6, §3.16, §4.2, §4.7).
+
+void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList& out) {
+  for (int pass = 0; pass < 2; ++pass) {
+    out.clear();
+    out.generation = fonts.generation;
+    const float s = viewport.scale;
+    Cursor c{out, fonts, s};
+    const float W = viewport.width;
+    const float H = viewport.height;
+    out.clips.push_back(Rect{0, 0, W, H});
+    // The scrim over the game, then the menu: at most 1.9 × the height wide, centred (§3.6).
+    c.fill(Rect{0, 0, W, H}, Colour::scrim);
+    const float menu_w = std::min(W, std::round(1.9f * H));
+    const float menu_x = std::round((W - menu_w) / 2);
+    c.fill(Rect{menu_x, 0, menu_w, H}, Colour::ground_1);
+
+    // ---- The rail.
+    const float rail_w = std::round(size::rail * s);
+    c.fill(Rect{menu_x, 0, rail_w, H}, Colour::ground_0);
+    const float pad = std::round(size::rail_padding * s);
+    float y = pad;
+    c.text(context_.title.empty() ? pages_.name : context_.title, TypeRole::display_md, menu_x + pad, y,
+           rail_w - 2 * pad, Colour::gold);
+    y += std::round(line_height(TypeRole::display_md, s) + 16 * s);
+    // GraceUI's links at the rail's foot, pinned to its bottom under a rule (§4.2.2's foot, D79).
+    float foot_y = H - pad;
+    for (const RailLink& link : context_.foot) {
+      foot_y -= std::round((link.category ? size::rail_category : size::rail_page) * s);
+    }
+    for (std::size_t i = 0; i < rail_.size(); ++i) {
+      const RailEntry& e = rail_[i];
+      const bool link = e.kind == RailEntry::Kind::head || e.kind == RailEntry::Kind::foot;
+      const RailLink* other = e.kind == RailEntry::Kind::head   ? &context_.head[e.index]
+                              : e.kind == RailEntry::Kind::foot ? &context_.foot[e.index]
+                                                                : nullptr;
+      const bool is_page = e.own_page() || (other != nullptr && !other->category);
+      const float h = std::round((is_page ? size::rail_page : size::rail_category) * s);
+      if (e.kind == RailEntry::Kind::foot && (i == 0 || rail_[i - 1].kind != RailEntry::Kind::foot)) {
+        y = std::max(y, foot_y);
+        c.line(menu_x + pad, y, rail_w - 2 * pad, Colour::rule);
+      }
+      const Rect row{menu_x, y, rail_w, h};
+      if ((e.category() || (link && other->category && e.kind == RailEntry::Kind::head)) && i != 0 &&
+          rail_[i - 1].kind != RailEntry::Kind::switcher) {
+        c.line(menu_x + pad, y, rail_w - 2 * pad, Colour::rule);
+      }
+      if (e.kind == RailEntry::Kind::switcher) {
+        // The content spaces' switcher: ‹ and › around the open one's place among them.
+        const std::string label = "\u2039  " + context_.switcher + "  \u203A";
+        c.text(label, TypeRole::ui_sm, menu_x + pad, y + std::round((h - line_height(TypeRole::ui_sm, s)) / 2),
+               rail_w - 2 * pad, Colour::ink_mute);
+        if (scope_ == Scope::rail && i == rail_focus_) {
+          c.focused(row);
+        }
+        y += h;
+        continue;
+      }
+      const bool open_category = e.category() && pages_.categories[e.index].id == current().category;
+      const bool current_page = e.own_page() && e.index == page_;
+      if (current_page) {
+        c.fill(row, Colour::tint_select);
+        c.fill(Rect{menu_x, y, std::round(2 * s), h}, Colour::gold);
+      }
+      const TypeRole role = is_page ? TypeRole::ui_sm : TypeRole::rail;
+      const float indent = is_page ? std::round(16 * s) : 0;
+      const Colour ink = current_page ? Colour::gold_hi : (open_category ? Colour::ink_hi : Colour::ink_mute);
+      const std::string& label = other != nullptr ? other->label
+                                 : e.category()  ? pages_.categories[e.index].name
+                                                 : pages_.pages[e.index].name;
+      c.text(label, role, menu_x + pad + indent, y + std::round((h - line_height(role, s)) / 2),
+             rail_w - 2 * pad - indent, ink);
+      if (scope_ == Scope::rail && i == rail_focus_) {
+        c.focused(row);
+      }
+      y += h;
+    }
+
+    // ---- The top bar: search at the left, the key that closes at the right.
+    const float page_x = menu_x + rail_w;
+    const float page_w = menu_w - rail_w;
+    const float bar_h = std::round(size::topbar * s);
+    const float gutter = std::round(size::gutter * s);
+    const Rect search{page_x + gutter, std::round(8 * s), std::round(280 * s), bar_h - std::round(16 * s)};
+    c.fill(search, Colour::ground_well, std::round(tokens::radius::control * s));
+    c.text("Search", TypeRole::ui_sm, search.x + std::round(10 * s),
+           search.y + std::round((search.h - line_height(TypeRole::ui_sm, s)) / 2), search.w - std::round(20 * s),
+           Colour::ink_faint);
+    if (scope_ == Scope::top) {
+      c.focused(search);
+    }
+    const char* close_hint = "F5  Close";
+    const float close_w = c.width(close_hint, TypeRole::ui_sm);
+    c.text(close_hint, TypeRole::ui_sm, page_x + page_w - gutter - close_w,
+           std::round((bar_h - line_height(TypeRole::ui_sm, s)) / 2), close_w + 1, Colour::ink_faint);
+    c.line(page_x, bar_h, page_w, Colour::rule);
+
+    // ---- The page, clipped between the top bar and the key hints, scrolled to keep focus in view.
+    const float footer_h = std::round(36 * s);
+    const Rect page_area{page_x, bar_h + 1, page_w, H - bar_h - 1 - footer_h};
+    out.clips.push_back(page_area);
+    c.clip = 1;
+    const float content_w = std::min(page_w - 2 * gutter, std::round(size::content_max * s));
+    const float x0 = page_x + gutter;
+    y = page_area.y + std::round(24 * s) - scroll_;
+    const protocol::Page& page = current();
+    const auto page_focus = [&](FocusKind kind, std::string_view id) {
+      return scope_ == Scope::page && !focus_.empty() && focus_[page_focus_].kind == kind && focus_[page_focus_].id == id;
+    };
+    // The header: title, description, actions, the lozenge rule.
+    c.text(page.name, TypeRole::display_lg, x0, y, content_w / 2, Colour::ink_hi);
+    float action_x = x0 + content_w;
+    for (std::size_t a = page.actions ? page.actions->size() : 0; a-- > 0;) {
+      const protocol::PageAction& act = (*page.actions)[a];
+      const bool asking = confirming_ == act.id;
+      const std::string label = asking ? "Press again to confirm" : act.label;
+      const float w = c.width(label, TypeRole::ui) + std::round(32 * s);
+      const Rect button{action_x - w, y + std::round(2 * s), w, std::round(32 * s)};
+      const float r = std::round(tokens::radius::control * s);
+      Colour ink = Colour::ink_hi;
+      if (act.tone == protocol::ActionTone::primary) {
+        c.fill(button, Colour::gold, r);
+        ink = Colour::on_gold;
+      } else if (act.tone == protocol::ActionTone::destructive) {
+        c.fill(button, Colour::rot_fill, r);
+      } else {
+        c.stroke(button, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), r);
+      }
+      c.text(label, TypeRole::ui, button.x + std::round(16 * s),
+             button.y + std::round((button.h - line_height(TypeRole::ui, s)) / 2), w, ink);
+      if (page_focus(FocusKind::action, act.id)) {
+        c.focused(button);
+      }
+      action_x = button.x - std::round(12 * s);
+    }
+    y += std::round(line_height(TypeRole::display_lg, s) + 4 * s);
+    c.text(page.description, TypeRole::ui_sm, x0, y, content_w, Colour::ink_mute);
+    y += std::round(line_height(TypeRole::ui_sm, s) + 12 * s);
+    c.line(x0, y, content_w, Colour::rule_strong);
+    c.diamond(Rect{x0, y - std::round(4 * s), std::round(9 * s), std::round(9 * s)}, Colour::gold_deep);
+    y += std::round(20 * s);
+    // Tabs.
+    if (page.tabs && !page.tabs->empty()) {
+      float tx = x0;
+      for (std::size_t t = 0; t < page.tabs->size(); ++t) {
+        const protocol::PageTab& tab = (*page.tabs)[t];
+        const bool active = t == tab_;
+        const float w = c.width(tab.name, TypeRole::tab);
+        c.text(tab.name, TypeRole::tab, tx, y, w + 1, active ? Colour::gold_hi : Colour::ink_mute);
+        const float under = y + line_height(TypeRole::tab, s) + std::round(6 * s);
+        if (active) {
+          c.fill(Rect{tx, under, w, std::round(2 * s)}, Colour::gold);
+        }
+        if (page_focus(FocusKind::tab, tab.id)) {
+          c.focused(Rect{tx, y, w, under + std::round(2 * s) - y});
+        }
+        tx += w + std::round(24 * s);
+      }
+      y += std::round(line_height(TypeRole::tab, s) + 9 * s);
+      c.line(x0, y, content_w, Colour::rule);
+      y += std::round(20 * s);
+    }
+    // Sections: cards of rows.
+    const float card_pad = std::round(20 * s);
+    const float control_w = std::round(size::settings_control * s);
+    const float row_h = std::round(size::settings_row * s);
+    for (const protocol::PageSection& section : sections()) {
+      const float card_top = y;
+      const std::size_t card_at = out.items.size();  // the card's ground goes under its rows, inserted below
+      y += std::round(16 * s);
+      const bool collapsed = collapsed_.count(page.id + "/" + section.id) != 0;
+      c.text(section.title, TypeRole::eyebrow, x0 + card_pad, y, content_w - 2 * card_pad - std::round(20 * s),
+             Colour::gold);
+      c.text(collapsed ? "+" : "-", TypeRole::ui_sm, x0 + content_w - card_pad - std::round(10 * s), y,
+             std::round(12 * s), Colour::ink_faint);
+      if (page_focus(FocusKind::section, section.id)) {
+        c.focused(Rect{x0 + card_pad, y, content_w - 2 * card_pad, line_height(TypeRole::eyebrow, s)});
+      }
+      y += std::round(line_height(TypeRole::eyebrow, s) + 4 * s);
+      if (section.description) {
+        c.text(*section.description, TypeRole::ui_sm, x0 + card_pad, y, content_w - 2 * card_pad, Colour::ink_mute);
+        y += std::round(line_height(TypeRole::ui_sm, s));
+      }
+      y += std::round(8 * s);
+      const auto draw_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
+        for (const protocol::PageBlock& block : blocks) {
+          if (block.kind == protocol::BlockKind::component) {
+            c.text("Shown in the browser view.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
+                   content_w - 2 * card_pad, Colour::ink_mute);
+            y += row_h;
+            continue;
+          }
+          for (const std::string& key : block.keys.value_or(std::vector<std::string>{})) {
+            const Setting& st = settings_[by_key_.at(key)];
+            const bool shortcut = block.kind == protocol::BlockKind::shortcuts;
+            if (shortcut && !present(st.home)) {
+              continue;  // a shortcut to a page of a later increment
+            }
+            const bool focused_row = page_focus(shortcut ? FocusKind::shortcut : FocusKind::setting, key);
+            const auto refusal = refusals_.find(key);
+            const float extra = (focused_row ? line_height(TypeRole::ui_sm, s) : 0) +
+                                (refusal != refusals_.end() ? line_height(TypeRole::ui_sm, s) : 0);
+            const Rect row{x0 + card_pad, y, content_w - 2 * card_pad, row_h + std::round(extra)};
+            c.line(row.x, row.y, row.w, Colour::rule);
+            const std::uint8_t alpha = st.locked ? 128 : 255;
+            const Json& v = value(key);
+            const float label_y = y + std::round((row_h - line_height(TypeRole::ui, s)) / 2);
+            if (!shortcut && v != st.default_) {  // changed from its default: the lozenge
+              c.diamond(Rect{row.x - std::round(14 * s), label_y + std::round(7 * s), std::round(8 * s),
+                             std::round(8 * s)},
+                        Colour::gold_deep);
+            }
+            const float label_w = c.text(st.label, TypeRole::ui, row.x, label_y,
+                                         row.w - control_w - std::round(24 * s), Colour::ink_hi, alpha);
+            const auto inherited = inherited_.find(key);
+            if (st.type == SettingType::tri_state && v == "inherit" && inherited != inherited_.end()) {
+              // What the chain resolves to, faint, with its source (D163).
+              const std::string from = (inherited->second.on ? "On, from " : "Off, from ") + inherited->second.source;
+              c.text(from, TypeRole::ui_sm, row.x + label_w + std::round(12 * s), label_y + std::round(2 * s),
+                     row.w - control_w - label_w - std::round(48 * s), Colour::ink_faint, alpha);
+            }
+            if (const std::string badge = availability_badge(st); !badge.empty()) {
+              c.text(badge, TypeRole::ui_sm, row.x + label_w + std::round(12 * s), label_y + std::round(2 * s),
+                     row.w - control_w - label_w - std::round(48 * s), Colour::ink_faint);
+            }
+            float line_y = y + row_h - std::round(8 * s);
+            if (focused_row) {  // the help line opens on focus, and ends with the default (§4.7)
+              const std::string help = st.help + " Default: " + format(key, st.default_) + ".";
+              c.text(help, TypeRole::ui_sm, row.x, line_y, row.w, Colour::ink_mute);
+              line_y += line_height(TypeRole::ui_sm, s);
+            }
+            if (refusal != refusals_.end()) {
+              c.text(refusal->second, TypeRole::ui_sm, row.x, line_y, row.w, Colour::rot);
+            }
+            // The control, right-aligned in its fixed column.
+            const Rect col{row.right() - control_w, y, control_w, row_h};
+            const float r = std::round(tokens::radius::control * s);
+            const float edge = std::round(tokens::kGrace.size.edge_width * s);
+            Rect control = col;
+            if (shortcut) {
+              std::string link = "Lives in ";
+              for (const protocol::Page& p : pages_.pages) {
+                if (p.id == st.home) {
+                  link += p.name;
+                }
+              }
+              const float w = c.width(link, TypeRole::ui_sm);
+              c.text(link, TypeRole::ui_sm, col.right() - w, y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2),
+                     w + 1, Colour::gold);
+              control = Rect{col.right() - w, y + std::round(12 * s), w, row_h - std::round(24 * s)};
+            } else if (st.availability == "later") {
+              const char* badge = "Later version";
+              const float w = c.width(badge, TypeRole::ui_sm);
+              c.text(badge, TypeRole::ui_sm, col.right() - w, y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2),
+                     w + 1, Colour::ink_faint);
+            } else if (st.type == SettingType::bool_) {
+              const bool on = v.is_boolean() && v.get<bool>();
+              control = Rect{col.right() - std::round(40 * s), y + std::round((row_h - 22 * s) / 2), std::round(40 * s),
+                             std::round(22 * s)};
+              if (on) {
+                c.fill(control, Colour::gold, control.h / 2, alpha);
+              } else {
+                c.fill(control, Colour::ground_well, control.h / 2, alpha);
+                c.stroke(control, Colour::edge, edge, control.h / 2, alpha);
+              }
+              const float knob = std::round(16 * s);
+              c.circle(Rect{on ? control.right() - knob - std::round(3 * s) : control.x + std::round(3 * s),
+                            control.y + std::round((control.h - knob) / 2), knob, knob},
+                       on ? Colour::on_gold : Colour::ink_mute, alpha);
+            } else if (numeric(st.type)) {
+              const std::string shown = format(key, v);
+              const float vw = c.width(shown, TypeRole::num);
+              c.text(shown, TypeRole::num, col.right() - vw,
+                     y + std::round((row_h - line_height(TypeRole::num, s)) / 2), vw + 1, Colour::ink_body, alpha);
+              const float track_w = control_w - std::round(64 * s);
+              const Rect track{col.x, y + std::round((row_h - 4 * s) / 2), track_w, std::round(4 * s)};
+              c.fill(track, Colour::ground_well, track.h / 2, alpha);
+              const double lo = st.min_.value_or(0), hi = st.max_.value_or(1);
+              const double n = v.is_number() ? v.get<double>() : lo;
+              const float t = hi > lo ? static_cast<float>(std::clamp((n - lo) / (hi - lo), 0.0, 1.0)) : 0.0f;
+              c.fill(Rect{track.x, track.y, std::round(track.w * t), track.h}, Colour::gold, track.h / 2, alpha);
+              const float knob = std::round(14 * s);
+              c.circle(Rect{track.x + std::round(track.w * t - knob / 2), y + std::round((row_h - knob) / 2), knob, knob},
+                       Colour::gold_hi, alpha);
+              control = Rect{track.x, y + std::round(10 * s), control_w, row_h - std::round(20 * s)};
+            } else if (st.type == SettingType::choice || st.type == SettingType::tri_state) {
+              std::vector<std::pair<std::string, bool>> segments;
+              if (st.type == SettingType::tri_state) {
+                for (int i = 0; i < 3; ++i) {
+                  segments.emplace_back(tri_label(st, i), v.is_string() && v.get_ref<const std::string&>() == tri_value(st, i));
+                }
+              } else {
+                for (const protocol::Choice& ch : st.choices.value_or(std::vector<protocol::Choice>{})) {
+                  segments.emplace_back(ch.label, v.is_string() && v.get_ref<const std::string&>() == ch.value);
+                }
+              }
+              control = Rect{col.x, y + std::round((row_h - 30 * s) / 2), control_w, std::round(30 * s)};
+              c.stroke(control, Colour::edge, edge, r, alpha);
+              const float seg_w = control.w / static_cast<float>(std::max<std::size_t>(segments.size(), 1));
+              for (std::size_t i = 0; i < segments.size(); ++i) {
+                const Rect seg{control.x + std::round(seg_w * static_cast<float>(i)), control.y, std::round(seg_w),
+                               control.h};
+                if (segments[i].second) {
+                  c.fill(Rect{seg.x + edge, seg.y + edge, seg.w - 2 * edge, seg.h - 2 * edge}, Colour::ground_3, r, alpha);
+                }
+                const float lw = std::min(c.width(segments[i].first, TypeRole::ui_sm), seg.w - std::round(8 * s));
+                c.text(segments[i].first, TypeRole::ui_sm, seg.x + std::round((seg.w - lw) / 2),
+                       seg.y + std::round((seg.h - line_height(TypeRole::ui_sm, s)) / 2), seg.w - std::round(8 * s),
+                       segments[i].second ? Colour::gold_hi : Colour::ink_mute, alpha);
+              }
+            } else {  // a key, a text, a secret: shown in a field; edited in the browser until GraceUI's own field
+              const std::string shown = format(key, v);
+              const TypeRole role = st.type == SettingType::key_name ? TypeRole::num : TypeRole::ui_sm;
+              const float w = st.type == SettingType::key_name ? c.width(shown, role) + std::round(20 * s) : control_w;
+              control = Rect{col.right() - w, y + std::round((row_h - 28 * s) / 2), w, std::round(28 * s)};
+              c.fill(control, Colour::ground_well, r, alpha);
+              c.stroke(control, Colour::edge, edge, r, alpha);
+              const Colour ink = st.type == SettingType::secret && shown == "Set" ? Colour::moss : Colour::ink_body;
+              c.text(shown, role, control.x + std::round(10 * s),
+                     control.y + std::round((control.h - line_height(role, s)) / 2), control.w - std::round(20 * s), ink,
+                     alpha);
+            }
+            if (focused_row) {
+              c.focused(control);
+            }
+            y += row.h;
+          }
+        }
+      };
+      if (!collapsed) {
+        draw_blocks(section.blocks);
+        if (section.advanced && !section.advanced->empty()) {
+          const bool open = advanced_open_.count(page.id + "/" + section.id) != 0;
+          c.line(x0 + card_pad, y, content_w - 2 * card_pad, Colour::rule);
+          c.text(open ? "Advanced  -" : "Advanced  +", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
+                 std::round(160 * s), Colour::gold);
+          if (page_focus(FocusKind::advanced, section.id)) {
+            c.focused(Rect{x0 + card_pad, y + std::round(8 * s), std::round(120 * s), std::round(28 * s)});
+          }
+          y += std::round(40 * s);
+          if (open) {
+            draw_blocks(*section.advanced);
+          }
+        }
+      }
+      y += std::round(12 * s);
+      // The card under what it holds: its ground and its rule border, inserted before its contents.
+      const Rect card{x0, card_top, content_w, y - card_top};
+      Item ground;
+      ground.shape = Shape::fill;
+      ground.colour = Colour::ground_2;
+      ground.clip = 1;
+      ground.rect = card;
+      ground.radius = std::round(tokens::radius::card * s);
+      Item border = ground;
+      border.shape = Shape::stroke;
+      border.colour = Colour::rule;
+      border.width = std::max(1.0f, std::round(s));
+      out.items.insert(out.items.begin() + static_cast<std::ptrdiff_t>(card_at), {ground, border});
+      y += std::round(16 * s);
+    }
+    // The Related card at the foot.
+    if (std::any_of(page.related.begin(), page.related.end(), [&](const std::string& id) { return present(id); })) {
+      const float top = y;
+      const std::size_t card_at = out.items.size();
+      y += std::round(16 * s);
+      c.text("Related", TypeRole::eyebrow, x0 + card_pad, y, content_w, Colour::gold);
+      y += std::round(line_height(TypeRole::eyebrow, s) + 8 * s);
+      for (const std::string& link : page.related) {
+        if (!present(link)) {
+          continue;  // a page of a later increment
+        }
+        const protocol::Page* target = nullptr;
+        for (const protocol::Page& p : pages_.pages) {
+          if (p.id == link) {
+            target = &p;
+          }
+        }
+        const Rect row{x0 + card_pad, y, content_w - 2 * card_pad, std::round(44 * s)};
+        c.line(row.x, row.y, row.w, Colour::rule);
+        c.text(target != nullptr ? target->name : link, TypeRole::ui, row.x, y + std::round(4 * s), row.w / 3,
+               Colour::ink_hi);
+        if (target != nullptr) {
+          c.text(target->description, TypeRole::ui_sm, row.x + row.w / 3, y + std::round(6 * s),
+                 row.w * 2 / 3 - std::round(30 * s), Colour::ink_mute);
+        }
+        c.text("→", TypeRole::ui, row.right() - std::round(16 * s), y + std::round(4 * s), std::round(16 * s),
+               Colour::gold);
+        if (page_focus(FocusKind::related, link)) {
+          c.focused(row);
+        }
+        y += row.h;
+      }
+      y += std::round(12 * s);
+      Item ground;
+      ground.shape = Shape::fill;
+      ground.colour = Colour::ground_2;
+      ground.clip = 1;
+      ground.rect = Rect{x0, top, content_w, y - top};
+      ground.radius = std::round(tokens::radius::card * s);
+      Item border = ground;
+      border.shape = Shape::stroke;
+      border.colour = Colour::rule;
+      border.width = std::max(1.0f, std::round(s));
+      out.items.insert(out.items.begin() + static_cast<std::ptrdiff_t>(card_at), {ground, border});
+      y += std::round(16 * s);
+    }
+    const float content_bottom = y + scroll_;
+
+    // ---- The key hints for the focused control, and the focus ring.
+    c.clip = 0;
+    c.line(page_x, H - footer_h, page_w, Colour::rule);
+    std::string hints = "Esc  Back";
+    if (scope_ == Scope::page && !focus_.empty()) {
+      const Focus& f = focus_[page_focus_];
+      if (f.kind == FocusKind::setting) {
+        const Setting& st = settings_[f.index];
+        hints = numeric(st.type) ? "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back"
+                : st.type == SettingType::bool_ ? "Enter  Toggle    R  Reset    Esc  Back"
+                : (st.type == SettingType::choice || st.type == SettingType::tri_state)
+                    ? "← →  Choose    R  Reset    Esc  Back"
+                    : "Edited in the browser view    Esc  Back";
+        if (st.locked) {
+          hints = "Locked in this version    Esc  Back";
+        }
+      } else {
+        hints = "Enter  Open    Esc  Back";
+      }
+    } else if (scope_ == Scope::rail) {
+      hints = "↑ ↓  Move    Enter  Open    →  Page    Esc  Close";
+    }
+    c.text(hints, TypeRole::ui_sm, page_x + gutter, H - footer_h + std::round((footer_h - line_height(TypeRole::ui_sm, s)) / 2),
+           page_w - 2 * gutter, Colour::ink_faint);
+    if (c.focus_found) {
+      const float off = std::round(tokens::kGrace.size.focus_offset * s);
+      const Rect ring{c.focus.x - off, c.focus.y - off, c.focus.w + 2 * off, c.focus.h + 2 * off};
+      c.clip = scope_ == Scope::page ? 1 : 0;
+      c.stroke(ring, Colour::gold_hi, std::round(tokens::kGrace.size.focus_width * s),
+               std::round((tokens::radius::control + tokens::kGrace.size.focus_offset) * s));
+    }
+    // Keep the focused element in view: scroll, and lay out once more.
+    if (pass == 0 && scope_ == Scope::page && c.focus_found) {
+      const float margin = std::round(24 * s);
+      float next = scroll_;
+      if (c.focus.bottom() + margin > page_area.bottom()) {
+        next += c.focus.bottom() + margin - page_area.bottom();
+      } else if (c.focus.y - margin < page_area.y) {
+        next -= page_area.y - (c.focus.y - margin);
+      }
+      next = std::clamp(next, 0.0f, std::max(0.0f, content_bottom - page_area.bottom() + margin));
+      if (next != scroll_) {
+        scroll_ = std::round(next);
+        continue;
+      }
+    }
+    break;
+  }
+}
+
+}  // namespace grace::view

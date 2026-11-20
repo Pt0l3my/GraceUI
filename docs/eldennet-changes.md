@@ -598,3 +598,227 @@ None of it is folded into EldenNet's design yet.
 4. **ARCH**: F11's row moves from EldenNet's own input to GraceUI's hotkey (`hotkeys.debug_view`'s home is GraceUI's
    Hotkeys page from GraceUI 0.6, D115); EldenNet's §14 item 4 above (F11 waiting on `register_hotkey`) is settled by
    this.
+
+## 18. The banner and the F11 view as part 12 builds them (S10.4.d, 2026-11-20, D156)
+
+What S10.4.d gives EldenNet's part 12; none of it is folded into EldenNet's design yet. `examples/hello-debug-view` is
+the whole of it in miniature, with invented content, and the harness runs it beside a second mod, each loaded before and
+after GraceUI.
+
+1. **The banner** (D134): one notice under EldenNet's own key with a duration of 0, its text replaced in place by a
+   later `notice` under the same key and withdrawn by an empty text. It needs only the cap `notices`, and it works in
+   the anti-cheat's notice-only mode, after `connect` answered inactive (anti-cheat) with a handle.
+2. **The F11 view on Dear ImGui's core** (D156): EldenNet compiles Dear ImGui 1.93.0's core with no backend (as
+   `gu_imgui_core` does) and includes `graceui_imgui.hpp` from `graceui-sys`. On T1, after `connect` with the caps
+   `notices panels textures hotkeys`: `ImGui::CreateContext()`, `graceui::imgui::prepare(io)`, its fonts added, then
+   `graceui::imgui::register_atlas(api, me, io)` before its first `submit` (its registration window); a panel of its
+   own, hidden, made with `create_panel`; F11 registered (§17). Each frame of its own, on its own thread: build the
+   view with `io.DisplaySize` set to the panel's size, `ImGui::Render()`, then `list.build(*ImGui::GetDrawData(),
+   width, height)` and, if it answered true, `api.submit(me, panel, list.view())`. A frame past ABI 1's bounds (256 KiB
+   of vertices or indices, 64 commands) is not built; the view then keeps its last list.
+3. **Opening and closing**: on each `GRACEUI_EVENT_HOTKEY` for F11 with an odd count, the view toggles: to open, one
+   list submitted and then `show_panel`, so it never shows empty; to close, `hide_panel`. The F11 view takes no input
+   in 0.1 (no `request_input`): its keys and pointer reach a holder only with §6's protocol (D142).
+
+## 19. EldenNet's pages in GraceUI's page format (S11.2.h, 2026-11-20, D160)
+
+What S11.2.h settles for EldenNet's pages, which are EldenNet's since G20 (S11.4.a builds them). None of it is folded
+into EldenNet's design yet.
+
+1. **One file per space**: EldenNet's page data is a TOML file in GraceUI's format, as GraceUI's own space and the demo
+   space are (`src/grace-pages/spaces/*/space.toml` in GraceUI): `[space]` (its id `eldennet`, name, settings schema
+   number, commands), `[[topic]]` (each topic of §6.5 with its shape, a stream with its ring), `[[category]]`,
+   `[[setting]]` (§6.9's fields) and `[[page]]` with its sections or tabs, blocks and actions. GraceUI's demo space shows
+   every part of it.
+2. **The lint**: EldenNet's CI runs `python3 -I tools/pages/build.py --lint <EldenNet's space.toml>` from a pinned
+   GraceUI. It checks, among the rest, that every setting appears on exactly one settings block on its home page
+   (invariant 12), that a secret's default is empty, that each component draws a declared topic of its shape, and that
+   each action's command is one EldenNet declares. A link to one of GraceUI's own pages is written `graceui/<page id>`
+   (`graceui/graceui.menu`, D115).
+3. **Into the DLL**: EldenNet turns its TOML into the protocol's JSON (`space_pages` and `settings_description`), as the
+   tool does for GraceUI's built-in spaces, and hands both over at `register_pages` (S11.2.b types the slot). Its
+   settings description's hash is the first 16 hex digits of the SHA-256 of its canonical JSON.
+4. **Availability and tri-states**: a setting's availability is `live`, `later`, `inert`, `check:<id>`,
+   `version:<x.y>` or `requires:<key>`, a later one locked; a tri-state's values are `on`, `off` and `auto`. *Later
+   (2026-11-20, D163, at EldenNet's request):* a tri-state names its third value, `third = "auto"` or
+   `third = "inherit"`; EldenNet's allowances and per-reaction switches are `inherit` tri-states (on, off, inherit).
+   For each one on `inherit`, EldenNet's `settings` topic body lists in `inherited` the key, whether it resolves on or
+   off, its source in words (the chain's link that decides: the named slot, the type, the live kind, the base kind or
+   the shipped default) and, if it has one, the page that sets it. Both views show it faint beside the row, the
+   browser with the source as a link.
+
+## 20. From part 12's run (2026-11-20, D164)
+
+What GraceUI changed after EldenNet's part 12 ran end to end against f51bcc7. None of it is folded into EldenNet's design
+yet.
+
+1. **An unbound hotkey answers so**: `register_hotkey` answers `GRACEUI_UNBOUND` (11) with the hotkey's id when the
+   hotkey is registered but unbound (its default taken, or none), and `GRACEUI_OK` only when it is bound. EldenNet's
+   launcher keeps its own Pause key while EldenNet's GraceUI Pause is unbound; F11 likewise. With `graceui_sys.hpp`, the
+   wrapper returns the status as it comes. §17 item 1 reads accordingly.
+2. **Not installed, stop at once**: `GraceUiSysFound` has `installed` (1 if a module named `graceui.dll` was loaded or
+   `GraceUI\graceui.dll` was in the game's folder at the last look, else 0), and `graceui_sys_find` takes the flag
+   `GRACEUI_SYS_STOP_IF_ABSENT`, which ends the looking at the first look that finds GraceUI not installed. EldenNet's
+   own rule for this can go, using the flag instead.
+3. **The vendored headers**: EldenNet's copy of `graceui-sys` (with `graceui_test.h`) is updated to the commit that
+   brings these; every struct keeps its size field.
+4. **Imports of a consumer's Dear ImGui core**: built with `/Zc:threadSafeInit-`, the core does not import the
+   runtime's thread-safe statics; `ReadConsoleW` comes with `sscanf` either way.
+5. **GraceUI's build writes `graceui.toml`** (D165): every Windows build of GraceUI lays out `GraceUI/` beside `bin/`
+   (`graceui.dll`, `LICENSE.txt`, `NOTICE.txt` and the `graceui.toml` listing them), so EldenNet's harness installs
+   that folder and drops its own writer. The format is D52's: `graceui`, `abi`, `protocol`, `caps` (empty for now),
+   `released` and `[files]`, names relative with `/`. EldenNet's release job checks the carried folder with
+   `python3 -I tools/release/manifest.py check FOLDER` from GraceUI's tag, or its own reader of the same subset.
+
+## 21. The in-game menu (2026-11-20, D167, S11.2.b)
+
+GraceUI's menu now opens on F5, drawn by the host: GraceUI's own space, with GraceUI › Menu (`ui.scale`,
+`ui.menu.theme`) as S4's page. What it means for EldenNet:
+
+1. **F5 is GraceUI's.** With no holder, F5 opens GraceUI's menu (the holder of kind menu that GraceUI asks for, owner
+   0). EldenNet's launcher, harness and documentation should expect that: a test that presses F5 with no holder now
+   finds the menu holding input until a second F5 or Esc from the rail.
+2. **The fonts folder holds eight faces** (`Game\GraceUI\fonts\`): Noto Sans Regular and SemiBold, Noto Sans Mono
+   Regular, Cinzel Regular and Bold, EB Garamond Regular, Medium and SemiBold, with `OFL.txt` (Noto's),
+   `Cinzel-OFL.txt` and `EBGaramond-OFL.txt`. GraceUI's build lays them out in `GraceUI/fonts/`, listed in
+   `graceui.toml` (D165): install that folder as it is.
+3. **The atlas is larger**: GraceUI's own faces take more of it (1024 × 2048 at 1080p with no mod's faces, measured
+   under Wine). EldenNet's eight faces (D139) still fit; should a bake run out of room, the mods' faces go first, then
+   the menu's, so notices keep their face.
+4. **S4's measurements** (EldenNet's roadmap S11.2.c) come from the harness's "menu" scenario until the game: frame cost,
+   atlas size and screenshots (with `GRACE_SHOTS` set). The owner's look review (S11.2.d) has the two screenshots.
+
+## 22. grace-serve for EldenNet's launcher (2026-11-20, D161, G29 (a))
+
+The server library is built (S11.2.i). What EldenNet's launcher does with it, off game:
+
+1. It links `grace_serve` and makes its own `Server`, from ordinary code, never DllMain; `start` and `stop` are plain
+   calls, and `stop` joins both of the server's threads.
+2. It hands EldenNet's space over with `add_space(describe_space(pages, settings, version, increment))`, from EldenNet's
+   page data and settings description (GraceUI's format, D160), and serves the web files of GraceUI's folder
+   (`graceui.toml`, checked, D165) or files it hands in from memory.
+3. On its `SpacePort` it answers each command exactly once (ok or an error); on `watched` it publishes the state, or a
+   stream from its oldest row, since the server keeps nothing for a topic nobody watches.
+4. It uses only the routes `/api/ticket` and `/api/ws`, and loopback only (§7.2 item 26).
+5. The page paces bursts: every message counts against 20 a second before it is parsed, subscriptions included.
+
+## 23. The ABI's protocol slots (2026-11-20, D169, agreed with EldenNet's session)
+
+GraceUI 0.2's table provides `register_pages`, `publish` and `answer`, and `poll` gives the space's events
+(`GRACEUI_CAP_PAGES`). What EldenNet does with them, on T6:
+
+1. **Register once**, after `connect`: `register_pages` with `GRACEUI_VIEW_GAME | GRACEUI_VIEW_BROWSER`, its version,
+   its increment, and its page data and settings description as JSON (GraceUI's format, D160), its `space` "eldennet".
+   GraceUI's server starts for it (the browser view, G4), on `dashboard.port`, only while `dashboard.enabled` is on and
+   never in the notice-only mode. With `graceui_sys.hpp`: `api.register_pages(consumer, views, version, pages,
+   settings, increment)`.
+2. **Poll with a buffer**: `api.poll(consumer, event, buffer, GRACEUI_FRAME_FROM_PAGE_MAX)`. Hotkeys come first, then
+   `GRACEUI_EVENT_WATCHED` / `_UNWATCHED` (a sub or unsub frame: start or stop building that topic) and
+   `GRACEUI_EVENT_COMMAND` (a cmd frame and `event.reply`). The old `poll(consumer, event)` still gives hotkeys alone.
+3. **Publish** state and rows frames of its own declared topics (at most 256 KiB each; EldenNet's kinds go as pages of
+   rows); a topic nobody watches is dropped.
+4. **Answer** every command exactly once with `api.answer(consumer, event.reply, result_frame)`: ok, or an error with
+   `body.detail` in words. A command left 10 s is answered `internal` by GraceUI with a log line naming the space: slow
+   work (self-test, finding servers, preparing lines) answers at once and publishes its progress.
+5. **The vendored headers** (graceui.h, graceui_sys.hpp, graceui_test.h) move to the commit that brings these; the
+   event's struct grew at its end, so code built against 0.1's headers keeps working, with hotkeys alone.
+6. **In game**, EldenNet's pages appear in GraceUI's menu once the menu shows a mod's space (D169's "not yet"), through
+   the same events: nothing more to do on EldenNet's side.
+
+## 24. The browser view's web shell (2026-11-20, D166)
+
+1. **The status lamp** shows only when a space publishes a state topic `status`, whose body is
+   `{"word": …, "tone": …, "reason": …, "page": …}` (the word in the top bar, its tone, the reason on hover and focus,
+   the page a click opens). EldenNet's L1 to L4 words and its Paused and Dormant (§4.2.3) map onto it.
+2. **Its pages and settings** reach the browser as registered (D169): GraceUI's server answers each space's `pages`
+   topic itself; EldenNet publishes its `settings` topic (a settings body: description, values, changed, inherited)
+   and answers `settings.set` and `settings.reset` at its one entry point.
+3. **Destructive commands** will carry `confirm: true` from both views (§7.3), and GraceUI will refuse one without it
+   `confirm_required`: EldenNet's destructive commands need not check it themselves, but may.
+
+## 25. From part 12's second run (2026-11-20, D170)
+
+1. **installed on the by-name path**: graceui-sys's find sets `installed` to 1 when it finds a loaded graceui.dll by
+   name (D164's rule; the branch returned before it). EldenNet's work-around (installed, or a find by name) can go once
+   it vendors graceui-sys from the commit that brings this.
+2. **No Direct3D DLL at load**: graceui.dll no longer imports dxgi.dll, d3d12.dll or d3dcompiler_47.dll; it binds the
+   three functions it needs on its init thread, after the game's window, from System32 alone. A mod (or EldenNet's
+   launcher with --also) that loads graceui.dll early no longer meets Wine's loader hang through GraceUI. Nothing for
+   EldenNet to change.
+
+## 26. grace-dev, for EldenNet's pages (2026-11-20, D168)
+
+EldenNet's pages can be previewed without the game: `grace-dev --space-dir DIR --web web/dist`, with DIR holding the
+pages.json and settings.json EldenNet's page build writes (and, if it likes, a topics.json of fixture states and a
+scenario.json of timed steps, invented content only). grace-dev checks them as `register_pages` does, and
+`grace-dev --dump eldennet <page> --size 1920x1080` prints a page's in-game structure.
+
+
+## 27. The menu shows mods' spaces (2026-11-20, D171)
+
+1. **EldenNet's pages in game, through GraceUI's menu**: a space registered with `GRACEUI_VIEW_GAME` is shown by F5's
+   menu, first on the session's first open, with GraceUI's own categories at its rail's foot. EldenNet's space needs
+   nothing new for it: the same `register_pages`, `poll`, `publish` and `answer` as for the browser.
+2. **The menu is a view of the `settings` topic**: while it shows EldenNet's space it watches `settings`, so EldenNet
+   hears WATCHED when the menu or a browser starts watching and UNWATCHED when neither does (the menu's close included).
+   Its state's `values` (and `inherited`, for tri-states that inherit) set the rows; publish every value, or the menu
+   shows a value missing from it as its default.
+3. **Commands from the menu** come as any view's do, with a reply handle and the same 10 s deadline; a refusal's words
+   (the result's own `detail`, protocol 1.1, §28) are shown under the row, and the row shows the last published value
+   again.
+4. **Component blocks** (status tiles, feeds) read "Shown in the browser view." in game (G16); only their settings are
+   drawn there in 0.2.
+
+## 28. Protocol 1.1 (2026-11-20, D172)
+
+1. **A refusal's words in `result.detail`**: optional, at most 256 bytes, a sentence a player reads ("Not now: the
+   ritual is under way."), shown under the row in both views in place of the error code's words. Put EldenNet's in
+   `detail`, not in `body`; nothing personal, no value, no path (PV rules, §6.7).
+2. **Clearing a stream**: publish an empty `rows` batch whose `from_seq` is past the next row (skip one number), and
+   every view clears that stream at once; the next rows follow on from that `from_seq`. A batch past a gap with rows in
+   it starts the stream over there, as before.
+3. **Nothing breaks**: 1.0 frames are still taken (GraceUI checks the major only); `hello` may say "1.1".
+
+## 29. D166's follow-ups and GraceUI 0.2.0 (2026-11-20, D173, D174)
+
+1. **Destructive commands arrive confirmed**: a command one of EldenNet's destructive actions sends (tone
+   `destructive`) reaches EldenNet's space only with `"confirm": true` in its args; GraceUI refuses one without it
+   `confirm_required`, from the browser and the in-game menu alike. EldenNet may rely on it, and keeps its own checks.
+2. **Pages by increment**: a page whose `increment` is later than the increment EldenNet registers is absent from both
+   views (rail, Page Up and Page Down, search, related links, shortcuts). Register the increment EldenNet's release
+   is, and give each page the increment it ships in; a page with none (a later-version statement page) always shows.
+3. **Words**: a secret reads Set or Missing; availability badges read "Waits on a game check", "Takes effect in
+   v1.5", "Off because … is off" (for `requires:<key>` while that key is off) and "No effect in this version" (inert).
+4. **GraceUI 0.2.0**: the `pages` capability and protocol 1.1 come with it; a floor of 0.2.0 asks for both.
+
+## 30. GraceUI's side of the in-game spikes S0-E and S4 (2026-11-20, D175)
+
+What we agreed, from GraceUI's side; the launcher and the DLL's side are EldenNet's (its message of 2026-11-20).
+
+1. **The package**: from GraceUI's commit, graceui.dll's test build (its GraceUI folder with `graceui.toml`, which
+   E12's pre-flight takes as it is), `grace-spike.dll` and `grace-standin.dll`, built with clang-cl;
+   `tools/grace-spike/README.md` is the owner's part of the steps (runs A1 to A4, A0 and B), for EldenNet's README.
+2. **The launcher**: `--also` with `grace-spike.dll` (and `grace-standin.dll` in the S0-E runs), before or without
+   `graceui.dll` as the run says; `ELDENNET_SPIKE_DIR` naming `%APPDATA%\EldenNet\spikes\<word>-<run number>`, with
+   the words `s0e`, `s0e_alone` and `s4`; unset outside a spike run, where grace-spike does nothing.
+3. **The DLL**: no call into the game in these runs (EldenNet's "spike: no call"); the connect, the banner and F11's
+   view as usual.
+4. **The harness cases to run against the package on the fake game**: "spike" and "spike-after" (the observer and the
+   stand-in before and after GraceUI, the typing test), "menu", "menu-space", "input" and "abi".
+5. **The reader**: `python3 -I tools/grace-spike/report.py <spikes folder> --by-hand movement=yes|no`; `--json` for
+   EldenNet's spike-report to fold in.
+
+## 31. A holder's events, for the chat box (2026-11-20, D176; proposal 0003)
+
+What EldenNet's chat box uses once GraceUI 0.2.1 is out (ABI 1.1):
+
+1. **Connect** with floor 0.2.1 and check `has_cap("holder-events")`; without it the box cannot take typing.
+2. **Ask with the flag**: `request_input` with `flags = GRACEUI_INPUT_EVENTS`, for the box's own panel (made with
+   `GRACEUI_PANEL_TAKES_INPUT`, shown), wanting the keyboard, the mouse and the pad.
+3. **Poll** with ABI 1.1's event size: `KEY`, `CHARACTER`, `POINTER` (in the panel's pixels), `PAD` (B as cancel, A
+   as send) and, once and last, `INPUT_ENDED` with its reason (released after the box's own `release_input`; danger,
+   which keeps the draft; no render; the player's exit). Feed them to the box's headless Dear ImGui with
+   `graceui::imgui::feed`.
+4. **The caret**: `set_caret` with the caret's rectangle in the panel's pixels, whenever it moves, for the IME.
+5. **Yours, not GraceUI's**: opening the Steam floating keyboard, and the clipboard if Ctrl+V is to paste.
+6. **Later, by D-entry**: the pad chord that opens the box (View + D-pad Up), as a hotkey with its masking.

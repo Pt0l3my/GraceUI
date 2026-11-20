@@ -1,0 +1,46 @@
+# demo demo.overview: 800x600, ui.scale 1.00, scale 0.556, theme grace, the fake face, settings at their defaults
+fill    scrim           0,   0  800x600 
+fill    ground.1        0,   0  800x600 
+fill    ground.0        0,   0  133x600 
+text    gold           13,  13   64x16   glyphs 9 "Demo space"
+text    ink.hi         13,  41   38x13   glyphs 8 "Lanterns"
+fill    tint.select     0,  59  133x18  
+fill    gold            0,  59    1x18  
+text    gold.hi        22,  62   30x11   glyphs 8 "Overview"
+text    ink.mute       22,  80   34x11   glyphs 9 "Behaviour"
+line    rule           13,  95  107x1   
+text    ink.mute       13,  99   33x13   glyphs 7 "Records"
+fill    ground.well   151,   4  156x15   r1
+text    ink.faint     157,   6   22x11   glyphs 6 "Search"
+text    ink.faint     748,   6   34x11   glyphs 7 "F5  Close"
+line    rule          133,  24  667x1   
+text    ink.hi        151,  38   71x20   clip1 glyphs 8 "Overview"
+fill    gold          710,  39   72x18   r1 clip1
+text    on.gold       719,  42   54x12   clip1 glyphs 11 "Trim the wick"
+text    ink.mute      151,  60  232x11   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
+line    rule.strong   151,  78  631x1    clip1
+diamond gold.deep     151,  76    5x5    w1 clip1
+fill    ground.2      151,  89  631x112  r2 clip1
+stroke  rule          151,  89  631x112  r2 w1 clip1
+text    gold          162,  98   13x9    clip1 glyphs 3 "Now"
+text    ink.faint     765,  98    4x11   clip1 glyphs 1 "-"
+text    ink.mute      162, 120   98x11   clip1 glyphs 22 "Shown in the browser view."
+text    ink.mute      162, 147   98x11   clip1 glyphs 22 "Shown in the browser view."
+line    rule          162, 167  609x1    clip1
+text    ink.hi        162, 174   42x12   clip1 glyphs 10 "Brightness"
+text    gold          704, 175   68x11   clip1 glyphs 16 "Lives in Behaviour"
+fill    ground.2      151, 210  631x77   r2 clip1
+stroke  rule          151, 210  631x77   r2 w1 clip1
+text    gold          162, 219   30x9    clip1 glyphs 7 "Related"
+line    rule          162, 232  609x1    clip1
+text    ink.hi        162, 234   38x12   clip1 glyphs 9 "Behaviour"
+text    ink.mute      365, 235  236x11   clip1 glyphs 52 "How the lantern burns, how often it flickers, and who keeps it."
+text    gold          762, 234    4x12   clip1 glyphs 1 "→"
+line    rule          162, 256  609x1    clip1
+text    ink.hi        162, 258   13x12   clip1 glyphs 3 "Log"
+text    ink.mute      365, 259  232x11   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
+text    gold          762, 258    4x12   clip1 glyphs 1 "→"
+line    rule          133, 580  667x1   
+text    ink.faint     151, 584   90x11   glyphs 16 "Enter  Open    Esc  Back"
+stroke  gold.hi       709,  38   74x20   r2 w1 clip1
+# 44 items, 1656 vertices, 3228 indices, 4 commands; check_draw_list: passes

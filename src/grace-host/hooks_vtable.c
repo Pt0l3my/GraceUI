@@ -5,21 +5,80 @@
  * these functions with the ones made here: the device is the adapter's one device, the game's own if it has made it
  * (Direct3D 12 hands out one per adapter); and every DirectInput device of a kind shares its class's vtable.
  *
+ * graceui.dll imports no Direct3D DLL (D170): CreateDXGIFactory1, D3D12CreateDevice and D3DCompile are bound here, on
+ * the init thread once the game's window exists, from the modules the game has loaded or else from System32 alone.
+ * Under Wine, loading dxgi.dll before the game's first window, while other threads make USER calls, can hang in the
+ * loader (EldenNet's part 12, 2026-11-20): a mod that loads graceui.dll early no longer loads them with it.
+ *
  * SAFETY: every interface pointer here is created and released in its function, on this thread; the casts turn the
  * vtables' entries, which are functions, into the one function type the caller stores until it hands them to MinHook,
- * which never calls them through that type, and DirectInput8Create back from that type into its own.
+ * which never calls them through that type, and DirectInput8Create back from that type into its own; and they turn
+ * GetProcAddress's answers into the three functions' own types, each as its SDK header declares it.
  */
 #define COBJMACROS
 #define DIRECTINPUT_VERSION 0x0800
 #include <windows.h>
 #include <initguid.h> /* the D3D12, DXGI and DirectInput ids are defined here, so nothing links dxguid */
 #include <d3d12.h>
+#include <d3dcompiler.h>
 #include <dinput.h>
 #include <dxgi1_4.h>
 
 #include "hooks_vtable.h"
 
 extern IMAGE_DOS_HEADER __ImageBase; /* graceui.dll's own module, for its window class */
+
+/* ---- The Direct3D functions, bound at run time (D170). Written once by the init thread before the hooks exist, read
+ * after: the hooks' installation publishes them. */
+typedef HRESULT(WINAPI* create_factory_fn)(REFIID, void**);
+typedef HRESULT(WINAPI* create_device_fn)(IUnknown*, D3D_FEATURE_LEVEL, REFIID, void**);
+typedef HRESULT(WINAPI* compile_fn)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO*, ID3DInclude*, LPCSTR, LPCSTR,
+                                    UINT, UINT, ID3DBlob**, ID3DBlob**);
+static create_factory_fn g_create_factory = NULL;
+static create_device_fn g_create_device = NULL;
+static compile_fn g_compile = NULL;
+
+/* A system module: the one already loaded (the game's), or else System32's, never one from the game's folder. */
+static HMODULE system_module(const wchar_t* name) {
+  HMODULE module = GetModuleHandleW(name);
+  return module != NULL ? module : LoadLibraryExW(name, NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+}
+
+/* GetProcAddress's answer, copied into a pointer of the function's own type (`out`, of `size` bytes). */
+static int bind(HMODULE module, const char* name, void* out, size_t size) {
+  const FARPROC found = module != NULL ? GetProcAddress(module, name) : NULL;
+  if (found == NULL || size != sizeof found) {
+    return 0;
+  }
+  CopyMemory(out, &found, sizeof found); /* SAFETY: the function's own type, as its SDK header declares it */
+  return 1;
+}
+
+int grace_host_bind_d3d(void) {
+  const int factory = bind(system_module(L"dxgi.dll"), "CreateDXGIFactory1", &g_create_factory, sizeof g_create_factory);
+  const int device = bind(system_module(L"d3d12.dll"), "D3D12CreateDevice", &g_create_device, sizeof g_create_device);
+  const int compile = bind(system_module(L"d3dcompiler_47.dll"), "D3DCompile", &g_compile, sizeof g_compile);
+  return factory && device && compile;
+}
+
+/* Dear ImGui's DX12 backend calls CreateDXGIFactory1 at its init (warm-up): as D3DCompile below, a stand-in. */
+HRESULT WINAPI CreateDXGIFactory1(REFIID riid, void** factory) {
+  if (g_create_factory == NULL) {
+    return E_FAIL;
+  }
+  return g_create_factory(riid, factory);
+}
+
+/* Dear ImGui's DX12 backend calls D3DCompile when it makes its shaders (at warm-up): this definition stands in for the
+ * import, unchanged in the backend (D28), and calls the function the init thread bound; never loading anything. */
+HRESULT WINAPI D3DCompile(LPCVOID data, SIZE_T size, LPCSTR name, const D3D_SHADER_MACRO* defines,
+                          ID3DInclude* include, LPCSTR entry, LPCSTR target, UINT flags1, UINT flags2,
+                          ID3DBlob** code, ID3DBlob** errors) {
+  if (g_compile == NULL) {
+    return E_FAIL;
+  }
+  return g_compile(data, size, name, defines, include, entry, target, flags1, flags2, code, errors);
+}
 
 static const wchar_t kWindowClass[] = L"GraceUI.HookProbe";
 
@@ -49,10 +108,11 @@ int grace_host_read_hook_targets(grace_host_fn targets[GRACE_HOST_RENDER_HOOKS])
   if (window == NULL) {
     goto done;
   }
-  if (FAILED(CreateDXGIFactory1(&IID_IDXGIFactory2, (void**)&factory))) {
+  if (g_create_factory == NULL || g_create_device == NULL ||
+      FAILED(g_create_factory(&IID_IDXGIFactory2, (void**)&factory))) {
     goto done;
   }
-  if (FAILED(D3D12CreateDevice(NULL, D3D_FEATURE_LEVEL_11_0, &IID_ID3D12Device, (void**)&device))) {
+  if (FAILED(g_create_device(NULL, D3D_FEATURE_LEVEL_11_0, &IID_ID3D12Device, (void**)&device))) {
     goto done;
   }
   ZeroMemory(&queue_desc, sizeof queue_desc);

@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstring>
 #include <cwchar>
 #include <string_view>
 #include <vector>
@@ -31,7 +32,9 @@
 #include "hooks_input.h"
 #include "input.h"
 #include "log.h"
+#include "menu.h"
 #include "session.h"
+#include "spaces.h"
 #include "state.h"
 
 namespace grace::host {
@@ -313,6 +316,40 @@ void test_turn_off_render() noexcept { draw::test_turn_off(); }
 
 void test_set_atlas_limit(std::uint32_t side) noexcept { atlas::test_set_limit(side); }
 
+void test_fill_menu(GraceUiTestMenu& out) noexcept {
+  menu::TestView view;
+  menu::test_view(view);
+  out.open = view.open;
+  out.generation = view.generation;
+  out.inputs = view.inputs;
+  out.lists = view.lists;
+  out.frames = view.frames;
+  out.refusals = view.refusals;
+  out.layout_us = view.layout_us;
+  out.vertices = view.vertices;
+  out.indices = view.indices;
+  out.commands = view.commands;
+  out.off = view.off;
+  out.scale = view.scale;
+  out.faces = view.faces;
+  std::memcpy(out.page, view.page, sizeof out.page);
+  std::memcpy(out.focused, view.focused, sizeof out.focused);
+}
+
+void test_fill_server(GraceUiTestServer& out) noexcept {
+  spaces::TestView view{};
+  spaces::test_view(view);
+  out.running = view.running;
+  out.port = view.port;
+  out.spaces = view.spaces;
+  out.pending = view.pending;
+  out.failed = view.failed;
+}
+
+std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capacity) noexcept {
+  return menu::test_setting(key, out, capacity);
+}
+
 std::uint64_t test_panel_published(std::uint64_t panel) noexcept {
   grace::abi::Panels& panels = session::panels();
   for (std::uint32_t i = 0; i < grace::abi::kMaxPanels; ++i) {
@@ -365,6 +402,7 @@ void test_fill_state(GraceUiTestState& out) noexcept {
   out.notice_face_grace = atlas::notice_face_is_grace() ? 1u : 0u;
   out.world_flags = session::world().combined();
   out.providers = session::world().providers();
+  out.present_prologue = hooks::present_prologue();
 }
 
 void test_reset_counters() noexcept {
@@ -495,6 +533,18 @@ void test_fill_input(GraceUiTestInput& out) noexcept {
   // SAFETY: a window handle is a value, given to the harness as a number to compare with its own windows'.
   out.window = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(input::window()));
   out.windows_filtered = static_cast<std::uint32_t>(hooks_input::windows_filtered());
+  const auto passed = [](counters::Passed kind) { return counters::passed_held[kind].load(std::memory_order_relaxed); };
+  out.passed_presses = passed(counters::press);
+  out.passed_releases = passed(counters::release);
+  out.passed_characters = passed(counters::character);
+  out.passed_mouse = passed(counters::mouse);
+  out.passed_raw = passed(counters::raw);
+  out.masked_keyboard_held = counters::masked_held[counters::dinput_keyboard].load(std::memory_order_relaxed);
+  out.masked_mouse_held = counters::masked_held[counters::dinput_mouse].load(std::memory_order_relaxed);
+  out.masked_pad_held = counters::masked_held[counters::xinput].load(std::memory_order_relaxed);
+  out.masked_keyboard_free = counters::masked_after[counters::dinput_keyboard].load(std::memory_order_relaxed);
+  out.masked_mouse_free = counters::masked_after[counters::dinput_mouse].load(std::memory_order_relaxed);
+  out.masked_pad_free = counters::masked_after[counters::xinput].load(std::memory_order_relaxed);
 }
 
 std::uint32_t test_copy_chars(std::uint32_t* out, std::uint32_t capacity) noexcept {

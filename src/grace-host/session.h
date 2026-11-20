@@ -41,6 +41,7 @@ grace::abi::Inactive inactive() noexcept;
 inline constexpr std::uint32_t kOwnNoticeMs = 20000;  // EST
 inline constexpr std::uint32_t kOwnKeyAntiCheat = 1;
 inline constexpr std::uint32_t kOwnKeyControls = 2;  // "‹Mod› has the controls" (D77)
+inline constexpr std::uint32_t kOwnKeyMenu = 3;      // why the menu did not open (§5.1, D167)
 inline constexpr std::uint32_t kControlsNoticeMs = 2000;  // as long as the player's exit waits for the second press
 void own_notice(std::uint32_t key, std::uint32_t tone, const char* format, ...) noexcept
 #if defined(__GNUC__) || defined(__clang__)

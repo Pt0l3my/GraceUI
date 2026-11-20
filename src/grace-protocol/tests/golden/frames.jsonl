@@ -1,0 +1,37 @@
+{"dir": "page", "expect": "ok", "frame": "{\"v\":1,\"t\":\"hello\",\"protocol\":\"1.0\",\"bundle\":\"web 0.2.0\",\"caps\":[\"settings\",\"notices\"],\"ticket\":\"t-0123456789abcdef\"}"}
+{"dir": "to", "expect": "ok", "frame": "{\"v\":1,\"t\":\"welcome\",\"protocol\":\"1.0\",\"caps\":[\"settings\"],\"graceui\":\"0.2.0\",\"spaces\":[{\"id\":\"demo\",\"name\":\"Demo space\",\"version\":\"0.2.0\",\"increment\":\"0.2\",\"settings_schema\":{\"number\":3,\"hash\":\"9f2c\"}}],\"session\":\"s-41\"}"}
+{"dir": "page", "expect": "ok", "frame": "{\"v\":1,\"t\":\"sub\",\"space\":\"demo\",\"id\":7,\"topic\":\"settings\"}"}
+{"dir": "page", "expect": "ok", "frame": "{\"v\":1,\"t\":\"sub\",\"space\":\"demo\",\"id\":8,\"topic\":\"lantern.log\",\"since\":120}"}
+{"dir": "page", "expect": "ok", "frame": "{\"v\":1,\"t\":\"unsub\",\"space\":\"demo\",\"id\":7,\"topic\":\"settings\"}"}
+{"dir": "to", "expect": "ok", "frame": "{\"v\":1,\"t\":\"state\",\"space\":\"demo\",\"topic\":\"settings\",\"rev\":118,\"body\":{\"values\":{\"lantern.brightness\":0.8}}}"}
+{"dir": "to", "expect": "ok", "frame": "{\"v\":1,\"t\":\"rows\",\"space\":\"demo\",\"topic\":\"lantern.log\",\"from_seq\":120,\"rows\":[{\"line\":\"The lantern was lit.\"},{\"line\":\"The lantern was trimmed.\"}],\"dropped\":0}"}
+{"dir": "page", "expect": "ok", "frame": "{\"v\":1,\"t\":\"cmd\",\"space\":\"demo\",\"id\":41,\"name\":\"settings.set\",\"args\":{\"key\":\"lantern.brightness\",\"value\":0.6}}"}
+{"dir": "to", "expect": "ok", "frame": "{\"v\":1,\"t\":\"result\",\"space\":\"demo\",\"id\":41,\"ok\":true}"}
+{"dir": "to", "expect": "ok", "frame": "{\"v\":1,\"t\":\"result\",\"space\":\"demo\",\"id\":42,\"error\":\"invalid_value\",\"body\":{\"min\":0,\"max\":1}}"}
+{"dir": "to", "expect": "ok", "frame": "{\"v\":1,\"t\":\"error\",\"code\":\"rate_limited\",\"detail\":\"Over the command rate.\"}"}
+{"dir": "to", "expect": "ok", "frame": "{\"v\":1,\"t\":\"error\",\"space\":\"demo\",\"code\":\"internal\",\"detail\":\"Something went wrong.\"}"}
+{"dir": "to", "expect": "ok", "frame": "{\"v\":1,\"t\":\"bye\",\"reason\":\"superseded\"}"}
+{"dir": "page", "expect": "ok", "frame": "{\"v\":1,\"t\":\"ping\"}"}
+{"dir": "to", "expect": "ok", "frame": "{\"v\":1,\"t\":\"pong\"}"}
+{"dir": "page", "expect": "version", "frame": "{\"v\":2,\"t\":\"hello\",\"protocol\":\"2.0\",\"bundle\":\"web 2.0.0\",\"caps\":[]}"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"t\":\"ping\"}"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"shout\"}"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"welcome\",\"protocol\":\"1.0\",\"caps\":[],\"graceui\":\"0.2.0\",\"spaces\":[],\"session\":\"s\"}"}
+{"dir": "to", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"hello\",\"protocol\":\"1.0\",\"bundle\":\"b\",\"caps\":[]}"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"sub\",\"id\":7,\"topic\":\"settings\"}"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"sub\",\"space\":\"Demo Space\",\"id\":7,\"topic\":\"settings\"}"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"sub\",\"space\":\"demo\",\"id\":-1,\"topic\":\"settings\"}"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"sub\",\"space\":\"demo\",\"id\":4294967296,\"topic\":\"settings\"}"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"sub\",\"space\":\"demo\",\"id\":7,\"topic\":\"settings\",\"since\":9007199254740992}"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"sub\",\"space\":\"demo\",\"id\":7.5,\"topic\":\"settings\"}"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"cmd\",\"space\":\"demo\",\"id\":1,\"name\":\"settings.set\",\"args\":[1,2]}"}
+{"dir": "to", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"result\",\"space\":\"demo\",\"id\":1,\"ok\":true,\"error\":\"busy\"}"}
+{"dir": "to", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"result\",\"space\":\"demo\",\"id\":1}"}
+{"dir": "to", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"result\",\"space\":\"demo\",\"id\":1,\"ok\":false}"}
+{"dir": "to", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"bye\",\"reason\":\"tired\"}"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"hello\",\"protocol\":\"1.0\",\"bundle\":\"b\",\"caps\":[\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\"]}"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"hello\",\"protocol\":\"1.0\",\"bundle\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"caps\":[]}"}
+{"dir": "page", "expect": "bad_message", "frame": "not json"}
+{"dir": "page", "expect": "bad_message", "frame": "[1,2,3]"}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"ping\""}
+{"dir": "page", "expect": "bad_message", "frame": "{\"v\":1,\"t\":\"ping\",\"x\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}"}

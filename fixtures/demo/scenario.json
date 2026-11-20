@@ -1,0 +1,61 @@
+{
+  "scenario": 1,
+  "space": "demo",
+  "about": "A minute of the north lantern's evening, invented for grace-dev (D168): wind, rain and a passing ship, then calm.",
+  "length_ms": 60000,
+  "inherited": [
+    {"key": "lantern.shield", "on": true, "source": "The lighthouse"}
+  ],
+  "steps": [
+    {"at": 4000, "rows": "lantern.log", "add": [{"time": "19:44", "line": "A moth circled the glass and flew off into the dark."}]},
+    {"at": 8000, "state": "lantern.status", "body": {
+      "tiles": [
+        {"label": "Flame", "value": "Flickering"},
+        {"label": "Oil", "value": "61%"},
+        {"label": "Since the last trim", "value": "18 min"}
+      ],
+      "sentence": "The north lantern flickers amber in a rising wind, with oil for about three hours."
+    }},
+    {"at": 12000, "rows": "lantern.log", "add": [{"time": "19:48", "line": "The wind rose from the sea; the flame bowed and held."}]},
+    {"at": 18000, "rows": "lantern.journal", "add": [{"time": "Today", "line": "A fisherman asked whether the lantern would burn till dawn."}]},
+    {"at": 24000, "state": "lantern.status", "body": {
+      "tiles": [
+        {"label": "Flame", "value": "Low"},
+        {"label": "Oil", "value": "58%"},
+        {"label": "Since the last trim", "value": "26 min"}
+      ],
+      "sentence": "The flame burns low behind sooty glass; a trim would steady it."
+    }},
+    {"at": 30000, "rows": "lantern.log", "add": [
+      {"time": "19:58", "line": "Rain began against the north pane."},
+      {"time": "19:59", "line": "The keeper wiped the glass dry."}
+    ]},
+    {"at": 40000, "state": "lantern.status", "body": {
+      "tiles": [
+        {"label": "Flame", "value": "Steady"},
+        {"label": "Oil", "value": "55%"},
+        {"label": "Since the last trim", "value": "34 min"}
+      ],
+      "sentence": "The rain has passed, and the lantern burns steady again, with oil for about two and a half hours."
+    }},
+    {"at": 48000, "rows": "lantern.log", "add": [{"time": "20:14", "line": "A ship's bell answered from the bay."}]},
+    {"at": 56000, "rows": "lantern.log", "add": [{"time": "20:22", "line": "The night watch changed in the tower below."}]}
+  ],
+  "reactions": [
+    {"on": "lantern.trim", "do": [
+      {"state": "lantern.status", "body": {
+        "tiles": [
+          {"label": "Flame", "value": "Tall"},
+          {"label": "Oil", "value": "55%"},
+          {"label": "Since the last trim", "value": "Just now"}
+        ],
+        "sentence": "The wick was trimmed just now; the flame stands tall and steady."
+      }},
+      {"rows": "lantern.log", "add": [{"time": "Just now", "line": "The wick was trimmed."}]}
+    ]},
+    {"on": "lantern.clear_log", "do": [
+      {"clear": "lantern.log"},
+      {"rows": "lantern.log", "add": [{"time": "Just now", "line": "The log was cleared. The journal is kept."}]}
+    ]}
+  ]
+}

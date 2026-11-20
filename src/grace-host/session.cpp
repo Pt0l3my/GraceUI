@@ -11,6 +11,7 @@
 #include "grace/host/host.h"
 #include "input.h"
 #include "log.h"
+#include "spaces.h"
 #include "state.h"
 
 namespace grace::host {
@@ -49,7 +50,10 @@ grace::abi::Notices& notices() noexcept { return g_notices; }
 grace::abi::Panels& panels() noexcept { return stores().panels; }
 grace::abi::Registry& registry() noexcept { return stores().registry; }
 grace::abi::World& world() noexcept { return stores().world; }
-void allocate() { (void)stores(); }
+void allocate() {
+  (void)stores();
+  (void)spaces::registry();  // the mods' spaces (D169)
+}
 
 void enter_notice_only(anticheat::Clause clause) noexcept {
   g_anti_cheat.store(clause, std::memory_order_relaxed);
@@ -218,7 +222,7 @@ bool log_connect_failure() noexcept {
 bool has_cap(std::string_view name) noexcept {
   return name == GRACEUI_CAP_NOTICES || name == GRACEUI_CAP_PANELS || name == GRACEUI_CAP_TEXTURES ||
          name == GRACEUI_CAP_FACES || name == GRACEUI_CAP_INPUT || name == GRACEUI_CAP_WORLD_STATE ||
-         name == GRACEUI_CAP_HOTKEYS;
+         name == GRACEUI_CAP_HOTKEYS || name == GRACEUI_CAP_PAGES;
 }
 
 grace::abi::ConnectResult connect(const grace::abi::ConnectRequest& request) noexcept {

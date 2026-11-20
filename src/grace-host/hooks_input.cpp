@@ -31,6 +31,7 @@
 #include "hooks_vtable.h"
 #include "input.h"
 #include "log.h"
+#include "menu.h"
 
 namespace grace::host::hooks_input {
 namespace {
@@ -83,6 +84,10 @@ constinit std::uint32_t g_char_generation = 0;
 struct Outcome {
   Route route = Route::game;
   LRESULT result = 0;  // what GraceUI answers for a message it keeps
+  // For the spikes' counters (D175): the device an input message belongs to (0 for another message), and what kind of
+  // input it is (counters::Passed; -1 for one that may always reach the game, Alt+F4's press).
+  std::uint8_t device = 0;
+  int passed = -1;
 };
 
 std::uint32_t keyboard_code_page(HWND window) noexcept {
@@ -175,6 +180,15 @@ void push_whole_character(WPARAM wparam) noexcept {
 }
 
 void push_key(Key key, std::uint32_t vk, bool down) noexcept {
+  if (const grace::input::Holder holder = input::capture().holder();
+      holder.kind == grace::input::Kind::menu && holder.owner == 0) {
+    // The menu's keys go to GraceUI's thread as the page view's inputs (D167), never to Dear ImGui; its modifiers are
+    // read only for its own presses.
+    if (down) {
+      menu::key_down(vk, (GetKeyState(VK_SHIFT) & 0x8000) != 0, (GetKeyState(VK_CONTROL) & 0x8000) != 0);
+    }
+    return;
+  }
   HolderEvent event;
   event.type = HolderEvent::Type::key;
   event.key = key;
@@ -291,6 +305,8 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
         push_key(key, vk, down);
       }
       out.route = decision.route;
+      out.device = grace::input::want_keyboard;
+      out.passed = !down ? 1 : system && vk == VK_F4 ? -1 : 0;  // release, press; Alt+F4 always reaches the game
       return out;
     }
     case WM_CHAR: {
@@ -299,12 +315,16 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
         push_character(wparam, unicode);
       }
       out.route = decision.route;
+      out.device = grace::input::want_keyboard;
+      out.passed = 2;
       return out;
     }
     case WM_DEADCHAR:
     case WM_SYSCHAR:
     case WM_SYSDEADCHAR:
       out.route = rules.other_character(grace::input::key_from_message(bits, 0)).route;
+      out.device = grace::input::want_keyboard;
+      out.passed = 2;
       return out;
     case WM_UNICHAR: {
       if (wparam == UNICODE_NOCHAR) {
@@ -360,6 +380,8 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
         push_mouse(HolderEvent::Type::mouse_move, 0, false, low_signed(lparam), high_signed(lparam));
       }
       out.route = decision.route;
+      out.device = grace::input::want_mouse;
+      out.passed = 3;
       return out;
     }
     case WM_MOUSEWHEEL:
@@ -371,6 +393,8 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
                    message == WM_MOUSEHWHEEL ? delta : 0);
       }
       out.route = decision.route;
+      out.device = grace::input::want_mouse;
+      out.passed = 3;
       return out;
     }
     case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK: case WM_LBUTTONUP:
@@ -386,6 +410,8 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
       }
       out.route = decision.route;
       out.result = message == WM_XBUTTONDOWN || message == WM_XBUTTONDBLCLK || message == WM_XBUTTONUP ? TRUE : 0;
+      out.device = grace::input::want_mouse;
+      out.passed = down ? 3 : -1;  // a button's release reaches the game as a key's does
       return out;
     }
     case WM_INPUT: {
@@ -402,6 +428,8 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
                                                                         : 0;
         if (device != 0) {
           out.route = rules.raw_input(device).route;
+          out.device = device;
+          out.passed = 4;
         }
       }
       return out;
@@ -442,6 +470,11 @@ LRESULT CALLBACK window_filter(HWND window, UINT message, WPARAM wparam, LPARAM 
       const counters::CountingScope counting;
       try {
         outcome = route(window, message, wparam, lparam, kUnicode);
+#if defined(GRACEUI_TEST_EXPORTS)
+        if (outcome.route == Route::game && outcome.passed >= 0 && input::capture().holder().takes(outcome.device)) {
+          counters::count_passed(static_cast<counters::Passed>(outcome.passed));
+        }
+#endif
         input::tick();
       } catch (...) {
         input::fault("an exception in the window procedure's filter");
@@ -485,7 +518,16 @@ void filter_device_state(IDirectInputDevice8W* device, DWORD size, void* data) n
         // SAFETY: DirectInput has just written the caller's 256 bytes at `data`, c_dfDIKeyboard's layout.
         auto& keys = *static_cast<std::uint8_t(*)[256]>(data);
         input::capture().escape(grace::input::Source::direct_input, (keys[grace::input::kEscape] & 0x80u) != 0, now);
+#if defined(GRACEUI_TEST_EXPORTS)
+        std::uint8_t before[256];
+        std::memcpy(before, keys, sizeof before);
+#endif
         input::keyboard().filter(keys, input::capture(), input::hidden_keys(), now);
+#if defined(GRACEUI_TEST_EXPORTS)
+        if (std::memcmp(before, keys, sizeof before) != 0) {
+          counters::count_masked(counters::dinput_keyboard, input::capture().holder().holds());
+        }
+#endif
       } else if (type == DI8DEVTYPE_MOUSE && (size == sizeof(DIMOUSESTATE) || size == sizeof(DIMOUSESTATE2))) {
         DIMOUSESTATE2 mouse{};
         // SAFETY: DirectInput has just written `size` bytes at `data`: a DIMOUSESTATE or a DIMOUSESTATE2, whose first
@@ -500,6 +542,15 @@ void filter_device_state(IDirectInputDevice8W* device, DWORD size, void* data) n
           view.buttons[i] = mouse.rgbButtons[i];
         }
         input::mouse().filter(view, input::capture(), now);
+#if defined(GRACEUI_TEST_EXPORTS)
+        bool changed = view.x != mouse.lX || view.y != mouse.lY || view.z != mouse.lZ;
+        for (unsigned i = 0; i < 8; ++i) {
+          changed = changed || view.buttons[i] != mouse.rgbButtons[i];
+        }
+        if (changed) {
+          counters::count_masked(counters::dinput_mouse, input::capture().holder().holds());
+        }
+#endif
         mouse.lX = view.x;
         mouse.lY = view.y;
         mouse.lZ = view.z;
@@ -556,7 +607,15 @@ void filter_pad(DWORD user, XINPUT_STATE* state, DWORD result) noexcept {
         pad.right_x = gamepad.sThumbRX;
         pad.right_y = gamepad.sThumbRY;
         std::uint32_t packet = state->dwPacketNumber;
+#if defined(GRACEUI_TEST_EXPORTS)
+        const grace::input::Pad before = pad;
+#endif
         input::pads().filter(user, packet, pad, input::capture(), input::now_ms());
+#if defined(GRACEUI_TEST_EXPORTS)
+        if (!(pad == before)) {
+          counters::count_masked(counters::xinput, input::capture().holder().holds());
+        }
+#endif
         state->dwPacketNumber = packet;
         gamepad.wButtons = pad.buttons;
         gamepad.bLeftTrigger = pad.left_trigger;

@@ -1,0 +1,372 @@
+# SPDX-License-Identifier: MIT
+# src/grace-protocol/protocol.toml: the bridge protocol's one schema (GraceUI DESIGN §6, D108, D159):
+# the envelope, every message kind, the error codes, the limits, the settings description and the framework's own
+# commands. tools/protocol/generate.py writes the C++ types and their checked decoders and encoders
+# (src/grace-protocol/include/grace/protocol/messages.h, src/grace-protocol/messages.cpp) and the web app's TypeScript
+# types (web/src/protocol.ts) from it; `--check` fails when an output drifts. A space's own topics and commands join this
+# schema as their pages are built (§6.1); a topic's or a command's body is otherwise a JSON object, checked by its space.
+#
+# Field types: string (with max, bytes of UTF-8), id (1 to 64 of a-z, 0-9, '.', '_', '-' and '/'), u32, u64, f64, bool,
+# json (any JSON value, at most max bytes when encoded), object (a JSON object, likewise), enum.<name>, type.<name>, and
+# list.<type> with max items. `optional = true` lets a field be absent.
+
+schema = 1
+protocol = { major = 1, minor = 1 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap
+
+[limits]
+frame_from_page = 16384       # bytes of a frame from a page (§6.8)
+frame_to_page = 262144        # bytes of a frame to a page: one state payload at most 256 KiB
+commands_per_second = 20      # per connection
+subscriptions = 32            # per connection
+rows_per_batch = 100          # a stream batch
+command_queue = 32            # each space's
+ping_seconds = 15             # liveness; two missed pongs close the socket
+bad_messages_before_close = 3
+
+[enums.error_code]
+values = ["bad_message", "unknown_topic", "unknown_command", "unknown_key", "invalid_value", "locked", "not_now", "busy",
+          "confirm_required", "unauthorised", "rate_limited", "version", "internal"]
+
+[enums.bye_reason]
+values = ["shutdown", "superseded", "unauthorised", "version", "fault"]
+
+[enums.setting_type]
+values = ["bool", "integer", "number", "duration_s", "choice", "tri_state", "key_name", "text", "secret"]
+
+[enums.setting_effect]
+values = ["now", "next_moment", "next_request", "next_launch"]
+
+# A tri-state's third value (D163): auto (the space decides at the moment) or inherit (taken from a chain the space
+# resolves, its value and source published in the settings body's `inherited`).
+[enums.tri_third]
+values = ["auto", "inherit"]
+
+[enums.reset_scope_kind]
+values = ["key", "page", "all"]
+
+[enums.topic_shape]
+values = ["state", "stream"]
+
+# The components a page's block may draw (§2.5), versioned with the protocol's minor (§6.4): only GraceUI adds one.
+# Settings rows, shortcut rows, sections, tabs, the header, help and the Related card are the page's own structure.
+[enums.component]
+values = ["stat_tiles", "filter_bar", "table", "master_detail", "card_grid", "segmented_switch", "statement",
+          "journal", "transcript", "live_feed", "check_list", "log_tail", "report_preview", "computed_sentence",
+          "action_button", "wizard_steps", "key_value_list"]
+
+[enums.block_kind]
+values = ["settings", "shortcuts", "component"]
+
+[enums.action_tone]
+values = ["primary", "secondary", "destructive"]
+
+[enums.page_tag]
+values = ["wip", "later"]
+
+# ---- Shared types.
+
+[types.settings_schema]
+doc = "A space's settings schema: its number and a hash of its settings description (§6.4)"
+fields = [
+  { name = "number", type = "u32" },
+  { name = "hash", type = "string", max = 64 },
+]
+
+[types.space_info]
+doc = "A space this view may show (welcome)"
+fields = [
+  { name = "id", type = "id" },
+  { name = "name", type = "string", max = 64 },
+  { name = "version", type = "string", max = 32 },
+  { name = "increment", type = "string", max = 64 },
+  { name = "settings_schema", type = "type.settings_schema" },
+]
+
+[types.choice]
+doc = "One choice of a choice setting, and the label players see"
+fields = [
+  { name = "value", type = "string", max = 64 },
+  { name = "label", type = "string", max = 128 },
+]
+
+[types.setting]
+doc = "One entry of a space's settings description (§6.9)"
+fields = [
+  { name = "key", type = "id" },
+  { name = "type", type = "enum.setting_type" },
+  { name = "default", type = "json", max = 1024 },
+  { name = "min", type = "f64", optional = true },
+  { name = "max", type = "f64", optional = true },
+  { name = "step", type = "f64", optional = true },
+  { name = "unit", type = "string", max = 16, optional = true },
+  { name = "choices", type = "list.type.choice", max = 64, optional = true },
+  { name = "third", type = "enum.tri_third", optional = true },
+  { name = "label", type = "string", max = 128 },
+  { name = "help", type = "string", max = 1024 },
+  { name = "synonyms", type = "list.string", max = 16, item_max = 64, optional = true },
+  { name = "home", type = "id" },
+  { name = "effect", type = "enum.setting_effect" },
+  { name = "availability", type = "string", max = 128 },
+  { name = "locked", type = "bool" },
+]
+
+[types.inherited_value]
+doc = "What an inherit tri-state resolves to now: on or off, the source in words, and the page that sets it"
+fields = [
+  { name = "key", type = "id" },
+  { name = "on", type = "bool" },
+  { name = "source", type = "string", max = 96 },
+  { name = "page", type = "id", optional = true },
+]
+
+[types.settings_body]
+doc = "The settings topic's body: the description, the values, the keys changed from their defaults, and what each inherit tri-state on inherit resolves to"
+fields = [
+  { name = "schema", type = "type.settings_schema" },
+  { name = "description", type = "list.type.setting", max = 512 },
+  { name = "values", type = "object", max = 65536 },
+  { name = "changed", type = "list.id", max = 512 },
+  { name = "inherited", type = "list.type.inherited_value", max = 512, optional = true },
+]
+
+# ---- Page descriptions (§2.5, D160): a space's rail, pages and topics, handed over at register_pages and shown by both
+# views with GraceUI's components. tools/pages/build.py writes them from each space's TOML; its lint holds the rules.
+
+[types.settings_description]
+doc = "A space's settings description (§6.9): its schema and every setting it owns"
+fields = [
+  { name = "schema", type = "type.settings_schema" },
+  { name = "settings", type = "list.type.setting", max = 512 },
+]
+
+[types.topic_info]
+doc = "A topic a space publishes: its shape, and for a stream its ring's size"
+fields = [
+  { name = "id", type = "id" },
+  { name = "shape", type = "enum.topic_shape" },
+  { name = "ring", type = "u32", optional = true },
+]
+
+[types.page_action]
+doc = "A header action: a command of the space's, with a confirmation for a destructive one"
+fields = [
+  { name = "id", type = "id" },
+  { name = "label", type = "string", max = 64 },
+  { name = "command", type = "id" },
+  { name = "tone", type = "enum.action_tone" },
+  { name = "confirm", type = "string", max = 256, optional = true },
+]
+
+[types.page_block]
+doc = "A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, or a component bound to a topic"
+fields = [
+  { name = "kind", type = "enum.block_kind" },
+  { name = "keys", type = "list.id", max = 64, optional = true },
+  { name = "component", type = "enum.component", optional = true },
+  { name = "topic", type = "id", optional = true },
+  { name = "props", type = "object", max = 4096, optional = true },
+]
+
+[types.page_section]
+doc = "A section: a card with a label, an optional line, its blocks and an Advanced disclosure"
+fields = [
+  { name = "id", type = "id" },
+  { name = "title", type = "string", max = 64 },
+  { name = "description", type = "string", max = 256, optional = true },
+  { name = "collapsed", type = "bool", optional = true },
+  { name = "blocks", type = "list.type.page_block", max = 32 },
+  { name = "advanced", type = "list.type.page_block", max = 16, optional = true },
+]
+
+[types.page_tab]
+doc = "A tab of a page and its sections"
+fields = [
+  { name = "id", type = "id" },
+  { name = "name", type = "string", max = 32 },
+  { name = "sections", type = "list.type.page_section", max = 32 },
+]
+
+[types.page_help]
+doc = "A page's help: what it is for, and how to use it in three to five steps (§4.2.4)"
+fields = [
+  { name = "purpose", type = "string", max = 512 },
+  { name = "steps", type = "list.string", max = 5, item_max = 256 },
+]
+
+[types.page]
+doc = "A page: its place, its header, its help, its Related links, and its tabs or its sections"
+fields = [
+  { name = "id", type = "id" },
+  { name = "category", type = "id" },
+  { name = "name", type = "string", max = 64 },
+  { name = "description", type = "string", max = 160 },
+  { name = "help", type = "type.page_help" },
+  { name = "related", type = "list.id", max = 8 },
+  { name = "increment", type = "string", max = 16, optional = true },
+  { name = "tag", type = "enum.page_tag", optional = true },
+  { name = "actions", type = "list.type.page_action", max = 4, optional = true },
+  { name = "tabs", type = "list.type.page_tab", max = 8, optional = true },
+  { name = "sections", type = "list.type.page_section", max = 32, optional = true },
+]
+
+[types.category]
+doc = "A category of the rail and its pages, in order"
+fields = [
+  { name = "id", type = "id" },
+  { name = "name", type = "string", max = 64 },
+  { name = "pages", type = "list.id", max = 32 },
+]
+
+[types.space_pages]
+doc = "A space's page data (§2.5): its rail, its pages, the topics and commands they use, and the protocol minor its components need"
+fields = [
+  { name = "space", type = "id" },
+  { name = "name", type = "string", max = 64 },
+  { name = "minor", type = "u32" },
+  { name = "categories", type = "list.type.category", max = 16 },
+  { name = "pages", type = "list.type.page", max = 128 },
+  { name = "topics", type = "list.type.topic_info", max = 64 },
+  { name = "commands", type = "list.id", max = 64 },
+]
+
+# ---- Message kinds (§6.3). `from` is who sends it: page (a view: the browser or the in-game view), grace (GraceUI),
+# space (a space, through GraceUI), or both. `space = true` means the frame carries its space's id.
+
+[messages.hello]
+from = "page"
+space = false
+doc = "The first frame: within 2 s of connecting (browser), when the in-game view starts (in game)"
+fields = [
+  { name = "protocol", type = "string", max = 16 },
+  { name = "bundle", type = "string", max = 64 },
+  { name = "caps", type = "list.id", max = 64 },
+  { name = "ticket", type = "string", max = 128, optional = true },
+]
+
+[messages.welcome]
+from = "grace"
+space = false
+doc = "The handshake accepted"
+fields = [
+  { name = "protocol", type = "string", max = 16 },
+  { name = "caps", type = "list.id", max = 64 },
+  { name = "graceui", type = "string", max = 32 },
+  { name = "spaces", type = "list.type.space_info", max = 32 },
+  { name = "session", type = "string", max = 64 },
+]
+
+[messages.sub]
+from = "page"
+space = true
+doc = "Watch a topic; for a stream, from a sequence number"
+fields = [
+  { name = "id", type = "u32" },
+  { name = "topic", type = "id" },
+  { name = "since", type = "u64", optional = true },
+]
+
+[messages.unsub]
+from = "page"
+space = true
+doc = "Stop watching a topic"
+fields = [
+  { name = "id", type = "u32" },
+  { name = "topic", type = "id" },
+]
+
+[messages.state]
+from = "space"
+space = true
+doc = "A state topic's whole payload"
+fields = [
+  { name = "topic", type = "id" },
+  { name = "rev", type = "u64" },
+  { name = "body", type = "object", max = 262144 },
+]
+
+[messages.rows]
+from = "space"
+space = true
+doc = "Stream rows, in order; a batch whose from_seq is past the view's next row starts the stream over there, so an empty one clears it (1.1)"
+fields = [
+  { name = "topic", type = "id" },
+  { name = "from_seq", type = "u64" },
+  { name = "rows", type = "list.object", max = 100, item_max = 16384 },
+  { name = "dropped", type = "u64" },
+]
+
+[messages.cmd]
+from = "page"
+space = true
+doc = "A command"
+fields = [
+  { name = "id", type = "u32" },
+  { name = "name", type = "id" },
+  { name = "args", type = "object", max = 16384 },
+]
+
+[messages.result]
+from = "space"
+space = true
+doc = "The answer to one command: ok, or an error with its reason in words a player reads (detail, 1.1)"
+fields = [
+  { name = "id", type = "u32" },
+  { name = "ok", type = "bool", optional = true },
+  { name = "error", type = "enum.error_code", optional = true },
+  { name = "body", type = "object", max = 262144, optional = true },
+  { name = "detail", type = "string", max = 256, optional = true },
+]
+
+[messages.error]
+from = "both"
+space = "optional"
+doc = "A protocol-level error not tied to a command"
+fields = [
+  { name = "code", type = "enum.error_code" },
+  { name = "detail", type = "string", max = 256 },
+]
+
+[messages.bye]
+from = "grace"
+space = false
+doc = "GraceUI is closing the connection"
+fields = [
+  { name = "reason", type = "enum.bye_reason" },
+]
+
+[messages.ping]
+from = "both"
+space = false
+doc = "Liveness, every 15 s"
+fields = []
+
+[messages.pong]
+from = "both"
+space = false
+doc = "The answer to a ping"
+fields = []
+
+# ---- The framework's commands (§6.6): the args each takes, checked before its space sees them.
+
+[commands."settings.set"]
+doc = "Set one setting: the key known, the value of its type and within its bounds, not locked (the space checks these)"
+fields = [
+  { name = "key", type = "id" },
+  { name = "value", type = "json", max = 1024 },
+]
+
+[commands."settings.reset"]
+doc = "Reset a key, a page or all of a space's settings; a page or all needs confirm"
+fields = [
+  { name = "scope", type = "enum.reset_scope_kind" },
+  { name = "target", type = "id", optional = true },
+  { name = "confirm", type = "bool", optional = true },
+]
+
+[commands."menu.close"]
+doc = "Close the menu (in game only)"
+fields = []
+
+[commands."dashboard.disconnect"]
+doc = "Renew the session cookie and close every connection (in game, or from the loopback listener)"
+fields = []

@@ -3,34 +3,42 @@
 clang-tidy rule; this is the grep). Run it with python3 -I from anywhere:
 
     python3 -I tools/check_safety.py                      # the source checks
-    python3 -I tools/check_safety.py --exports DLL        # and a release build's export table: the two exports only
+    python3 -I tools/check_safety.py --exports DLL        # and a release build's export table: the two exports only;
+                                                          # and its imports, against the reviewed list (D170)
     python3 -I tools/check_safety.py --exports DLL --test # a test build's: those two and GraceUI_Test_* only
     python3 -I tools/check_safety.py --abi-self-test      # shows that check 8 refuses what it must, and nothing else
 
-The source checks, over src/ and examples/ (our own code; third-party code is fetched into the build tree and not
-looked at):
+The source checks, over src/, examples/ and tools/grace-dev/ (our own code; third-party code is fetched into the build
+tree and not looked at; the web app's node_modules/ and dist/ are never walked):
   1. reinterpret_cast, const_cast and std::bit_cast appear only in grace-host's abi, hooks and draw files, the DLL's
-     abi files (D110) and graceui-sys's headers (a mod's side: GetProcAddress's answer made a function), each with a
-     "// SAFETY:" comment on its statement or in the three lines before it; a C file's pointer casts only in those files
-     too.
+     abi files (D110), graceui-sys's headers (a mod's side: GetProcAddress's answer made a function) and grace-serve's
+     Winsock file (a SOCKET made the HANDLE SetHandleInformation takes, so that no socket is inherited, §7.2 item 24),
+     each with a "// SAFETY:" comment on its statement or in the three lines before it; a C file's pointer casts only in
+     those files too.
   2. Each of those files that holds raw pointers from callers, casts or hook code carries a SAFETY comment.
   3. MinHook is included and called only in grace-host's hooks files, and so is any other way of hooking a window
      (SetWindowLongPtr, SetWindowsHookEx), and Dear ImGui's backends only in grace-host (invariant 16): graceui-sys and
      the example mods, a mod's side, hook nothing; only grace-host's CMakeLists.txt links MinHook or Dear ImGui with
      its backends (the module graph). Dear ImGui's core alone (gu_imgui_core: no backend, D76) is linked only by the
-     example mods, and its target compiles no backend.
+     example mods and the spike observer (tools/grace-spike, a mod's side, D175), and its target compiles no backend.
   4. Only the DLL's abi files export anything (the public header declares the two exports).
   5. hooks.cpp's hook table names only functions of D102's published list, and is the only place MinHook makes a hook.
   6. No project that EldenNet's O47 and O48 exclude is named in a build file (D106).
-  7. The pure modules (grace-input, grace-abi) include no Windows header, no Dear ImGui and no MinHook, and their
-     libraries link nothing (G15 (a), D124, D131): their unit tests build on Linux, which proves the first, and this
-     check names the line.
+  7. The pure modules (grace-input, grace-abi, grace-tokens and grace-serve's core) include no Windows header, no Dear
+     ImGui and no MinHook, and their libraries link nothing (G15 (a), D124, D131, D158): their unit tests build on
+     Linux, which proves the first, and this check names the line. grace-serve's I/O, in src/grace-serve/io/ (its own
+     library, grace_serve), is not pure; so grace_serve_core compiles nothing from io/, and no file of the core includes
+     io/'s headers or grace_serve's own (server.h, space.h, files.h).
   8. graceui.h only grows against ABI 1.0's first header, src/grace-abi/baseline/graceui-abi1-0.h (D109, D132): every
      constant keeps its value (GRACEUI_ABI1_MINOR may only rise), every typedef and export its declaration, and every
      struct, the table GraceUiApi1 among them, keeps its members in their order, adding members only at its end; a slot
      of the table declared as GraceUiReservedSlot may be given its type, keeping its name and place.
+  9. grace-dev (tools/grace-dev/, D168) is a developer's tool, not a pure module and no part of graceui.dll: checks 1
+     to 4 hold for its code as for src/'s, so it casts, hooks and exports nothing; its library, grace_dev_core, is
+     linked by grace-dev and its tests alone; and it makes no shared library, so nothing of it is ever loaded by a game.
 Exit status 0 when every check passes; each failure is printed with its file and line.
 """
+import os
 import pathlib
 import re
 import struct
@@ -39,6 +47,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 EXAMPLES = ROOT / "examples"
+GRACE_DEV = ROOT / "tools" / "grace-dev"  # a tool, held to the source checks as src/ is (check 9)
 
 ABI_HEADER = "src/grace-abi/include/graceui.h"
 ABI_BASELINE = "src/grace-abi/baseline/graceui-abi1-0.h"
@@ -46,7 +55,8 @@ ABI_BASELINE = "src/grace-abi/baseline/graceui-abi1-0.h"
 # D110: the files where raw pointers from callers, casts and hook code may live; and graceui-sys's headers, the mod's
 # side of the boundary, whose one cast turns GetProcAddress's answer into the export's type.
 ALLOWED = re.compile(
-    r"^src/(grace-host/(abi|hooks|draw)[^/]*|graceui/abi[^/]*)\.(cpp|c|h)$|^src/graceui-sys/include/[^/]+\.(h|hpp)$")
+    r"^src/(grace-host/(abi|hooks|draw)[^/]*|graceui/abi[^/]*)\.(cpp|c|h)$|^src/graceui-sys/include/[^/]+\.(h|hpp)$"
+    r"|^src/grace-serve/io/platform_win32\.cpp$")
 HOOK_FILES = re.compile(r"^src/grace-host/hooks[^/]*\.(cpp|c|h)$")
 GRACE_HOST_FILES = re.compile(r"^src/grace-host/")
 DLL_ABI_FILES = re.compile(r"^src/graceui/abi[^/]*\.cpp$")
@@ -70,7 +80,20 @@ PUBLISHED_HOOKS = {
 EXCLUDED_PROJECTS = re.compile(r"\bme3\b|fromsoftware-rs|fromsoftware_rs", re.IGNORECASE)
 
 # The pure modules and their libraries: no Win32, no Dear ImGui, no MinHook (D124, D131).
-PURE_MODULES = {"src/grace-input/": ("grace_input",), "src/grace-abi/": ("grace_abi", "grace_abi_rules")}
+PURE_MODULES = {"src/grace-input/": ("grace_input",), "src/grace-abi/": ("grace_abi", "grace_abi_rules"),
+                "src/grace-tokens/": ("grace_tokens",), "src/grace-protocol/": ("grace_protocol",),
+                "src/grace-serve/": ("grace_serve_core",), "src/grace-pages/": ("grace_pages",),
+                "src/grace-view/": ("grace_view",), "src/grace-draw/": ("grace_draw",)}
+# What a pure module may link: nlohmann/json, header-only, for grace-protocol (D159); and other pure modules, for the
+# in-game views (D162) and a space's settings store (D167).
+PURE_MAY_LINK = {"grace_protocol": ("gu_nlohmann_json",), "grace_pages": ("grace_protocol",),
+                 "grace_view": ("grace_protocol", "grace_tokens"),
+                 "grace_draw": ("grace_view", "grace_tokens", "grace_abi_rules")}
+# grace-serve's I/O (grace_serve, S11.2.i): beside its pure core, and not pure itself.
+IMPURE_PARTS = ("src/grace-serve/io/", "src/grace-serve/include/grace/serve/server.h",
+                "src/grace-serve/include/grace/serve/space.h", "src/grace-serve/include/grace/serve/files.h")
+SERVE_IO_HEADERS = re.compile(r'#\s*include\s*[<"](?:[^">]*/)?(?:platform|internal|engine)\.h[">]|'
+                              r'#\s*include\s*[<"]grace/serve/(?:server|space|files)\.h[">]')
 IMPURE_INCLUDE = re.compile(
     r'#\s*include\s*[<"](windows|winuser|windef|winbase|imm|dinput|xinput|d3d1\d|dxgi[0-9_]*|psapi|tlhelp32|'
     r'imgui[a-z_]*|MinHook)\.h[">]', re.IGNORECASE)
@@ -82,8 +105,26 @@ def fail(path, line, message):
     failures.append(f"{path}:{line}: {message}")
 
 
+# Folders never walked: build trees, worktrees, and the web app's installed packages and build output (D166), which
+# are third-party code and generated files, never ours to check here.
+SKIPPED_DIRS = ("node_modules", "dist", ".git")
+
+
+def project_files(name):
+    """Every file called `name` in the repository, skipping build trees, .claude/ and the web app's node_modules/ and
+    dist/ without descending into them."""
+    found = []
+    for folder, dirs, files in os.walk(ROOT):
+        rel = pathlib.Path(folder).relative_to(ROOT).as_posix()
+        dirs[:] = sorted(d for d in dirs if d not in SKIPPED_DIRS and not (rel == "." and (d.startswith("build") or
+                                                                                         d == ".claude")))
+        if name in files:
+            found.append(pathlib.Path(folder) / name)
+    return sorted(found)
+
+
 def own_sources():
-    for folder in (SRC, EXAMPLES):
+    for folder in (SRC, EXAMPLES, GRACE_DEV):
         for path in sorted(folder.rglob("*")):
             rel = path.relative_to(ROOT).as_posix()
             if path.suffix in (".cpp", ".c", ".h", ".hpp") and path.is_file() and not rel.startswith(
@@ -167,9 +208,9 @@ def check_sources():
 
 
 def check_module_graph():
-    for path in sorted(ROOT.rglob("CMakeLists.txt")):
+    for path in project_files("CMakeLists.txt"):
         rel = path.relative_to(ROOT).as_posix()
-        if rel.startswith("build"):
+        if rel.startswith(("build", ".claude/")):
             continue
         text = path.read_text(encoding="utf-8")
         for number, line in enumerate(text.splitlines(), 1):
@@ -186,16 +227,17 @@ def check_module_graph():
 
 
 def check_imgui_core():
-    """Dear ImGui's core alone is a mod's (D76): only the example mods link it, and it compiles no backend."""
-    for path in sorted(ROOT.rglob("CMakeLists.txt")):
+    """Dear ImGui's core alone is a mod's (D76): only the example mods and the spike observer (a test mod, D175) link it,
+    and it compiles no backend."""
+    for path in project_files("CMakeLists.txt"):
         rel = path.relative_to(ROOT).as_posix()
-        if rel.startswith("build"):
+        if rel.startswith(("build", ".claude/")):
             continue
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             code = line.split("#", 1)[0]
             if re.search(r"\bgu_imgui_core\b", code) and "target_link_libraries" in code and \
-                    not rel.startswith("examples/"):
-                fail(rel, number, "Dear ImGui's core linked outside the example mods (D76)")
+                    not rel.startswith(("examples/", "tools/grace-spike/")):
+                fail(rel, number, "Dear ImGui's core linked outside the example mods and the spike observer (D76)")
     third_party = (ROOT / "cmake" / "third_party.cmake").read_text(encoding="utf-8")
     block = re.search(r"add_library\(gu_imgui_core\b(.*?)\)", third_party, re.S)
     if block is None:
@@ -204,21 +246,46 @@ def check_imgui_core():
         fail("cmake/third_party.cmake", 0, "gu_imgui_core compiles a Dear ImGui backend (invariant 16)")
 
 
+def check_grace_dev():
+    """Check 9: grace-dev's library is its own and its tests', and grace-dev makes no shared library (D168)."""
+    own = "tools/grace-dev/CMakeLists.txt"
+    for path in sorted(ROOT.rglob("CMakeLists.txt")):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel.startswith(("build", ".claude/")):
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            code = line.split("#", 1)[0]
+            if re.search(r"\bgrace_dev_core\b", code) and "target_link_libraries" in code and rel != own:
+                fail(rel, number, "grace-dev's library linked outside grace-dev (D168)")
+            if rel == own and re.search(r"add_library\s*\([^)]*\b(SHARED|MODULE)\b", code):
+                fail(rel, number, "grace-dev makes a shared library: it is a program alone (D168)")
+
+
 def check_pure_modules():
     for module, libraries in PURE_MODULES.items():
         folder = ROOT / module
-        linking = re.compile(r"target_link_libraries\s*\(\s*(" + "|".join(libraries) + r")\b")
+        linking = re.compile(r"target_link_libraries\s*\(\s*(" + "|".join(libraries) + r")\b(.*)")
         for path in sorted(folder.rglob("*")):
             rel = path.relative_to(ROOT).as_posix()
+            if rel.startswith(IMPURE_PARTS):
+                continue
             if path.suffix in (".cpp", ".c", ".h"):
                 for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                     if IMPURE_INCLUDE.search(line):
                         fail(rel, number, "a pure module includes Win32, Dear ImGui or MinHook (D124)")
+                    if module == "src/grace-serve/" and SERVE_IO_HEADERS.search(line):
+                        fail(rel, number, "grace-serve's pure core includes a header of its I/O (D158)")
             elif path.name == "CMakeLists.txt":
                 for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                     code = line.split("#", 1)[0]
-                    if linking.search(code):
-                        fail(rel, number, "a pure module's library links a library (D124)")
+                    found = linking.search(code)
+                    if found:
+                        linked = set(found.group(2).replace(")", " ").split()) - {"PUBLIC", "PRIVATE", "INTERFACE"}
+                        if linked - set(PURE_MAY_LINK.get(found.group(1), ())):
+                            fail(rel, number, "a pure module's library links a library (D124)")
+                core = re.search(r"add_library\(grace_serve_core\b(.*?)\)", path.read_text(encoding="utf-8"), re.S)
+                if core is not None and "io/" in core.group(1):
+                    fail(rel, 0, "grace_serve_core compiles a file of grace-serve's I/O (D158)")
 
 
 # ---- Check 8: graceui.h only grows against ABI 1.0's first header (D109, D132).
@@ -397,6 +464,52 @@ def check_hook_table():
         fail("src/grace-host/hooks.cpp", 1, "hooks are created somewhere other than the one loop over the table")
 
 
+# graceui.dll's imports (invariant 16, D170), reviewed: the system's own DLLs a windowed process has loaded, the
+# server's sockets and random source, Dear ImGui's Win32 backend's dwmapi, and MinGW's C runtime. No Direct3D DLL:
+# CreateDXGIFactory1, D3D12CreateDevice and D3DCompile are bound at run time on the init thread, after the game's window,
+# since loading dxgi.dll early can hang Wine's loader (D170).
+IMPORTS_ALLOWED = {"kernel32.dll", "user32.dll", "gdi32.dll", "imm32.dll", "ws2_32.dll", "bcrypt.dll", "dwmapi.dll",
+                   "msvcrt.dll"}
+
+
+def pe_sections(data):
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    if data[pe:pe + 4] != b"PE\0\0":
+        raise ValueError("not a PE file")
+    sections = struct.unpack_from("<H", data, pe + 6)[0]
+    optional_size = struct.unpack_from("<H", data, pe + 20)[0]
+    optional = pe + 24
+    if struct.unpack_from("<H", data, optional)[0] != 0x20B:
+        raise ValueError("not a PE32+ (x64) file")
+    table = optional + optional_size
+    spans = [struct.unpack_from("<IIII", data, table + 40 * i + 8) for i in range(sections)]
+
+    def offset(rva):
+        for size, address, raw_size, raw_offset in spans:
+            if address <= rva < address + max(size, raw_size):
+                return rva - address + raw_offset
+        raise ValueError("an address outside every section")
+
+    return optional, offset
+
+
+def imported_dlls(dll):
+    data = pathlib.Path(dll).read_bytes()
+    optional, offset = pe_sections(data)
+    import_rva = struct.unpack_from("<I", data, optional + 120)[0]
+    if import_rva == 0:
+        return []
+    names = []
+    entry = offset(import_rva)
+    while True:
+        name_rva = struct.unpack_from("<I", data, entry + 12)[0]
+        if name_rva == 0:
+            return names
+        start = offset(name_rva)
+        names.append(data[start:data.index(b"\0", start)].decode("ascii"))
+        entry += 20
+
+
 def exported_names(dll):
     data = pathlib.Path(dll).read_bytes()
     pe = struct.unpack_from("<I", data, 0x3C)[0]
@@ -443,6 +556,11 @@ def check_exports(dll, test_build):
     if test_build and not test_only:
         fail(dll, 0, "a test build without its test exports")
     print(f"{pathlib.Path(dll).name} exports: {', '.join(sorted(names))}")
+    imports = imported_dlls(dll)
+    unreviewed = sorted(name for name in imports if name.lower() not in IMPORTS_ALLOWED)
+    if unreviewed:
+        fail(dll, 0, f"imports DLLs outside the reviewed list (invariant 16, D170): {unreviewed}")
+    print(f"{pathlib.Path(dll).name} imports: {', '.join(sorted(imports, key=str.lower))}")
 
 
 def main(argv):
@@ -452,6 +570,7 @@ def main(argv):
     check_module_graph()
     check_imgui_core()
     check_pure_modules()
+    check_grace_dev()
     check_hook_table()
     check_abi()
     if "--exports" in argv:

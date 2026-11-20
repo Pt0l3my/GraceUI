@@ -1,0 +1,777 @@
+// menu.cpp: the in-game menu (menu.h; §5.1, D79, D115, D167).
+//
+// Three threads touch it, and none waits for another: the window procedure pushes keys and the present thread the pad's
+// new presses, each into a ring of its own (one producer each); GraceUI's own thread, woken by either, pops them, runs
+// the page view and GraceUI's settings store, lays the page out and tessellates it into the back list of a draw list's
+// triple buffer, and publishes it; the present thread takes the newest list for the holder of its generation. The
+// holder itself is grace-input's (D77): the menu asks for input as any holder does, and the one close routine ends it,
+// whoever ends it; the menu's own thread learns of a close at its next wake.
+#include "menu.h"
+
+#include <windows.h>
+
+#include <atomic>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <stdexcept>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "draw_atlas.h"
+#include "grace/abi/drawlist.h"
+#include "grace/abi/registry.h"
+#include "grace/draw/tessellate.h"
+#include "grace/input/devices.h"
+#include "grace/input/queue.h"
+#include "grace/pages/settings_store.h"
+#include "grace/spaces/own_space.h"
+#include "grace/spaces/registry.h"
+#include "grace/tokens.h"
+#include "grace/view/page_view.h"
+#include "hooks.h"
+#include "input.h"
+#include "log.h"
+#include "session.h"
+#include "spaces.h"
+
+namespace grace::host::menu {
+namespace {
+
+using grace::input::Kind;
+using grace::input::Phase;
+using grace::view::Key;
+
+// The menu is the holder of kind menu that GraceUI itself asked for (owner 0); a test's holder of that kind is not.
+constexpr bool ours(const grace::input::Holder& holder) noexcept {
+  return holder.kind == Kind::menu && holder.owner == 0 && holder.phase == Phase::active;
+}
+
+struct MenuInput {
+  Key key = Key::down;
+  std::uint8_t shift = 0;
+  std::uint32_t generation = 0;  // the holder it is for
+};
+
+constinit grace::input::SpscRing<MenuInput, 64> g_keys;  // the window procedure's
+constinit grace::input::SpscRing<MenuInput, 64> g_pad;   // the present thread's
+constinit std::atomic<grace::abi::DrawListBuffers*> g_lists{nullptr};  // made by GraceUI's thread, never freed
+constinit std::atomic<bool> g_off{false};
+constinit std::atomic<std::uint32_t> g_width{0};
+constinit std::atomic<std::uint32_t> g_height{0};
+constinit std::atomic<float> g_ui_scale{1.0f};  // ui.scale as the store holds it, for the next bake's scale
+
+// The test exports' view (and nothing else reads it).
+constinit std::atomic<std::uint64_t> g_published{0};
+constinit std::atomic<std::uint64_t> g_frames{0};
+constinit std::atomic<std::uint32_t> g_inputs{0};
+constinit std::atomic<std::uint32_t> g_refusals{0};
+constinit std::atomic<std::uint32_t> g_layout_us{0};
+constinit std::atomic<std::uint32_t> g_vertices{0};
+constinit std::atomic<std::uint32_t> g_indices{0};
+constinit std::atomic<std::uint32_t> g_commands{0};
+constinit std::atomic<float> g_scale{0.0f};
+
+// The present thread's: the pad's buttons as last seen for the holder, so that only a new press counts, and the press
+// that was held when the menu opened does nothing until it is released (§5.2).
+struct PadSeen {
+  std::uint32_t generation;
+  std::uint16_t buttons;
+  bool left_trigger;
+  bool right_trigger;
+  std::int8_t stick_x;
+  std::int8_t stick_y;
+};
+constinit PadSeen g_pad_seen{};
+
+constexpr float kStickPress = 16384.0f;  // half the left stick's travel: a press of the d-pad (EST)
+
+// A space the menu shows (D79, D171): GraceUI's own, or a mod's that asked for the game's view.
+struct SpaceView {
+  std::string id;
+  std::string name;
+  bool own = false;
+  grace::view::PageView view;
+  std::vector<grace::view::RailLink> categories;  // its categories, as links to their first pages
+  std::uint64_t settings_rev = 0;                 // its settings topic's, as the menu last took it
+  grace::protocol::Json values = grace::protocol::Json::object();  // its values, as its settings state last gave them
+  bool watching = false;                          // the menu watches its settings topic (while it is open on it)
+};
+
+// GraceUI's thread's: the spaces' page views, GraceUI's settings and what was laid out last.
+struct State {
+  bool loaded = false;
+  bool open = false;
+  std::uint32_t generation = 0;
+  std::uint32_t width = 0;
+  std::uint32_t height = 0;
+  std::uint64_t serial = 0;
+  double ui_scale = 1.0;
+  bool clear = false;  // ui.menu.theme is Grace Clear
+  std::vector<std::unique_ptr<SpaceView>> spaces;  // the mods' first, in the order they registered, GraceUI's last
+  std::size_t active = 0;                          // the space whose page is open
+  std::string last_content;                        // the mod's space last open: its wordmark heads GraceUI's rail
+  std::uint64_t spaces_rev = 0;                    // the registry's, as the menu last took it
+  bool ever_opened = false;
+  std::uint32_t next_command = 1;
+  std::map<std::uint64_t, std::pair<std::string, std::string>> commands;  // a ticket: its space and its key
+  std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
+  grace::view::DisplayList list;
+  std::string page;  // as the test exports read it, under its lock
+  std::string focused;
+};
+constinit State* g_state = nullptr;
+constinit grace::abi::SpinLock g_view_lock;  // the test exports' copy of page and focused
+
+std::int64_t qpc() noexcept {
+  LARGE_INTEGER now{};
+  QueryPerformanceCounter(&now);
+  return now.QuadPart;
+}
+
+std::uint32_t micros_since(std::int64_t start) noexcept {
+  LARGE_INTEGER frequency{};
+  QueryPerformanceFrequency(&frequency);
+  return frequency.QuadPart > 0 ? static_cast<std::uint32_t>((qpc() - start) * 1000000 / frequency.QuadPart) : 0;
+}
+
+// GraceUI's own space (D115), shared with the browser's views through one settings store (D169).
+grace::spaces::OwnSpace& own_space() {
+  grace::spaces::OwnSpace* own = spaces::own();
+  if (own == nullptr) {
+    throw std::runtime_error("GraceUI's own space does not load");
+  }
+  return *own;
+}
+
+grace::view::PageView& active_view(State& m) { return m.spaces[m.active]->view; }
+SpaceView& own_view(State& m) { return *m.spaces.back(); }
+
+std::string first_page(const grace::protocol::SpacePages& pages, const grace::protocol::Category& category) {
+  return category.pages.empty() ? (pages.pages.empty() ? std::string() : pages.pages[0].id) : category.pages[0];
+}
+
+std::vector<grace::view::RailLink> category_links(const grace::protocol::SpacePages& pages) {
+  std::vector<grace::view::RailLink> links;
+  for (const grace::protocol::Category& category : pages.categories) {
+    links.push_back(grace::view::RailLink{category.name, pages.space, first_page(pages, category), true});
+  }
+  return links;
+}
+
+void load(State& m) {
+  grace::spaces::OwnSpace& own = own_space();
+  auto view = std::make_unique<SpaceView>();
+  view->id = own.pages().space;
+  view->name = own.pages().name;
+  view->own = true;
+  view->categories = category_links(own.pages());
+  std::string why;
+  if (!view->view.load(own.pages(), own.settings(), why)) {
+    throw std::runtime_error("GraceUI's own space does not load");
+  }
+  view->view.set_increment(spaces::increment_text());  // its later pages absent (§4.2.2, D173)
+  if (!view->view.open("graceui.menu")) {
+    throw std::runtime_error("GraceUI's own space has no Menu page");
+  }
+  m.spaces.push_back(std::move(view));
+  m.active = 0;
+  m.loaded = true;
+}
+
+// The rails around each space (D79): a mod's space with GraceUI's at its foot, and from two mods' spaces a switcher;
+// GraceUI's own under the wordmark and the categories of the mod's space last open.
+void update_rails(State& m) {
+  std::vector<SpaceView*> content;
+  for (auto& space : m.spaces) {
+    if (!space->own) {
+      content.push_back(space.get());
+    }
+  }
+  const std::size_t n = content.size();
+  for (std::size_t i = 0; i < n; ++i) {
+    grace::view::RailContext context;
+    context.foot = own_view(m).categories;
+    if (n >= 2) {
+      const SpaceView& previous = *content[(i + n - 1) % n];
+      const SpaceView& next = *content[(i + 1) % n];
+      context.switcher = content[i]->name + ", " + std::to_string(i + 1) + " of " + std::to_string(n);
+      context.previous = grace::view::RailLink{previous.name, previous.id, previous.categories.empty()
+                                                                              ? std::string()
+                                                                              : previous.categories[0].page, true};
+      context.next = grace::view::RailLink{next.name, next.id, next.categories.empty() ? std::string()
+                                                                                       : next.categories[0].page, true};
+    }
+    content[i]->view.set_rail(std::move(context));
+  }
+  grace::view::RailContext own_context;
+  if (n != 0) {
+    const SpaceView* last = content[0];
+    for (SpaceView* space : content) {
+      if (space->id == m.last_content) {
+        last = space;
+      }
+    }
+    own_context.title = last->name;
+    own_context.head = last->categories;
+  }
+  own_view(m).view.set_rail(std::move(own_context));
+}
+
+void watch(State& m, bool on) {
+  SpaceView& space = *m.spaces[m.active];
+  if (space.own || space.watching == on) {
+    return;
+  }
+  spaces::registry().game_watch(space.id, "settings", on);
+  space.watching = on;
+  if (on) {
+    space.settings_rev = 0;  // the newest state again, whatever came before
+  }
+}
+
+// The spaces that asked for the game's view, as the registry has them now: a new one gets a page view, open on its
+// first page; one that has gone is dropped, and if it was open, GraceUI's own is (D171).
+bool sync_spaces(State& m) {
+  const std::uint64_t revision = spaces::registry().spaces_revision();
+  if (revision == m.spaces_rev) {
+    return false;
+  }
+  m.spaces_rev = revision;
+  const std::string active_id = m.spaces[m.active]->id;
+  std::vector<std::unique_ptr<SpaceView>> next;
+  for (const auto& listed : spaces::registry().game_spaces()) {
+    std::unique_ptr<SpaceView> kept;
+    for (auto& space : m.spaces) {
+      if (space != nullptr && !space->own && space->id == listed.id) {
+        kept = std::move(space);
+      }
+    }
+    if (kept == nullptr) {
+      kept = std::make_unique<SpaceView>();
+      kept->id = listed.id;
+      kept->name = listed.name;
+      kept->categories = category_links(*listed.pages);
+      std::string why;
+      const std::string page = kept->categories.empty() ? std::string() : kept->categories[0].page;
+      if (kept->view.load(*listed.pages, *listed.settings, why)) {
+        kept->view.set_increment(listed.increment);  // its later pages absent (§4.2.2, D173)
+      }
+      if (!why.empty() || !kept->view.open(page)) {
+        log_line("the menu cannot show %s's space: %s", listed.id.c_str(), why.c_str());
+        continue;
+      }
+    }
+    next.push_back(std::move(kept));
+  }
+  next.push_back(std::move(m.spaces.back()));  // GraceUI's own, at the foot
+  m.spaces = std::move(next);
+  m.active = m.spaces.size() - 1;
+  for (std::size_t i = 0; i < m.spaces.size(); ++i) {
+    if (m.spaces[i]->id == active_id) {
+      m.active = i;
+    }
+  }
+  update_rails(m);
+  return true;
+}
+
+// Opens `page` of the space `id`. From a link on another space's rail, focus stays on the rail: on the switcher if it
+// was the switcher, else on the page's entry, as opening a category leaves it.
+enum class From : std::uint8_t { open, link, switcher };
+void activate(State& m, const std::string& id, const std::string& page, From from) {
+  for (std::size_t i = 0; i < m.spaces.size(); ++i) {
+    if (m.spaces[i]->id != id) {
+      continue;
+    }
+    watch(m, false);
+    m.active = i;
+    if (!page.empty()) {
+      m.spaces[i]->view.open(page);
+    }
+    if (!m.spaces[i]->own) {
+      m.last_content = id;
+    }
+    update_rails(m);
+    if (from != From::open) {
+      m.spaces[i]->view.focus_rail(from == From::switcher);
+    }
+    if (m.open) {
+      watch(m, true);
+    }
+    return;
+  }
+}
+
+// A refusal in words, as §6.7's table gives them and the browser view writes them (refusalWords), when the space gave
+// none of its own.
+const char* refusal_words(grace::protocol::ErrorCode code) noexcept {
+  using grace::protocol::ErrorCode;
+  switch (code) {
+    case ErrorCode::unknown_topic:
+    case ErrorCode::unknown_command:
+    case ErrorCode::unknown_key: return "Not available in this version.";
+    case ErrorCode::invalid_value: return "That value is not allowed here.";
+    case ErrorCode::locked: return "Locked in this version.";
+    case ErrorCode::not_now: return "Not possible right now.";
+    case ErrorCode::busy: return "Already running.";
+    case ErrorCode::confirm_required: return "This needs a confirmation first.";
+    case ErrorCode::rate_limited: return "Too many changes at once: try again in a moment.";
+    case ErrorCode::unauthorised:
+    case ErrorCode::version:
+    case ErrorCode::bad_message:
+    case ErrorCode::internal: break;
+  }
+  return "Something went wrong; the log has the details.";
+}
+
+// What the menu watches came back: the open mod's space's settings (its values, what its inherit tri-states resolve
+// to), and the results of the menu's commands to mods' spaces (a refusal under its row, as GraceUI's own are).
+bool take_from_spaces(State& m) {
+  bool changed = false;
+  SpaceView& space = *m.spaces[m.active];
+  grace::protocol::Json body;
+  std::uint64_t rev = 0;
+  if (!space.own && space.watching &&
+      spaces::registry().game_state(space.id, "settings", space.settings_rev, body, rev)) {
+    space.settings_rev = rev;
+    if (body.is_object() && body.contains("values") && body["values"].is_object()) {
+      space.values = body["values"];
+      space.view.set_values(space.values);
+    }
+    if (body.is_object() && body.contains("inherited") && body["inherited"].is_array()) {
+      std::vector<grace::protocol::InheritedValue> inherited;
+      for (const grace::protocol::Json& item : body["inherited"]) {
+        grace::protocol::InheritedValue value;
+        grace::protocol::DecodeError error;
+        if (decode(item, value, "", error)) {
+          inherited.push_back(std::move(value));
+        }
+      }
+      space.view.set_inherited(inherited);
+    }
+    changed = true;
+  }
+  for (const auto& result : spaces::registry().take_game_results()) {
+    const auto it = m.commands.find(result.ticket);
+    if (it == m.commands.end()) {
+      continue;
+    }
+    if (result.result.error.has_value()) {
+      g_refusals.fetch_add(1, std::memory_order_relaxed);
+      std::string detail = refusal_words(*result.result.error);
+      if (result.result.detail.has_value() && !result.result.detail->empty()) {
+        detail = *result.result.detail;  // the space's own words (protocol 1.1)
+      }
+      for (auto& view : m.spaces) {
+        if (view->id == it->second.first && !it->second.second.empty()) {
+          const std::string& key = it->second.second;
+          view->view.refused(key, detail);
+          view->view.restore(key, view->values.contains(key) ? view->values[key] : grace::protocol::Json());
+        }
+      }
+    }
+    m.commands.erase(it);
+    changed = true;
+  }
+  return changed;
+}
+
+// What a changed setting does at once (its effect "now"): the scale, the theme. The rest are kept for their users.
+void take_effects(State& m) {
+  const grace::pages::SettingsStore& store = own_space().store();
+  const grace::protocol::Json& scale = store.held("ui.scale");
+  m.ui_scale = scale.is_number() ? scale.get<double>() : 1.0;
+  g_ui_scale.store(static_cast<float>(m.ui_scale), std::memory_order_relaxed);
+  m.clear = store.held("ui.menu.theme") == "clear";
+  own_view(m).view.set_values(store.values());
+  m.revision = own_space().revision();
+}
+
+std::string key_of(const grace::protocol::Cmd& command) {
+  const grace::protocol::Json& args = command.args;
+  for (const char* field : {"key", "target"}) {
+    if (args.is_object() && args.contains(field) && args[field].is_string()) {
+      return args[field].get<std::string>();
+    }
+  }
+  return {};
+}
+
+// A command from the page view: GraceUI's own space answers it here, at its one entry point (invariant 3); a mod's
+// space's goes to the mod, as a view's command does, and its result comes back to the menu (D171).
+void run(State& m, const grace::protocol::Cmd& command) {
+  if (command.name == "menu.close") {
+    input::close_holder(grace::input::Closed::released, m.generation);
+    return;
+  }
+  SpaceView& space = *m.spaces[m.active];
+  if (!space.own) {
+    grace::protocol::Cmd sent = command;
+    sent.space = space.id;
+    sent.id = m.next_command++;
+    std::uint64_t ticket = 0;
+    if (spaces::registry().game_command(space.id, std::move(sent), ticket)) {
+      m.commands[ticket] = {space.id, key_of(command)};
+    } else {
+      g_refusals.fetch_add(1, std::memory_order_relaxed);
+      space.view.refused(key_of(command), "Not now: the space has too many commands waiting.");
+    }
+    return;
+  }
+  if (command.name == "settings.set" || command.name == "settings.reset") {
+    const grace::pages::Outcome outcome = own_space().apply(command);  // the browser's views see it too
+    if (!outcome.ok) {
+      g_refusals.fetch_add(1, std::memory_order_relaxed);
+      own_view(m).view.refused(key_of(command), outcome.detail);
+    }
+    take_effects(m);
+    return;
+  }
+  if (command.name == "dashboard.disconnect") {
+    spaces::disconnect_browsers();  // a new session cookie; every browser must load the page again (§7.2 item 17)
+    log_line("the menu's Disconnect: every browser's session ended");
+    return;
+  }
+  g_refusals.fetch_add(1, std::memory_order_relaxed);
+  own_view(m).view.refused(key_of(command), "Not a command of GraceUI's.");
+}
+
+void take(State& m, const MenuInput& in, bool& dirty) {
+  if (in.generation != m.generation) {
+    return;  // pressed for an earlier holder
+  }
+  const grace::view::Action action = active_view(m).input(grace::view::Input{in.key, in.shift != 0});
+  const bool on_switcher = active_view(m).focused() == "rail:switcher";
+  g_inputs.fetch_add(1, std::memory_order_relaxed);
+  dirty = true;
+  switch (action.kind) {
+    case grace::view::Action::Kind::command:
+      run(m, action.command);
+      break;
+    case grace::view::Action::Kind::close:
+      input::close_holder(grace::input::Closed::released, m.generation);  // back from the rail (§5.3)
+      break;
+    case grace::view::Action::Kind::switch_space:
+      activate(m, action.space, action.page, on_switcher ? From::switcher : From::link);  // another space (D79, D171)
+      break;
+    case grace::view::Action::Kind::opened_page:
+    case grace::view::Action::Kind::none:
+      break;
+  }
+}
+
+void publish(State& m) {
+  const grace::view::Fonts* fonts = atlas::menu_fonts();
+  grace::abi::DrawListBuffers* lists = g_lists.load(std::memory_order_acquire);
+  if (fonts == nullptr || lists == nullptr || m.width == 0 || m.height == 0) {
+    return;
+  }
+  const std::int64_t started = qpc();
+  const float scale = static_cast<float>(m.height) / 1080.0f * static_cast<float>(m.ui_scale);  // §3.13
+  active_view(m).layout(grace::view::Viewport{static_cast<float>(m.width), static_cast<float>(m.height), scale},
+                        *fonts, m.list);
+  grace::draw::Atlas atlas{grace::abi::kAtlasTexture, 0.0f, 0.0f};
+  atlas::white_pixel(atlas.white_u, atlas.white_v);
+  const grace::tokens::Palette& palette = m.clear ? grace::tokens::kClear.colour : grace::tokens::kGrace.colour;
+  lists->writer_lock().lock();
+  grace::abi::DrawListData& out = lists->back();
+  const grace::draw::Stats stats = grace::draw::tessellate(m.list, palette, atlas, out);
+  out.serial = ++m.serial;
+  out.panel_generation = m.generation;  // drawn only for this holder
+  out.atlas_generation = atlas::generation();
+  out.placed_x = 0.0f;
+  out.placed_y = 0.0f;
+  lists->publish();
+  lists->writer_lock().unlock();
+  g_published.fetch_add(1, std::memory_order_relaxed);
+  g_layout_us.store(micros_since(started), std::memory_order_relaxed);
+  g_vertices.store(stats.vertices, std::memory_order_relaxed);
+  g_indices.store(stats.indices, std::memory_order_relaxed);
+  g_commands.store(stats.commands, std::memory_order_relaxed);
+  g_scale.store(scale, std::memory_order_relaxed);
+  g_view_lock.lock();
+  m.page.assign(active_view(m).page());
+  m.focused = active_view(m).focused();
+  g_view_lock.unlock();
+}
+
+void drain() noexcept {
+  MenuInput in;
+  while (g_keys.pop(in)) {
+  }
+  while (g_pad.pop(in)) {
+  }
+}
+
+void serve_menu() {
+  if (g_lists.load(std::memory_order_acquire) == nullptr) {
+    g_lists.store(new grace::abi::DrawListBuffers(), std::memory_order_release);
+  }
+  if (g_state == nullptr) {
+    g_state = new State();
+  }
+  State& m = *g_state;
+  const grace::input::Holder holder = input::capture().holder();
+  if (m.loaded) {
+    sync_spaces(m);  // a mod's space came or went, open or not
+  }
+  if (!ours(holder)) {
+    if (m.open) {
+      m.open = false;
+      active_view(m).cancel_confirmation();  // the close routine's part (§5.1): changes stay, the page is kept
+      watch(m, false);                       // a mod builds nothing the menu no longer shows
+    }
+    drain();
+    return;
+  }
+  if (!m.loaded) {
+    load(m);
+    take_effects(m);
+    sync_spaces(m);
+  }
+  bool dirty = false;
+  if (m.revision != own_space().revision()) {
+    take_effects(m);  // a browser changed a setting: the menu shows it, and its scale and theme follow (D169)
+    dirty = true;
+  }
+  if (!m.open || m.generation != holder.generation) {
+    m.open = true;
+    m.generation = holder.generation;
+    if (!m.ever_opened && m.spaces.size() > 1) {
+      activate(m, m.spaces[0]->id, std::string(), From::open);  // the first open: the first mod's space, its first page
+    }
+    m.ever_opened = true;
+    active_view(m).cancel_confirmation();
+    watch(m, true);
+    dirty = true;
+  }
+  if (take_from_spaces(m)) {
+    dirty = true;
+  }
+  MenuInput in;
+  for (int i = 0; i < 64 && g_keys.pop(in); ++i) {
+    take(m, in, dirty);
+  }
+  for (int i = 0; i < 64 && g_pad.pop(in); ++i) {
+    take(m, in, dirty);
+  }
+  const std::uint32_t width = g_width.load(std::memory_order_relaxed);
+  const std::uint32_t height = g_height.load(std::memory_order_relaxed);
+  if (width != m.width || height != m.height) {
+    m.width = width;
+    m.height = height;
+    dirty = true;
+  }
+  if (dirty && m.open) {
+    publish(m);
+  }
+}
+
+void push_pad(Key key, std::uint32_t generation, bool& any) noexcept {
+  any = g_pad.push(MenuInput{key, 0, generation}) || any;
+}
+
+// The present thread: the holder's pad, its new presses as the menu's inputs (§5.4).
+void pad_inputs(std::uint32_t generation) noexcept {
+  grace::input::HolderPad view;
+  if (!input::pads().holder_view(generation, view)) {
+    return;
+  }
+  const grace::input::Pad& pad = view.pad;
+  PadSeen now{generation, pad.buttons, pad.left_trigger > grace::input::kTriggerThreshold,
+              pad.right_trigger > grace::input::kTriggerThreshold,
+              static_cast<std::int8_t>(pad.left_x > kStickPress ? 1 : pad.left_x < -kStickPress ? -1 : 0),
+              static_cast<std::int8_t>(pad.left_y > kStickPress ? 1 : pad.left_y < -kStickPress ? -1 : 0)};
+  const PadSeen before = g_pad_seen;
+  g_pad_seen = now;
+  if (before.generation != generation) {
+    return;  // the first look for this holder: what is held now does nothing until it is released
+  }
+  const std::uint16_t pressed = static_cast<std::uint16_t>(now.buttons & ~before.buttons);
+  struct Map {
+    std::uint16_t mask;
+    Key key;
+  };
+  static constexpr Map kButtons[] = {
+      {0x0001, Key::up},           {0x0002, Key::down},    {0x0004, Key::left},     {0x0008, Key::right},
+      {0x1000, Key::activate},     {0x2000, Key::back},    {0x0100, Key::previous_tab},
+      {0x0200, Key::next_tab},     {0x4000, Key::reset},
+  };
+  bool any = false;
+  for (const Map& map : kButtons) {
+    if ((pressed & map.mask) != 0) {
+      push_pad(map.key, generation, any);
+    }
+  }
+  if (now.left_trigger && !before.left_trigger) {
+    push_pad(Key::previous_page, generation, any);
+  }
+  if (now.right_trigger && !before.right_trigger) {
+    push_pad(Key::next_page, generation, any);
+  }
+  if (now.stick_y != before.stick_y && now.stick_y != 0) {
+    push_pad(now.stick_y > 0 ? Key::up : Key::down, generation, any);
+  }
+  if (now.stick_x != before.stick_x && now.stick_x != 0) {
+    push_pad(now.stick_x > 0 ? Key::right : Key::left, generation, any);
+  }
+  if (any) {
+    hooks::wake();
+  }
+}
+
+}  // namespace
+
+float bake_scale(std::uint32_t height) noexcept {
+  const float scale = (height > 0 ? static_cast<float>(height) : 1080.0f) / 1080.0f *
+                      g_ui_scale.load(std::memory_order_relaxed);
+  return scale < 0.5f ? 0.5f : scale > 4.0f ? 4.0f : scale;
+}
+
+void open_requested() noexcept {
+  if (g_off.load(std::memory_order_acquire)) {
+    session::own_notice_text(session::kOwnKeyMenu, GRACEUI_TONE_WARNING, session::kOwnNoticeMs,
+                             "GraceUI's menu is off for this session after a fault.");
+    return;
+  }
+  if (atlas::menu_fonts() == nullptr) {
+    session::own_notice_text(session::kOwnKeyMenu, GRACEUI_TONE_NORMAL, session::kOwnNoticeMs,
+                             "Not now: GraceUI's menu is not ready yet.");
+    return;
+  }
+  const grace::input::Request request = input::request(0, Kind::menu, grace::input::want_all);
+  if (request.answer == grace::input::Answer::granted) {
+    hooks::wake();
+    return;
+  }
+  if (request.answer == grace::input::Answer::not_now) {
+    using grace::input::NotNow;
+    const char* why = request.why == NotNow::danger      ? "Not now: you are in danger."
+                      : request.why == NotNow::loading   ? "Not now: the game is loading."
+                      : request.why == NotNow::game_menu ? "Not now: a game menu is open."
+                                                         : "Not now: GraceUI is not drawing yet.";
+    session::own_notice_text(session::kOwnKeyMenu, GRACEUI_TONE_NORMAL, session::kOwnNoticeMs, why);
+  }
+}
+
+bool key_down(std::uint32_t vk, bool shift, bool ctrl) noexcept {
+  Key key{};
+  switch (vk) {
+    case VK_UP: key = Key::up; break;
+    case VK_DOWN: key = Key::down; break;
+    case VK_LEFT: key = Key::left; break;
+    case VK_RIGHT: key = Key::right; break;
+    case VK_TAB: key = shift ? Key::previous : Key::next; break;
+    case VK_RETURN:
+    case VK_SPACE: key = Key::activate; break;
+    case VK_ESCAPE: key = Key::back; break;
+    case 'Q': key = Key::previous_tab; break;
+    case 'E': key = Key::next_tab; break;
+    case VK_PRIOR: key = Key::previous_page; break;
+    case VK_NEXT: key = Key::next_page; break;
+    case 'R': key = Key::reset; break;
+    default: return false;  // search (`/`, Ctrl+F) comes with GraceUI's text field (§5.6)
+  }
+  if (ctrl) {
+    return false;
+  }
+  const std::uint32_t generation = input::capture().holder().generation;
+  if (g_keys.push(MenuInput{key, static_cast<std::uint8_t>(shift ? 1 : 0), generation})) {
+    hooks::wake();
+  }
+  return true;
+}
+
+grace::abi::DrawListData* frame(std::uint32_t width, std::uint32_t height) noexcept {
+  if (g_width.load(std::memory_order_relaxed) != width || g_height.load(std::memory_order_relaxed) != height) {
+    g_width.store(width, std::memory_order_relaxed);
+    g_height.store(height, std::memory_order_relaxed);
+    hooks::wake();  // the menu lays itself out again for the new size, if it is open
+  }
+  const grace::input::Holder holder = input::capture().holder();
+  if (!ours(holder)) {
+    g_pad_seen.generation = 0;
+    return nullptr;
+  }
+  pad_inputs(holder.generation);
+  grace::abi::DrawListBuffers* lists = g_lists.load(std::memory_order_acquire);
+  if (lists == nullptr) {
+    return nullptr;
+  }
+  grace::abi::DrawListData& data = lists->read();
+  if (data.serial == 0 || data.panel_generation != holder.generation || data.commands.empty()) {
+    return nullptr;  // the first list for this holder is still being laid out
+  }
+  g_frames.fetch_add(1, std::memory_order_relaxed);
+  return &data;
+}
+
+void serve() noexcept {
+  if (g_off.load(std::memory_order_acquire)) {
+    drain();
+    return;
+  }
+  try {
+    serve_menu();
+  } catch (...) {
+    g_off.store(true, std::memory_order_release);
+    log_line("the menu is off for this session: an exception in its layout or its commands");
+    const grace::input::Holder holder = input::capture().holder();
+    if (ours(holder)) {
+      input::close_holder(grace::input::Closed::fault, holder.generation);  // §5.1: a fault in the menu
+    }
+  }
+}
+
+#if defined(GRACEUI_TEST_EXPORTS)
+void test_view(TestView& out) noexcept {
+  out = TestView{};
+  const grace::input::Holder holder = input::capture().holder();
+  out.open = ours(holder) ? 1 : 0;
+  out.generation = out.open != 0 ? holder.generation : 0;
+  out.lists = g_published.load(std::memory_order_relaxed);
+  out.frames = g_frames.load(std::memory_order_relaxed);
+  out.inputs = g_inputs.load(std::memory_order_relaxed);
+  out.refusals = g_refusals.load(std::memory_order_relaxed);
+  out.layout_us = g_layout_us.load(std::memory_order_relaxed);
+  out.vertices = g_vertices.load(std::memory_order_relaxed);
+  out.indices = g_indices.load(std::memory_order_relaxed);
+  out.commands = g_commands.load(std::memory_order_relaxed);
+  out.off = g_off.load(std::memory_order_relaxed) ? 1 : 0;
+  out.scale = g_scale.load(std::memory_order_relaxed);
+  out.faces = atlas::menu_fonts() != nullptr ? static_cast<std::uint32_t>(grace::tokens::kTypeCount) : 0;
+  g_view_lock.lock();
+  if (g_state != nullptr) {
+    std::snprintf(out.page, sizeof out.page, "%s", g_state->page.c_str());
+    std::snprintf(out.focused, sizeof out.focused, "%s", g_state->focused.c_str());
+  }
+  g_view_lock.unlock();
+}
+
+std::uint32_t test_setting(const char* key, char* out, std::uint32_t capacity) noexcept {
+  // Read on the caller's thread while GraceUI's thread may be writing: a test reads it only once GraceUI is idle.
+  if (key == nullptr || out == nullptr || capacity == 0) {
+    return 0;
+  }
+  try {
+    grace::spaces::OwnSpace* own = spaces::loaded_own();
+    if (own == nullptr) {
+      return 0;
+    }
+    const grace::protocol::Json values = own->store().values();
+    if (!values.contains(key)) {
+      return 0;
+    }
+    const std::string text = values[key].dump();
+    const int written = std::snprintf(out, capacity, "%s", text.c_str());
+    return written < 0 ? 0 : static_cast<std::uint32_t>(written);
+  } catch (...) {
+    return 0;
+  }
+}
+#endif
+
+}  // namespace grace::host::menu
