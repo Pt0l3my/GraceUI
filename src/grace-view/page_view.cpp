@@ -39,8 +39,19 @@ std::string lower(std::string_view text) {
   return out;
 }
 
-constexpr const char* kTriStates[] = {"on", "off", "auto"};
-constexpr const char* kTriLabels[] = {"On", "Off", "Auto"};
+// A tri-state's three values, its third auto or inherit (D163), and their labels.
+const char* tri_value(const Setting& s, int i) {
+  if (i < 2) {
+    return i == 0 ? "on" : "off";
+  }
+  return s.third.value_or(protocol::TriThird::auto_) == protocol::TriThird::inherit ? "inherit" : "auto";
+}
+const char* tri_label(const Setting& s, int i) {
+  if (i < 2) {
+    return i == 0 ? "On" : "Off";
+  }
+  return s.third.value_or(protocol::TriThird::auto_) == protocol::TriThird::inherit ? "Inherit" : "Auto";
+}
 
 // The layout's running state: where the next row goes, and the focused element's rectangle once it is placed.
 struct Cursor {
@@ -160,6 +171,13 @@ bool PageView::load(const protocol::SpacePages& pages, const protocol::SettingsD
   rebuild();
   focus_first_control();
   return true;
+}
+
+void PageView::set_inherited(const std::vector<protocol::InheritedValue>& inherited) {
+  inherited_.clear();
+  for (const protocol::InheritedValue& one : inherited) {
+    inherited_[one.key] = one;
+  }
 }
 
 void PageView::set_values(const Json& values) {
@@ -335,8 +353,8 @@ std::string PageView::format(std::string_view key, const Json& v) const {
       return "";
     case SettingType::tri_state:
       for (int i = 0; i < 3; ++i) {
-        if (v.is_string() && v.get_ref<const std::string&>() == kTriStates[i]) {
-          return kTriLabels[i];
+        if (v.is_string() && v.get_ref<const std::string&>() == tri_value(*s, i)) {
+          return tri_label(*s, i);
         }
       }
       return "";
@@ -397,13 +415,13 @@ Action PageView::change(const Setting& s, int direction, bool shift) {
       return set(s, Json(choices[next].value));
     }
     case SettingType::tri_state: {
-      std::size_t at = 2;
-      for (std::size_t i = 0; i < 3; ++i) {
-        if (v.is_string() && v.get_ref<const std::string&>() == kTriStates[i]) {
+      int at = 2;
+      for (int i = 0; i < 3; ++i) {
+        if (v.is_string() && v.get_ref<const std::string&>() == tri_value(s, i)) {
           at = i;
         }
       }
-      return set(s, Json(kTriStates[(at + (direction > 0 ? 1 : 2)) % 3]));
+      return set(s, Json(tri_value(s, (at + (direction > 0 ? 1 : 2)) % 3)));
     }
     case SettingType::key_name:
     case SettingType::text:
@@ -870,6 +888,13 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             }
             const float label_w = c.text(st.label, TypeRole::ui, row.x, label_y,
                                          row.w - control_w - std::round(24 * s), Colour::ink_hi, alpha);
+            const auto inherited = inherited_.find(key);
+            if (st.type == SettingType::tri_state && v == "inherit" && inherited != inherited_.end()) {
+              // What the chain resolves to, faint, with its source (D163).
+              const std::string from = (inherited->second.on ? "On, from " : "Off, from ") + inherited->second.source;
+              c.text(from, TypeRole::ui_sm, row.x + label_w + std::round(12 * s), label_y + std::round(2 * s),
+                     row.w - control_w - label_w - std::round(48 * s), Colour::ink_faint, alpha);
+            }
             if (st.availability != "live" && st.availability != "later") {
               const char* badge = st.availability.rfind("check:", 0) == 0 ? "Waits on a check"
                                   : st.availability == "inert"           ? "No effect in this version"
@@ -941,7 +966,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               std::vector<std::pair<std::string, bool>> segments;
               if (st.type == SettingType::tri_state) {
                 for (int i = 0; i < 3; ++i) {
-                  segments.emplace_back(kTriLabels[i], v.is_string() && v.get_ref<const std::string&>() == kTriStates[i]);
+                  segments.emplace_back(tri_label(st, i), v.is_string() && v.get_ref<const std::string&>() == tri_value(st, i));
                 }
               } else {
                 for (const protocol::Choice& ch : st.choices.value_or(std::vector<protocol::Choice>{})) {

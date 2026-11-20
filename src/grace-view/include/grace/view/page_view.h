@@ -61,6 +61,8 @@ class PageView {
   bool load(const protocol::SpacePages& pages, const protocol::SettingsDescription& settings, std::string& why);
   // The settings topic's values (an object of key to value); a key not in it shows its default.
   void set_values(const protocol::Json& values);
+  // What each inherit tri-state on inherit resolves to (the settings body's `inherited`, D163), shown faint beside it.
+  void set_inherited(const std::vector<protocol::InheritedValue>& inherited);
   // Opens a page (its first tab), focus on its first control; false for no such page.
   bool open(std::string_view page_id);
 
@@ -113,6 +115,7 @@ class PageView {
   std::map<std::string, std::size_t, std::less<>> by_key_;
   protocol::Json values_ = protocol::Json::object();
   std::map<std::string, std::string, std::less<>> refusals_;
+  std::map<std::string, protocol::InheritedValue, std::less<>> inherited_;
   std::set<std::string, std::less<>> collapsed_;
   std::set<std::string, std::less<>> advanced_open_;
   std::size_t page_ = 0;

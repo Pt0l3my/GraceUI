@@ -176,6 +176,26 @@ TEST_CASE("the demo space: tabs, the Advanced disclosure, every control") {
   CHECK(a.command.args["value"] == "on");
 }
 
+TEST_CASE("an inherit tri-state cycles on, off, inherit, and shows what it inherits (D163)") {
+  PageView view = loaded("demo", "demo.behaviour");
+  while (view.focused() != "setting:lantern.shield") {
+    press(view, Key::down);
+  }
+  CHECK(view.format("lantern.shield", view.value("lantern.shield")) == "Inherit");
+  view.set_inherited({{"lantern.shield", true, "The lighthouse", std::string("demo.overview")}});
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(list.dump().find("\"On, from The lighthouse\"") != std::string::npos);
+  Action a = press(view, Key::right);
+  CHECK(a.command.args["value"] == "on");
+  a = press(view, Key::right);
+  CHECK(a.command.args["value"] == "off");
+  a = press(view, Key::right);
+  CHECK(a.command.args["value"] == "inherit");
+  a = press(view, Key::reset);
+  CHECK(a.command.name == "settings.reset");
+}
+
 TEST_CASE("a section that starts collapsed opens with Enter") {
   PageView view = loaded("demo", "demo.log");
   while (view.focused() != "section:journal") {

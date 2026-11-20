@@ -147,6 +147,7 @@ class Seeded(unittest.TestCase):
             ("lantern.festival", "locked", False, "a later setting is locked"),
             ("lantern.wicks", "default", 12, "outside 1 to 8"),
             ("lantern.mode", "default", "maybe", "a tri-state's default"),
+            ("lantern.shield", "third", "auto", "a tri-state's default is on, off or auto"),
             ("lantern.enabled", "availability", "soon", "is not live, later"),
             ("lantern.trim_key", "default", "Hyper+F9", "not a key's name"),
         ]
@@ -158,6 +159,9 @@ class Seeded(unittest.TestCase):
         sp, desc, fx = demo()
         setting(desc, "lantern.enabled")["min"] = 0
         self.expect("min on a bool", sp, desc, fx)
+        sp, desc, fx = demo()
+        setting(desc, "lantern.enabled")["third"] = "inherit"
+        self.expect("third on a bool", sp, desc, fx)
 
     def test_fixtures(self):
         sp, desc, fx = demo()

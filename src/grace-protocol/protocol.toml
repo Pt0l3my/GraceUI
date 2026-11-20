@@ -36,6 +36,11 @@ values = ["bool", "integer", "number", "duration_s", "choice", "tri_state", "key
 [enums.setting_effect]
 values = ["now", "next_moment", "next_request", "next_launch"]
 
+# A tri-state's third value (D163): auto (the space decides at the moment) or inherit (taken from a chain the space
+# resolves, its value and source published in the settings body's `inherited`).
+[enums.tri_third]
+values = ["auto", "inherit"]
+
 [enums.reset_scope_kind]
 values = ["key", "page", "all"]
 
@@ -95,6 +100,7 @@ fields = [
   { name = "step", type = "f64", optional = true },
   { name = "unit", type = "string", max = 16, optional = true },
   { name = "choices", type = "list.type.choice", max = 64, optional = true },
+  { name = "third", type = "enum.tri_third", optional = true },
   { name = "label", type = "string", max = 128 },
   { name = "help", type = "string", max = 1024 },
   { name = "synonyms", type = "list.string", max = 16, item_max = 64, optional = true },
@@ -104,13 +110,23 @@ fields = [
   { name = "locked", type = "bool" },
 ]
 
+[types.inherited_value]
+doc = "What an inherit tri-state resolves to now: on or off, the source in words, and the page that sets it"
+fields = [
+  { name = "key", type = "id" },
+  { name = "on", type = "bool" },
+  { name = "source", type = "string", max = 96 },
+  { name = "page", type = "id", optional = true },
+]
+
 [types.settings_body]
-doc = "The settings topic's body: the description, the values, and the keys changed from their defaults"
+doc = "The settings topic's body: the description, the values, the keys changed from their defaults, and what each inherit tri-state on inherit resolves to"
 fields = [
   { name = "schema", type = "type.settings_schema" },
   { name = "description", type = "list.type.setting", max = 512 },
   { name = "values", type = "object", max = 65536 },
   { name = "changed", type = "list.id", max = 512 },
+  { name = "inherited", type = "list.type.inherited_value", max = 512, optional = true },
 ]
 
 # ---- Page descriptions (§2.5, D160): a space's rail, pages and topics, handed over at register_pages and shown by both

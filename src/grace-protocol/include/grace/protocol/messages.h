@@ -80,6 +80,13 @@ enum class SettingEffect : std::uint8_t {
 std::string_view to_string(SettingEffect value) noexcept;
 bool from_string(std::string_view text, SettingEffect& out) noexcept;
 
+enum class TriThird : std::uint8_t {
+  auto_,
+  inherit,
+};
+std::string_view to_string(TriThird value) noexcept;
+bool from_string(std::string_view text, TriThird& out) noexcept;
+
 enum class ResetScopeKind : std::uint8_t {
   key,
   page,
@@ -189,6 +196,7 @@ struct Setting {
   std::optional<double> step{};
   std::optional<std::string> unit{};
   std::optional<std::vector<Choice>> choices{};
+  std::optional<TriThird> third{};
   std::string label{};
   std::string help{};
   std::optional<std::vector<std::string>> synonyms{};
@@ -201,12 +209,24 @@ struct Setting {
 bool decode(const Json& in, Setting& out, const std::string& path, DecodeError& e);
 Json encode(const Setting& in);
 
-// The settings topic's body: the description, the values, and the keys changed from their defaults.
+// What an inherit tri-state resolves to now: on or off, the source in words, and the page that sets it.
+struct InheritedValue {
+  std::string key{};
+  bool on{};
+  std::string source{};
+  std::optional<std::string> page{};
+  bool operator==(const InheritedValue&) const = default;
+};
+bool decode(const Json& in, InheritedValue& out, const std::string& path, DecodeError& e);
+Json encode(const InheritedValue& in);
+
+// The settings topic's body: the description, the values, the keys changed from their defaults, and what each inherit tri-state on inherit resolves to.
 struct SettingsBody {
   SettingsSchema schema{};
   std::vector<Setting> description{};
   Json values{};
   std::vector<std::string> changed{};
+  std::optional<std::vector<InheritedValue>> inherited{};
   bool operator==(const SettingsBody&) const = default;
 };
 bool decode(const Json& in, SettingsBody& out, const std::string& path, DecodeError& e);

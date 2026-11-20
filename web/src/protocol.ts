@@ -30,6 +30,9 @@ export const SETTING_TYPES: readonly SettingType[] = ["bool", "integer", "number
 export type SettingEffect = "now" | "next_moment" | "next_request" | "next_launch";
 export const SETTING_EFFECTS: readonly SettingEffect[] = ["now", "next_moment", "next_request", "next_launch"];
 
+export type TriThird = "auto" | "inherit";
+export const TRI_THIRDS: readonly TriThird[] = ["auto", "inherit"];
+
 export type ResetScopeKind = "key" | "page" | "all";
 export const RESET_SCOPE_KINDS: readonly ResetScopeKind[] = ["key", "page", "all"];
 
@@ -79,6 +82,7 @@ export interface Setting {
   step?: number;
   unit?: string;
   choices?: Choice[];
+  third?: TriThird;
   label: string;
   help: string;
   synonyms?: string[];
@@ -88,12 +92,21 @@ export interface Setting {
   locked: boolean;
 }
 
-/** The settings topic's body: the description, the values, and the keys changed from their defaults. */
+/** What an inherit tri-state resolves to now: on or off, the source in words, and the page that sets it. */
+export interface InheritedValue {
+  key: string;
+  on: boolean;
+  source: string;
+  page?: string;
+}
+
+/** The settings topic's body: the description, the values, the keys changed from their defaults, and what each inherit tri-state on inherit resolves to. */
 export interface SettingsBody {
   schema: SettingsSchema;
   description: Setting[];
   values: JsonObject;
   changed: string[];
+  inherited?: InheritedValue[];
 }
 
 /** A space's settings description (§6.9): its schema and every setting it owns. */

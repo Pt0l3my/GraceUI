@@ -1,7 +1,7 @@
 {
   "schema": {
     "number": 1,
-    "hash": "2f65cfafe108edda"
+    "hash": "823a58aeb0307df3"
   },
   "settings": [
     {
@@ -77,6 +77,23 @@
       "synonyms": [
         "shutter",
         "cover"
+      ],
+      "home": "demo.behaviour",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "lantern.shield",
+      "type": "tri_state",
+      "default": "inherit",
+      "third": "inherit",
+      "label": "Wind shield",
+      "help": "On, off, or as the lighthouse's own setting has it.",
+      "synonyms": [
+        "wind",
+        "shield",
+        "glass"
       ],
       "home": "demo.behaviour",
       "effect": "now",

@@ -20,7 +20,8 @@ are checked against the protocol's schema as grace-protocol's decoders check the
      on exactly one settings block, on its home page; a shortcut is to a key homed elsewhere.
   5. A setting's description: its default of its type and within its bounds; min, max and step only for numbers;
      choices only for a choice, and its default one of them; a secret's default empty (PV3); an availability in its
-     form (live, later, inert, check:<id>, version:<x.y>, requires:<key>); a later setting locked.
+     form (live, later, inert, check:<id>, version:<x.y>, requires:<key>); a later setting locked; a tri-state's
+     default on, off or its third value (auto, or inherit, D163).
   6. Components: a component's topic declared by the space and of the shape it draws (a feed or a log tail a stream,
      every other a state topic); a block's fields those of its kind.
   7. Actions: each command one the space declares; a destructive action has a confirmation.
@@ -47,11 +48,11 @@ BUILTIN = ROOT / "src" / "grace-pages" / "builtin.cpp"
 STREAM_COMPONENTS = {"live_feed", "log_tail"}
 NO_TOPIC_COMPONENTS = {"statement", "filter_bar", "segmented_switch", "action_button"}
 NUMERIC = {"integer", "number", "duration_s"}
-TRI_STATES = ("on", "off", "auto")
+TRI_THIRDS = ("auto", "inherit")
 AVAILABILITY = re.compile(r"live|later|inert|check:[a-z0-9._-]{1,48}|version:\d+\.\d+|requires:[a-z0-9._/-]{1,64}")
 PAGE_FIELDS = ("id", "category", "name", "description", "help", "related", "increment", "tag", "actions", "tabs",
                "sections")
-SETTING_FIELDS = ("key", "type", "default", "min", "max", "step", "unit", "choices", "label", "help", "synonyms",
+SETTING_FIELDS = ("key", "type", "default", "min", "max", "step", "unit", "choices", "third", "label", "help", "synonyms",
                   "home", "effect", "availability", "locked")
 
 
@@ -129,8 +130,12 @@ def lint_setting(space, s, failures):
         failures.append(f"{where}: choices on a {kind}")
     if kind == "bool" and not isinstance(default, bool):
         failures.append(f"{where}: its default is not true or false")
-    if kind == "tri_state" and default not in TRI_STATES:
-        failures.append(f"{where}: a tri-state's default is one of {', '.join(TRI_STATES)}")
+    if kind == "tri_state":
+        third = s.get("third", "auto")
+        if default not in ("on", "off", third):
+            failures.append(f"{where}: a tri-state's default is on, off or {third}")
+    elif "third" in s:
+        failures.append(f"{where}: third on a {kind}")
     if kind in ("text", "key_name", "secret") and not isinstance(default, str):
         failures.append(f"{where}: its default is not text")
     if kind == "key_name" and not re.fullmatch(r"(Ctrl\+|Shift\+|Alt\+)*[A-Za-z0-9]{1,12}", default):

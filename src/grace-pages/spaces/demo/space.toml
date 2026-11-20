@@ -89,6 +89,18 @@ effect = "now"
 availability = "live"
 
 [[setting]]
+key = "lantern.shield"
+type = "tri_state"
+third = "inherit"
+default = "inherit"
+label = "Wind shield"
+help = "On, off, or as the lighthouse's own setting has it."
+synonyms = ["wind", "shield", "glass"]
+home = "demo.behaviour"
+effect = "now"
+availability = "live"
+
+[[setting]]
 key = "lantern.gap_s"
 type = "duration_s"
 default = 2.5
@@ -209,7 +221,7 @@ help.steps = ["Choose the flame on the Light tab.", "Set its rhythm on the Timin
 [[page.tabs]]
 id = "light"
 name = "Light"
-sections = [{ id = "flame", title = "Flame", blocks = [{ kind = "settings", keys = ["lantern.enabled", "lantern.brightness", "lantern.colour", "lantern.mode"] }] }]
+sections = [{ id = "flame", title = "Flame", blocks = [{ kind = "settings", keys = ["lantern.enabled", "lantern.brightness", "lantern.colour", "lantern.mode", "lantern.shield"] }] }]
 
 [[page.tabs]]
 id = "timing"

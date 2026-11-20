@@ -105,7 +105,8 @@
                     "lantern.enabled",
                     "lantern.brightness",
                     "lantern.colour",
-                    "lantern.mode"
+                    "lantern.mode",
+                    "lantern.shield"
                   ]
                 }
               ]
