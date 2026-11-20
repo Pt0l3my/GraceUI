@@ -1881,7 +1881,7 @@ in the entry with its date, and a later decision amends an earlier one by a note
 | [G30](DECISIONS.md#g30) | What is the loopback server built on, in C++? | (a) our own small server, on the narrow subset §7.2 and §6.8 allow, built to the independent review's plan (SRV §5) and fuzzed in CI (§7.6) | Decided 2026-11-16, as recommended |
 | [G31](DECISIONS.md#g31) | What pointer does the menu draw in game? | (a) our own pointer in the Grace look, still: a notched arrowhead with rounded corners, a gold edge on a dark fill (D178) | Decided 2026-11-20, as recommended |
 | [G32](DECISIONS.md#g32) | May the player quiet a mod's notices? | Recommended: (a) a switch per mod on the Mods page, GraceUI's own notices always shown | Decided 2026-11-20: (a), as recommended; built as D181 |
-| [G33](DECISIONS.md#g33) | Which of five additions for mods' pages to build (proposal 0006)? | Recommended: all five, a space's greyed state as a framework topic | Open since 2026-11-20 |
+| [G33](DECISIONS.md#g33) | Which of five additions for mods' pages to build (proposal 0006)? | Recommended: all five, a space's greyed state as a framework topic mapping each greyed page to its words (EldenNet's answer) | Open since 2026-11-20 |
 
 ---
 

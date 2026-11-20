@@ -1,6 +1,7 @@
 # Proposal 0006: Five additions for mods' pages
 
-**Status: proposal, 2026-11-20, put to the owner and EldenNet's session (G33); not built.** EldenNet's session met
+**Status: proposal, 2026-11-20, put to the owner and EldenNet's session (G33); EldenNet's session answered the same
+day (§8), and §4's recommendation follows its answer; not built.** EldenNet's session met
 these while building its first pages (Home, System, Settings > Developer; its WHY§266 to §270) and listed them with
 D184's in-game components, which GraceUI 0.2.6 built. None blocks EldenNet: each has a stand-in today. They change the
 page data's format, or add a framework feature every mod may use (G16, G18), so they are put here rather than settled
@@ -35,8 +36,11 @@ inactive: reason", and has only a statement block and the banner notice for it. 
 `space.state`** a space may declare and publish, `{"inactive": "reason in the space's words"}` or `{}`, which greys
 every page of the space in both views (its controls inert, as a locked setting's) under one line with the reason, and
 lifts when the topic says so; (b) the same per page (`{"pages": {"eldennet.home": "reason"}}`); (c) nothing: the space
-uses a statement block. *Recommended:* (a). An inactive space is inactive everywhere, and one rule keeps both views
-alike; a per-page grey (b) can come later in the same topic. Commands to an inactive space still go to it, which
+uses a statement block. *Recommended, after EldenNet's answer (§8):* (b) from the start, in the shape
+`{"greyed": {"<page id>": "<the space's words>"}}`, with (a) beside it as a shorthand (`{"inactive": "..."}` greys
+every page not named): a page in the map is greyed with its own words in both views, a page not in it is usable. An
+inactive space is rarely inactive everywhere: EldenNet keeps its System, Settings and Docs pages usable while the rest
+are greyed, and greys some pages only at the title screen. Commands to an inactive space still go to it, which
 answers `not_now` as it does today: the grey is what the player sees, the space's answer is the rule (invariant 3).
 
 ## 5. A shortcut row's control in game
@@ -57,3 +61,12 @@ EldenNet's order of need is the order above.
 ## 7. For the owner and EldenNet's session
 
 Which to build, and for 4, which option. EldenNet's session asked for all five; it said none blocks it.
+
+## 8. EldenNet's answer (2026-11-20)
+
+Items 1, 2, 3 and 5 fit its PAGES as written. Item 4 must be per page from the start: at L1 its PAGES §4.4 keeps
+System, Tools > Bug report, Settings, Docs and Voice > Text and subtitles usable and greys the rest with "EldenNet is
+inactive: reason"; at the title screen, Playthrough, History and Event monitor read "Load a character to see this"
+while the rest stay usable. So the greyed state is a map from page id to its words (§4's recommendation now), with a
+whole-space shorthand beside it if wanted. With that change EldenNet's session recommends the proposal to the owner as
+written.

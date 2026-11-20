@@ -694,3 +694,8 @@ page, (c) nothing; (5) a shortcut row's control in game, as the browser draws it
 both views; 4 a framework topic name and both views' grey; 5 grace-view alone. No change of the ABI.
 
 **Follows from.** EldenNet's request of 2026-11-20 (its WHY§266 to §270); D166, D181, D184; G16, G18.
+
+*Later (2026-11-20):* EldenNet's session answered that 1, 2, 3 and 5 fit its PAGES as written, and that (4) must be
+per page from the start (its PAGES §4.4 greys some pages at L1 and others at the title screen, keeping the rest
+usable). The recommendation for (4) is now (b), a map from page id to its words, with (a) as a shorthand beside it
+(proposal 0006 §4, §8); EldenNet's session recommends the proposal with that change.
