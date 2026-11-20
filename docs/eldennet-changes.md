@@ -813,12 +813,17 @@ What we agreed, from GraceUI's side; the launcher and the DLL's side are EldenNe
 What EldenNet's chat box uses once GraceUI 0.2.1 is out (ABI 1.1):
 
 1. **Connect** with floor 0.2.1 and check `has_cap("holder-events")`; without it the box cannot take typing.
-2. **Ask with the flag**: `request_input` with `flags = GRACEUI_INPUT_EVENTS`, for the box's own panel (made with
+2. **Ask with the flag**: `request_input` with `flags = GRACEUI_INPUT_EVENTS` (a field appended to
+   `GraceUiInputRequest`, which is 32 bytes in ABI 1.1), for the box's own panel (made with
    `GRACEUI_PANEL_TAKES_INPUT`, shown), wanting the keyboard, the mouse and the pad.
-3. **Poll** with ABI 1.1's event size: `KEY`, `CHARACTER`, `POINTER` (in the panel's pixels), `PAD` (B as cancel, A
-   as send) and, once and last, `INPUT_ENDED` with its reason (released after the box's own `release_input`; danger,
-   which keeps the draft; no render; the player's exit). Feed them to the box's headless Dear ImGui with
-   `graceui::imgui::feed`.
-4. **The caret**: `set_caret` with the caret's rectangle in the panel's pixels, whenever it moves, for the IME.
+3. **Poll** with ABI 1.1's event size (104 bytes; graceui-sys's `Api::poll` asks with it where GraceUI has the
+   capability, with or without a buffer): `KEY`, `CHARACTER`, `POINTER` (in the panel's pixels; `button_event` 1 for a
+   button, else a move or the wheel), `PAD` (B as cancel, A as send) and, once and last, `INPUT_ENDED` with its reason
+   (released after the box's own `release_input`; danger, which keeps the draft; no render; the player's exit). Feed
+   them to the box's headless Dear ImGui with `graceui::imgui::feed(io, event)` before its `ImGui::NewFrame()`; it
+   sets `ImGuiBackendFlags_HasGamepad` at the first pad event, and the box sets `ImGuiConfigFlags_NavEnableGamepad`
+   if it wants pad navigation.
+4. **The caret**: `set_caret` with the caret's rectangle in the panel's pixels, whenever it moves, for the IME, while
+   the box holds input: one set while it does not is ignored, and the caret ends with the holder.
 5. **Yours, not GraceUI's**: opening the Steam floating keyboard, and the clipboard if Ctrl+V is to paste.
 6. **Later, by D-entry**: the pad chord that opens the box (View + D-pad Up), as a hotkey with its masking.
