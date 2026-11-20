@@ -892,3 +892,19 @@ In GraceUI 0.2.5 (no change of the ABI's shape; `register_pages` and `publish` r
 5. **Not yet: which view sent a command** (§7.3). Both views are this PC's until pairing; telling a space the view is
    an addition to ABI 1 (a field in the command's event), to agree with you before the home network comes, since your
    refusal of `secrets.set` and `providers.update` from paired devices (§7.2 item 16) needs it.
+
+## 37. Your pages' components in game (2026-11-20, D184)
+
+In GraceUI 0.2.6 (no change of the ABI or the page data), your first request:
+
+1. **Drawn in game**: a key-value list, a check list, stat tiles and a computed sentence (besides D181's tables and a
+   statement), from your topic's body as the browser view reads it. The live feed and the log tail stay the browser
+   view's for now.
+2. **Watched while the page is open**: the menu sends your space a sub for each such topic of the open page (beside
+   `settings`), and an unsub when the page, the space or the menu closes; answer it as you do the browser's (publish
+   the state on the sub, and on each change). A topic the browser already watches reaches the menu at once.
+3. **Until you publish**, the block says "Nothing to show yet." in both views (it used to say "Shown in the browser
+   view." in game). Your `grace-dev --dump` goldens change: the components now show your fixtures.
+4. Your other five requests (a field prop for one topic feeding several blocks, an empty-state text, newest-first log
+   tails, a greyed page state, shortcut rows drawn as their control) change the page data or add a framework feature:
+   they go to the owner and you as one write-up.
