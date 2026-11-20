@@ -203,6 +203,14 @@ The Linux build's CTest runs the licence tool's tests always, and the type check
 licence check, the bundle scan and (with the machine's own Playwright and Chromium) the DOM tests when Node and
 `web/node_modules` are present; `protocol_typescript` then uses the web app's pinned TypeScript.
 
+## The fake host: grace-dev
+
+`grace-dev` (D168, `tools/grace-dev/`) serves spaces from page data and fixtures on the real server, plays scripted time,
+and dumps a page's in-game structure; it is built with the Linux unit tests and in the Windows test builds.
+`tools/grace-dev/README.md` has its command line, the space folder's and the scenario's formats, and how its tests run
+under Wine. With the web app built, `build-linux/bin/grace-dev --space demo --space graceui --web web/dist --loop` serves
+the browser view at `http://127.0.0.1:8642/`.
+
 ## The release build: clang-cl
 
 Built as EldenNet's engine is (its ARCH §2.6), against the CRT and SDK that [xwin](https://github.com/Jake-Shadle/xwin)

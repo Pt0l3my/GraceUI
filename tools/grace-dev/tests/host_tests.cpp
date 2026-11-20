@@ -235,7 +235,7 @@ TEST_CASE("each refusal is the store's: its code, and its words in the result's 
   };
   const Case cases[] = {
       {"demo", "settings.set", set("lantern.festival", true), "locked"},       // later, and locked
-      {"demo", "settings.set", set("lantern.night_only", true), "locked"},     // waiting on its check
+      {"demo", "settings.set", set("lantern.night_only", true), "not_now"},    // waiting on its check (D169)
       {"demo", "settings.set", set("lantern.brightness", 2.0), "invalid_value"},
       {"demo", "settings.set", set("lantern.flame", 1), "unknown_key"},
       {"demo", "settings.reset", Json{{"scope", "page"}, {"target", "demo.behaviour"}}, "confirm_required"},
