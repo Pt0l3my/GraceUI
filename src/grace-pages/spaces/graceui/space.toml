@@ -1,0 +1,252 @@
+# SPDX-License-Identifier: MIT
+# GraceUI's own space (D79, D115, D160): the pages at the rail's foot, and GraceUI's own settings. tools/pages/build.py
+# checks it with the page lint and compiles it into grace-pages; never edit its outputs.
+
+[space]
+id = "graceui"
+name = "GraceUI"
+settings_schema = 1
+commands = ["settings.set", "settings.reset", "menu.close", "dashboard.disconnect"]
+
+[[topic]]
+id = "settings"
+shape = "state"
+
+[[topic]]
+id = "graceui.hotkeys"
+shape = "state"
+
+[[topic]]
+id = "graceui.dashboard"
+shape = "state"
+
+[[topic]]
+id = "graceui.mods"
+shape = "state"
+
+[[topic]]
+id = "graceui.compatibility"
+shape = "state"
+
+[[topic]]
+id = "graceui.about"
+shape = "state"
+
+[[category]]
+id = "graceui"
+name = "GraceUI"
+pages = ["graceui.menu", "graceui.hotkeys", "graceui.browser", "graceui.mods", "graceui.compatibility", "graceui.about"]
+
+# ---- Settings (§6.9; D84, D115).
+
+[[setting]]
+key = "ui.scale"
+type = "number"
+default = 1.0
+min = 0.75
+max = 1.5
+step = 0.05
+unit = "×"
+label = "Menu size"
+help = "How large the menu and its text are drawn, in game and in the browser."
+synonyms = ["scale", "size", "zoom", "text size"]
+home = "graceui.menu"
+effect = "now"
+availability = "live"
+
+[[setting]]
+key = "ui.menu.theme"
+type = "choice"
+default = "grace"
+choices = [{ value = "grace", label = "Grace" }, { value = "clear", label = "Grace Clear (high contrast)" }]
+label = "Theme"
+help = "Grace, or Grace Clear: brighter text on a black ground, with thicker borders and focus rings."
+synonyms = ["contrast", "colours", "high contrast"]
+home = "graceui.menu"
+effect = "now"
+availability = "live"
+
+[[setting]]
+key = "ui.menu.reduce_motion"
+type = "bool"
+default = false
+label = "Reduce motion"
+help = "Fades shorten to a moment, and nothing else moves."
+synonyms = ["animation", "motion", "fade"]
+home = "graceui.menu"
+effect = "now"
+availability = "live"
+
+[[setting]]
+key = "ui.menu.plain_text"
+type = "bool"
+default = false
+label = "Plain text"
+help = "Prose and titles are drawn in the plain sans face, for anyone who finds serif type hard to read."
+synonyms = ["font", "serif", "readability", "dyslexia"]
+home = "graceui.menu"
+effect = "now"
+availability = "live"
+
+[[setting]]
+key = "hotkeys.menu"
+type = "key_name"
+default = "F5"
+label = "Open the menu"
+help = "The key that opens and closes the menu. It never reaches the game."
+synonyms = ["menu key", "open", "shortcut"]
+home = "graceui.hotkeys"
+effect = "now"
+availability = "live"
+
+[[setting]]
+key = "dashboard.enabled"
+type = "bool"
+default = true
+label = "Browser view"
+help = "The menu in a browser on this PC, at its own address, while the game runs."
+synonyms = ["dashboard", "browser", "web"]
+home = "graceui.browser"
+effect = "now"
+availability = "live"
+
+[[setting]]
+key = "dashboard.port"
+type = "integer"
+default = 8642
+min = 1024
+max = 65535
+step = 1
+label = "Port"
+help = "The browser view's port on this PC. Change it only if another program holds it."
+synonyms = ["address", "port number"]
+home = "graceui.browser"
+effect = "next_launch"
+availability = "live"
+
+[[setting]]
+key = "dashboard.lan"
+type = "bool"
+default = false
+label = "Other devices on your home network"
+help = "Lets a phone or another computer at home open the browser view, each once paired with a code shown in game."
+synonyms = ["phone", "tablet", "network", "lan", "pairing"]
+home = "graceui.browser"
+effect = "now"
+availability = "later"
+locked = true
+
+# ---- Pages (D79, D115).
+
+[[page]]
+id = "graceui.menu"
+category = "graceui"
+name = "Menu"
+description = "How the menu looks: its size, its theme, its motion and its type."
+increment = "0.2"
+related = ["graceui.hotkeys", "graceui.browser"]
+help.purpose = "Choose how GraceUI's menu is drawn, in game and in the browser alike."
+help.steps = ["Set the menu's size with the slider; the menu redraws at once.", "Pick Grace Clear for brighter text and thicker outlines.", "Turn on Reduce motion or Plain text if fades or serif type bother you."]
+
+[[page.sections]]
+id = "look"
+title = "Look"
+blocks = [{ kind = "settings", keys = ["ui.scale", "ui.menu.theme"] }]
+
+[[page.sections]]
+id = "comfort"
+title = "Comfort"
+blocks = [{ kind = "settings", keys = ["ui.menu.reduce_motion", "ui.menu.plain_text"] }]
+
+[[page]]
+id = "graceui.hotkeys"
+category = "graceui"
+name = "Hotkeys"
+description = "The menu's key, and every mod's hotkeys with their conflicts."
+increment = "0.6"
+related = ["graceui.menu", "graceui.mods"]
+help.purpose = "See every hotkey GraceUI watches for, and which mod each belongs to."
+help.steps = ["Choose the key that opens the menu.", "Look down the list for a hotkey marked unbound: another took its key first.", "Change a mod's hotkey on that mod's own page."]
+
+[[page.sections]]
+id = "menu-key"
+title = "The menu"
+blocks = [{ kind = "settings", keys = ["hotkeys.menu"] }]
+
+[[page.sections]]
+id = "every-hotkey"
+title = "Every mod's hotkeys"
+blocks = [{ kind = "component", component = "table", topic = "graceui.hotkeys" }]
+
+[[page]]
+id = "graceui.browser"
+category = "graceui"
+name = "Browser view"
+description = "The menu in a browser on this PC: its address and the browsers connected."
+increment = "0.2"
+related = ["graceui.menu", "graceui.about"]
+help.purpose = "Open GraceUI's pages in a browser while the game runs, on this PC alone."
+help.steps = ["Leave Browser view on, and open the address shown here in a browser on this PC.", "Change the port only if another program holds it.", "Disconnect every browser to end their sessions; each must load the page again."]
+
+[[page.actions]]
+id = "disconnect"
+label = "Disconnect every browser"
+command = "dashboard.disconnect"
+tone = "destructive"
+confirm = "Every browser tab is disconnected and must load the page again."
+
+[[page.sections]]
+id = "browser-view"
+title = "Browser view"
+blocks = [{ kind = "settings", keys = ["dashboard.enabled", "dashboard.port"] }, { kind = "component", component = "key_value_list", topic = "graceui.dashboard" }]
+
+[[page.sections]]
+id = "other-devices"
+title = "Other devices"
+description = "A later version lets devices on your home network open the browser view, each paired once."
+blocks = [{ kind = "settings", keys = ["dashboard.lan"] }]
+
+[[page]]
+id = "graceui.mods"
+category = "graceui"
+name = "Installed mods"
+description = "Every mod connected to GraceUI this session, and what each uses."
+increment = "0.6"
+related = ["graceui.compatibility", "graceui.hotkeys"]
+help.purpose = "See which mods drew through GraceUI this session, and in what state."
+help.steps = ["Find a mod by its name.", "Read what it uses: notices, panels, hotkeys, pages.", "A mod that is not listed did not connect; its own log says why."]
+
+[[page.sections]]
+id = "mods"
+title = "Connected mods"
+blocks = [{ kind = "component", component = "table", topic = "graceui.mods" }]
+
+[[page]]
+id = "graceui.compatibility"
+category = "graceui"
+name = "Compatibility"
+description = "GraceUI's versions, its folder's check, and each mod's needs."
+increment = "0.6"
+related = ["graceui.mods", "graceui.about"]
+help.purpose = "Check that GraceUI and the mods that use it agree on their versions."
+help.steps = ["Look for a check that is not passed.", "Read what it names: a file, a version, a mod.", "Install the GraceUI the line names, or update the mod."]
+
+[[page.sections]]
+id = "checks"
+title = "Checks"
+blocks = [{ kind = "component", component = "check_list", topic = "graceui.compatibility" }]
+
+[[page]]
+id = "graceui.about"
+category = "graceui"
+name = "About"
+description = "GraceUI's version, its licence, and the work it builds on."
+increment = "0.2"
+related = ["graceui.compatibility", "graceui.menu"]
+help.purpose = "See which GraceUI this is, and the open work it is made from."
+help.steps = ["Read the version line.", "Open the licence and the notices to see each library and font credited.", "Quote the version when you report a problem."]
+
+[[page.sections]]
+id = "about"
+title = "GraceUI"
+blocks = [{ kind = "component", component = "key_value_list", topic = "graceui.about" }]

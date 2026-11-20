@@ -1,0 +1,19 @@
+{
+  "lantern.status": {
+    "tiles": [
+      {"label": "Flame", "value": "Steady"},
+      {"label": "Oil", "value": "62%"},
+      {"label": "Since the last trim", "value": "14 min"}
+    ],
+    "sentence": "The north lantern burns steady amber, with oil for about three hours."
+  },
+  "lantern.log": [
+    {"seq": 1, "time": "19:02", "line": "The lantern was lit."},
+    {"seq": 2, "time": "19:16", "line": "The wick was trimmed."},
+    {"seq": 3, "time": "19:40", "line": "The flame guttered in a draught, then steadied."}
+  ],
+  "lantern.journal": [
+    {"seq": 1, "time": "Yesterday", "line": "Oil delivered: two flasks."},
+    {"seq": 2, "time": "Today", "line": "The glass was cleaned."}
+  ]
+}

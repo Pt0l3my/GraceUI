@@ -137,6 +137,83 @@ def load(text=None):
     return data
 
 
+# ---- A validator, for Python tools (the page lint, the fake host): a value checked against a type of the schema as
+# grace-protocol's decoders check it.
+
+ID = re.compile(r"[a-z0-9._/-]{1,64}")
+MAX_SAFE = 2 ** 53 - 1
+
+
+def json_size(value):
+    import json
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def validate(data, value, kind, field=None, path=""):
+    """The errors of `value` as a `kind` ("type.page", "list.id", "u32"...): a list of "path: what" strings, empty when
+    it would decode. `field` is the schema's field entry, for its bounds."""
+    field = field or {}
+    errors = []
+
+    def err(why):
+        errors.append(f"{path or '(top)'}: {why}")
+
+    if kind.startswith("list."):
+        if not isinstance(value, list):
+            err("not a list")
+        elif "max" in field and len(value) > field["max"]:
+            err(f"more than {field['max']} items")
+        else:
+            inner = dict(field)
+            inner.pop("max", None)
+            if "item_max" in field:
+                inner["max"] = field["item_max"]
+            for i, item in enumerate(value):
+                errors += validate(data, item, kind[5:], inner, f"{path}[{i}]")
+        return errors
+    if kind.startswith("enum."):
+        if value not in data["enums"][kind[5:]]["values"]:
+            err(f"not one of {kind[5:]}'s names")
+        return errors
+    if kind.startswith("type."):
+        if not isinstance(value, dict):
+            err("not an object")
+            return errors
+        for f in data["types"][kind[5:]]["fields"]:
+            name = f["name"]
+            sub = f"{path}.{name}" if path else name
+            if name not in value or value[name] is None:
+                if not f.get("optional"):
+                    errors.append(f"{sub}: missing")
+                continue
+            errors += validate(data, value[name], f["type"], f, sub)
+        return errors
+    if kind in ("string", "id"):
+        if not isinstance(value, str):
+            err("not a string")
+        elif kind == "id" and not ID.fullmatch(value):
+            err("not an id (1 to 64 of a-z, 0-9, '.', '_', '-' and '/')")
+        elif kind == "string" and "max" in field and len(value.encode("utf-8")) > field["max"]:
+            err(f"longer than {field['max']} bytes")
+    elif kind in ("u32", "u64"):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            err("not a whole number of 0 or more")
+        elif value > (2 ** 32 - 1 if kind == "u32" else MAX_SAFE):
+            err("too large")
+    elif kind == "f64":
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            err("not a number")
+    elif kind == "bool":
+        if not isinstance(value, bool):
+            err("not true or false")
+    elif kind in ("json", "object"):
+        if kind == "object" and not isinstance(value, dict):
+            err("not an object")
+        elif "max" in field and json_size(value) > field["max"]:
+            err(f"larger than {field['max']} bytes")
+    return errors
+
+
 # ---- C++.
 
 def cpp_type(kind):

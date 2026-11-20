@@ -33,6 +33,21 @@ export const SETTING_EFFECTS: readonly SettingEffect[] = ["now", "next_moment", 
 export type ResetScopeKind = "key" | "page" | "all";
 export const RESET_SCOPE_KINDS: readonly ResetScopeKind[] = ["key", "page", "all"];
 
+export type TopicShape = "state" | "stream";
+export const TOPIC_SHAPES: readonly TopicShape[] = ["state", "stream"];
+
+export type Component = "stat_tiles" | "filter_bar" | "table" | "master_detail" | "card_grid" | "segmented_switch" | "statement" | "journal" | "transcript" | "live_feed" | "check_list" | "log_tail" | "report_preview" | "computed_sentence" | "action_button" | "wizard_steps" | "key_value_list";
+export const COMPONENTS: readonly Component[] = ["stat_tiles", "filter_bar", "table", "master_detail", "card_grid", "segmented_switch", "statement", "journal", "transcript", "live_feed", "check_list", "log_tail", "report_preview", "computed_sentence", "action_button", "wizard_steps", "key_value_list"];
+
+export type BlockKind = "settings" | "shortcuts" | "component";
+export const BLOCK_KINDS: readonly BlockKind[] = ["settings", "shortcuts", "component"];
+
+export type ActionTone = "primary" | "secondary" | "destructive";
+export const ACTION_TONES: readonly ActionTone[] = ["primary", "secondary", "destructive"];
+
+export type PageTag = "wip" | "later";
+export const PAGE_TAGS: readonly PageTag[] = ["wip", "later"];
+
 /** A space's settings schema: its number and a hash of its settings description (§6.4). */
 export interface SettingsSchema {
   number: number;
@@ -79,6 +94,93 @@ export interface SettingsBody {
   description: Setting[];
   values: JsonObject;
   changed: string[];
+}
+
+/** A space's settings description (§6.9): its schema and every setting it owns. */
+export interface SettingsDescription {
+  schema: SettingsSchema;
+  settings: Setting[];
+}
+
+/** A topic a space publishes: its shape, and for a stream its ring's size. */
+export interface TopicInfo {
+  id: string;
+  shape: TopicShape;
+  ring?: number;
+}
+
+/** A header action: a command of the space's, with a confirmation for a destructive one. */
+export interface PageAction {
+  id: string;
+  label: string;
+  command: string;
+  tone: ActionTone;
+  confirm?: string;
+}
+
+/** A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, or a component bound to a topic. */
+export interface PageBlock {
+  kind: BlockKind;
+  keys?: string[];
+  component?: Component;
+  topic?: string;
+  props?: JsonObject;
+}
+
+/** A section: a card with a label, an optional line, its blocks and an Advanced disclosure. */
+export interface PageSection {
+  id: string;
+  title: string;
+  description?: string;
+  collapsed?: boolean;
+  blocks: PageBlock[];
+  advanced?: PageBlock[];
+}
+
+/** A tab of a page and its sections. */
+export interface PageTab {
+  id: string;
+  name: string;
+  sections: PageSection[];
+}
+
+/** A page's help: what it is for, and how to use it in three to five steps (§4.2.4). */
+export interface PageHelp {
+  purpose: string;
+  steps: string[];
+}
+
+/** A page: its place, its header, its help, its Related links, and its tabs or its sections. */
+export interface Page {
+  id: string;
+  category: string;
+  name: string;
+  description: string;
+  help: PageHelp;
+  related: string[];
+  increment?: string;
+  tag?: PageTag;
+  actions?: PageAction[];
+  tabs?: PageTab[];
+  sections?: PageSection[];
+}
+
+/** A category of the rail and its pages, in order. */
+export interface Category {
+  id: string;
+  name: string;
+  pages: string[];
+}
+
+/** A space's page data (§2.5): its rail, its pages, the topics and commands they use, and the protocol minor its components need. */
+export interface SpacePages {
+  space: string;
+  name: string;
+  minor: number;
+  categories: Category[];
+  pages: Page[];
+  topics: TopicInfo[];
+  commands: string[];
 }
 
 /** The first frame: within 2 s of connecting (browser), when the in-game view starts (in game). */

@@ -39,6 +39,25 @@ values = ["now", "next_moment", "next_request", "next_launch"]
 [enums.reset_scope_kind]
 values = ["key", "page", "all"]
 
+[enums.topic_shape]
+values = ["state", "stream"]
+
+# The components a page's block may draw (§2.5), versioned with the protocol's minor (§6.4): only GraceUI adds one.
+# Settings rows, shortcut rows, sections, tabs, the header, help and the Related card are the page's own structure.
+[enums.component]
+values = ["stat_tiles", "filter_bar", "table", "master_detail", "card_grid", "segmented_switch", "statement",
+          "journal", "transcript", "live_feed", "check_list", "log_tail", "report_preview", "computed_sentence",
+          "action_button", "wizard_steps", "key_value_list"]
+
+[enums.block_kind]
+values = ["settings", "shortcuts", "component"]
+
+[enums.action_tone]
+values = ["primary", "secondary", "destructive"]
+
+[enums.page_tag]
+values = ["wip", "later"]
+
 # ---- Shared types.
 
 [types.settings_schema]
@@ -92,6 +111,106 @@ fields = [
   { name = "description", type = "list.type.setting", max = 512 },
   { name = "values", type = "object", max = 65536 },
   { name = "changed", type = "list.id", max = 512 },
+]
+
+# ---- Page descriptions (§2.5, D160): a space's rail, pages and topics, handed over at register_pages and shown by both
+# views with GraceUI's components. tools/pages/build.py writes them from each space's TOML; its lint holds the rules.
+
+[types.settings_description]
+doc = "A space's settings description (§6.9): its schema and every setting it owns"
+fields = [
+  { name = "schema", type = "type.settings_schema" },
+  { name = "settings", type = "list.type.setting", max = 512 },
+]
+
+[types.topic_info]
+doc = "A topic a space publishes: its shape, and for a stream its ring's size"
+fields = [
+  { name = "id", type = "id" },
+  { name = "shape", type = "enum.topic_shape" },
+  { name = "ring", type = "u32", optional = true },
+]
+
+[types.page_action]
+doc = "A header action: a command of the space's, with a confirmation for a destructive one"
+fields = [
+  { name = "id", type = "id" },
+  { name = "label", type = "string", max = 64 },
+  { name = "command", type = "id" },
+  { name = "tone", type = "enum.action_tone" },
+  { name = "confirm", type = "string", max = 256, optional = true },
+]
+
+[types.page_block]
+doc = "A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, or a component bound to a topic"
+fields = [
+  { name = "kind", type = "enum.block_kind" },
+  { name = "keys", type = "list.id", max = 64, optional = true },
+  { name = "component", type = "enum.component", optional = true },
+  { name = "topic", type = "id", optional = true },
+  { name = "props", type = "object", max = 4096, optional = true },
+]
+
+[types.page_section]
+doc = "A section: a card with a label, an optional line, its blocks and an Advanced disclosure"
+fields = [
+  { name = "id", type = "id" },
+  { name = "title", type = "string", max = 64 },
+  { name = "description", type = "string", max = 256, optional = true },
+  { name = "collapsed", type = "bool", optional = true },
+  { name = "blocks", type = "list.type.page_block", max = 32 },
+  { name = "advanced", type = "list.type.page_block", max = 16, optional = true },
+]
+
+[types.page_tab]
+doc = "A tab of a page and its sections"
+fields = [
+  { name = "id", type = "id" },
+  { name = "name", type = "string", max = 32 },
+  { name = "sections", type = "list.type.page_section", max = 32 },
+]
+
+[types.page_help]
+doc = "A page's help: what it is for, and how to use it in three to five steps (§4.2.4)"
+fields = [
+  { name = "purpose", type = "string", max = 512 },
+  { name = "steps", type = "list.string", max = 5, item_max = 256 },
+]
+
+[types.page]
+doc = "A page: its place, its header, its help, its Related links, and its tabs or its sections"
+fields = [
+  { name = "id", type = "id" },
+  { name = "category", type = "id" },
+  { name = "name", type = "string", max = 64 },
+  { name = "description", type = "string", max = 160 },
+  { name = "help", type = "type.page_help" },
+  { name = "related", type = "list.id", max = 8 },
+  { name = "increment", type = "string", max = 16, optional = true },
+  { name = "tag", type = "enum.page_tag", optional = true },
+  { name = "actions", type = "list.type.page_action", max = 4, optional = true },
+  { name = "tabs", type = "list.type.page_tab", max = 8, optional = true },
+  { name = "sections", type = "list.type.page_section", max = 32, optional = true },
+]
+
+[types.category]
+doc = "A category of the rail and its pages, in order"
+fields = [
+  { name = "id", type = "id" },
+  { name = "name", type = "string", max = 64 },
+  { name = "pages", type = "list.id", max = 32 },
+]
+
+[types.space_pages]
+doc = "A space's page data (§2.5): its rail, its pages, the topics and commands they use, and the protocol minor its components need"
+fields = [
+  { name = "space", type = "id" },
+  { name = "name", type = "string", max = 64 },
+  { name = "minor", type = "u32" },
+  { name = "categories", type = "list.type.category", max = 16 },
+  { name = "pages", type = "list.type.page", max = 128 },
+  { name = "topics", type = "list.type.topic_info", max = 64 },
+  { name = "commands", type = "list.id", max = 64 },
 ]
 
 # ---- Message kinds (§6.3). `from` is who sends it: page (a view: the browser or the in-game view), grace (GraceUI),

@@ -75,6 +75,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # core is the server's protocol code (G30, §7.6, D158).
 add_subdirectory(src/grace-tokens)
 add_subdirectory(src/grace-protocol)
+add_subdirectory(src/grace-pages)
 add_subdirectory(src/grace-input)
 add_subdirectory(src/grace-abi)
 add_subdirectory(src/grace-serve)

@@ -88,6 +88,58 @@ enum class ResetScopeKind : std::uint8_t {
 std::string_view to_string(ResetScopeKind value) noexcept;
 bool from_string(std::string_view text, ResetScopeKind& out) noexcept;
 
+enum class TopicShape : std::uint8_t {
+  state,
+  stream,
+};
+std::string_view to_string(TopicShape value) noexcept;
+bool from_string(std::string_view text, TopicShape& out) noexcept;
+
+enum class Component : std::uint8_t {
+  stat_tiles,
+  filter_bar,
+  table,
+  master_detail,
+  card_grid,
+  segmented_switch,
+  statement,
+  journal,
+  transcript,
+  live_feed,
+  check_list,
+  log_tail,
+  report_preview,
+  computed_sentence,
+  action_button,
+  wizard_steps,
+  key_value_list,
+};
+std::string_view to_string(Component value) noexcept;
+bool from_string(std::string_view text, Component& out) noexcept;
+
+enum class BlockKind : std::uint8_t {
+  settings,
+  shortcuts,
+  component,
+};
+std::string_view to_string(BlockKind value) noexcept;
+bool from_string(std::string_view text, BlockKind& out) noexcept;
+
+enum class ActionTone : std::uint8_t {
+  primary,
+  secondary,
+  destructive,
+};
+std::string_view to_string(ActionTone value) noexcept;
+bool from_string(std::string_view text, ActionTone& out) noexcept;
+
+enum class PageTag : std::uint8_t {
+  wip,
+  later,
+};
+std::string_view to_string(PageTag value) noexcept;
+bool from_string(std::string_view text, PageTag& out) noexcept;
+
 // Reads an enum's name: false, with the error set, for a value that is not one of its names.
 template <class E>
 bool read_enum(const Json& value, E& out, const std::string& path, DecodeError& error) {
@@ -159,6 +211,123 @@ struct SettingsBody {
 };
 bool decode(const Json& in, SettingsBody& out, const std::string& path, DecodeError& e);
 Json encode(const SettingsBody& in);
+
+// A space's settings description (§6.9): its schema and every setting it owns.
+struct SettingsDescription {
+  SettingsSchema schema{};
+  std::vector<Setting> settings{};
+  bool operator==(const SettingsDescription&) const = default;
+};
+bool decode(const Json& in, SettingsDescription& out, const std::string& path, DecodeError& e);
+Json encode(const SettingsDescription& in);
+
+// A topic a space publishes: its shape, and for a stream its ring's size.
+struct TopicInfo {
+  std::string id{};
+  TopicShape shape{};
+  std::optional<std::uint32_t> ring{};
+  bool operator==(const TopicInfo&) const = default;
+};
+bool decode(const Json& in, TopicInfo& out, const std::string& path, DecodeError& e);
+Json encode(const TopicInfo& in);
+
+// A header action: a command of the space's, with a confirmation for a destructive one.
+struct PageAction {
+  std::string id{};
+  std::string label{};
+  std::string command{};
+  ActionTone tone{};
+  std::optional<std::string> confirm{};
+  bool operator==(const PageAction&) const = default;
+};
+bool decode(const Json& in, PageAction& out, const std::string& path, DecodeError& e);
+Json encode(const PageAction& in);
+
+// A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, or a component bound to a topic.
+struct PageBlock {
+  BlockKind kind{};
+  std::optional<std::vector<std::string>> keys{};
+  std::optional<Component> component{};
+  std::optional<std::string> topic{};
+  std::optional<Json> props{};
+  bool operator==(const PageBlock&) const = default;
+};
+bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError& e);
+Json encode(const PageBlock& in);
+
+// A section: a card with a label, an optional line, its blocks and an Advanced disclosure.
+struct PageSection {
+  std::string id{};
+  std::string title{};
+  std::optional<std::string> description{};
+  std::optional<bool> collapsed{};
+  std::vector<PageBlock> blocks{};
+  std::optional<std::vector<PageBlock>> advanced{};
+  bool operator==(const PageSection&) const = default;
+};
+bool decode(const Json& in, PageSection& out, const std::string& path, DecodeError& e);
+Json encode(const PageSection& in);
+
+// A tab of a page and its sections.
+struct PageTab {
+  std::string id{};
+  std::string name{};
+  std::vector<PageSection> sections{};
+  bool operator==(const PageTab&) const = default;
+};
+bool decode(const Json& in, PageTab& out, const std::string& path, DecodeError& e);
+Json encode(const PageTab& in);
+
+// A page's help: what it is for, and how to use it in three to five steps (§4.2.4).
+struct PageHelp {
+  std::string purpose{};
+  std::vector<std::string> steps{};
+  bool operator==(const PageHelp&) const = default;
+};
+bool decode(const Json& in, PageHelp& out, const std::string& path, DecodeError& e);
+Json encode(const PageHelp& in);
+
+// A page: its place, its header, its help, its Related links, and its tabs or its sections.
+struct Page {
+  std::string id{};
+  std::string category{};
+  std::string name{};
+  std::string description{};
+  PageHelp help{};
+  std::vector<std::string> related{};
+  std::optional<std::string> increment{};
+  std::optional<PageTag> tag{};
+  std::optional<std::vector<PageAction>> actions{};
+  std::optional<std::vector<PageTab>> tabs{};
+  std::optional<std::vector<PageSection>> sections{};
+  bool operator==(const Page&) const = default;
+};
+bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e);
+Json encode(const Page& in);
+
+// A category of the rail and its pages, in order.
+struct Category {
+  std::string id{};
+  std::string name{};
+  std::vector<std::string> pages{};
+  bool operator==(const Category&) const = default;
+};
+bool decode(const Json& in, Category& out, const std::string& path, DecodeError& e);
+Json encode(const Category& in);
+
+// A space's page data (§2.5): its rail, its pages, the topics and commands they use, and the protocol minor its components need.
+struct SpacePages {
+  std::string space{};
+  std::string name{};
+  std::uint32_t minor{};
+  std::vector<Category> categories{};
+  std::vector<Page> pages{};
+  std::vector<TopicInfo> topics{};
+  std::vector<std::string> commands{};
+  bool operator==(const SpacePages&) const = default;
+};
+bool decode(const Json& in, SpacePages& out, const std::string& path, DecodeError& e);
+Json encode(const SpacePages& in);
 
 // ---- The message kinds (§6.3).
 

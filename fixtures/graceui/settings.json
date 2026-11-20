@@ -1,0 +1,156 @@
+{
+  "schema": {
+    "number": 1,
+    "hash": "76b87b0933f71a86"
+  },
+  "settings": [
+    {
+      "key": "ui.scale",
+      "type": "number",
+      "default": 1.0,
+      "min": 0.75,
+      "max": 1.5,
+      "step": 0.05,
+      "unit": "×",
+      "label": "Menu size",
+      "help": "How large the menu and its text are drawn, in game and in the browser.",
+      "synonyms": [
+        "scale",
+        "size",
+        "zoom",
+        "text size"
+      ],
+      "home": "graceui.menu",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "ui.menu.theme",
+      "type": "choice",
+      "default": "grace",
+      "choices": [
+        {
+          "value": "grace",
+          "label": "Grace"
+        },
+        {
+          "value": "clear",
+          "label": "Grace Clear (high contrast)"
+        }
+      ],
+      "label": "Theme",
+      "help": "Grace, or Grace Clear: brighter text on a black ground, with thicker borders and focus rings.",
+      "synonyms": [
+        "contrast",
+        "colours",
+        "high contrast"
+      ],
+      "home": "graceui.menu",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "ui.menu.reduce_motion",
+      "type": "bool",
+      "default": false,
+      "label": "Reduce motion",
+      "help": "Fades shorten to a moment, and nothing else moves.",
+      "synonyms": [
+        "animation",
+        "motion",
+        "fade"
+      ],
+      "home": "graceui.menu",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "ui.menu.plain_text",
+      "type": "bool",
+      "default": false,
+      "label": "Plain text",
+      "help": "Prose and titles are drawn in the plain sans face, for anyone who finds serif type hard to read.",
+      "synonyms": [
+        "font",
+        "serif",
+        "readability",
+        "dyslexia"
+      ],
+      "home": "graceui.menu",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "hotkeys.menu",
+      "type": "key_name",
+      "default": "F5",
+      "label": "Open the menu",
+      "help": "The key that opens and closes the menu. It never reaches the game.",
+      "synonyms": [
+        "menu key",
+        "open",
+        "shortcut"
+      ],
+      "home": "graceui.hotkeys",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "dashboard.enabled",
+      "type": "bool",
+      "default": true,
+      "label": "Browser view",
+      "help": "The menu in a browser on this PC, at its own address, while the game runs.",
+      "synonyms": [
+        "dashboard",
+        "browser",
+        "web"
+      ],
+      "home": "graceui.browser",
+      "effect": "now",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "dashboard.port",
+      "type": "integer",
+      "default": 8642,
+      "min": 1024,
+      "max": 65535,
+      "step": 1,
+      "label": "Port",
+      "help": "The browser view's port on this PC. Change it only if another program holds it.",
+      "synonyms": [
+        "address",
+        "port number"
+      ],
+      "home": "graceui.browser",
+      "effect": "next_launch",
+      "availability": "live",
+      "locked": false
+    },
+    {
+      "key": "dashboard.lan",
+      "type": "bool",
+      "default": false,
+      "label": "Other devices on your home network",
+      "help": "Lets a phone or another computer at home open the browser view, each once paired with a code shown in game.",
+      "synonyms": [
+        "phone",
+        "tablet",
+        "network",
+        "lan",
+        "pairing"
+      ],
+      "home": "graceui.browser",
+      "effect": "now",
+      "availability": "later",
+      "locked": true
+    }
+  ]
+}

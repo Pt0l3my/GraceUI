@@ -148,6 +148,23 @@ cmake --build build-linux-fuzz --target grace_frame_fuzz
 build-linux-fuzz/bin/grace_frame_fuzz -max_total_time=60 -max_len=20000 <a corpus folder: the golden frames, one a file>
 ```
 
+## The page descriptions
+
+GraceUI's built-in spaces, its own and the demo space, are `src/grace-pages/spaces/<id>/space.toml` (D160).
+`tools/pages/build.py` checks each against the protocol's schema and by the page lint, then writes
+`fixtures/<id>/pages.json`, `fixtures/<id>/settings.json` and `src/grace-pages/builtin.cpp`, all committed; edit the
+TOML, never the outputs. `--lint` checks another project's spaces against this GraceUI's rules.
+
+```sh
+python3 -I tools/pages/build.py                  # check the spaces, then write their outputs
+python3 -I tools/pages/build.py --check          # fail if an output is not what the spaces build
+python3 -I tools/pages/build.py --lint <space.toml>...
+python3 -I -m unittest discover -s tools/pages
+```
+
+The Linux build's CTest runs `--check`, the lint's tests (each rule failing on a demo space seeded to break it) and
+`grace_pages_tests` (every built-in space decoded by grace-protocol's own decoders).
+
 ## The release build: clang-cl
 
 Built as EldenNet's engine is (its ARCH §2.6), against the CRT and SDK that [xwin](https://github.com/Jake-Shadle/xwin)
