@@ -42,7 +42,8 @@ TEST_CASE("the built-in spaces load, GraceUI's own first; the demo's fixtures an
   SpaceData own;
   std::string why;
   REQUIRE(load_builtin("graceui", own, why));
-  CHECK(own.fixtures.empty());  // no fixture states yet: its topics publish nothing
+  CHECK(own.fixtures.contains("graceui.about"));  // GraceUI's own pages' sample states
+  CHECK(own.fixtures["graceui.compatibility"]["checks"].size() == 5);
   CHECK(own.scenario_text.empty());
   const SpaceData lanterns = demo();
   CHECK(lanterns.fixtures.contains("lantern.status"));

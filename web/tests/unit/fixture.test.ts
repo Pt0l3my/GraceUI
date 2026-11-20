@@ -38,7 +38,9 @@ test("welcome names both spaces, with their settings schemas", async () => {
 });
 
 test("each topic's first frame: pages, settings, a state fixture, a stream's rows; nothing for a topic with none", async () => {
-  const transport = new FixtureTransport(builtinSpaces());
+  const spaces = builtinSpaces();
+  delete spaces[0]?.topics?.["graceui.about"];  // a topic the space has published nothing on
+  const transport = new FixtureTransport(spaces);
   const { got, events } = recorder();
   await transport.connect(events);
   transport.subscribe("demo", "pages");

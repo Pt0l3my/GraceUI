@@ -1,0 +1,54 @@
+{
+  "graceui.hotkeys": {
+    "columns": [
+      {"id": "mod", "label": "Mod"},
+      {"id": "action", "label": "Action"},
+      {"id": "key", "label": "Key"},
+      {"id": "state", "label": "State"}
+    ],
+    "rows": [
+      {"mod": "GraceUI", "action": "Open the menu", "key": "F5", "state": "Bound"},
+      {"mod": "Demo space", "action": "Trim the wick", "key": "T", "state": "Bound"},
+      {"mod": "Tide Charts", "action": "Show the tide table", "key": "Ctrl+T", "state": "Bound"},
+      {"mod": "Quiet Camp", "action": "Pitch the tent", "key": "T", "state": "Unbound: Demo space took T first"}
+    ]
+  },
+  "graceui.dashboard": {
+    "items": [
+      {"label": "Address", "value": "http://127.0.0.1:8642/"},
+      {"label": "Browsers connected", "value": "1"},
+      {"label": "Other devices", "value": "Off: a later version pairs them"}
+    ]
+  },
+  "graceui.mods": {
+    "columns": [
+      {"id": "mod", "label": "Mod"},
+      {"id": "version", "label": "Version", "numeric": true},
+      {"id": "uses", "label": "Uses"},
+      {"id": "state", "label": "State"}
+    ],
+    "rows": [
+      {"mod": "Demo space", "version": "1.0.0", "uses": "Pages, notices", "state": "Connected"},
+      {"mod": "Tide Charts", "version": "0.4.2", "uses": "Panels, hotkeys", "state": "Connected"},
+      {"mod": "Quiet Camp", "version": "2.1.0", "uses": "Notices, hotkeys", "state": "Connected, one hotkey unbound"}
+    ]
+  },
+  "graceui.compatibility": {
+    "checks": [
+      {"state": "pass", "label": "GraceUI's folder", "detail": "Every file its list names is present and unchanged."},
+      {"state": "pass", "label": "One copy of GraceUI", "detail": "No second copy was found in another folder."},
+      {"state": "pass", "label": "Demo space", "detail": "Built for ABI 1.0 and protocol 1.1; this GraceUI has both."},
+      {"state": "warn", "label": "Tide Charts", "detail": "Built for GraceUI 0.3; this is 0.2. It runs, without the panels 0.3 adds."},
+      {"state": "fail", "label": "Old Lamplighter", "detail": "Built for ABI 2, which this GraceUI does not have. Update GraceUI or remove the mod."}
+    ]
+  },
+  "graceui.about": {
+    "items": [
+      {"label": "Version", "value": "GraceUI 0.2.0"},
+      {"label": "Interface", "value": "ABI 1.0, protocol 1.1"},
+      {"label": "Licence", "value": "MIT"},
+      {"label": "Built on", "value": "Dear ImGui and MinHook in game; Preact in the browser"},
+      {"label": "Type", "value": "Cinzel, EB Garamond, Noto Sans and Noto Sans Mono, under the SIL Open Font Licence"}
+    ]
+  }
+}

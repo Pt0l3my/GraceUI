@@ -7,7 +7,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <fstream>
 #include <functional>
+#include <iterator>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -314,10 +316,27 @@ TEST_CASE("fixture states, and a stream's rows from the oldest held, in order") 
   const std::optional<Json> journal = view.rows("lantern.journal");
   REQUIRE(journal.has_value());
   CHECK(seqs(*journal) == std::vector<std::uint64_t>{1, 2});
-  // A topic with no fixture publishes nothing (absence is silent), and grace-dev says so once.
+  // GraceUI's own pages have sample states too (fixtures/graceui/topics.json).
   view.sub("graceui", "graceui.about");
+  const std::optional<Json> about = view.state("graceui.about");
+  REQUIRE(about.has_value());
+  CHECK((*about)["body"]["items"][0]["label"] == "Version");
+}
+
+TEST_CASE("a topic with no fixture publishes nothing (absence is silent), and grace-dev says so once") {
+  TempFolder folder;  // the tidepool space, its pool.status left without a fixture
+  for (const char* name : {"pages.json", "settings.json"}) {
+    std::ifstream in(test::tests_folder() / "tidepool" / name, std::ios::binary);
+    folder.write(name, std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()));
+  }
+  folder.write("topics.json", R"({"pool.notes": [{"seq": 1, "time": "Low water", "line": "Three crabs counted."}]})");
+  HostOptions options;
+  options.spaces = {SpaceSource{{}, folder.path}};
+  auto dev = serve(options);
+  View view(dev->port());
+  view.sub("tidepool", "pool.status");
   CHECK(view.quiet(150ms));
-  CHECK(dev->said_within("graceui: graceui.about is watched, but has no fixture state: it publishes nothing", 1s));
+  CHECK(dev->said_within("tidepool: pool.status is watched, but has no fixture state: it publishes nothing", 1s));
 }
 
 TEST_CASE("an author's space folder: its fixtures, its scripted steps near their times, and its reaction's refusal") {
