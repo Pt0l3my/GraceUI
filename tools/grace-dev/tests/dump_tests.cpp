@@ -9,6 +9,7 @@
 
 #include "cli.h"
 #include "dump.h"
+#include "space_data.h"
 #include "support.h"
 
 namespace {
@@ -22,8 +23,9 @@ SpaceData builtin(std::string_view id) {
   return space;
 }
 
-DumpResult dumped(std::string_view id, std::string page, float width, float height, double ui_scale = 1,
-                  bool clear = false) {
+// At GraceUI's default ui.scale unless a test names one, as the command line does.
+DumpResult dumped(std::string_view id, std::string page, float width, float height,
+                  double ui_scale = default_ui_scale(), bool clear = false) {
   DumpResult out;
   std::string why;
   REQUIRE_MESSAGE(dump_page(builtin(id), DumpRequest{std::move(page), width, height, ui_scale, clear}, out, why), why);
@@ -50,11 +52,11 @@ TEST_CASE("--dump: the demo's Overview at 800x600, as its golden says") {
 #endif
   CHECK_MESSAGE(test::read_text(golden) == result.text, "the dump differs from ", golden.string(),
                 " (run with GRACE_UPDATE_GOLDEN=1 to accept it)");
-  CHECK(test::contains(result.text, "# demo demo.overview: 800x600, ui.scale 1.00, scale 0.556, theme grace"));
+  CHECK(test::contains(result.text, "# demo demo.overview: 800x600, ui.scale 1.25, scale 0.694, theme grace"));
   CHECK(test::contains(result.text, "check_draw_list: passes\n"));
 }
 
-TEST_CASE("--dump draws what grace-view's own goldens hold: GraceUI's Menu page at 1920x1080") {
+TEST_CASE("--dump draws what grace-view's own goldens hold: GraceUI's Menu page at 1920x1080, its default size") {
   const DumpResult result = dumped("graceui", "graceui.menu", 1920, 1080);
   const std::filesystem::path golden =
       path_from_utf8(GRACE_DEV_TESTS) / ".." / ".." / ".." / "src" / "grace-view" / "tests" / "golden" /

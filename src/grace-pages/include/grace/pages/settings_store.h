@@ -43,6 +43,17 @@ class SettingsStore {
   // The keys whose values differ from their defaults, in the description's order (a view's "changed" lozenges).
   std::vector<std::string> changed() const;
 
+  // What is kept between sessions (D84, D179): an object of the values that differ from their defaults, a secret's
+  // never, so that a later change of a default still reaches a player who never changed the setting.
+  protocol::Json saved() const;
+  // Takes back what saved() gave in an earlier session, each value as settings.set takes it (an unknown key, a value off
+  // its type, bounds or step, and a locked or not-now setting are left out). Answers how many were taken and left out.
+  struct Restored {
+    std::size_t taken = 0;
+    std::size_t left_out = 0;
+  };
+  Restored restore(const protocol::Json& saved);
+
   // settings.set: unknown_key; locked (a later setting, or a locked one); not_now (a check, a version or a dependency
   // holds it: its availability is neither "live" nor "later"); invalid_value; or ok, with the key in `changed` if its
   // value changed.

@@ -204,6 +204,34 @@ std::vector<std::string> SettingsStore::changed() const {
   return out;
 }
 
+Json SettingsStore::saved() const {
+  Json out = Json::object();
+  for (std::size_t i = 0; i < description_.settings.size(); ++i) {
+    const protocol::Setting& s = description_.settings[i];
+    if (s.type != protocol::SettingType::secret && values_[i] != s.default_) {
+      out[s.key] = values_[i];
+    }
+  }
+  return out;
+}
+
+SettingsStore::Restored SettingsStore::restore(const Json& saved) {
+  Restored out;
+  if (!saved.is_object()) {
+    return out;
+  }
+  for (const auto& [key, value] : saved.items()) {
+    const std::size_t i = index_of(key);
+    const bool secret = i < description_.settings.size() && description_.settings[i].type == protocol::SettingType::secret;
+    if (!secret && set(key, value).ok) {
+      ++out.taken;
+    } else {
+      ++out.left_out;
+    }
+  }
+  return out;
+}
+
 Outcome SettingsStore::set(std::string_view key, const Json& value) {
   const std::size_t i = index_of(key);
   if (i == description_.settings.size()) {

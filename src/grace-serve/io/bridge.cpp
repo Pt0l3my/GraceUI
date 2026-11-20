@@ -484,6 +484,12 @@ void Engine::hello(Connection& c, const protocol::Hello& hello, Clock::time_poin
   c.phase = Connection::Phase::open;
   c.pings_out = 0;
   c.next_ping = now + config_.timings.ping;
+  // §6.8: a third view, once its ticket is shown, supersedes the oldest.
+  if (Connection* oldest = oldest_websocket(Connection::Phase::open, &c);
+      oldest != nullptr && count_websockets(Connection::Phase::open) > kMaxWebSockets) {
+    log(LogLevel::info, "A third WebSocket superseded the oldest.");
+    close_socket(*oldest, protocol::ByeReason::superseded, 1000, now);
+  }
 }
 
 void Engine::subscribe(Connection& c, const protocol::Sub& sub) {

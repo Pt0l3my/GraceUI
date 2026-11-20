@@ -10,6 +10,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "grace/protocol/messages.h"
@@ -36,6 +37,15 @@ struct Input {
 };
 
 enum class Scope : std::uint8_t { rail, top, page };
+
+// The mouse (§5.5), in the display's pixels as the last layout drew them.
+struct Pointer {
+  enum class Kind : std::uint8_t { move, press, release, wheel, leave };
+  Kind kind = Kind::move;
+  float x = 0;
+  float y = 0;
+  float wheel = 0;  // with wheel: notches, positive away from the player (the page moves down)
+};
 
 struct Action {
   enum class Kind : std::uint8_t {
@@ -101,12 +111,23 @@ class PageView {
 
   // A key or a button: what it did (§5.3, §5.4, §5.7).
   Action input(const Input& input);
+  // The mouse (§5.5): a press focuses what it is on and does what Enter does there, or on a control what a click on its
+  // part does (a switch turns, a choice's segment is chosen, a slider takes the value under the pointer); a slider's
+  // moves while its button is held set it, and the release ends that; the wheel scrolls the page, which then stays
+  // where the wheel left it until a key moves focus; a move changes only what is hovered. Hover tints are drawn only
+  // while the pointer is over the menu.
+  Action pointer(const Pointer& pointer);
   // A command the space refused: the reason, in words, under its control, focus back on it (§5.7).
   void refused(std::string_view key, std::string_view reason);
   // A setting's value as the space last gave it, after a refusal: `value`, or its default if null (D171).
   void restore(std::string_view key, const protocol::Json& value);
   // The rail's other spaces (D79, D171): the host sets them whenever the spaces or the open one change.
   void set_rail(RailContext context);
+  // A component's topic body, as the host has it (D181). A table whose topic body the view has is drawn in game: one row
+  // a row, its first column's words, the others' after them, and a switch column's switch, which ↵, A, ← and → turn
+  // (the column's command, with the row's key and "on"). Any other component, or a table without its body, is shown in
+  // the browser view. Focus stays on the row it was on.
+  void set_topic(std::string_view topic, const protocol::Json& body);
   // Focus on the rail, as a link from another space's rail leaves it: on the switcher, or on the open page's entry, as
   // opening a category leaves it (D171).
   void focus_rail(bool switcher);
@@ -121,8 +142,17 @@ class PageView {
   std::string_view page() const noexcept;
   Scope scope() const noexcept { return scope_; }
   // The focused element, as "rail:<page or category>", "search", "action:<id>", "tab:<id>", "section:<id>",
-  // "advanced:<section>", "setting:<key>", "shortcut:<key>" or "related:<page>".
+  // "advanced:<section>", "setting:<key>", "shortcut:<key>", "related:<page>" or "cell:<topic>/<row's key>".
   std::string focused() const;
+  // Where the last layout drew an element, named as focused() names it: its row (within the page's clip) and its control
+  // (a setting's or a cell's; else the row). Both empty if it was not drawn. For tests and the pointer's host.
+  struct Bounds {
+    Rect row;
+    Rect control;
+  };
+  Bounds bounds_of(std::string_view name) const;
+  // Every element the last layout drew, by name, in drawing order.
+  std::vector<std::pair<std::string, Bounds>> all_bounds() const;
   // A setting's value as the view shows it: its value, or its default.
   const protocol::Json& value(std::string_view key) const;
   // A value as the view writes it ("2.5 s", "1.00×", "On", a choice's label).
@@ -131,11 +161,11 @@ class PageView {
   std::string availability_badge(const protocol::Setting& setting) const;
 
  private:
-  enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related };
+  enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related, cell };
   struct Focus {
     FocusKind kind;
-    std::string id;     // an action's, tab's or section's id, a setting's key, a related page
-    std::size_t index;  // into page().actions, tabs, sections; a setting's index
+    std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key
+    std::size_t index;  // into page().actions, tabs, sections; a setting's index; a cell's row
   };
   struct RailEntry {
     enum class Kind : std::uint8_t { category, page, head, foot, switcher };
@@ -153,6 +183,21 @@ class PageView {
   Action change(const protocol::Setting& setting, int direction, bool shift);
   Action set(const protocol::Setting& setting, protocol::Json value);
   Action open_index(std::size_t index, Scope scope);
+  // A table component's body, if the view has its topic's and it has columns and rows; and its switch column, if any.
+  const protocol::Json* table_of(const protocol::PageBlock& block) const;
+  Action toggle_cell(const Focus& focus) const;
+  // Where the pointer acts (§5.5): each focusable element as the last layout drew it, the page's within its clip.
+  struct Hit {
+    Rect rect;            // where it takes the pointer
+    Rect control;         // a setting's or a cell's control within it; empty, the whole rect acts
+    Rect track;           // a slider's track
+    Scope scope = Scope::page;
+    std::size_t index = 0;     // into rail_ or focus_ (top: 0)
+    std::size_t segments = 0;  // a choice's
+  };
+  const Hit* hit_at(float x, float y) const;
+  std::string name_of(Scope scope, std::size_t index) const;
+  Action slide(float x);
   std::size_t rail_index_of_page() const;
   void focus_first_control();
 
@@ -162,6 +207,7 @@ class PageView {
   protocol::Json values_ = protocol::Json::object();
   std::map<std::string, std::string, std::less<>> refusals_;
   std::map<std::string, protocol::InheritedValue, std::less<>> inherited_;
+  std::map<std::string, protocol::Json, std::less<>> topics_;  // components' topic bodies (D181)
   std::set<std::string, std::less<>> collapsed_;
   std::set<std::string, std::less<>> advanced_open_;
   std::size_t page_ = 0;
@@ -174,6 +220,14 @@ class PageView {
   std::size_t page_focus_ = 0;
   std::string confirming_;  // a destructive action's id, waiting for its second press
   float scroll_ = 0;
+  bool follow_ = true;          // keep focus in view; false once the wheel has scrolled, until a key moves focus
+  float scale_ = 1;             // the last layout's effective scale
+  std::vector<Hit> hits_;       // the last layout's
+  bool pointer_in_ = false;     // the pointer is over the menu: hover tints
+  float pointer_x_ = 0;
+  float pointer_y_ = 0;
+  std::string drag_;            // a slider's key while its button is held
+  Rect drag_track_{};
   std::set<std::string, std::less<>> absent_;         // pages of a later increment (set_increment)
   protocol::Json null_;                               // a key the space does not have
   std::vector<protocol::PageSection> no_sections_;    // a page with neither tabs nor sections

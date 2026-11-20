@@ -34,7 +34,8 @@ void load_own_fonts() noexcept;
 // with fewer faces on a fresh atlas, and this starts its tables afresh.
 // `menu_scale` above 0 bakes the menu's faces too, one for each type role at its size times that scale (the effective
 // scale, §3.13); 0 leaves them out, and the menu cannot open this session (the caller's last try, D167).
-void bake(ImFontAtlas* fonts, std::uint32_t mod_faces, float menu_scale);
+// `content_scale` sizes the mods' GRACEUI_FACE_SCALED faces: each at its pixel height times it, within 6 to 128 px (D180).
+void bake(ImFontAtlas* fonts, std::uint32_t mod_faces, float menu_scale, float content_scale);
 
 // The atlas's generation: 0 before the bake, then 1 for the session (GraceUI 0.1 never rebuilds it).
 std::uint32_t generation() noexcept;

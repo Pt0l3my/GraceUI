@@ -25,6 +25,11 @@ grace::spaces::Registry& registry() noexcept;
 grace::spaces::OwnSpace* own() noexcept;
 // Any thread: the same once GraceUI's own thread has loaded it, else null (it never loads it here). For tests to read.
 grace::spaces::OwnSpace* loaded_own() noexcept;
+// GraceUI's thread, after a change of its settings from either view: writes them to user\settings.json for the next
+// session (D84, D179), once a revision.
+void keep_own_settings() noexcept;
+// ui.scale and its default, as the own space holds them, to the display's values (D180).
+void publish_ui_scale(const grace::spaces::OwnSpace& own) noexcept;
 
 // GraceUI's own thread, at every wake: starts or stops the server as it is wanted, answers the browser's views on
 // GraceUI's own space, and answers internal any mod's command left past its deadline.
@@ -32,6 +37,11 @@ void serve() noexcept;
 
 // Whether GraceUI's own thread should wake by itself about once a second: while the server runs (the deadlines).
 bool wants_timer() noexcept;
+
+// An anti-cheat found after the first request: a world-state provider's flag, or GraceUI's own module re-check (every
+// 60 s while the server runs). Any thread: the browser view's server stops at GraceUI's next wake and never starts
+// again this session, whatever any space asks (§7.2 item 1, D81, invariant 4). One log line names `source`.
+void close_for_anti_cheat(const char* source) noexcept;
 
 // dashboard.disconnect, from the menu: a new session cookie, every browser connection closed (§7.2 item 17).
 void disconnect_browsers() noexcept;
@@ -45,6 +55,10 @@ struct TestView {
   std::uint32_t failed;    // 1 if it could not start this session
 };
 void test_view(TestView& out) noexcept;
+// The module re-check's interval, for a test: 0 keeps 60 s.
+void test_set_recheck_ms(std::uint32_t ms) noexcept;
+// One of GraceUI's own topics as JSON text (GraceUI_Test_GetTopic): its length, 0 for none or if it does not fit.
+std::uint32_t test_topic(const char* topic, char* out, std::uint32_t capacity) noexcept;
 #endif
 
 }  // namespace grace::host::spaces

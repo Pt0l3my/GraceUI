@@ -1,0 +1,47 @@
+fill    scrim           0,   0 1920x1080
+fill    ground.1        0,   0 1920x1080
+fill    ground.0        0,   0  300x1080
+text    gold           30,  30  100x35   glyphs 7 "GraceUI"
+text    ink.hi         30,  95   74x30   glyphs 7 "GraceUI"
+text    ink.mute       50, 143   34x25   glyphs 4 "Menu"
+text    ink.mute       50, 183  101x25   glyphs 11 "Browser view"
+fill    tint.select     0, 215  300x40  
+fill    gold            0, 215    3x40  
+text    gold.hi        50, 223  118x25   glyphs 13 "Installed mods"
+text    ink.mute       50, 263   42x25   glyphs 5 "About"
+fill    ground.well   340,  10  350x35   r3
+text    ink.faint     353,  15   51x25   glyphs 6 "Search"
+text    ink.faint    1804,  15   76x25   glyphs 7 "F5  Close"
+line    rule          300,  55 1620x1   
+text    ink.hi        340,  86  278x45   clip1 glyphs 13 "Installed mods"
+text    ink.mute      340, 136  759x25   clip1 glyphs 76 "Every mod connected to GraceUI this session, what each uses, and whether its notices show."
+line    rule.strong   340, 176 1540x1    clip1
+diamond gold.deep     340, 171   11x11   w1 clip1
+fill    ground.2      340, 201 1540x190  r5 clip1
+stroke  rule          340, 201 1540x190  r5 w1 clip1
+text    gold          365, 221  134x20   clip1 glyphs 13 "Connected mods"
+text    ink.faint    1842, 221    8x25   clip1 glyphs 1 "-"
+line    rule          365, 256 1490x1    clip1
+text    ink.hi        365, 272   94x28   clip1 glyphs 9 "Quiet Camp"
+text    ink.mute      862, 274  143x25   clip1 glyphs 13 "2.1.0  ·  Notices"
+text    ink.body     1748, 274   42x25   clip1 glyphs 5 "Quiet"
+fill    ground.well  1805, 272   50x28   r14 clip1
+stroke  edge         1805, 272   50x28   r14 w1 clip1
+circle  ink.mute     1809, 276   20x20   clip1
+line    rule          365, 316 1490x1    clip1
+text    ink.hi        365, 332   94x28   clip1 glyphs 9 "Demo space"
+text    ink.mute      862, 334  202x25   clip1 glyphs 19 "1.0.0  ·  Pages, notices"
+text    ink.body     1748, 334   42x25   clip1 glyphs 5 "Shown"
+fill    gold         1805, 332   50x28   r14 clip1
+circle  on.gold      1831, 336   20x20   clip1
+fill    ground.2      340, 411 1540x155  r5 clip1
+stroke  rule          340, 411 1540x155  r5 w1 clip1
+text    gold          365, 431  125x20   clip1 glyphs 12 "Quiet notices"
+text    ink.faint    1842, 431    8x25   clip1 glyphs 1 "-"
+text    ink.mute      365, 456  624x25   clip1 glyphs 62 "What the mods with their notices off have said this session, newest first."
+line    rule          365, 491 1490x1    clip1
+text    ink.hi        365, 507   94x28   clip1 glyphs 9 "Quiet Camp"
+text    ink.mute      862, 509  202x25   clip1 glyphs 21 "Firewood is running low."
+line    rule          300,1035 1620x1   
+text    ink.faint     340,1045  202x25   glyphs 16 "Enter  Open    Esc  Back"
+stroke  gold.hi       362, 428 1496x26   r5 w3 clip1

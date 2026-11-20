@@ -84,6 +84,7 @@ struct TexturePixels {
 struct FaceData {
   std::uint32_t id = 0;
   float pixel_height = 0.0f;
+  bool scaled = false;  // GRACEUI_FACE_SCALED: baked at pixel_height x the content scale (D180)
   const std::vector<unsigned char>* data = nullptr;
   const std::vector<std::uint32_t>* ranges = nullptr;  // pairs of first and last, then 0 (Dear ImGui's form)
 };
@@ -147,7 +148,8 @@ class Registry {
   std::uint32_t textures_ready() const noexcept;
 
   // ---- Faces: a mod's thread begins, fills and commits; warm-up seals the table and reads what was committed.
-  Registered begin_face(GraceUiConsumer owner, std::uint32_t budget, float pixel_height, std::uint32_t& slot) noexcept;
+  Registered begin_face(GraceUiConsumer owner, std::uint32_t budget, float pixel_height, std::uint32_t& slot,
+                        bool scaled = false) noexcept;
   std::vector<unsigned char>& face_data(std::uint32_t slot) noexcept { return faces_[slot].data; }
   std::vector<std::uint32_t>& face_ranges(std::uint32_t slot) noexcept { return faces_[slot].ranges; }
   // The face's room in the shared atlas, once its data is checked and before its commit: `area` (face_area) within
@@ -166,6 +168,8 @@ class Registry {
   std::uint32_t faces() const noexcept;  // committed
   // A face's owner, if it is a mod's face that was baked (0 otherwise).
   GraceUiConsumer face_owner(std::uint32_t face_id) const noexcept;
+  // Whether `owner` registered a GRACEUI_FACE_SCALED face that is in the table (D180).
+  bool scaled_faces_of(GraceUiConsumer owner) const noexcept;
 
  private:
   struct OwnerBook {
@@ -192,6 +196,7 @@ class Registry {
     std::atomic<FaceState> state{FaceState::empty};
     GraceUiConsumer owner = 0;
     float pixel_height = 0.0f;
+    bool scaled = false;
     std::uint64_t area = 0;  // its reserved room in the atlas, under lock_
     bool others = false;     // counted in the share of the mods other than EldenNet
     std::vector<unsigned char> data;

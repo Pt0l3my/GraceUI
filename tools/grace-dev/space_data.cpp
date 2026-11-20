@@ -356,4 +356,9 @@ std::uint16_t default_port() {
   return port >= 1024 && port <= 65535 ? static_cast<std::uint16_t>(port) : std::uint16_t{0};
 }
 
+double default_ui_scale() {
+  const protocol::Json& value = graceui_setting("ui.scale").default_;
+  return value.is_number() ? value.get<double>() : 1.0;
+}
+
 }  // namespace grace::dev

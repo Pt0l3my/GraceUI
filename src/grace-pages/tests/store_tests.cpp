@@ -43,7 +43,7 @@ Cmd command(std::string name, Json args) {
 
 TEST_CASE("GraceUI's own settings start at their defaults and take what their descriptions allow") {
   SettingsStore store = store_of("graceui");
-  CHECK(store.held("ui.scale") == 1.0);
+  CHECK(store.held("ui.scale") == 1.25);  // its default (the owner, 2026-11-20)
   CHECK(store.changed().empty());
   Outcome out = store.set("ui.scale", Json(1.05));
   CHECK(out.ok);
@@ -134,9 +134,44 @@ TEST_CASE("apply takes the framework's commands, their arguments checked by the 
   SettingsStore store = store_of("graceui");
   CHECK(store.apply(command("settings.set", Json::object({{"key", "ui.scale"}, {"value", 1.1}}))).ok);
   CHECK(store.apply(command("settings.reset", Json::object({{"scope", "key"}, {"target", "ui.scale"}}))).ok);
-  CHECK(store.held("ui.scale") == 1.0);
+  CHECK(store.held("ui.scale") == 1.25);
   const Outcome bad = store.apply(command("settings.set", Json::object({{"value", 1.1}})));
   CHECK_FALSE(bad.ok);
   CHECK(bad.error == ErrorCode::invalid_value);
   CHECK(store.apply(command("lantern.polish", Json::object())).error == ErrorCode::unknown_command);
+}
+
+TEST_CASE("kept between sessions: only what differs from its default, never a secret, taken back as set takes it") {
+  SettingsStore first = store_of("graceui");
+  CHECK(first.saved() == Json::object());  // nothing changed: nothing kept, so a later default reaches the player
+  REQUIRE(first.set("ui.scale", Json(1.3)).ok);
+  REQUIRE(first.set("ui.menu.theme", Json("clear")).ok);
+  const Json kept = first.saved();
+  CHECK(kept == Json::object({{"ui.scale", 1.3}, {"ui.menu.theme", "clear"}}));
+  SettingsStore next = store_of("graceui");
+  const SettingsStore::Restored back = next.restore(kept);
+  CHECK(back.taken == 2);
+  CHECK(back.left_out == 0);
+  CHECK(next.held("ui.scale") == 1.3);
+  CHECK(next.held("ui.menu.theme") == "clear");
+  // A file from another version, or edited by hand: what does not fit is left out, the rest taken.
+  const Json odd = Json::object({{"ui.scale", 9.0}, {"no.such.key", true}, {"ui.menu.theme", 3}, {"ui.menu.reduce_motion", true},
+                                 {"dashboard.lan", true}});
+  SettingsStore third = store_of("graceui");
+  const SettingsStore::Restored mixed = third.restore(odd);
+  CHECK(mixed.taken == 1);
+  CHECK(mixed.left_out == 4);
+  CHECK(third.held("ui.scale") == 1.25);
+  CHECK(third.held("ui.menu.reduce_motion") == true);
+  CHECK(third.restore(Json("not an object")).taken == 0);
+  // A secret is never kept, and never taken back from a file.
+  SettingsStore demo = store_of("demo");
+  for (const auto& s : demo.description().settings) {
+    if (s.type == SettingType::secret) {
+      REQUIRE(demo.set(s.key, Json("a value")).ok);
+      CHECK_FALSE(demo.saved().contains(s.key));
+      SettingsStore again = store_of("demo");
+      CHECK(again.restore(Json::object({{s.key, "a value"}})).left_out == 1);
+    }
+  }
 }

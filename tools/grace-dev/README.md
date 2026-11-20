@@ -126,7 +126,8 @@ build-linux/bin/grace-dev --dump tidepool tidepool.today --size 1920x1080 --spac
 ```
 
 `--dump SPACE PAGE` lays `PAGE` out as the in-game menu does (D167): at the display's `--size`, with GraceUI's
-`ui.scale` (`--scale`, as `ui.scale` takes it) giving the effective scale (H / 1080) × ui.scale (§3.13), the space's
+`ui.scale` (`--scale`, as `ui.scale` takes it; GraceUI's default, 1.25, without it) giving the effective scale
+(H / 1080) × ui.scale (§3.13), the space's
 settings at their defaults (GraceUI's own Menu page showing the scale and theme it is drawn at). It prints a header,
 the structure dump the golden tests compare (§9.3: one line per item, its shape, colour role, place, size and text),
 and the tessellated list's counts with the draw-list checker's answer (D76). Text is measured in the layout tests'

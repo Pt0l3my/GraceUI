@@ -688,7 +688,7 @@ ul, ol {
   color: var(--ink-mute);
 }
 
-.page__notice, .row__refusal {
+.page__notice, .row__refusal, .table__notice {
   display: flex;
   align-items: center;
   gap: var(--space-8);
@@ -1380,6 +1380,15 @@ ul, ol {
   height: var(--size-row);
   border-bottom: var(--size-edge-width) solid var(--rule);
   color: var(--ink-body);
+}
+
+.table .table__switch {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.table__notice {
+  margin: var(--space-8) 0 0;
 }
 
 .table .num {

@@ -561,6 +561,14 @@ export class Session {
     }
   }
 
+  /** A command a page's component sends, such as a table's switch (D181): the space's own command and arguments. */
+  async command(space: string, name: string, args: JsonObject): Promise<Answer> {
+    if (!this.transport) {
+      return { ok: false, error: "not_now", local: "Not connected to the game." };
+    }
+    return this.transport.command(space, name, args);
+  }
+
   /** A header action's command (its confirmation, if it has one, already given). */
   async action(space: string, action: PageAction): Promise<Answer> {
     if (!this.transport) {

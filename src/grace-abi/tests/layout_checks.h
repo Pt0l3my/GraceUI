@@ -38,7 +38,7 @@ GU_AT(GraceUiConnectRequest, name_length, 40);
 GU_AT(GraceUiConnectRequest, caps, 48);
 GU_AT(GraceUiConnectRequest, caps_length, 56);
 
-GU_SIZE(GraceUiConnectAnswer, 32);
+GU_SIZE(GraceUiConnectAnswer, 48); /* 32 in ABI 1.0; the display appended in 1.2 (D180) */
 GU_AT(GraceUiConnectAnswer, size, 0);
 GU_AT(GraceUiConnectAnswer, status, 4);
 GU_AT(GraceUiConnectAnswer, reason, 8);
@@ -46,6 +46,10 @@ GU_AT(GraceUiConnectAnswer, graceui_version, 12);
 GU_AT(GraceUiConnectAnswer, floor, 16);
 GU_AT(GraceUiConnectAnswer, abi_minor, 20);
 GU_AT(GraceUiConnectAnswer, consumer, 24);
+GU_AT(GraceUiConnectAnswer, ui_scale, 32);
+GU_AT(GraceUiConnectAnswer, ui_scale_default, 36);
+GU_AT(GraceUiConnectAnswer, display_width, 40);
+GU_AT(GraceUiConnectAnswer, display_height, 44);
 
 GU_SIZE(GraceUiNotice, 32);
 GU_AT(GraceUiNotice, size, 0);
@@ -64,13 +68,15 @@ GU_AT(GraceUiTextureDesc, row_bytes, 16);
 GU_AT(GraceUiTextureDesc, reserved, 20);
 GU_AT(GraceUiTextureDesc, pixels, 24);
 
-GU_SIZE(GraceUiFaceDesc, 40);
+GU_SIZE(GraceUiFaceDesc, 48); /* 40 in ABI 1.0; flags appended in 1.2 (D180) */
 GU_AT(GraceUiFaceDesc, size, 0);
 GU_AT(GraceUiFaceDesc, pixel_height, 4);
 GU_AT(GraceUiFaceDesc, data, 8);
 GU_AT(GraceUiFaceDesc, data_length, 16);
 GU_AT(GraceUiFaceDesc, ranges, 24);
 GU_AT(GraceUiFaceDesc, range_count, 32);
+GU_AT(GraceUiFaceDesc, flags, 40);
+GU_AT(GraceUiFaceDesc, reserved, 44);
 
 GU_SIZE(GraceUiGlyph, 40);
 GU_AT(GraceUiGlyph, code_point, 0);
@@ -171,7 +177,7 @@ GU_AT(GraceUiHotkeyDesc, action_length, 24);
 GU_AT(GraceUiHotkeyDesc, name, 32);
 GU_AT(GraceUiHotkeyDesc, name_length, 40);
 
-GU_SIZE(GraceUiEvent, 104); /* 48 in GraceUI 0.2 (ABI 1.0); a holder's fields appended in 1.1 (D176) */
+GU_SIZE(GraceUiEvent, 136); /* 48 in GraceUI 0.2 (ABI 1.0); a holder's fields in 1.1 (D176); the display's in 1.2 */
 GU_AT(GraceUiEvent, size, 0);
 GU_AT(GraceUiEvent, kind, 4);
 GU_AT(GraceUiEvent, hotkey_id, 8);
@@ -194,6 +200,14 @@ GU_AT(GraceUiEvent, x, 88);
 GU_AT(GraceUiEvent, y, 92);
 GU_AT(GraceUiEvent, wheel_x, 96);
 GU_AT(GraceUiEvent, wheel_y, 100);
+GU_AT(GraceUiEvent, display_width, 104);
+GU_AT(GraceUiEvent, display_height, 108);
+GU_AT(GraceUiEvent, ui_scale, 112);
+GU_AT(GraceUiEvent, ui_scale_default, 116);
+GU_AT(GraceUiEvent, scale, 120);
+GU_AT(GraceUiEvent, content_scale, 124);
+GU_AT(GraceUiEvent, faces_scale, 128);
+GU_AT(GraceUiEvent, reserved3, 132);
 
 GU_SIZE(GraceUiSpaceDesc, 64);
 GU_AT(GraceUiSpaceDesc, size, 0);
@@ -240,7 +254,7 @@ GU_AT(GraceUiApi1, log, 168);
 GU_AT(GraceUiApi1, set_caret, 176);
 
 /* The numbers a mod compiles in. */
-GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 1u, "ABI 1.1");
+GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 2u, "ABI 1.2");
 GU_ASSERT(GRACEUI_VERSION_PACK(1, 2, 3) == ((1u << 22) | (2u << 12) | 3u), "the version's packing");
 GU_ASSERT(GRACEUI_VERSION_MAJOR(GRACEUI_VERSION_PACK(1023, 1023, 4095)) == 1023u, "a major's ten bits");
 GU_ASSERT(GRACEUI_VERSION_MINOR(GRACEUI_VERSION_PACK(1023, 1023, 4095)) == 1023u, "a minor's ten bits");

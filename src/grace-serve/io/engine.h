@@ -144,7 +144,9 @@ class Engine {
   bool new_token(std::array<char, kTokenChars>& out) noexcept;
   void renew(Clock::time_point now);
   void take_files(Clock::time_point now);
-  std::size_t count_websockets() const noexcept;
+  // WebSockets in `phase` (hello: waiting for their ticket; open: welcomed views), and the oldest of them but `except`.
+  std::size_t count_websockets(Connection::Phase phase) const noexcept;
+  Connection* oldest_websocket(Connection::Phase phase, const Connection* except) noexcept;
 
   // The bridge (bridge.cpp).
   void take_hub(Clock::time_point now);
@@ -217,7 +219,8 @@ class Engine {
   std::atomic<std::size_t> stat_faults_{0};
 };
 
-// The pool: every plain HTTP connection, every WebSocket, and room for WebSockets still closing after a supersede.
-inline constexpr std::size_t kPoolSize = kMaxHttpConnections + kMaxWebSockets + 6;
+// The pool: every plain HTTP connection, the welcomed views and as many waiting for their hello, and room for
+// WebSockets still closing after a supersede.
+inline constexpr std::size_t kPoolSize = kMaxHttpConnections + 2 * kMaxWebSockets + 6;
 
 }  // namespace grace::serve::detail

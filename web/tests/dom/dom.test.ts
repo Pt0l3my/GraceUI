@@ -312,6 +312,38 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("a table's switch shows what the space published and sends its command; a refusal shows its reason (D181)",
+       async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "graceui", "graceui.mods");
+      const tide = page.locator("[role=switch][aria-label='Notices: Tide Charts']");
+      const camp = page.locator("[role=switch][aria-label='Notices: Quiet Camp']");
+      assert.equal(await tide.getAttribute("aria-checked"), "true");
+      assert.equal(await camp.getAttribute("aria-checked"), "false");
+      assert.match((await camp.locator("xpath=..").textContent()) ?? "", /Quiet/);
+      const sent = () => host.received.filter((f) => f.t === "cmd" && f.name === "mods.notices");
+      await tide.click();
+      for (let i = 0; i < 20 && sent().length === 0; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.equal(sent().length, 1);
+      assert.deepEqual(sent()[0]?.args, { id: "tide-charts", on: false });
+      await page.waitForTimeout(100);
+      // Accepted, but the space published nothing new: the switch is never flipped by the view (invariant 1).
+      assert.equal(await tide.getAttribute("aria-checked"), "true");
+      assert.equal(await page.locator(".table__notice").count(), 0);
+      host.refuse.set("mods.notices", "not_now");
+      await camp.press("ArrowRight");
+      await page.locator(".table__notice[role=alert]").waitFor();
+      assert.match((await page.locator(".table__notice").textContent()) ?? "", /Not possible right now/);
+      assert.deepEqual(sent()[1]?.args, { id: "quiet-camp", on: true });
+    } finally {
+      host.refuse.delete("mods.notices");
+      await close();
+    }
+  });
+
   test("a secret's value never reaches the DOM or storage; the row shows only Set", async () => {
     const { page, close } = await fresh();
     const secret = "Zq7-wick-tallow-99";

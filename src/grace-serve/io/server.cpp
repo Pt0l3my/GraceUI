@@ -528,10 +528,10 @@ void Engine::accept_from(const io::Socket& listener, Clock::time_point now) {
   }
 }
 
-std::size_t Engine::count_websockets() const noexcept {
+std::size_t Engine::count_websockets(Connection::Phase phase) const noexcept {
   std::size_t count = 0;
   for (const auto& slot : pool_) {
-    count += slot->websocket ? 1 : 0;
+    count += slot->websocket && slot->phase == phase ? 1 : 0;
   }
   return count;
 }
@@ -893,19 +893,23 @@ void Engine::upgrade(Connection& c, std::size_t after, Clock::time_point now) {
   if (!enqueue(c, std::make_shared<const std::string>(c.head.data(), size))) {
     return;
   }
-  if (count_websockets() > kMaxWebSockets) {
-    // §6.8: a third supersedes the oldest.
-    Connection* oldest = nullptr;
-    for (const auto& slot : pool_) {
-      if (slot.get() != &c && slot->websocket && (oldest == nullptr || slot->upgraded < oldest->upgraded)) {
-        oldest = slot.get();
-      }
-    }
-    if (oldest != nullptr) {
-      log(LogLevel::info, "A third WebSocket superseded the oldest.");
-      close_socket(*oldest, protocol::ByeReason::superseded, 1000, now);
+  // Sockets still waiting for their hello have a cap of their own, and one past it closes the oldest of them, never a
+  // view that showed its ticket: only a welcomed view supersedes one (§6.8, at the welcome).
+  if (Connection* oldest = oldest_websocket(Connection::Phase::hello, &c);
+      oldest != nullptr && count_websockets(Connection::Phase::hello) > kMaxWebSockets) {
+    close_socket(*oldest, protocol::ByeReason::unauthorised, 1000, now);
+  }
+}
+
+Connection* Engine::oldest_websocket(Connection::Phase phase, const Connection* except) noexcept {
+  Connection* oldest = nullptr;
+  for (const auto& slot : pool_) {
+    if (slot.get() != except && slot->websocket && slot->phase == phase &&
+        (oldest == nullptr || slot->upgraded < oldest->upgraded)) {
+      oldest = slot.get();
     }
   }
+  return oldest;
 }
 
 void Engine::renew(Clock::time_point now) {

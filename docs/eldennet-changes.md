@@ -827,3 +827,68 @@ What EldenNet's chat box uses once GraceUI 0.2.1 is out (ABI 1.1):
    the box holds input: one set while it does not is ignored, and the caret ends with the holder.
 5. **Yours, not GraceUI's**: opening the Steam floating keyboard, and the clipboard if Ctrl+V is to paste.
 6. **Later, by D-entry**: the pad chord that opens the box (View + D-pad Up), as a hotkey with its masking.
+
+## 32. The menu's default size is 1.25 (2026-11-20, D177)
+
+From the owner's look review: `ui.scale` (Menu size) now defaults to 1.25 instead of 1.0, its bounds (0.75 to 1.5)
+unchanged. The effective scale that GraceUI's display-changed event carries is `(H / 1080) × ui.scale`, so at the
+default EldenNet's text that follows it (subtitles, the chat box, the call-out box: NPC §10.7) is a quarter larger than
+its sizes at 1.0. Check those sizes against the new default; if any was tuned to look right at 1.0, divide it by 1.25
+rather than ignore the scale. EldenNet's pages in the browser are a quarter larger by default too (one setting for both
+views, §3.13). The Steam Deck's first-run 1.35 (G6) is unchanged.
+
+## 33. The display, and GraceUI's settings kept (2026-11-20, D179, D180; proposal 0004)
+
+In GraceUI 0.2.2 (ABI 1.2):
+
+1. **Connect** with floor 0.2.2 and check `has_cap("display")`. The answer now says `ui_scale` (the player's, kept
+   from the last session) and `ui_scale_default`, and the display's size once the game's swap chain is bound (usually
+   0 at your connect).
+2. **Faces**: register the subtitles', the chat box's and the call-out box's faces with `GRACEUI_FACE_SCALED` and
+   their design size at 1080 lines and the default Menu size. GraceUI bakes each at warm-up at that size times the
+   content scale, `(H / 1080) × ui.scale / its default`, rounded to a whole pixel: your O93 rule, with no constant.
+   The glyph table gives the baked size.
+3. **Poll** with ABI 1.2's event size: `GRACEUI_EVENT_DISPLAY` comes once after warm-up and after each change of the
+   size or `ui.scale`, with `content_scale` (your NPC §10.7 scale) and `faces_scale` (what your scaled faces were baked
+   at). Lay your text out at `content_scale`; after a change, draw your scaled faces' glyphs scaled by
+   `content_scale / faces_scale` until the next session (the atlas is baked once, invariant 11). graceui-sys's
+   `Api::poll` asks at the full size already.
+4. **Settings**: Menu size, the theme and GraceUI's other settings are kept in `Game\GraceUI\user\settings.json`
+   between sessions; nothing for EldenNet to do, but a release must not carry a `user\` folder (the manifest skips it).
+
+## 34. A mod's notices may be quiet (2026-11-20, G32, D181)
+
+In GraceUI 0.2.3 (no change of the ABI):
+
+1. **The player may quiet EldenNet's notices** on GraceUI's Installed mods page, as any mod's. A quiet mod's notice is
+   still answered `ok` (EldenNet learns nothing of the switch, by design) and is kept in a list on that page, not drawn
+   over the game; a withdrawal goes on as usual. So never rely on a notice being seen: what the player must know (the
+   banner of EldenNet's F11 view, a failed start) should also be in EldenNet's own pages or its log. Nothing to change
+   in code.
+2. **GraceUI's own notices always show** (the player's exit, why the menu cannot open, a too-old mod).
+3. **The switch is kept** between sessions in `Game\GraceUI\user\settings.json` (`"quiet_mods"`, mods' ids only); a
+   release must still not carry a `user\` folder.
+
+## 35. The menu by mouse (2026-11-20, D182)
+
+In GraceUI 0.2.4 (no change of the ABI): the in-game menu takes the mouse on every space's pages, EldenNet's included:
+a click does what Enter does, a slider follows a held button, the wheel scrolls. Nothing for EldenNet to do; its
+pages' settings and actions arrive as the same commands as from the keys.
+
+## 36. The security review's fixes (2026-11-20, D183)
+
+In GraceUI 0.2.5 (no change of the ABI's shape; `register_pages` and `publish` refuse more):
+
+1. **A destructive action needs its `confirm` text**: `register_pages` refuses page data with an action of tone
+   `destructive` and no `confirm` (its words are what the second press shows). Check EldenNet's pages before your slice
+   registers them.
+2. **The space id `graceui` is reserved**; and a space may not declare a topic named `pages` (the server's own).
+3. **The `settings` topic is held to the registration**: if you publish `schema` or `description`, they must be the
+   ones you registered (compared decoded), or the frame is refused; a secret's value is replaced by `"set"` or `""`,
+   with one log line. Publish secrets' status only, as GraceUI's own store does.
+4. **Your anti-cheat flag now works**: `set_world_state` with `GRACEUI_WORLD_ANTI_CHEAT` closes the browser view's
+   server for the rest of the session, whatever any space asks; GraceUI also re-checks the process's modules every
+   60 s while the server runs. The menu stays.
+5. **Not yet: which view sent a command** (§7.3). Both views are this PC's until pairing; telling a space the view is
+   an addition to ABI 1 (a field in the command's event), to agree with you before the home network comes, since your
+   refusal of `secrets.set` and `providers.update` from paired devices (§7.2 item 16) needs it.

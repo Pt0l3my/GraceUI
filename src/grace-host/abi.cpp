@@ -15,10 +15,12 @@
 #endif
 #include <psapi.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <iterator>
 #include <string_view>
 #include <vector>
 
@@ -332,6 +334,7 @@ void test_fill_menu(GraceUiTestMenu& out) noexcept {
   out.off = view.off;
   out.scale = view.scale;
   out.faces = view.faces;
+  out.baked_scale = view.baked_scale;
   std::memcpy(out.page, view.page, sizeof out.page);
   std::memcpy(out.focused, view.focused, sizeof out.focused);
 }
@@ -348,6 +351,21 @@ void test_fill_server(GraceUiTestServer& out) noexcept {
 
 std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capacity) noexcept {
   return menu::test_setting(key, out, capacity);
+}
+
+void test_set_recheck_ms(std::uint32_t ms) noexcept { spaces::test_set_recheck_ms(ms); }
+
+std::uint32_t test_menu_bounds(const char* name, float* out) noexcept {
+  float values[8] = {};
+  if (out == nullptr || !menu::test_bounds(name, values)) {
+    return 0;
+  }
+  std::copy(std::begin(values), std::end(values), out);
+  return 1;
+}
+
+std::uint32_t test_copy_topic(const char* topic, char* out, std::uint32_t capacity) noexcept {
+  return spaces::test_topic(topic, out, capacity);
 }
 
 std::uint64_t test_panel_published(std::uint64_t panel) noexcept {

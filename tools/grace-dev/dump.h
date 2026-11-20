@@ -16,7 +16,7 @@ struct DumpRequest {
   std::string page;
   float width = 1920;
   float height = 1080;
-  double ui_scale = 1;  // GraceUI's ui.scale, within its own bounds
+  double ui_scale = 1;  // GraceUI's ui.scale, within its own bounds (grace-dev's command line: GraceUI's default)
   bool clear = false;   // Grace Clear's palette (ui.menu.theme)
 };
 

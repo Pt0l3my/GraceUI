@@ -39,6 +39,8 @@ struct Registry::Space {
   std::string held_frame;                  // an event the mod's buffer was too small for, kept for its next poll
   EventKind held_kind = EventKind::none;
   std::uint64_t held_reply = 0;
+  protocol::Json described;                // its settings description as it registered it, encoded once
+  bool secret_masked = false;              // a secret's value was masked once already (logged once)
 };
 
 struct Registry::Pending {
@@ -111,6 +113,25 @@ Status Registry::add(std::uint64_t owner, std::string_view mod_id, const Registr
     why = "its page data names another space than the mod's own id";
     return Status::refused;
   }
+  if (mod_id == "graceui") {
+    why = "graceui is GraceUI's own space's id";  // one space an id, in both views (invariant 3, D81)
+    return Status::refused;
+  }
+  for (const protocol::TopicInfo& topic : pages.topics) {
+    if (topic.id == "pages") {
+      why = "pages is the framework's own topic";  // the server sends a space's page data as it registered them (D169)
+      return Status::refused;
+    }
+  }
+  for (const protocol::Page& page : pages.pages) {
+    for (const protocol::PageAction& action : page.actions.value_or(std::vector<protocol::PageAction>{})) {
+      if (action.tone == protocol::ActionTone::destructive && (!action.confirm || action.confirm->empty())) {
+        // The confirmation is the framework's (§7.3, D173): its words are what the second press shows.
+        why = "a destructive action without its confirm text";
+        return Status::refused;
+      }
+    }
+  }
   pages::SettingsStore store;  // every default valid, no key twice
   view::PageView view;         // pages and settings agree: every key on a page is described, every page is known
   if (!store.load(settings, why) || !view.load(pages, settings, why)) {
@@ -122,6 +143,7 @@ Status Registry::add(std::uint64_t owner, std::string_view mod_id, const Registr
   space->views = in.views;
   space->description = serve::describe_space(pages, settings, in.version, in.increment);
   space->pages = std::make_shared<const protocol::SpacePages>(std::move(pages));
+  space->described = protocol::encode(settings);
   space->settings = std::make_shared<const protocol::SettingsDescription>(std::move(settings));
 
   std::lock_guard<std::mutex> lock(mutex_);
@@ -141,6 +163,10 @@ Status Registry::add(std::uint64_t owner, std::string_view mod_id, const Registr
   }
   if (server_ != nullptr && (space->views & kViewBrowser) != 0) {
     space->port = server_->add_space(space->description);
+    if (space->port == nullptr) {
+      why = "the browser view's server does not take it";
+      return Status::refused;
+    }
   }
   const bool game = (space->views & kViewGame) != 0;
   spaces_.push_back(std::move(space));
@@ -236,6 +262,52 @@ Status Registry::publish(std::uint64_t owner, std::string_view frame, std::strin
     if (declared == topics.end() || declared->shape != shape) {
       why = declared == topics.end() ? "not a topic the space declares" : "not the topic's shape";
       return Status::refused;
+    }
+    if (shape == protocol::TopicShape::state && *topic == "settings") {
+      // The settings topic is held to what the space registered (invariants 5 and 12, as framework guards): its
+      // description, if it sends one, is the registered one, and a secret's value never leaves: only whether it is set.
+      protocol::Json& body = std::get<protocol::State>(message).body;
+      if (!body.is_object()) {
+        why = "the settings topic's body is not an object";
+        return Status::refused;
+      }
+      if (body.contains("schema") || body.contains("description")) {
+        // Compared as decoded, so that two encodings of one description (an optional field left out) are one.
+        protocol::Json sent = protocol::Json::object();
+        sent["schema"] = body.contains("schema") ? body["schema"] : space->described["schema"];
+        sent["settings"] = body.contains("description") ? body["description"] : space->described["settings"];
+        protocol::SettingsDescription decoded;
+        protocol::DecodeError error;
+        if (!protocol::decode(sent, decoded, "", error) || !(decoded == *space->settings)) {
+          why = "its settings description is not the one it registered";
+          return Status::refused;
+        }
+      }
+      bool masked = false;
+      if (body.contains("values") && body["values"].is_object()) {
+        protocol::Json& values = body["values"];
+        for (const protocol::Setting& setting : space->settings->settings) {
+          const auto found = values.find(setting.key);
+          if (setting.type != protocol::SettingType::secret || found == values.end()) {
+            continue;
+          }
+          const bool empty = found->is_null() || (found->is_string() && found->get_ref<const std::string&>().empty());
+          const protocol::Json shown = empty ? protocol::Json("") : protocol::Json("set");
+          if (*found != shown) {
+            *found = shown;
+            masked = true;
+          }
+        }
+      }
+      if (masked) {
+        Space* writable = find(owner);
+        if (!writable->secret_masked) {
+          writable->secret_masked = true;
+          if (log_) {
+            log_("space " + space->id + " published a secret's value: only whether it is set was sent");
+          }
+        }
+      }
     }
     port = space->port;
     if (shape == protocol::TopicShape::state && space->game_watched.count(*topic) != 0) {

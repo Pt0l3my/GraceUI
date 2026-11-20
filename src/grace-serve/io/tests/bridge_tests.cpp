@@ -508,6 +508,31 @@ TEST_CASE("a third WebSocket supersedes the oldest, which is told bye superseded
   CHECK(fixture.server.stats().websockets == 2);
 }
 
+TEST_CASE("only a welcomed view supersedes one: upgrades that show no ticket close the oldest of themselves") {
+  Fixture fixture;
+  const std::unique_ptr<WsClient> first = fixture.join();
+  std::this_thread::sleep_for(10ms);
+  const std::unique_ptr<WsClient> second = fixture.join();
+  const std::string cookie = fixture.cookie();
+  // Three upgrades with the cookie and no hello: the two views stay; past two, the oldest of the three goes.
+  WsClient bare[3];
+  for (WsClient& one : bare) {
+    REQUIRE(one.open(fixture.port, cookie) == 101);
+    std::this_thread::sleep_for(10ms);
+  }
+  CHECK(bare[0].closed(1s));
+  CHECK(first->quiet(100ms));
+  first->send_json(frame("ping"));
+  CHECK((*first->next_json())["t"] == "pong");
+  second->send_json(frame("ping"));
+  CHECK((*second->next_json())["t"] == "pong");
+  // The two left without a hello are closed at the hello's deadline, and the views are untouched.
+  CHECK(bare[1].gone(4s));
+  CHECK(bare[2].gone(4s));
+  first->send_json(frame("ping"));
+  CHECK((*first->next_json())["t"] == "pong");
+}
+
 TEST_CASE("a ping every interval; two unanswered close the connection, and a pong keeps it") {
   Fixture::Options options;
   options.timings.ping = 100ms;

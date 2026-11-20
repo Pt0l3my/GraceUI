@@ -16,6 +16,8 @@ namespace grace::host::menu {
 
 // The effective scale the menu's faces are baked at (§3.13): (height / 1080) times ui.scale.
 float bake_scale(std::uint32_t height) noexcept;
+// Whether GraceUI's theme is Grace Clear (ui.menu.theme), for what the present thread draws in it: the pointer.
+bool clear_theme() noexcept;
 
 // The window procedure, on a fresh press of the menu key with no holder: asks for input as the menu; granted, GraceUI's
 // thread lays out the first frame; not now, one of GraceUI's notices says why (§5.1).
@@ -24,6 +26,11 @@ void open_requested() noexcept;
 // The window procedure, for a key that went down (or repeated) while the menu holds input: true if it is one of the
 // menu's keys (§5.3), which goes to GraceUI's thread. `shift` and `ctrl` held.
 bool key_down(std::uint32_t vk, bool shift, bool ctrl) noexcept;
+
+// The present thread, for the menu holder's mouse (§5.5): a move (0), a left button's press (1) or release (2), the wheel
+// (3, in notches, positive away from the player) or the pointer gone (4), at `x`, `y` in the display's pixels as Dear
+// ImGui has them, so that a press lands where the Grace pointer is drawn; to GraceUI's thread as the page view's input.
+void pointer(std::uint8_t kind, float x, float y, float wheel, std::uint32_t generation) noexcept;
 
 // The present thread, each frame: the menu's newest list for the holder of this generation if the menu holds input and
 // has published one for it, else null. Also turns the pad's new presses into the menu's inputs, and notes the display's
@@ -48,12 +55,16 @@ struct TestView {
   std::uint32_t off;            // 1 once a fault turned the menu off for the session
   float scale;                  // the effective scale of the last layout
   std::uint32_t faces;          // the menu's faces in the atlas
+  float baked_scale;            // the effective scale they were baked at (0 if left out)
   char page[64];
   char focused[96];
 };
 void test_view(TestView& out) noexcept;
 // A setting of GraceUI's own space as JSON text (a secret's as its status); answers its length, 0 for none.
 std::uint32_t test_setting(const char* key, char* out, std::uint32_t capacity) noexcept;
+// Where the menu's last layout drew an element, named as grace-view's focused() names it: its row and its control
+// (x, y, width, height each, in the display's pixels); false if it was not drawn.
+bool test_bounds(const char* name, float (&out)[8]) noexcept;
 #endif
 
 }  // namespace grace::host::menu

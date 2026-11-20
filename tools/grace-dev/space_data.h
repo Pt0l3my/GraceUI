@@ -63,5 +63,7 @@ std::size_t ring_of(const protocol::TopicInfo& topic) noexcept;
 const protocol::Setting& graceui_setting(std::string_view key);
 // dashboard.port's default (D58).
 std::uint16_t default_port();
+// GraceUI's ui.scale as its own space describes its default (§3.13): --dump's scale unless --scale names one.
+double default_ui_scale();
 
 }  // namespace grace::dev

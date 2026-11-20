@@ -52,14 +52,14 @@ TEST_CASE("the Menu page: focus on its first control, and each key's command") {
   REQUIRE(a.kind == Action::Kind::command);
   CHECK(a.command.space == "graceui");
   CHECK(a.command.name == "settings.set");
-  CHECK(a.command.args == Json::object({{"key", "ui.scale"}, {"value", 1.05}}));
-  CHECK(view.format("ui.scale", view.value("ui.scale")) == "1.05×");
+  CHECK(a.command.args == Json::object({{"key", "ui.scale"}, {"value", 1.3}}));
+  CHECK(view.format("ui.scale", view.value("ui.scale")) == "1.30×");
   a = press(view, Key::right, true);  // ten steps, held to the maximum
   CHECK(a.command.args["value"].get<double>() == doctest::Approx(1.5));
   a = press(view, Key::reset);
   CHECK(a.command.name == "settings.reset");
   CHECK(a.command.args == Json::object({{"scope", "key"}, {"target", "ui.scale"}}));
-  CHECK(view.value("ui.scale").get<double>() == 1.0);
+  CHECK(view.value("ui.scale").get<double>() == 1.25);
   press(view, Key::down);
   CHECK(view.focused() == "setting:ui.menu.theme");
   a = press(view, Key::right);
@@ -362,7 +362,7 @@ TEST_CASE("every setting's value as grace-view writes it, and each press's comma
 TEST_CASE("the Menu page's layout, as its structure dump says (§9.3)") {
   PageView view = loaded("graceui", "graceui.menu");
   DisplayList list;
-  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);  // at 1080 lines, ui.scale's default
   golden("menu-1920x1080.txt", list.dump());
   DisplayList large;
   view.layout(Viewport{1280, 800, 1.5f}, test::fonts(), large);
@@ -371,7 +371,7 @@ TEST_CASE("the Menu page's layout, as its structure dump says (§9.3)") {
   // host draws with: the items name their colours by role, grace-draw's tests).
   view.set_values(Json::object({{"ui.menu.theme", "clear"}}));
   DisplayList again;
-  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), again);
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), again);
   CHECK(again.items.size() == list.items.size() + 1);
   // Every item lies within the display, and the page's within its clip.
   for (const Item& item : list.items) {
@@ -511,20 +511,225 @@ TEST_CASE("a page of a later increment is absent: rail, Page Down, search, relat
   view.set_increment("0.2");
   CHECK_FALSE(view.present("graceui.hotkeys"));  // 0.6
   CHECK(view.present("graceui.browser"));        // 0.2
-  CHECK_FALSE(view.open("graceui.mods"));
+  CHECK(view.present("graceui.mods"));           // 0.2 since D181 (G32's switches)
+  CHECK_FALSE(view.open("graceui.compatibility"));
   CHECK(view.search("menu key").empty());  // hotkeys.menu lives on Hotkeys, a 0.6 page
-  // Page Down from Menu skips Hotkeys: Browser view, then About past Installed mods and Compatibility.
+  // Page Down from Menu skips Hotkeys: Browser view, Installed mods, then About past Compatibility.
   press(view, Key::next_page);
   CHECK(view.page() == "graceui.browser");
+  press(view, Key::next_page);
+  CHECK(view.page() == "graceui.mods");
   press(view, Key::next_page);
   CHECK(view.page() == "graceui.about");
   DisplayList list;
   view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
   const std::string dump = list.dump();
-  CHECK(dump.find("Installed mods") == std::string::npos);  // neither on the rail nor among About's related pages
-  CHECK(dump.find("Compatibility") == std::string::npos);
+  CHECK(dump.find("Compatibility") == std::string::npos);  // neither on the rail nor among About's related pages
+  CHECK(dump.find("Hotkeys") == std::string::npos);
   view.set_increment("0.6");
   CHECK(view.open("graceui.hotkeys"));
   view.set_increment("");
-  CHECK(view.present("graceui.mods"));
+  CHECK(view.present("graceui.compatibility"));
+}
+
+TEST_CASE("a table in game (D181): its rows, a switch a row by its key, turned to the column's command") {
+  PageView view = loaded("graceui", "graceui.mods");
+  view.set_increment("0.2");
+  const Json switch_column = {{"id", "notices"},
+                              {"label", "Notices"},
+                              {"switch", {{"command", "mods.notices"}, {"key", "id"}, {"on", "Shown"}, {"off", "Quiet"}}}};
+  const Json mods = {{"columns", Json::array({{{"id", "mod"}, {"label", "Mod"}},
+                                              {{"id", "version"}, {"label", "Version"}, {"numeric", true}},
+                                              {{"id", "uses"}, {"label", "Uses"}},
+                                              switch_column})},
+                     {"rows", Json::array({{{"id", "demo"}, {"mod", "Demo space"}, {"version", "1.0.0"},
+                                            {"uses", "Pages, notices"}, {"notices", "Shown"}},
+                                           {{"id", "quiet-camp"}, {"mod", "Quiet Camp"}, {"version", "2.1.0"},
+                                            {"uses", "Notices"}, {"notices", "Quiet"}}})}};
+  // Without its body the table is the browser's, and no row takes focus.
+  DisplayList before;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), before);
+  CHECK(before.dump().find("Shown in the browser view.") != std::string::npos);
+  CHECK(view.focused().rfind("cell:", 0) != 0);
+
+  view.set_topic("graceui.mods", mods);
+  view.set_topic("graceui.notices",
+                 Json{{"columns", Json::array({{{"id", "mod"}, {"label", "Mod"}}, {{"id", "text"}, {"label", "Notice"}}})},
+                      {"rows", Json::array({{{"mod", "Quiet Camp"}, {"text", "Firewood is running low."}}})}});
+  view.open("graceui.mods");
+  CHECK(view.focused() == "cell:graceui.mods/demo");
+  Action a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.name == "mods.notices");
+  CHECK(a.command.args == Json::object({{"id", "demo"}, {"on", false}}));
+  press(view, Key::down);
+  CHECK(view.focused() == "cell:graceui.mods/quiet-camp");
+  a = press(view, Key::right);
+  CHECK(a.command.args == Json::object({{"id", "quiet-camp"}, {"on", true}}));
+  // A newer body with the rows in another order: focus stays on the same mod's switch; a read-only table takes none.
+  Json reordered = mods;
+  std::swap(reordered["rows"][0], reordered["rows"][1]);
+  view.set_topic("graceui.mods", reordered);
+  CHECK(view.focused() == "cell:graceui.mods/quiet-camp");
+  press(view, Key::down);
+  CHECK(view.focused() == "cell:graceui.mods/demo");
+  press(view, Key::down);
+  CHECK(view.focused().rfind("cell:graceui.notices", 0) != 0);
+
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  golden("mods-1920x1080.txt", list.dump());
+  const std::string dump = list.dump();
+  CHECK(dump.find("Quiet Camp") != std::string::npos);
+  CHECK(dump.find("2.1.0  ·  Notices") != std::string::npos);
+  CHECK(dump.find("Firewood is running low.") != std::string::npos);
+  CHECK(dump.find("Shown in the browser view.") == std::string::npos);
+  // An empty table says so.
+  view.set_topic("graceui.notices", Json{{"columns", Json::array()}, {"rows", Json::array()}});
+  DisplayList empty;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), empty);
+  CHECK(empty.dump().find("Nothing here yet.") != std::string::npos);
+  // A refused switch: the space's reason under its row, focus on it; a new body of the table takes the line away.
+  view.refused("graceui.mods/quiet-camp", "That mod is not connected now.");
+  CHECK(view.focused() == "cell:graceui.mods/quiet-camp");
+  DisplayList refused;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), refused);
+  CHECK(refused.dump().find("That mod is not connected now.") != std::string::npos);
+  view.set_topic("graceui.mods", mods);
+  DisplayList answered;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), answered);
+  CHECK(answered.dump().find("That mod is not connected now.") == std::string::npos);
+}
+
+namespace {
+
+// The middle of a rectangle, and a point a fraction of the way across it.
+Pointer at(Pointer::Kind kind, const Rect& r, float across = 0.5f) {
+  return Pointer{kind, r.x + r.w * across, r.y + r.h / 2, 0};
+}
+
+}  // namespace
+
+TEST_CASE("the mouse (§5.5): a press focuses and acts on what it is on, a slider follows a held button") {
+  PageView view = loaded("demo", "demo.behaviour");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  const std::string before = list.dump();
+
+  // A switch: a press on its control turns it; a press on its label only focuses the row.
+  const PageView::Bounds lit = view.bounds_of("setting:lantern.enabled");
+  REQUIRE(lit.control.w > 0);
+  Action a = view.pointer(at(Pointer::Kind::press, lit.row, 0.05f));
+  CHECK(a.kind == Action::Kind::none);
+  CHECK(view.focused() == "setting:lantern.enabled");
+  a = view.pointer(at(Pointer::Kind::press, lit.control));
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.args == Json::object({{"key", "lantern.enabled"}, {"value", false}}));
+
+  // A slider: the value under the pointer, snapped to its step; moves while held follow, and the release ends that.
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  const PageView::Bounds bright = view.bounds_of("setting:lantern.brightness");
+  REQUIRE(bright.control.w > 0);
+  a = view.pointer(at(Pointer::Kind::press, bright.control, 0.02f));
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(view.focused() == "setting:lantern.brightness");
+  CHECK(a.command.args["value"].get<double>() == doctest::Approx(0.0));
+  a = view.pointer(at(Pointer::Kind::move, bright.control, 0.9f));
+  REQUIRE(a.kind == Action::Kind::command);
+  const double high = a.command.args["value"].get<double>();
+  CHECK(high > 0.8);
+  CHECK(std::fmod(std::round(high * 100), 5.0) == doctest::Approx(0.0));  // on its step of 0.05
+  CHECK(view.pointer(at(Pointer::Kind::move, bright.control, 0.9f)).kind == Action::Kind::none);  // the same value
+  view.pointer(at(Pointer::Kind::release, bright.control, 0.9f));
+  CHECK(view.pointer(at(Pointer::Kind::move, bright.control, 0.1f)).kind == Action::Kind::none);  // let go: a hover
+
+  // A choice: the segment under the pointer.
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  const PageView::Bounds colour = view.bounds_of("setting:lantern.colour");
+  REQUIRE(colour.control.w > 0);
+  a = view.pointer(at(Pointer::Kind::press, colour.control, 0.9f));
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.args == Json::object({{"key", "lantern.colour"}, {"value", "blue"}}));
+
+  // The rail: a press opens what Enter would (a category, its first page).
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  const PageView::Bounds records = view.bounds_of("rail:records");
+  REQUIRE(records.row.w > 0);
+  view.pointer(at(Pointer::Kind::press, records.row));
+  CHECK(view.page() == "demo.log");
+
+  // Outside every element: nothing.
+  CHECK(view.pointer(Pointer{Pointer::Kind::press, 1, 1, 0}).kind == Action::Kind::none);
+  CHECK(view.page() == "demo.log");
+
+  // Hover: drawn only while the pointer is over the menu; a layout without a pointer is as before.
+  PageView fresh = loaded("demo", "demo.behaviour");
+  DisplayList plain;
+  fresh.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), plain);
+  CHECK(plain.dump() == before);
+  CHECK(plain.dump().find("tint.hover") == std::string::npos);
+  fresh.pointer(at(Pointer::Kind::move, fresh.bounds_of("setting:lantern.colour").row, 0.2f));
+  DisplayList hovering;
+  fresh.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), hovering);
+  CHECK(hovering.dump().find("tint.hover") != std::string::npos);
+  fresh.pointer(Pointer{Pointer::Kind::leave, 0, 0, 0});
+  DisplayList left;
+  fresh.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), left);
+  CHECK(left.dump() == before);
+}
+
+TEST_CASE("the wheel scrolls the page, which stays until a key moves focus; a table's switch takes a click (§5.5)") {
+  PageView view = loaded("demo", "demo.behaviour");
+  DisplayList list;
+  view.layout(Viewport{1280, 720, 1.0f}, test::fonts(), list);
+  const float top = view.bounds_of("setting:lantern.enabled").row.y;
+  view.pointer(Pointer{Pointer::Kind::wheel, 900, 400, -1});  // towards the player: the page moves up
+  view.layout(Viewport{1280, 720, 1.0f}, test::fonts(), list);
+  const PageView::Bounds after = view.bounds_of("setting:lantern.enabled");
+  CHECK((after.row.w == 0 || after.row.y < top));  // scrolled, though focus stayed on the first row
+  CHECK(view.focused() == "setting:lantern.enabled");
+  view.pointer(Pointer{Pointer::Kind::wheel, 900, 400, 50});  // far past the top: held at it
+  view.layout(Viewport{1280, 720, 1.0f}, test::fonts(), list);
+  CHECK(view.bounds_of("setting:lantern.enabled").row.y == doctest::Approx(top));
+  view.pointer(Pointer{Pointer::Kind::wheel, 900, 400, -50});  // far past the end: held at it
+  view.layout(Viewport{1280, 720, 1.0f}, test::fonts(), list);
+  press(view, Key::down);  // a key: focus moves, and the page follows it again
+  view.layout(Viewport{1280, 720, 1.0f}, test::fonts(), list);
+  CHECK(view.bounds_of(view.focused()).row.w > 0);
+
+  PageView mods = loaded("graceui", "graceui.mods");
+  mods.set_increment("0.2");
+  mods.set_topic("graceui.mods",
+                 Json{{"columns", Json::array({{{"id", "mod"}, {"label", "Mod"}},
+                                               {{"id", "notices"},
+                                                {"label", "Notices"},
+                                                {"switch", {{"command", "mods.notices"}, {"key", "id"}, {"on", "Shown"},
+                                                            {"off", "Quiet"}}}}})},
+                      {"rows", Json::array({{{"id", "tide-charts"}, {"mod", "Tide Charts"}, {"notices", "Shown"}}})}});
+  mods.open("graceui.mods");
+  mods.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  const PageView::Bounds cell = mods.bounds_of("cell:graceui.mods/tide-charts");
+  REQUIRE(cell.control.w > 0);
+  CHECK(mods.pointer(at(Pointer::Kind::press, cell.row, 0.05f)).kind == Action::Kind::none);
+  const Action a = mods.pointer(at(Pointer::Kind::press, cell.control));
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.args == Json::object({{"id", "tide-charts"}, {"on", false}}));
+}
+
+TEST_CASE("a destructive action asks for its second press even without its confirm text (§7.3, D173)") {
+  const auto& s = test::space("demo");
+  std::string pages(s.pages);
+  const std::string confirm = ",\"confirm\":\"The log's lines are removed. The journal is kept.\"";
+  REQUIRE(pages.find(confirm) != std::string::npos);
+  pages.erase(pages.find(confirm), confirm.size());
+  PageView view;
+  std::string why;
+  REQUIRE(view.load(test::decoded<grace::protocol::SpacePages>(pages),
+                    test::decoded<grace::protocol::SettingsDescription>(s.settings), why));
+  REQUIRE(view.open("demo.log"));
+  CHECK(view.focused() == "action:clear");
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // asks first
+  const Action a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.args == Json::object({{"confirm", true}}));
 }

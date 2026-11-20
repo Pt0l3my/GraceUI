@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 
+#include "display.h"
 #include "draw_atlas.h"
 #include "grace/abi/drawlist.h"
 #include "grace/abi/panels.h"
@@ -67,15 +68,12 @@ void log_list_refusal(GraceUiConsumer consumer, std::uint32_t owner, const char*
   log_line("a draw list of %s was refused: %s (logged once for this mod)", id, why);
 }
 
-constinit std::atomic<bool> g_anti_cheat_reported{false};
-
 // After the World changed: the input half reads the newest combined claims itself (never `flags`, which another
 // provider's call may already have replaced), so whichever provider settles last decides (D143, invariant 9).
 void apply_world(std::uint32_t flags) noexcept {
   input::world_changed();
-  if ((flags & GRACEUI_WORLD_ANTI_CHEAT) != 0 && !g_anti_cheat_reported.exchange(true, std::memory_order_relaxed)) {
-    // D78, D81: the browser view closes for the session; GraceUI 0.1 serves none yet.
-    log_line("a world-state provider reports an anti-cheat: the browser view stays closed this session");
+  if ((flags & GRACEUI_WORLD_ANTI_CHEAT) != 0) {
+    spaces::close_for_anti_cheat("a world-state provider reports an anti-cheat");  // D78, D81, §7.2 item 1
   }
 }
 
@@ -169,7 +167,7 @@ GraceUiStatus register_texture(GraceUiConsumer consumer, std::uint32_t width, st
   return GRACEUI_OK;
 }
 
-GraceUiStatus register_face(GraceUiConsumer consumer, float pixel_height, std::uint64_t data_length,
+GraceUiStatus register_face(GraceUiConsumer consumer, float pixel_height, bool scaled, std::uint64_t data_length,
                             std::uint64_t range_count, CopyFace copy, const void* context, std::uint32_t& id) noexcept {
   GraceUiStatus status = GRACEUI_OK;
   const std::uint32_t owner = admitted(consumer, status);
@@ -185,7 +183,7 @@ GraceUiStatus register_face(GraceUiConsumer consumer, float pixel_height, std::u
   grace::abi::Registry& registry = session::registry();
   std::uint32_t slot = 0;
   switch (registry.begin_face(consumer, eldennet ? grace::abi::kFacesEldenNet : grace::abi::kFacesPerMod,
-                              pixel_height, slot)) {
+                              pixel_height, slot, scaled)) {
     case grace::abi::Registered::ok: break;
     case grace::abi::Registered::invalid:
       refused("register_face", "a size outside 6 to 128 pixels");
@@ -560,7 +558,15 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
   return added == grace::input::Added::unbound ? GRACEUI_UNBOUND : GRACEUI_OK;  // D164: the mod learns which
 }
 
-GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder) noexcept {
+void display_at_connect(GraceUiConnectAnswer& out) noexcept {
+  const display::Snapshot now = display::read();
+  out.ui_scale = now.ui_scale;
+  out.ui_scale_default = now.ui_scale_default;
+  out.display_width = now.width;
+  out.display_height = now.height;
+}
+
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder, bool display_ok) noexcept {
   GraceUiStatus status = GRACEUI_OK;
   const std::uint32_t owner = admitted(consumer, status);
   if (owner == 0) {
@@ -571,6 +577,18 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, b
     std::uint32_t dropped = 0;
     if (holder && input::holder_mail()->take(static_cast<std::uint16_t>(owner), consumer, mail, dropped)) {
       fill_holder_event(consumer, mail, dropped, out);
+      return GRACEUI_OK;
+    }
+    // The display, once a revision (D180): after warm-up, and after each change of its size or ui.scale.
+    if (display::Snapshot now; display_ok && display::take(owner, now)) {
+      out.kind = GRACEUI_EVENT_DISPLAY;
+      out.display_width = now.width;
+      out.display_height = now.height;
+      out.ui_scale = now.ui_scale;
+      out.ui_scale_default = now.ui_scale_default;
+      out.scale = now.scale;
+      out.content_scale = now.content_scale;
+      out.faces_scale = session::registry().scaled_faces_of(consumer) ? now.faces_scale : 0.0f;
       return GRACEUI_OK;
     }
   } catch (...) {

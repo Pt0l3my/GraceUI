@@ -27,17 +27,72 @@ bool OwnSpace::load(std::string& why) {
   if (!store_.load(settings_, why)) {
     return false;
   }
+  for (const protocol::TopicInfo& topic : pages_.topics) {
+    if (topic.id != "settings") {
+      topics_.emplace(topic.id, Topic{});
+    }
+  }
   loaded_ = true;
   return true;
 }
 
+bool OwnSpace::declared_command(std::string_view name) const {
+  for (const std::string& command : pages_.commands) {
+    if (command == name) {
+      return true;
+    }
+  }
+  return false;
+}
+
 pages::Outcome OwnSpace::apply(const protocol::Cmd& command) {
+  if (command.name != "settings.set" && command.name != "settings.reset") {
+    if (hooks_.command && declared_command(command.name) && command.name != "dashboard.disconnect" &&
+        command.name != "menu.close") {
+      return hooks_.command(command);
+    }
+    pages::Outcome refused;
+    refused.error = protocol::ErrorCode::unknown_command;
+    refused.detail = "Not available in this version.";
+    return refused;
+  }
   pages::Outcome outcome = store_.apply(command);
   if (outcome.ok && !outcome.changed.empty()) {
     ++revision_;
     publish_settings();
   }
   return outcome;
+}
+
+bool OwnSpace::set_state(std::string_view topic, protocol::Json body) {
+  const auto found = topics_.find(topic);
+  if (found == topics_.end()) {
+    return false;
+  }
+  found->second.body = std::move(body);
+  found->second.rev += 1;
+  ++states_revision_;
+  publish_topic(found->first, found->second);
+  return true;
+}
+
+const protocol::Json* OwnSpace::state_of(std::string_view topic) const {
+  const auto found = topics_.find(topic);
+  return found == topics_.end() || found->second.rev == 0 ? nullptr : &found->second.body;
+}
+
+void OwnSpace::publish_topic(const std::string& topic, Topic& state) {
+  if (port_ == nullptr || !state.watched || state.rev == 0 || state.published == state.rev) {
+    return;
+  }
+  protocol::State frame;
+  frame.space = pages_.space;
+  frame.topic = topic;
+  frame.rev = state.rev;
+  frame.body = state.body;
+  if (port_->publish(std::move(frame))) {
+    state.published = state.rev;
+  }
 }
 
 void OwnSpace::attach(serve::Server& server, const std::string& version, Hooks hooks, serve::SpaceWake wake) {
@@ -84,11 +139,17 @@ void OwnSpace::serve() {
           settings_watched_ = true;
           published_rev_ = 0;  // a new view: the whole state again
           publish_settings();
+        } else if (const auto found = topics_.find(event.topic); found != topics_.end()) {
+          found->second.watched = true;
+          found->second.published = 0;  // a new view: the newest body again
+          publish_topic(found->first, found->second);
         }
-        break;  // GraceUI's other topics are published from S11.4, with the components that draw them
+        break;
       case serve::SpaceEvent::Kind::unwatched:
         if (event.topic == "settings") {
           settings_watched_ = false;
+        } else if (const auto found = topics_.find(event.topic); found != topics_.end()) {
+          found->second.watched = false;
         }
         break;
       case serve::SpaceEvent::Kind::command: {
@@ -111,6 +172,15 @@ void OwnSpace::serve() {
             hooks_.disconnect();  // after the answer: renewing the session closes the view that asked
           }
           continue;
+        } else if (event.command != "menu.close" && hooks_.command && declared_command(event.command)) {
+          protocol::Cmd command{pages_.space, event.reply.id, event.command, std::move(event.args)};
+          const pages::Outcome outcome = hooks_.command(command);
+          if (outcome.ok) {
+            result.ok = true;
+          } else {
+            result.error = outcome.error;
+            result.detail = outcome.detail;
+          }
         } else {
           result.error = event.command == "menu.close" ? protocol::ErrorCode::not_now
                                                        : protocol::ErrorCode::unknown_command;

@@ -6,7 +6,7 @@
 id = "graceui"
 name = "GraceUI"
 settings_schema = 1
-commands = ["settings.set", "settings.reset", "menu.close", "dashboard.disconnect"]
+commands = ["settings.set", "settings.reset", "menu.close", "dashboard.disconnect", "mods.notices"]
 
 [[topic]]
 id = "settings"
@@ -22,6 +22,10 @@ shape = "state"
 
 [[topic]]
 id = "graceui.mods"
+shape = "state"
+
+[[topic]]
+id = "graceui.notices"
 shape = "state"
 
 [[topic]]
@@ -42,7 +46,7 @@ pages = ["graceui.menu", "graceui.hotkeys", "graceui.browser", "graceui.mods", "
 [[setting]]
 key = "ui.scale"
 type = "number"
-default = 1.0
+default = 1.25
 min = 0.75
 max = 1.5
 step = 0.05
@@ -210,16 +214,22 @@ blocks = [{ kind = "settings", keys = ["dashboard.lan"] }]
 id = "graceui.mods"
 category = "graceui"
 name = "Installed mods"
-description = "Every mod connected to GraceUI this session, and what each uses."
-increment = "0.6"
+description = "Every mod connected to GraceUI this session, what each uses, and whether its notices show."
+increment = "0.2"
 related = ["graceui.compatibility", "graceui.hotkeys"]
-help.purpose = "See which mods drew through GraceUI this session, and in what state."
-help.steps = ["Find a mod by its name.", "Read what it uses: notices, panels, hotkeys, pages.", "A mod that is not listed did not connect; its own log says why."]
+help.purpose = "See which mods drew through GraceUI this session, and quiet one whose notices you do not want over the game."
+help.steps = ["Find a mod by its name.", "Turn its notices off to keep them here instead of over the game; GraceUI's own notices always show.", "A mod that is not listed did not connect; its own log says why."]
 
 [[page.sections]]
 id = "mods"
 title = "Connected mods"
 blocks = [{ kind = "component", component = "table", topic = "graceui.mods" }]
+
+[[page.sections]]
+id = "quiet-notices"
+title = "Quiet notices"
+description = "What the mods with their notices off have said this session, newest first."
+blocks = [{ kind = "component", component = "table", topic = "graceui.notices" }]
 
 [[page]]
 id = "graceui.compatibility"

@@ -12,6 +12,7 @@
 #include "grace/abi/consumers.h"
 #include "grace/abi/notices.h"
 #include "grace/abi/panels.h"
+#include "grace/abi/quiet.h"
 #include "grace/abi/registry.h"
 #include "grace/abi/world.h"
 
@@ -24,6 +25,8 @@ grace::abi::Notices& notices() noexcept;
 grace::abi::Panels& panels() noexcept;
 grace::abi::Registry& registry() noexcept;
 grace::abi::World& world() noexcept;
+// The mods whose notices the player quieted, and what they posted meanwhile (G32, D181).
+grace::abi::QuietNotices& quiet() noexcept;
 void allocate();
 
 // The anti-cheat check found `clause` (D88): from now on input is off for the session (every detour and the window

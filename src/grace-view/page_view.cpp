@@ -40,6 +40,8 @@ std::string lower(std::string_view text) {
 }
 
 // A tri-state's three values, its third auto or inherit (D163), and their labels.
+constexpr std::size_t kNone = static_cast<std::size_t>(-1);  // no focus index: nothing the pointer can act on
+
 const char* tri_value(const Setting& s, int i) {
   if (i < 2) {
     return i == 0 ? "on" : "off";
@@ -286,6 +288,89 @@ void PageView::set_rail(RailContext context) {
   rail_focus_ = rail_index_of_page();
 }
 
+namespace {
+
+// A table body's switch column (D181): {command, key, on, off}; null if it has none, or one not whole.
+const Json* switch_of(const Json& column) {
+  const auto found = column.find("switch");
+  if (found == column.end() || !found->is_object()) {
+    return nullptr;
+  }
+  const Json& sw = *found;
+  const auto is_text = [&](const char* name) { return sw.contains(name) && sw[name].is_string(); };
+  return is_text("command") && is_text("key") && is_text("on") && is_text("off") ? &sw : nullptr;
+}
+
+// A cell's words: a string as it is, a number as JSON writes it, anything else nothing.
+std::string cell_words(const Json& row, const std::string& column) {
+  const auto found = row.find(column);
+  if (found == row.end()) {
+    return {};
+  }
+  if (found->is_string()) {
+    return found->get<std::string>();
+  }
+  return found->is_number() ? found->dump() : std::string();
+}
+
+}  // namespace
+
+void PageView::set_topic(std::string_view topic, const Json& body) {
+  const std::string was = focused();
+  topics_[std::string(topic)] = body;
+  const std::string prefix = std::string(topic) + "/";
+  for (auto at = refusals_.lower_bound(prefix); at != refusals_.end() && at->first.rfind(prefix, 0) == 0;) {
+    at = refusals_.erase(at);  // a new body answers what was refused of its rows
+  }
+  rebuild();
+  if (was.rfind("cell:", 0) == 0) {  // the same row, wherever it now is
+    for (std::size_t i = 0; i < focus_.size(); ++i) {
+      if (focus_[i].kind == FocusKind::cell && "cell:" + focus_[i].id == was) {
+        page_focus_ = i;
+      }
+    }
+  }
+}
+
+const Json* PageView::table_of(const protocol::PageBlock& block) const {
+  if (block.kind != protocol::BlockKind::component || block.component != protocol::Component::table || !block.topic) {
+    return nullptr;
+  }
+  const auto found = topics_.find(*block.topic);
+  if (found == topics_.end() || !found->second.is_object()) {
+    return nullptr;
+  }
+  const Json& body = found->second;
+  return body.contains("columns") && body["columns"].is_array() && body.contains("rows") && body["rows"].is_array()
+             ? &body
+             : nullptr;
+}
+
+Action PageView::toggle_cell(const Focus& f) const {
+  const std::size_t slash = f.id.find('/');
+  const auto found = topics_.find(std::string_view(f.id).substr(0, slash));
+  if (found == topics_.end()) {
+    return {};
+  }
+  const Json& body = found->second;
+  for (const Json& column : body["columns"]) {
+    const Json* sw = switch_of(column);
+    if (sw == nullptr || !column.contains("id") || !column["id"].is_string() || f.index >= body["rows"].size()) {
+      continue;
+    }
+    const Json& row = body["rows"][f.index];
+    const bool on = cell_words(row, column["id"].get<std::string>()) == (*sw)["on"].get<std::string>();
+    Action action;
+    action.kind = Action::Kind::command;
+    action.command.space = pages_.space;
+    action.command.name = (*sw)["command"].get<std::string>();
+    const std::string key = (*sw)["key"].get<std::string>();
+    action.command.args = Json::object({{key, row.contains(key) ? row[key] : Json()}, {"on", !on}});
+    return action;
+  }
+  return {};
+}
+
 void PageView::focus_rail(bool switcher) {
   scope_ = Scope::rail;
   rail_focus_ = rail_index_of_page();
@@ -350,6 +435,23 @@ void PageView::rebuild() {
     }
     const auto add_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
       for (const protocol::PageBlock& block : blocks) {
+        if (const Json* table = table_of(block); table != nullptr) {
+          // A table with a switch column: each row's switch takes focus, by the row's key (D181).
+          for (const Json& column : (*table)["columns"]) {
+            const Json* sw = switch_of(column);
+            if (sw == nullptr) {
+              continue;
+            }
+            const std::string key = (*sw)["key"].get<std::string>();
+            for (std::size_t r = 0; r < (*table)["rows"].size(); ++r) {
+              const Json& row = (*table)["rows"][r];
+              const std::string id = row.is_object() ? cell_words(row, key) : std::string();
+              focus_.push_back({FocusKind::cell, *block.topic + "/" + (id.empty() ? std::to_string(r) : id), r});
+            }
+            break;  // one switch column a table
+          }
+          continue;
+        }
         for (const std::string& key : block.keys.value_or(std::vector<std::string>{})) {
           if (block.kind == protocol::BlockKind::shortcuts && !present(settings_[by_key_.at(key)].home)) {
             continue;  // a shortcut to a page of a later increment
@@ -397,14 +499,18 @@ std::size_t PageView::rail_index_of_page() const {
 }
 
 std::string PageView::focused() const {
-  if (scope_ == Scope::top) {
+  return name_of(scope_, scope_ == Scope::rail ? rail_focus_ : page_focus_);
+}
+
+std::string PageView::name_of(Scope scope, std::size_t index) const {
+  if (scope == Scope::top) {
     return "search";
   }
-  if (scope_ == Scope::rail) {
-    if (rail_.empty()) {
+  if (scope == Scope::rail) {
+    if (index >= rail_.size()) {
       return "rail:";
     }
-    const RailEntry& e = rail_[rail_focus_];
+    const RailEntry& e = rail_[index];
     switch (e.kind) {
       case RailEntry::Kind::category: return "rail:" + pages_.categories[e.index].id;
       case RailEntry::Kind::page: return "rail:" + pages_.pages[e.index].id;
@@ -414,12 +520,31 @@ std::string PageView::focused() const {
     }
     return "rail:";
   }
-  if (focus_.empty()) {
+  if (index >= focus_.size()) {
     return "";
   }
-  static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related"};
-  const Focus& f = focus_[page_focus_];
+  static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
+                                          "cell"};
+  const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
+}
+
+std::vector<std::pair<std::string, PageView::Bounds>> PageView::all_bounds() const {
+  std::vector<std::pair<std::string, Bounds>> out;
+  out.reserve(hits_.size());
+  for (const Hit& h : hits_) {
+    out.emplace_back(name_of(h.scope, h.index), Bounds{h.rect, h.control.w > 0 ? h.control : h.rect});
+  }
+  return out;
+}
+
+PageView::Bounds PageView::bounds_of(std::string_view name) const {
+  for (const Hit& h : hits_) {
+    if (name_of(h.scope, h.index) == name) {
+      return Bounds{h.rect, h.control.w > 0 ? h.control : h.rect};
+    }
+  }
+  return {};
 }
 
 // ---- Values.
@@ -532,10 +657,126 @@ Action PageView::change(const Setting& s, int direction, bool shift) {
   return {};
 }
 
+// ---- The mouse (§5.5).
+
+const PageView::Hit* PageView::hit_at(float x, float y) const {
+  for (std::size_t i = hits_.size(); i-- > 0;) {  // the last drawn is on top
+    const Rect& r = hits_[i].rect;
+    if (x >= r.x && x < r.right() && y >= r.y && y < r.bottom()) {
+      return &hits_[i];
+    }
+  }
+  return nullptr;
+}
+
+Action PageView::slide(float x) {
+  const Setting* s = setting(drag_);
+  if (s == nullptr || drag_track_.w <= 0 || s->locked) {
+    return {};
+  }
+  const double lo = s->min_.value_or(0);
+  const double hi = s->max_.value_or(1);
+  const double t = std::clamp(static_cast<double>((x - drag_track_.x) / drag_track_.w), 0.0, 1.0);
+  const double step = s->step.value_or(1.0);
+  double n = lo + t * (hi - lo);
+  n = step > 0 ? lo + std::round((n - lo) / step) * step : n;
+  const double scale = std::pow(10.0, decimals_of(step));
+  n = std::clamp(std::round(n * scale) / scale, lo, hi);
+  const Json now = s->type == SettingType::integer ? Json(static_cast<std::int64_t>(std::llround(n))) : Json(n);
+  const Json& was = value(s->key);
+  if (was.is_number() && std::fabs(was.get<double>() - n) < 1e-9) {
+    return {};  // the same value: nothing to send
+  }
+  return set(*s, now);
+}
+
+Action PageView::pointer(const Pointer& in) {
+  pointer_x_ = in.x;
+  pointer_y_ = in.y;
+  pointer_in_ = in.kind != Pointer::Kind::leave;
+  switch (in.kind) {
+    case Pointer::Kind::leave:
+    case Pointer::Kind::release:
+      drag_.clear();
+      return {};
+    case Pointer::Kind::wheel:
+      scroll_ = std::max(0.0f, std::round(scroll_ - in.wheel * 120.0f * scale_));  // three rows a notch; layout bounds it
+      follow_ = false;
+      return {};
+    case Pointer::Kind::move:
+      return drag_.empty() ? Action{} : slide(in.x);
+    case Pointer::Kind::press:
+      break;
+  }
+  drag_.clear();
+  const Hit* hit = hit_at(in.x, in.y);
+  if (hit == nullptr) {
+    return {};
+  }
+  const Hit target = *hit;
+  follow_ = true;
+  if (target.scope == Scope::rail) {
+    scope_ = Scope::rail;
+    rail_focus_ = target.index;
+    return input(Input{Key::activate, false});
+  }
+  if (target.scope == Scope::top) {
+    scope_ = Scope::top;  // search waits for GraceUI's text field (§5.6): focus only
+    return {};
+  }
+  if (target.index >= focus_.size()) {
+    return {};
+  }
+  if (!confirming_.empty() && (focus_[target.index].kind != FocusKind::action ||
+                               focus_[target.index].id != confirming_)) {
+    confirming_.clear();  // a click elsewhere lets a destructive action's confirmation go, as any other key does
+  }
+  scope_ = Scope::page;
+  page_focus_ = target.index;
+  const Focus f = focus_[target.index];
+  const Rect& c = target.control;
+  const bool on_control = c.w > 0 && in.x >= c.x && in.x < c.right() && in.y >= c.y && in.y < c.bottom();
+  switch (f.kind) {
+    case FocusKind::setting: {
+      const Setting& st = settings_[f.index];
+      if (!on_control || st.locked || st.availability == "later") {
+        return {};  // focus only
+      }
+      if (st.type == SettingType::bool_) {
+        return change(st, 1, false);
+      }
+      if (numeric(st.type)) {
+        drag_ = st.key;  // its moves are the slider's until the button is released
+        drag_track_ = target.track;
+        return slide(in.x);
+      }
+      if ((st.type == SettingType::choice || st.type == SettingType::tri_state) && target.segments > 0) {
+        const std::size_t at = std::min(
+            target.segments - 1,
+            static_cast<std::size_t>(std::max(0.0f, (in.x - c.x) / (c.w / static_cast<float>(target.segments)))));
+        if (st.type == SettingType::tri_state) {
+          return set(st, Json(tri_value(st, static_cast<int>(at))));
+        }
+        const auto& choices = st.choices.value_or(std::vector<protocol::Choice>{});
+        return at < choices.size() ? set(st, Json(choices[at].value)) : Action{};
+      }
+      return {};  // a key, a text, a secret: edited in the browser view until GraceUI's own field
+    }
+    case FocusKind::cell:
+      if (!on_control) {
+        return {};
+      }
+      refusals_.erase(f.id);
+      return toggle_cell(f);
+    default:
+      return input(Input{Key::activate, false});  // an action, a tab, a section, a shortcut, a related page: as Enter
+  }
+}
+
 void PageView::refused(std::string_view key, std::string_view reason) {
   refusals_[std::string(key)] = std::string(reason);
   for (std::size_t i = 0; i < focus_.size(); ++i) {
-    if (focus_[i].kind == FocusKind::setting && focus_[i].id == key) {
+    if ((focus_[i].kind == FocusKind::setting || focus_[i].kind == FocusKind::cell) && focus_[i].id == key) {
       scope_ = Scope::page;
       page_focus_ = i;
     }
@@ -613,6 +854,7 @@ Action PageView::input(const Input& in) {
   if (rail_.empty() && focus_.empty()) {
     return {};
   }
+  follow_ = true;  // a key moves focus, and the page follows it again
   // A destructive action waits for its second press; any other key lets it go.
   const bool confirming = !confirming_.empty();
   if (confirming && !(in.key == Key::activate && scope_ == Scope::page)) {
@@ -763,6 +1005,10 @@ Action PageView::input(const Input& in) {
           s->type != SettingType::secret) {
         return change(*s, in.key == Key::right ? 1 : -1, in.shift);
       }
+      if (f.kind == FocusKind::cell) {
+        refusals_.erase(f.id);  // a new try: the last refusal's line goes
+        return toggle_cell(f);  // a switch turns with ← and →, as a setting's does
+      }
       if (in.key == Key::left) {
         scope_ = Scope::rail;  // ← at the page's left edge goes back to the rail
         rail_focus_ = rail_index_of_page();
@@ -788,8 +1034,8 @@ Action PageView::input(const Input& in) {
       switch (f.kind) {
         case FocusKind::action: {
           const protocol::PageAction& a = (*current().actions)[f.index];
-          if (a.confirm && confirming_ != a.id) {
-            confirming_ = a.id;  // the button asks for its second press
+          if ((a.confirm || a.tone == protocol::ActionTone::destructive) && confirming_ != a.id) {
+            confirming_ = a.id;  // the button asks for its second press; a destructive one always (§7.3, D173)
             return {};
           }
           confirming_.clear();
@@ -827,6 +1073,9 @@ Action PageView::input(const Input& in) {
             return change(*s, 1, false);
           }
           return {};
+        case FocusKind::cell:
+          refusals_.erase(f.id);
+          return toggle_cell(f);
         case FocusKind::shortcut:
         case FocusKind::related: {
           const std::string target = f.kind == FocusKind::shortcut ? settings_[f.index].home : f.id;
@@ -859,10 +1108,39 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     out.clear();
     out.generation = fonts.generation;
     const float s = viewport.scale;
+    scale_ = s;
     Cursor c{out, fonts, s};
     const float W = viewport.width;
     const float H = viewport.height;
     out.clips.push_back(Rect{0, 0, W, H});
+    // Where the pointer acts (§5.5): each focusable element, within the clip it is drawn in.
+    hits_.clear();
+    const auto hit = [&](Rect rect, Scope scope, std::size_t index, Rect control = {}, Rect track = {},
+                         std::size_t segments = 0) {
+      const Rect& clip = out.clips[c.clip];
+      const float left = std::max(rect.x, clip.x);
+      const float top = std::max(rect.y, clip.y);
+      const float right = std::min(rect.right(), clip.right());
+      const float bottom = std::min(rect.bottom(), clip.bottom());
+      if (right > left && bottom > top && index != kNone) {
+        hits_.push_back(Hit{Rect{left, top, right - left, bottom - top}, control, track, scope, index, segments});
+      }
+    };
+    const auto hovered = [&](Rect rect) {
+      const Rect& clip = out.clips[c.clip];
+      const auto inside = [&](const Rect& r) {
+        return pointer_x_ >= r.x && pointer_x_ < r.right() && pointer_y_ >= r.y && pointer_y_ < r.bottom();
+      };
+      return pointer_in_ && drag_.empty() && inside(rect) && inside(clip);
+    };
+    const auto focus_index = [&](FocusKind kind, std::string_view id) {
+      for (std::size_t i = 0; i < focus_.size(); ++i) {
+        if (focus_[i].kind == kind && focus_[i].id == id) {
+          return i;
+        }
+      }
+      return kNone;
+    };
     // The scrim over the game, then the menu: at most 1.9 × the height wide, centred (§3.6).
     c.fill(Rect{0, 0, W, H}, Colour::scrim);
     const float menu_w = std::min(W, std::round(1.9f * H));
@@ -895,11 +1173,15 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         c.line(menu_x + pad, y, rail_w - 2 * pad, Colour::rule);
       }
       const Rect row{menu_x, y, rail_w, h};
+      hit(row, Scope::rail, i);
       if ((e.category() || (link && other->category && e.kind == RailEntry::Kind::head)) && i != 0 &&
           rail_[i - 1].kind != RailEntry::Kind::switcher) {
         c.line(menu_x + pad, y, rail_w - 2 * pad, Colour::rule);
       }
       if (e.kind == RailEntry::Kind::switcher) {
+        if (hovered(row)) {
+          c.fill(row, Colour::tint_hover);
+        }
         // The content spaces' switcher: ‹ and › around the open one's place among them.
         const std::string label = "\u2039  " + context_.switcher + "  \u203A";
         c.text(label, TypeRole::ui_sm, menu_x + pad, y + std::round((h - line_height(TypeRole::ui_sm, s)) / 2),
@@ -915,6 +1197,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       if (current_page) {
         c.fill(row, Colour::tint_select);
         c.fill(Rect{menu_x, y, std::round(2 * s), h}, Colour::gold);
+      } else if (hovered(row)) {
+        c.fill(row, Colour::tint_hover);
       }
       const TypeRole role = is_page ? TypeRole::ui_sm : TypeRole::rail;
       const float indent = is_page ? std::round(16 * s) : 0;
@@ -937,6 +1221,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     const float gutter = std::round(size::gutter * s);
     const Rect search{page_x + gutter, std::round(8 * s), std::round(280 * s), bar_h - std::round(16 * s)};
     c.fill(search, Colour::ground_well, std::round(tokens::radius::control * s));
+    hit(search, Scope::top, 0);
     c.text("Search", TypeRole::ui_sm, search.x + std::round(10 * s),
            search.y + std::round((search.h - line_height(TypeRole::ui_sm, s)) / 2), search.w - std::round(20 * s),
            Colour::ink_faint);
@@ -971,6 +1256,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const float w = c.width(label, TypeRole::ui) + std::round(32 * s);
       const Rect button{action_x - w, y + std::round(2 * s), w, std::round(32 * s)};
       const float r = std::round(tokens::radius::control * s);
+      hit(button, Scope::page, focus_index(FocusKind::action, act.id));
       Colour ink = Colour::ink_hi;
       if (act.tone == protocol::ActionTone::primary) {
         c.fill(button, Colour::gold, r);
@@ -978,6 +1264,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       } else if (act.tone == protocol::ActionTone::destructive) {
         c.fill(button, Colour::rot_fill, r);
       } else {
+        if (hovered(button)) {
+          c.fill(button, Colour::tint_hover, r);
+        }
         c.stroke(button, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), r);
       }
       c.text(label, TypeRole::ui, button.x + std::round(16 * s),
@@ -1005,6 +1294,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         if (active) {
           c.fill(Rect{tx, under, w, std::round(2 * s)}, Colour::gold);
         }
+        hit(Rect{tx, y, w, under + std::round(2 * s) - y}, Scope::page, focus_index(FocusKind::tab, tab.id));
         if (page_focus(FocusKind::tab, tab.id)) {
           c.focused(Rect{tx, y, w, under + std::round(2 * s) - y});
         }
@@ -1027,6 +1317,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
              Colour::gold);
       c.text(collapsed ? "+" : "-", TypeRole::ui_sm, x0 + content_w - card_pad - std::round(10 * s), y,
              std::round(12 * s), Colour::ink_faint);
+      hit(Rect{x0 + card_pad, y, content_w - 2 * card_pad, line_height(TypeRole::eyebrow, s)}, Scope::page,
+          focus_index(FocusKind::section, section.id));
       if (page_focus(FocusKind::section, section.id)) {
         c.focused(Rect{x0 + card_pad, y, content_w - 2 * card_pad, line_height(TypeRole::eyebrow, s)});
       }
@@ -1039,9 +1331,92 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const auto draw_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
         for (const protocol::PageBlock& block : blocks) {
           if (block.kind == protocol::BlockKind::component) {
-            c.text("Shown in the browser view.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
-                   content_w - 2 * card_pad, Colour::ink_mute);
-            y += row_h;
+            const Json* table = table_of(block);
+            if (table == nullptr) {
+              c.text("Shown in the browser view.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
+                     content_w - 2 * card_pad, Colour::ink_mute);
+              y += row_h;
+              continue;
+            }
+            // A table in game (D181): a row a row, its first column's words, the others' after them, and a switch
+            // column's switch at the right, as a setting's.
+            std::vector<std::string> text_columns;
+            std::string switch_column;
+            const Json* sw = nullptr;
+            for (const Json& column : (*table)["columns"]) {
+              if (!column.is_object() || !column.contains("id") || !column["id"].is_string()) {
+                continue;
+              }
+              if (const Json* found = switch_of(column); found != nullptr && sw == nullptr) {
+                sw = found;
+                switch_column = column["id"].get<std::string>();
+              } else {
+                text_columns.push_back(column["id"].get<std::string>());
+              }
+            }
+            const Json& rows = (*table)["rows"];
+            if (rows.empty()) {
+              c.line(x0 + card_pad, y, content_w - 2 * card_pad, Colour::rule);
+              c.text("Nothing here yet.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
+                     content_w - 2 * card_pad, Colour::ink_mute);
+              y += row_h;
+              continue;
+            }
+            for (std::size_t r = 0; r < rows.size(); ++r) {
+              const Json& line = rows[r];
+              if (!line.is_object()) {
+                continue;
+              }
+              const std::string row_key = sw != nullptr ? cell_words(line, (*sw)["key"].get<std::string>()) : std::string();
+              const std::string cell_id = *block.topic + "/" + (row_key.empty() ? std::to_string(r) : row_key);
+              const auto refusal = sw != nullptr ? refusals_.find(cell_id) : refusals_.end();
+              const Rect row{x0 + card_pad, y, content_w - 2 * card_pad, row_h};
+              if (sw != nullptr && hovered(row)) {
+                c.fill(row, Colour::tint_hover);
+              }
+              c.line(row.x, row.y, row.w, Colour::rule);
+              const std::string label = text_columns.empty() ? std::string() : cell_words(line, text_columns[0]);
+              std::string rest;
+              for (std::size_t k = 1; k < text_columns.size(); ++k) {
+                const std::string words = cell_words(line, text_columns[k]);
+                if (!words.empty()) {
+                  rest += (rest.empty() ? "" : "  ·  ") + words;
+                }
+              }
+              const float label_y = y + std::round((row_h - line_height(TypeRole::ui, s)) / 2);
+              c.text(label, TypeRole::ui, row.x, label_y, row.w / 3 - std::round(12 * s), Colour::ink_hi);
+              const float rest_w = (sw != nullptr ? row.w - control_w : row.w) - row.w / 3 - std::round(12 * s);
+              c.text(rest, TypeRole::ui_sm, row.x + row.w / 3,
+                     y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2), rest_w, Colour::ink_mute);
+              if (sw != nullptr) {
+                const std::string words = cell_words(line, switch_column);
+                const bool on = words == (*sw)["on"].get<std::string>();
+                const Rect control{row.right() - std::round(40 * s), y + std::round((row_h - 22 * s) / 2),
+                                   std::round(40 * s), std::round(22 * s)};
+                const float word_w = c.width(words, TypeRole::ui_sm);
+                c.text(words, TypeRole::ui_sm, control.x - std::round(12 * s) - word_w,
+                       y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2), word_w + 1, Colour::ink_body);
+                if (on) {
+                  c.fill(control, Colour::gold, control.h / 2);
+                } else {
+                  c.fill(control, Colour::ground_well, control.h / 2);
+                  c.stroke(control, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), control.h / 2);
+                }
+                const float knob = std::round(16 * s);
+                c.circle(Rect{on ? control.right() - knob - std::round(3 * s) : control.x + std::round(3 * s),
+                              control.y + std::round((control.h - knob) / 2), knob, knob},
+                         on ? Colour::on_gold : Colour::ink_mute);
+                hit(row, Scope::page, focus_index(FocusKind::cell, cell_id), control);
+                if (page_focus(FocusKind::cell, cell_id)) {
+                  c.focused(control);
+                }
+              }
+              y += row_h;
+              if (refusal != refusals_.end()) {  // the space's reason, under its row (§5.7)
+                c.text(refusal->second, TypeRole::ui_sm, row.x, y - std::round(8 * s), row.w, Colour::rot);
+                y += std::round(line_height(TypeRole::ui_sm, s));
+              }
+            }
             continue;
           }
           for (const std::string& key : block.keys.value_or(std::vector<std::string>{})) {
@@ -1055,8 +1430,13 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             const float extra = (focused_row ? line_height(TypeRole::ui_sm, s) : 0) +
                                 (refusal != refusals_.end() ? line_height(TypeRole::ui_sm, s) : 0);
             const Rect row{x0 + card_pad, y, content_w - 2 * card_pad, row_h + std::round(extra)};
+            if (hovered(row)) {
+              c.fill(row, Colour::tint_hover);
+            }
             c.line(row.x, row.y, row.w, Colour::rule);
             const std::uint8_t alpha = st.locked ? 128 : 255;
+            Rect track_rect{};
+            std::size_t segment_count = 0;
             const Json& v = value(key);
             const float label_y = y + std::round((row_h - line_height(TypeRole::ui, s)) / 2);
             if (!shortcut && v != st.default_) {  // changed from its default: the lozenge
@@ -1122,12 +1502,16 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                             control.y + std::round((control.h - knob) / 2), knob, knob},
                        on ? Colour::on_gold : Colour::ink_mute, alpha);
             } else if (numeric(st.type)) {
+              // Inside its column by a margin on each side, so that neither the value nor the knob at either end
+              // meets the focus outline drawn around the column.
+              const float inset = std::round(12 * s);
               const std::string shown = format(key, v);
               const float vw = c.width(shown, TypeRole::num);
-              c.text(shown, TypeRole::num, col.right() - vw,
+              c.text(shown, TypeRole::num, col.right() - inset - vw,
                      y + std::round((row_h - line_height(TypeRole::num, s)) / 2), vw + 1, Colour::ink_body, alpha);
-              const float track_w = control_w - std::round(64 * s);
-              const Rect track{col.x, y + std::round((row_h - 4 * s) / 2), track_w, std::round(4 * s)};
+              const float track_w = control_w - std::round(64 * s) - 2 * inset;
+              const Rect track{col.x + inset, y + std::round((row_h - 4 * s) / 2), track_w, std::round(4 * s)};
+              track_rect = track;
               c.fill(track, Colour::ground_well, track.h / 2, alpha);
               const double lo = st.min_.value_or(0), hi = st.max_.value_or(1);
               const double n = v.is_number() ? v.get<double>() : lo;
@@ -1136,7 +1520,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               const float knob = std::round(14 * s);
               c.circle(Rect{track.x + std::round(track.w * t - knob / 2), y + std::round((row_h - knob) / 2), knob, knob},
                        Colour::gold_hi, alpha);
-              control = Rect{track.x, y + std::round(10 * s), control_w, row_h - std::round(20 * s)};
+              control = Rect{col.x, y + std::round(10 * s), control_w, row_h - std::round(20 * s)};
             } else if (st.type == SettingType::choice || st.type == SettingType::tri_state) {
               std::vector<std::pair<std::string, bool>> segments;
               if (st.type == SettingType::tri_state) {
@@ -1149,6 +1533,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 }
               }
               control = Rect{col.x, y + std::round((row_h - 30 * s) / 2), control_w, std::round(30 * s)};
+              segment_count = segments.size();
               c.stroke(control, Colour::edge, edge, r, alpha);
               const float seg_w = control.w / static_cast<float>(std::max<std::size_t>(segments.size(), 1));
               for (std::size_t i = 0; i < segments.size(); ++i) {
@@ -1174,6 +1559,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                      control.y + std::round((control.h - line_height(role, s)) / 2), control.w - std::round(20 * s), ink,
                      alpha);
             }
+            hit(row, Scope::page, focus_index(shortcut ? FocusKind::shortcut : FocusKind::setting, key), control, track_rect,
+                segment_count);
             if (focused_row) {
               c.focused(control);
             }
@@ -1188,6 +1575,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
           c.line(x0 + card_pad, y, content_w - 2 * card_pad, Colour::rule);
           c.text(open ? "Advanced  -" : "Advanced  +", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
                  std::round(160 * s), Colour::gold);
+          hit(Rect{x0 + card_pad, y + std::round(8 * s), std::round(120 * s), std::round(28 * s)}, Scope::page,
+              focus_index(FocusKind::advanced, section.id));
           if (page_focus(FocusKind::advanced, section.id)) {
             c.focused(Rect{x0 + card_pad, y + std::round(8 * s), std::round(120 * s), std::round(28 * s)});
           }
@@ -1231,6 +1620,10 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
           }
         }
         const Rect row{x0 + card_pad, y, content_w - 2 * card_pad, std::round(44 * s)};
+        if (hovered(row)) {
+          c.fill(row, Colour::tint_hover);
+        }
+        hit(row, Scope::page, focus_index(FocusKind::related, link));
         c.line(row.x, row.y, row.w, Colour::rule);
         c.text(target != nullptr ? target->name : link, TypeRole::ui, row.x, y + std::round(4 * s), row.w / 3,
                Colour::ink_hi);
@@ -1277,6 +1670,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         if (st.locked) {
           hints = "Locked in this version    Esc  Back";
         }
+      } else if (f.kind == FocusKind::cell) {
+        hints = "Enter  Toggle    Esc  Back";  // a table's switch, as a setting's but with no default to reset to
       } else {
         hints = "Enter  Open    Esc  Back";
       }
@@ -1292,17 +1687,20 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       c.stroke(ring, Colour::gold_hi, std::round(tokens::kGrace.size.focus_width * s),
                std::round((tokens::radius::control + tokens::kGrace.size.focus_offset) * s));
     }
-    // Keep the focused element in view: scroll, and lay out once more.
-    if (pass == 0 && scope_ == Scope::page && c.focus_found) {
+    // Keep the focused element in view, unless the wheel has scrolled since a key last moved focus; within the page's
+    // length either way. Then lay out once more.
+    if (pass == 0) {
       const float margin = std::round(24 * s);
       float next = scroll_;
-      if (c.focus.bottom() + margin > page_area.bottom()) {
-        next += c.focus.bottom() + margin - page_area.bottom();
-      } else if (c.focus.y - margin < page_area.y) {
-        next -= page_area.y - (c.focus.y - margin);
+      if (follow_ && scope_ == Scope::page && c.focus_found) {
+        if (c.focus.bottom() + margin > page_area.bottom()) {
+          next += c.focus.bottom() + margin - page_area.bottom();
+        } else if (c.focus.y - margin < page_area.y) {
+          next -= page_area.y - (c.focus.y - margin);
+        }
       }
       next = std::clamp(next, 0.0f, std::max(0.0f, content_bottom - page_area.bottom() + margin));
-      if (next != scroll_) {
+      if (std::round(next) != scroll_) {
         scroll_ = std::round(next);
         continue;
       }

@@ -10,13 +10,15 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <stdexcept>
+#include <iterator>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -57,11 +59,19 @@ struct MenuInput {
 
 constinit grace::input::SpscRing<MenuInput, 64> g_keys;  // the window procedure's
 constinit grace::input::SpscRing<MenuInput, 64> g_pad;   // the present thread's
+
+// The mouse's events for the menu (§5.5), the present thread's: a move a frame at most, in the display's pixels.
+struct MenuPointer {
+  grace::view::Pointer pointer{};
+  std::uint32_t generation = 0;  // the holder it is for
+};
+constinit grace::input::SpscRing<MenuPointer, 64> g_pointer;
 constinit std::atomic<grace::abi::DrawListBuffers*> g_lists{nullptr};  // made by GraceUI's thread, never freed
 constinit std::atomic<bool> g_off{false};
 constinit std::atomic<std::uint32_t> g_width{0};
 constinit std::atomic<std::uint32_t> g_height{0};
-constinit std::atomic<float> g_ui_scale{1.0f};  // ui.scale as the store holds it, for the next bake's scale
+constinit std::atomic<bool> g_clear_theme{false};  // ui.menu.theme is Grace Clear: the pointer's colours (G31)
+constinit std::atomic<float> g_ui_scale{0.0f};  // ui.scale as the store holds it, for the next bake's scale; 0 unread
 
 // The test exports' view (and nothing else reads it).
 constinit std::atomic<std::uint64_t> g_published{0};
@@ -118,9 +128,13 @@ struct State {
   std::uint32_t next_command = 1;
   std::map<std::uint64_t, std::pair<std::string, std::string>> commands;  // a ticket: its space and its key
   std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
+  std::uint64_t states = 0;    // its other topics', as the menu last took them (D181)
   grace::view::DisplayList list;
   std::string page;  // as the test exports read it, under its lock
   std::string focused;
+#if defined(GRACEUI_TEST_EXPORTS)
+  std::vector<std::pair<std::string, grace::view::PageView::Bounds>> bounds;  // the last layout's, under the same lock
+#endif
 };
 constinit State* g_state = nullptr;
 constinit grace::abi::SpinLock g_view_lock;  // the test exports' copy of page and focused
@@ -386,8 +400,27 @@ void take_effects(State& m) {
   m.ui_scale = scale.is_number() ? scale.get<double>() : 1.0;
   g_ui_scale.store(static_cast<float>(m.ui_scale), std::memory_order_relaxed);
   m.clear = store.held("ui.menu.theme") == "clear";
+  g_clear_theme.store(m.clear, std::memory_order_relaxed);
   own_view(m).view.set_values(store.values());
   m.revision = own_space().revision();
+  spaces::publish_ui_scale(own_space());  // the mods hear of a new ui.scale (D180)
+  spaces::keep_own_settings();  // for the next session (D179): only after a change
+}
+
+// GraceUI's own topics other than its settings (the Mods page's, D181), as its space last published them, to the menu's
+// view of it. True if any changed.
+bool take_topics(State& m) {
+  const grace::spaces::OwnSpace& own = own_space();
+  if (m.states == own.states_revision()) {
+    return false;
+  }
+  m.states = own.states_revision();
+  for (const grace::protocol::TopicInfo& topic : own.pages().topics) {
+    if (const grace::protocol::Json* body = own.state_of(topic.id); body != nullptr) {
+      own_view(m).view.set_topic(topic.id, *body);
+    }
+  }
+  return true;
 }
 
 std::string key_of(const grace::protocol::Cmd& command) {
@@ -435,18 +468,20 @@ void run(State& m, const grace::protocol::Cmd& command) {
     log_line("the menu's Disconnect: every browser's session ended");
     return;
   }
-  g_refusals.fetch_add(1, std::memory_order_relaxed);
-  own_view(m).view.refused(key_of(command), "Not a command of GraceUI's.");
+  // Its other commands (a Mods page switch, D181) go to the one entry point the browser's views use too.
+  const grace::pages::Outcome outcome = own_space().apply(command);
+  if (!outcome.ok) {
+    g_refusals.fetch_add(1, std::memory_order_relaxed);
+    const std::string focused = own_view(m).view.focused();
+    own_view(m).view.refused(focused.rfind("cell:", 0) == 0 ? focused.substr(5) : key_of(command),
+                             outcome.detail.empty() ? "Not possible right now." : outcome.detail);
+  }
+  take_topics(m);
 }
 
-void take(State& m, const MenuInput& in, bool& dirty) {
-  if (in.generation != m.generation) {
-    return;  // pressed for an earlier holder
-  }
-  const grace::view::Action action = active_view(m).input(grace::view::Input{in.key, in.shift != 0});
+// What a key, a button or the mouse did in the page view.
+void act(State& m, const grace::view::Action& action) {
   const bool on_switcher = active_view(m).focused() == "rail:switcher";
-  g_inputs.fetch_add(1, std::memory_order_relaxed);
-  dirty = true;
   switch (action.kind) {
     case grace::view::Action::Kind::command:
       run(m, action.command);
@@ -461,6 +496,28 @@ void take(State& m, const MenuInput& in, bool& dirty) {
     case grace::view::Action::Kind::none:
       break;
   }
+}
+
+void take(State& m, const MenuInput& in, bool& dirty) {
+  if (in.generation != m.generation) {
+    return;  // pressed for an earlier holder
+  }
+  const grace::view::Action action = active_view(m).input(grace::view::Input{in.key, in.shift != 0});
+  g_inputs.fetch_add(1, std::memory_order_relaxed);
+  dirty = true;
+  act(m, action);
+}
+
+void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
+  if (in.generation != m.generation) {
+    return;  // for an earlier holder
+  }
+  const grace::view::Action action = active_view(m).pointer(in.pointer);
+  if (in.pointer.kind != grace::view::Pointer::Kind::move) {
+    g_inputs.fetch_add(1, std::memory_order_relaxed);
+  }
+  dirty = true;  // a move changes what is hovered
+  act(m, action);
 }
 
 void publish(State& m) {
@@ -492,9 +549,15 @@ void publish(State& m) {
   g_indices.store(stats.indices, std::memory_order_relaxed);
   g_commands.store(stats.commands, std::memory_order_relaxed);
   g_scale.store(scale, std::memory_order_relaxed);
+#if defined(GRACEUI_TEST_EXPORTS)
+  std::vector<std::pair<std::string, grace::view::PageView::Bounds>> bounds = active_view(m).all_bounds();
+#endif
   g_view_lock.lock();
   m.page.assign(active_view(m).page());
   m.focused = active_view(m).focused();
+#if defined(GRACEUI_TEST_EXPORTS)
+  m.bounds.swap(bounds);
+#endif
   g_view_lock.unlock();
 }
 
@@ -503,6 +566,9 @@ void drain() noexcept {
   while (g_keys.pop(in)) {
   }
   while (g_pad.pop(in)) {
+  }
+  MenuPointer pointer;
+  while (g_pointer.pop(pointer)) {
   }
 }
 
@@ -522,6 +588,7 @@ void serve_menu() {
     if (m.open) {
       m.open = false;
       active_view(m).cancel_confirmation();  // the close routine's part (§5.1): changes stay, the page is kept
+      active_view(m).pointer(grace::view::Pointer{grace::view::Pointer::Kind::leave, 0, 0, 0});  // no hover, no drag
       watch(m, false);                       // a mod builds nothing the menu no longer shows
     }
     drain();
@@ -536,6 +603,9 @@ void serve_menu() {
   if (m.revision != own_space().revision()) {
     take_effects(m);  // a browser changed a setting: the menu shows it, and its scale and theme follow (D169)
     dirty = true;
+  }
+  if (take_topics(m)) {
+    dirty = true;  // a mod came or went, or a switch turned (D181)
   }
   if (!m.open || m.generation != holder.generation) {
     m.open = true;
@@ -557,6 +627,10 @@ void serve_menu() {
   }
   for (int i = 0; i < 64 && g_pad.pop(in); ++i) {
     take(m, in, dirty);
+  }
+  MenuPointer pointer;
+  for (int i = 0; i < 64 && g_pointer.pop(pointer); ++i) {
+    take_pointer(m, pointer, dirty);
   }
   const std::uint32_t width = g_width.load(std::memory_order_relaxed);
   const std::uint32_t height = g_height.load(std::memory_order_relaxed);
@@ -625,9 +699,31 @@ void pad_inputs(std::uint32_t generation) noexcept {
 
 }  // namespace
 
+namespace {
+
+// ui.scale as GraceUI's own store holds it, the last session's if it kept one (D179), else its default: the scale of a
+// bake before the menu has read its settings (GraceUI's thread, which reads them too). 1 if the space does not load.
+float stored_ui_scale() noexcept {
+  try {
+    const grace::protocol::Json& scale = own_space().store().held("ui.scale");
+    if (scale.is_number()) {
+      return static_cast<float>(scale.get<double>());
+    }
+  } catch (...) {
+  }
+  return 1.0f;
+}
+
+}  // namespace
+
+bool clear_theme() noexcept { return g_clear_theme.load(std::memory_order_relaxed); }
+
 float bake_scale(std::uint32_t height) noexcept {
-  const float scale = (height > 0 ? static_cast<float>(height) : 1080.0f) / 1080.0f *
-                      g_ui_scale.load(std::memory_order_relaxed);
+  float ui_scale = g_ui_scale.load(std::memory_order_relaxed);
+  if (ui_scale <= 0.0f) {
+    ui_scale = stored_ui_scale();
+  }
+  const float scale = (height > 0 ? static_cast<float>(height) : 1080.0f) / 1080.0f * ui_scale;
   return scale < 0.5f ? 0.5f : scale > 4.0f ? 4.0f : scale;
 }
 
@@ -654,6 +750,15 @@ void open_requested() noexcept {
                       : request.why == NotNow::game_menu ? "Not now: a game menu is open."
                                                          : "Not now: GraceUI is not drawing yet.";
     session::own_notice_text(session::kOwnKeyMenu, GRACEUI_TONE_NORMAL, session::kOwnNoticeMs, why);
+  }
+}
+
+void pointer(std::uint8_t kind, float x, float y, float wheel, std::uint32_t generation) noexcept {
+  MenuPointer in;
+  in.pointer = grace::view::Pointer{static_cast<grace::view::Pointer::Kind>(kind), x, y, wheel};
+  in.generation = generation;
+  if (g_pointer.push(in)) {
+    hooks::wake();
   }
 }
 
@@ -743,12 +848,33 @@ void test_view(TestView& out) noexcept {
   out.off = g_off.load(std::memory_order_relaxed) ? 1 : 0;
   out.scale = g_scale.load(std::memory_order_relaxed);
   out.faces = atlas::menu_fonts() != nullptr ? static_cast<std::uint32_t>(grace::tokens::kTypeCount) : 0;
+  out.baked_scale = atlas::menu_scale();
   g_view_lock.lock();
   if (g_state != nullptr) {
     std::snprintf(out.page, sizeof out.page, "%s", g_state->page.c_str());
     std::snprintf(out.focused, sizeof out.focused, "%s", g_state->focused.c_str());
   }
   g_view_lock.unlock();
+}
+
+bool test_bounds(const char* name, float (&out)[8]) noexcept {
+  if (name == nullptr) {
+    return false;
+  }
+  bool found = false;
+  g_view_lock.lock();
+  if (g_state != nullptr) {
+    for (const auto& [named, b] : g_state->bounds) {
+      if (!found && named == name) {
+        const float values[8] = {b.row.x,     b.row.y,     b.row.w,     b.row.h,
+                                 b.control.x, b.control.y, b.control.w, b.control.h};
+        std::copy(std::begin(values), std::end(values), std::begin(out));
+        found = true;
+      }
+    }
+  }
+  g_view_lock.unlock();
+  return found;
 }
 
 std::uint32_t test_setting(const char* key, char* out, std::uint32_t capacity) noexcept {

@@ -86,7 +86,7 @@ std::string_view usage() noexcept {
          "  --increment X.Y    the increment welcome names for every space (default 0.2)\n"
          "  --dump SPACE PAGE  print PAGE's in-game structure and its draw list's counts, and exit\n"
          "  --size WxH         the display's size for --dump\n"
-         "  --scale S          GraceUI's ui.scale for --dump, from 0.75 to 1.5 (default 1)\n"
+         "  --scale S          GraceUI's ui.scale for --dump, from 0.75 to 1.5 (default GraceUI's, 1.25)\n"
          "  --theme T          grace or clear, for --dump (default grace)\n"
          "\n"
          "Stop it with Ctrl+C. It never prints a setting's value, a cookie or a ticket.\n";
@@ -94,6 +94,7 @@ std::string_view usage() noexcept {
 
 bool parse_cli(const std::vector<std::string>& args, Cli& out, std::string& why) {
   out = Cli{};
+  out.dump.ui_scale = default_ui_scale();
   bool serving_only = false;
   bool dump_only = false;
   bool sized = false;

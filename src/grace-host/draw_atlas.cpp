@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <iterator>
 #include <span>
 #include <string_view>
@@ -249,7 +250,7 @@ constinit std::atomic<std::uint32_t> g_test_limit{0};
 void test_set_limit(std::uint32_t side) noexcept { g_test_limit.store(side, std::memory_order_relaxed); }
 #endif
 
-void bake(ImFontAtlas* fonts, std::uint32_t mod_faces, float menu_scale) {
+void bake(ImFontAtlas* fonts, std::uint32_t mod_faces, float menu_scale, float content_scale) {
   grace::abi::Registry& registry = session::registry();  // sealed by the present thread before this runs (D80)
   // A fresh start: an earlier attempt that failed left nothing GraceUI keeps.
   g_table_count = 0;
@@ -317,10 +318,13 @@ void bake(ImFontAtlas* fonts, std::uint32_t mod_faces, float menu_scale) {
   for (; i < mod_faces && registry.face(i, face) && mod_count < grace::abi::kMaxFaces; ++i) {
     const ImFontConfig config = face_config();
     const std::uint32_t* ranges = face.ranges->empty() ? grace::abi::default_ranges() : face.ranges->data();
+    // A scaled face at its pixel height times the content scale (D180); any other at its pixel height.
+    const float pixels = face.scaled ? std::clamp(std::round(face.pixel_height * content_scale),
+                                                  grace::abi::kFacePixelsMin, grace::abi::kFacePixelsMax)
+                                     : face.pixel_height;
     // SAFETY: as above; the registry keeps the face's data and ranges for the session once its table is sealed.
     ImFont* font = fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(face.data->data()),
-                                               static_cast<int>(face.data->size()), face.pixel_height, &config,
-                                               ranges);
+                                               static_cast<int>(face.data->size()), pixels, &config, ranges);
     if (font == nullptr) {
       log_line("face %u could not be loaded from its mod's file: it is left out of the atlas", face.id);
       continue;

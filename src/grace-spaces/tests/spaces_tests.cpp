@@ -89,6 +89,24 @@ TEST_CASE("a registration is checked: views, its own id, decodable page data, on
   std::string broken = pages;
   broken.replace(broken.find("\"lantern.wicks\""), 15, "\"lantern.wickz\"");
   CHECK(registry.add(kMod, "demo", demo_registration(broken, settings), why) == Status::refused);
+  // A destructive action must carry the words its second press shows (§7.3, D173), whatever a mod's tools checked.
+  std::string unconfirmed = pages;
+  const std::string confirm = ",\"confirm\":\"The log's lines are removed. The journal is kept.\"";
+  REQUIRE(unconfirmed.find(confirm) != std::string::npos);
+  unconfirmed.erase(unconfirmed.find(confirm), confirm.size());
+  CHECK(registry.add(kMod, "demo", demo_registration(unconfirmed, settings), why) == Status::refused);
+  CHECK(why == "a destructive action without its confirm text");
+  // GraceUI's own space's id is not a mod's.
+  std::string own = pages;
+  own.replace(own.find("\"space\":\"demo\""), 14, "\"space\":\"graceui\"");
+  CHECK(registry.add(kMod, "graceui", demo_registration(own, settings), why) == Status::refused);
+  CHECK(why.find("GraceUI's own") != std::string::npos);
+  // The pages topic is the framework's: a space may not declare its own.
+  std::string pages_topic = pages;
+  const std::string status_topic = "{\"id\":\"lantern.status\"";
+  pages_topic.replace(pages_topic.find(status_topic), status_topic.size(), "{\"id\":\"pages\"");
+  CHECK(registry.add(kMod, "demo", demo_registration(pages_topic, settings), why) == Status::refused);
+  CHECK(why == "pages is the framework's own topic");
   CHECK(registry.add(kMod, "demo", demo_registration(pages, settings), why) == Status::ok);
   CHECK(registry.add(kMod, "demo", demo_registration(pages, settings), why) == Status::duplicate);
   CHECK(registry.add(kMod + 1, "demo", demo_registration(pages, settings), why) == Status::duplicate);
@@ -212,7 +230,7 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
   std::string why;
   REQUIRE_MESSAGE(own.load(why), why);
   int disconnects = 0;
-  own.attach(fixture.server, "0.2.0", spaces::OwnSpace::Hooks{[&] { ++disconnects; }});
+  own.attach(fixture.server, "0.2.0", spaces::OwnSpace::Hooks{[&] { ++disconnects; }, {}});
   REQUIRE(fixture.wait_files());
   auto view = fixture.join();
   REQUIRE(view != nullptr);
@@ -238,7 +256,7 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
   REQUIRE(view->send_json(frame("sub", {{"space", "graceui"}, {"id", 1}, {"topic", "settings"}})));
   auto state = serve_until("state");
   REQUIRE(state);
-  CHECK((*state)["body"]["values"]["ui.scale"] == 1.0);
+  CHECK((*state)["body"]["values"]["ui.scale"] == 1.25);
   CHECK((*state)["body"]["changed"].empty());
 
   // The browser sets a value: answered ok, and the topic goes out again.
@@ -279,6 +297,83 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
   CHECK(disconnects == 1);
 }
 
+TEST_CASE("GraceUI's other topics and commands (D181): bodies the host sets, published to a watching view") {
+  Fixture fixture(no_spaces());
+  REQUIRE(fixture.started == serve::StartResult::ok);
+  spaces::OwnSpace own;
+  std::string why;
+  REQUIRE_MESSAGE(own.load(why), why);
+  std::vector<protocol::Cmd> taken;
+  spaces::OwnSpace::Hooks hooks;
+  hooks.command = [&](const protocol::Cmd& command) {
+    taken.push_back(command);
+    pages::Outcome outcome;
+    outcome.ok = command.args.value("on", true);
+    if (!outcome.ok) {
+      outcome.error = protocol::ErrorCode::not_now;
+      outcome.detail = "Not now.";
+    }
+    return outcome;
+  };
+  own.attach(fixture.server, "0.2.0", hooks);
+  REQUIRE(fixture.wait_files());
+  // Before the host sets it, a topic has no body; an undeclared topic is never taken.
+  CHECK(own.state_of("graceui.mods") == nullptr);
+  CHECK_FALSE(own.set_state("graceui.nothing", Json::object()));
+  const Json mods = {{"columns", Json::array()}, {"rows", Json::array({{{"id", "demo"}}})}};
+  REQUIRE(own.set_state("graceui.mods", mods));
+  REQUIRE(own.state_of("graceui.mods") != nullptr);
+  CHECK(*own.state_of("graceui.mods") == mods);
+  CHECK(own.states_revision() == 1);
+
+  auto view = fixture.join();
+  REQUIRE(view != nullptr);
+  REQUIRE(view->send_json(frame("sub", {{"space", "graceui"}, {"id", 1}, {"topic", "graceui.mods"}})));
+  std::optional<Json> state;
+  for (int i = 0; i < 300 && !state; ++i) {
+    own.serve();
+    if (auto json = view->next_json(std::chrono::milliseconds(10)); json && (*json)["t"] == "state") {
+      state = json;
+    }
+  }
+  REQUIRE(state);
+  CHECK((*state)["topic"] == "graceui.mods");
+  CHECK((*state)["body"] == mods);
+  // A newer body reaches the watching view.
+  const Json quieter = {{"columns", Json::array()}, {"rows", Json::array()}};
+  REQUIRE(own.set_state("graceui.mods", quieter));
+  std::optional<Json> newer;
+  for (int i = 0; i < 300 && !newer; ++i) {
+    own.serve();
+    if (auto json = view->next_json(std::chrono::milliseconds(10)); json && (*json)["t"] == "state") {
+      newer = json;
+    }
+  }
+  REQUIRE(newer);
+  CHECK((*newer)["body"] == quieter);
+
+  // A declared command of the host's, from the browser and from the menu, reaches the hook; its refusal carries its words.
+  REQUIRE(view->send_json(frame("cmd", {{"space", "graceui"}, {"id", 5}, {"name", "mods.notices"},
+                                        {"args", {{"id", "demo"}, {"on", false}}}})));
+  std::optional<Json> result;
+  for (int i = 0; i < 300 && !result; ++i) {
+    own.serve();
+    if (auto json = view->next_json(std::chrono::milliseconds(10)); json && (*json)["t"] == "result") {
+      result = json;
+    }
+  }
+  REQUIRE(result);
+  CHECK((*result)["error"] == "not_now");
+  CHECK((*result)["detail"] == "Not now.");
+  CHECK(own.apply(protocol::Cmd{"graceui", 0, "mods.notices", Json::object({{"id", "demo"}, {"on", true}})}).ok);
+  REQUIRE(taken.size() == 2);
+  CHECK(taken[0].args["id"] == "demo");
+  // dashboard.disconnect and menu.close never reach the command hook; an undeclared command is refused.
+  CHECK_FALSE(own.apply(protocol::Cmd{"graceui", 0, "menu.close", Json::object()}).ok);
+  CHECK_FALSE(own.apply(protocol::Cmd{"graceui", 0, "mods.everything", Json::object()}).ok);
+  CHECK(taken.size() == 2);
+}
+
 TEST_CASE("the menu's side, with no server: the space listed, a watch, its state, a command and its result (D171)") {
   spaces::Registry registry;
   int wakes = 0;
@@ -310,6 +405,17 @@ TEST_CASE("the menu's side, with no server: the space listed, a watch, its state
   CHECK(body["values"]["lantern.wicks"] == 5);
   CHECK_FALSE(registry.game_state("demo", "settings", 4, body, rev));  // nothing newer
   CHECK(wakes >= 1);
+  // The settings topic is held to the registration: a secret's value never leaves (only whether it is set), and a
+  // description other than the registered one is refused (invariants 5 and 12, as framework guards).
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"settings","rev":5,"body":{"values":{"lantern.oil_token":"Zq7-wick-tallow-99","lantern.keeper":"Ivo"}}})",
+                         why) == Status::ok);
+  REQUIRE(registry.game_state("demo", "settings", 4, body, rev));
+  CHECK(body["values"]["lantern.oil_token"] == "set");
+  CHECK(body["values"]["lantern.keeper"] == "Ivo");
+  CHECK(body.dump().find("Zq7") == std::string::npos);
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"settings","rev":6,"body":{"description":[],"values":{}}})",
+                         why) == Status::refused);
+  CHECK(why == "its settings description is not the one it registered");
 
   std::uint64_t ticket = 0;
   REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 3, "settings.set",

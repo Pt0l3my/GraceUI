@@ -608,3 +608,71 @@ capped at two, with plain HTTP connections capped on their own (§6.8, corrected
 **Evidence.** [research/server-basis.md](research/server-basis.md) (SRV): the review recommends the same, with
 Boost.Beast as the runner-up, and found that every general-purpose library it checked shipped parser or framing fixes
 in 2025-26.
+
+## G31
+
+**The menu's pointer** · *Open since 2026-11-20*
+
+**Question.** In game, the menu and a mod's panel that holds the mouse show Dear ImGui's own arrow, drawn by the host
+(§5.5): a white arrow with a black edge, which looks nothing like the rest of Grace. Asked at the look review whether it
+could be the same as Elden Ring's own pointer. **Options:** (a) **our own pointer in the Grace look**: a slim arrow drawn
+as vector shapes from the tokens (`gold.hi` edge on a dark fill, Grace Clear's thicker), at the effective scale, with
+a text beam over fields; drawn where Dear ImGui's is today, so it never lags; (b) keep Dear ImGui's arrow; (c) the
+game's own pointer, taken from the player's install at run time.
+
+**Recommendation.** (a). The game's pointer image can never be in our files (no game textures, icons or frames in a
+repository or a release). (c) would take it from the player's install at run time instead, which GraceUI cannot do
+itself (it reads nothing of the game; what comes from the install comes through EldenNet): EldenNet's devkit would have
+to read the game's archives with the player's own keys (EldenNet's O73 to O75) and hand the image to GraceUI, a large
+piece of work for one pointer, and one that other mods would not have. (a) can share the game's spirit (a fine, warm,
+unobtrusive pointer) without copying it, as the rest of Grace does, and costs one shape in grace-draw and a golden.
+*What (a) gives up:* an exact match with the game's pointer.
+
+**What each answer changes.** (a): §5.5's first line names the Grace pointer; grace-draw gains its shape and the host
+draws it in Dear ImGui's place; a golden and a harness check. (b): nothing. (c): a request to EldenNet for the devkit's
+run-time read, a texture EldenNet registers for GraceUI at load, and (a) as the fallback when EldenNet is absent.
+
+**Follows from.** The owner's look review of the in-game menu (EldenNet's roadmap S11.2.d), 2026-11-20; §3, §5.5.
+
+*Later (2026-11-20):* the owner sent a cursor of another game's theme as a reference ("how about cursor like this one,
+but with elden ring colors and more rounded edges?"): a hollow arrowhead with a notched back and a looping glint. It
+was read only, never copied, and kept out of the repository; a mock-up of our own was shown, in three forms: A still,
+B with a lit edge, C with one glint played once (a loop being against invariant 14).
+
+**Decision (2026-11-20).** (a), as recommended, in form A: our own pointer, a notched arrowhead with rounded corners,
+`gold.hi` edge on a dark fill over a soft dark halo, still, with no glint; a text beam over fields. Built as D178.
+
+**Owner's words.** "the white animation is not required" (of the mock-up's glint, form C), after asking for a pointer
+"like this one, but with elden ring colors and more rounded edges".
+
+## G32
+
+**Quieting a mod's notices** · *Open since 2026-11-20*
+
+**Question.** Each mod sets its notices' durations (D134), and the player has no say over a chatty mod. SkyrimNet's
+dashboard has a switch for its in-game notices (research note SND), which led to the question whether GraceUI, as the
+framework every mod's notices go through, should give the player one. **Options:** (a) **a switch per mod on the Mods
+page** (Notices: shown, or quiet: a quiet mod's notices are kept in a list the menu shows, not drawn over the game),
+GraceUI's own notices always shown (the player's exit, why the menu cannot open, danger); (b) one switch for every mod's
+notices; (c) nothing for now.
+
+**Recommendation.** (a): the player quiets the one mod that bothers them and keeps the rest; GraceUI's own notices stay,
+since they say how to take the controls back (invariant 17). It is a framework rule of GraceUI's own, not a part of
+SkyrimNet's, so G19 is not touched. *What (a) gives up:* a mod cannot rely on a notice being seen; it learns nothing of
+the switch (a quiet notice is still accepted, invariant 2's spirit: absence is silent).
+
+**What each answer changes.** (a): a setting per connected mod on the Mods page, its home there (invariant 12), a
+notice list in the menu, the harness's notice checks with a quiet mod. (b): one setting on the Menu page. (c): nothing.
+
+**Follows from.** The owner's question at the look review, 2026-11-20, comparing SkyrimNet's UI settings; D134, D141;
+G19.
+
+**Decision (2026-11-20).** (a), as recommended: a switch per mod on the Mods page (Installed mods), Shown or Quiet; a
+quiet mod's notices are accepted as before and kept in a list on the same page, not drawn over the game; GraceUI's own
+notices always show; the switch is kept between sessions. Built as D181 in GraceUI 0.2.3. Since the mods are known only
+at run time, the switch is not a setting of GraceUI's settings store but a command of GraceUI's own space
+(`mods.notices`), its state in the page's table; its one home is still the Mods page (invariant 12), and the Mods page
+joins in 0.2 rather than 0.6 (D173 amended).
+
+**Owner's words.** "go ahead with G32, per-mod switch".
+

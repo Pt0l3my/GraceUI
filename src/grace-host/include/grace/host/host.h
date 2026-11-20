@@ -51,7 +51,7 @@ GraceUiStatus register_texture(GraceUiConsumer consumer, std::uint32_t width, st
 // A face of `pixel_height`: `copy` writes its font file (`data_length` bytes) and its ranges (`range_count` pairs, none
 // for GraceUI's default) into what it is given.
 using CopyFace = void (*)(const void* context, unsigned char* data, std::uint32_t* ranges);
-GraceUiStatus register_face(GraceUiConsumer consumer, float pixel_height, std::uint64_t data_length,
+GraceUiStatus register_face(GraceUiConsumer consumer, float pixel_height, bool scaled, std::uint64_t data_length,
                             std::uint64_t range_count, CopyFace copy, const void* context, std::uint32_t& id) noexcept;
 
 GraceUiStatus glyph_table(GraceUiConsumer consumer, std::uint32_t face_id, GraceUiGlyphTable& out) noexcept;
@@ -86,7 +86,9 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
 // then hotkey presses; then, with `protocol` (the mod's event is large enough), its space's events, written into
 // out.frame (the mod's buffer, out.frame_capacity bytes); `out` is GraceUI's own, zeroed by the caller but for those
 // two. GRACEUI_FULL with out.frame_length the size needed when the buffer is too small.
-GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder) noexcept;
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder, bool display) noexcept;
+// connect's display fields (ABI 1.2, D180): ui.scale, its default and the back buffer's size as they stand.
+void display_at_connect(GraceUiConnectAnswer& out) noexcept;
 // The caret of the mod's field in its panel (D176), for the IME.
 GraceUiStatus set_caret(GraceUiConsumer consumer, std::uint64_t panel, float x, float y, float height) noexcept;
 // The mod's space (D169): its JSON already copied or seen whole within the call.
@@ -131,6 +133,9 @@ void test_set_atlas_limit(std::uint32_t side) noexcept;
 std::uint64_t test_panel_published(std::uint64_t panel) noexcept;
 void test_fill_menu(GraceUiTestMenu& out) noexcept;
 std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capacity) noexcept;
+std::uint32_t test_copy_topic(const char* topic, char* out, std::uint32_t capacity) noexcept;
+std::uint32_t test_menu_bounds(const char* name, float* out) noexcept;
+void test_set_recheck_ms(std::uint32_t ms) noexcept;
 void test_fill_server(GraceUiTestServer& out) noexcept;
 #endif
 

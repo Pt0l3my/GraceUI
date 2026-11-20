@@ -49,7 +49,8 @@ extern "C" {
 
 /* The ABI major this header describes, and its minor: the number of the newest appends (0: the first table). */
 #define GRACEUI_ABI_MAJOR 1u
-#define GRACEUI_ABI1_MINOR 1u /* 1: a holder's events and set_caret (GraceUI 0.2.1, D176) */
+#define GRACEUI_ABI1_MINOR 2u /* 1: a holder's events and set_caret (GraceUI 0.2.1, D176); 2: the display and scaled
+                                 faces (GraceUI 0.2.2, D180) */
 
 /*
  * GraceUI's own version (GRACEUI_VERSION_PACK). Needs no start: callable from any thread, at any time after the DLL is
@@ -141,6 +142,8 @@ typedef uint32_t GraceUiStatus;
 #define GRACEUI_CAP_PAGES "pages"     /* register_pages, publish, answer, and poll's protocol events: since 0.2 (D169) */
 #define GRACEUI_CAP_HOLDER_EVENTS "holder-events" /* GRACEUI_INPUT_EVENTS, poll's holder events, set_caret: since
                                                     0.2.1, ABI 1.1 (D176) */
+#define GRACEUI_CAP_DISPLAY "display" /* connect's display fields, GRACEUI_EVENT_DISPLAY, GRACEUI_FACE_SCALED: since 0.2.2,
+                                        ABI 1.2 (D180) */
 
 /* A connected mod's handle, which every slot after connect takes; 0 is none. */
 typedef uint64_t GraceUiConsumer;
@@ -168,6 +171,11 @@ typedef struct GraceUiConnectAnswer {
   uint32_t floor;            /* with GRACEUI_TOO_OLD: the version the mod needs */
   uint32_t abi_minor;        /* the ABI minor this GraceUI serves */
   GraceUiConsumer consumer;  /* with GRACEUI_OK or GRACEUI_INACTIVE: the mod's handle; else 0 */
+  /* From ABI 1.2 (D180): the display as it stands at connect (a mod sizes its faces for the registration window). */
+  float ui_scale;            /* GraceUI's ui.scale (Menu size): the player's, kept from the last session, or its default */
+  float ui_scale_default;    /* its default: a mod's content scale is (H / 1080) x ui_scale / ui_scale_default */
+  uint32_t display_width;    /* the back buffer's size; 0 until the game's swap chain is bound (often so at connect) */
+  uint32_t display_height;
 } GraceUiConnectAnswer;
 
 /* ---- notice: a short text GraceUI shows above everything else (the notice layer, D76), in game. */
@@ -214,7 +222,18 @@ typedef struct GraceUiFaceDesc {
   uint64_t data_length;
   const uint32_t* ranges;  /* the code points to bake, as pairs of first and last; null for GraceUI's default */
   uint64_t range_count;    /* pairs */
+  /* From ABI 1.2 (D180). */
+  uint32_t flags;          /* GRACEUI_FACE_* */
+  uint32_t reserved;       /* 0 */
 } GraceUiFaceDesc;
+
+/* A scaled face: baked at warm-up at pixel_height x the content scale, (H / 1080) x ui.scale / its default, rounded to a
+ * whole pixel (6 to 128 px),
+ * so a mod designs at 1080 lines and the default Menu size and need not know the display when it registers. Its glyph
+ * table gives the size it was baked at; GRACEUI_EVENT_DISPLAY's faces_scale says the scale. The atlas is baked once
+ * (invariant 11): after a later change of the display or of ui.scale, the mod draws its glyphs scaled by
+ * content_scale / faces_scale, a little soft, until the next session. Without the flag a face is baked at pixel_height. */
+#define GRACEUI_FACE_SCALED 1u
 
 typedef struct GraceUiGlyph {
   uint32_t code_point;
@@ -407,6 +426,8 @@ typedef struct GraceUiHotkeyDesc {
                                         the newest); a button's press or release (button, pressed); the wheel */
 #define GRACEUI_EVENT_INPUT_ENDED 8u /* the mod's holder ended: why; once, after its other events */
 #define GRACEUI_EVENT_PAD 9u         /* with GRACEUI_WANT_PAD: a pad button's press or release (button, pressed, pad) */
+/* From ABI 1.2 (D180), to every mod that polls with an event of 1.2's size: */
+#define GRACEUI_EVENT_DISPLAY 10u    /* the display: once after warm-up, then after each change of its size or ui.scale */
 
 /* Why a holder ended (GRACEUI_EVENT_INPUT_ENDED's `why`). */
 #define GRACEUI_CLOSED_RELEASED 1u   /* release_input, the holding panel hidden, or its mod gone */
@@ -450,6 +471,15 @@ typedef struct GraceUiEvent {
   float y;               /*   when the pointer is) */
   float wheel_x;         /* GRACEUI_EVENT_POINTER: wheel notches, rightwards */
   float wheel_y;         /*   and away from the player */
+  /* From ABI 1.2 (D180): GRACEUI_EVENT_DISPLAY's fields. An event smaller than this never gets that kind. */
+  uint32_t display_width;  /* the back buffer's size */
+  uint32_t display_height;
+  float ui_scale;          /* GraceUI's ui.scale (Menu size) */
+  float ui_scale_default;  /* its default */
+  float scale;             /* the effective scale, (display_height / 1080) x ui_scale, GraceUI's own text's (§3.13) */
+  float content_scale;     /* scale / ui_scale_default: a mod's design size at 1080 lines and the default Menu size */
+  float faces_scale;       /* the content scale the mod's GRACEUI_FACE_SCALED faces were baked at (0 if it has none) */
+  uint32_t reserved3;
 } GraceUiEvent;
 
 /* ---- A space (D75, D81, D169): the mod's pages, topics and commands, as the bridge protocol's frames (§6). The same
@@ -505,7 +535,8 @@ typedef GraceUiStatus (*GraceUiReservedSlot)(GraceUiConsumer consumer, const voi
  * GRACEUI_NOT_YET where this GraceUI does not provide it. GraceUI 0.1 provides every slot but three of the bridge
  * protocol's four (register_pages, publish, answer) and log, and its poll gives hotkey events alone (D155); GraceUI 0.2
  * provides the protocol's three and poll's protocol events (D169), and log is declared for the increment that builds
- * it; GraceUI 0.2.1 (ABI 1.1) adds set_caret and poll's holder events (D176).
+ * it; GraceUI 0.2.1 (ABI 1.1) adds set_caret and poll's holder events (D176); GraceUI 0.2.2 (ABI 1.2) connect's display
+ * fields, poll's display event and scaled faces (D180), with no new slot.
  */
 typedef struct GraceUiApi1 {
   uint32_t size;             /* the table's size in this GraceUI: a slot exists only if it ends within it */
