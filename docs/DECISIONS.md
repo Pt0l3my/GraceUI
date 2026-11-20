@@ -667,3 +667,12 @@ notice list in the menu, the harness's notice checks with a quiet mod. (b): one 
 **Follows from.** The owner's question at the look review, 2026-11-20, comparing SkyrimNet's UI settings; D134, D141;
 G19.
 
+**Decision (2026-11-20).** (a), as recommended: a switch per mod on the Mods page (Installed mods), Shown or Quiet; a
+quiet mod's notices are accepted as before and kept in a list on the same page, not drawn over the game; GraceUI's own
+notices always show; the switch is kept between sessions. Built as D181 in GraceUI 0.2.3. Since the mods are known only
+at run time, the switch is not a setting of GraceUI's settings store but a command of GraceUI's own space
+(`mods.notices`), its state in the page's table; its one home is still the Mods page (invariant 12), and the Mods page
+joins in 0.2 rather than 0.6 (D173 amended).
+
+**Owner's words.** "go ahead with G32, per-mod switch".
+
