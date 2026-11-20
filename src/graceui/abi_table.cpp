@@ -110,6 +110,7 @@ GraceUiStatus connect(const GraceUiConnectRequest* request, GraceUiConnectAnswer
     GraceUiConnectAnswer result{};
     result.graceui_version = kVersion;
     result.abi_minor = GRACEUI_ABI1_MINOR;
+    grace::host::abi1::display_at_connect(result);  // ABI 1.2 (D180): written only as far as the mod's answer reaches
     GraceUiConnectRequest in{};
     char id[GRACEUI_ID_MAX];
     char name[GRACEUI_NAME_MAX];
@@ -236,12 +237,16 @@ GraceUiStatus register_face(GraceUiConsumer consumer, const GraceUiFaceDesc* fac
   try {
     GraceUiFaceDesc in{};
     if (face_id == nullptr || !read_in(face, kFace10, in) || in.data == nullptr ||
-        (in.ranges == nullptr && in.range_count != 0)) {
-      return refused_argument(consumer, "register_face", "a face that is null, below its first size, or without data");
+        (in.ranges == nullptr && in.range_count != 0) || (in.flags & ~std::uint32_t{GRACEUI_FACE_SCALED}) != 0) {
+      return refused_argument(consumer, "register_face",
+                              "a face that is null, below its first size, without data, or with a flag GraceUI does not "
+                              "know");
     }
     std::uint32_t id = 0;
+    // A face of 1.0's size is read with flags 0: baked at its pixel height, as before (D180).
     const GraceUiStatus status = grace::host::abi1::register_face(
-        consumer, static_cast<float>(in.pixel_height), in.data_length, in.ranges == nullptr ? 0 : in.range_count,
+        consumer, static_cast<float>(in.pixel_height), (in.flags & GRACEUI_FACE_SCALED) != 0, in.data_length,
+        in.ranges == nullptr ? 0 : in.range_count,
         [](const void* context, unsigned char* data, std::uint32_t* ranges) {
           // SAFETY: `context` is the GraceUiFaceDesc copied above, whose length and range count GraceUI bounded before
           // it made room: the mod's data holds `data_length` bytes and its ranges `range_count` pairs.
@@ -423,10 +428,11 @@ constexpr std::uint32_t kHotkey10 = 48;
 constexpr std::uint32_t kEvent10 = 16;
 constexpr std::uint32_t kEvent02 = 48;       // with reply, frame, frame_capacity and frame_length (D169)
 constexpr std::uint32_t kEvent11 = 104;      // with a holder's fields, ABI 1.1 (D176)
+constexpr std::uint32_t kEvent12 = 136;      // with the display's fields, ABI 1.2 (D180)
 constexpr std::uint32_t kSpaceDesc02 = 64;   // GraceUiSpaceDesc as GraceUI 0.2 first gave it
 constexpr std::uint32_t kCaret11 = 32;       // GraceUiCaret as ABI 1.1 first gave it
 constexpr std::uint64_t kPagesMax = 1u << 20;  // a space's page data or settings description: 1 MiB (EST)
-static_assert(sizeof(GraceUiEvent) == kEvent11 && sizeof(GraceUiSpaceDesc) == kSpaceDesc02 &&
+static_assert(sizeof(GraceUiEvent) == kEvent12 && sizeof(GraceUiSpaceDesc) == kSpaceDesc02 &&
               sizeof(GraceUiCaret) == kCaret11);
 
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, const GraceUiHotkeyDesc* hotkey,
@@ -473,7 +479,9 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent* event) noexcept {
       out.frame_capacity = in.frame == nullptr ? 0 : in.frame_capacity;
     }
     // ABI 1.1 (D176): an event that holds a holder's fields takes the mod's holder's events too.
-    const GraceUiStatus status = grace::host::abi1::poll(consumer, out, protocol, event_size >= kEvent11);
+    // ABI 1.2 (D180): one of 1.2's size takes the display's event too.
+    const GraceUiStatus status =
+        grace::host::abi1::poll(consumer, out, protocol, event_size >= kEvent11, event_size >= kEvent12);
     if (status == GRACEUI_OK || status == GRACEUI_FULL) {
       write_out(event, event_size, out);
     }

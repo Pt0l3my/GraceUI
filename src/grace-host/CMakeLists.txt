@@ -7,6 +7,7 @@
 add_library(grace_host STATIC
   abi.cpp
   anticheat.cpp
+  display.cpp
   draw.cpp
   draw_alloc.cpp
   draw_atlas.cpp

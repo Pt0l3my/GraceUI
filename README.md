@@ -18,7 +18,9 @@ across the ABI; F5 opens GraceUI's menu in game, drawn by the host, on every mod
 browser view (a Preact app served by GraceUI's own server on loopback) shows the same pages from the same data, with
 `grace-dev` to preview a space's pages without the game. **GraceUI 0.2.1** (ABI 1.1) gives a mod whose panel holds
 the controls what the player does there, if it asks: keys, characters, the pointer, a pad's buttons and the end of its
-hold, through `poll`, with the IME placed at its caret, so a mod's own Dear ImGui can take typing. Hotkeys and the log
+hold, through `poll`, with the IME placed at its caret, so a mod's own Dear ImGui can take typing. **GraceUI 0.2.2**
+(ABI 1.2) keeps GraceUI's settings between sessions, draws its own pointer, and tells every mod the display: its size
+and Menu size at connect and in an event, with faces it bakes at the display's scale. Hotkeys and the log
 are declared for the increments that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the

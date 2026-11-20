@@ -221,6 +221,10 @@ TEST_CASE("faces: a budget per mod, the table sealed at warm-up, a face being wr
   }
   CHECK(registry->begin_face(kModB, kFacesEldenNet, 13.0f, slot) == Registered::full);
   CHECK(registry->face_owner(first) == kModA);
+  // A scaled face (D180) keeps its mark for warm-up's bake; the others do not have it.
+  FaceData read;
+  REQUIRE(registry->face(0, read));
+  CHECK_FALSE(read.scaled);
 
   // A face being written while warm-up seals the table is late: its commit fails, and its writer frees it.
   const GraceUiConsumer third = (1ull << 8) | 3;
@@ -433,3 +437,18 @@ TEST_CASE("a face's area, and the atlas's room: EldenNet's faces first, the othe
   registry->abort_face(slot);
   CHECK(registry->area_used() == kAtlasAreaMods);
 }
+
+TEST_CASE("a scaled face keeps its mark and its size at a scale of 1, for warm-up's bake (D180)") {
+  auto registry = std::make_unique<Registry>();
+  std::uint32_t slot = 0;
+  REQUIRE(registry->begin_face(kModA, kFacesPerMod, 16.0f, slot, true) == Registered::ok);
+  registry->face_data(slot) = font_like();
+  REQUIRE(registry->commit_face(slot) != 0);
+  FaceData face;
+  REQUIRE(registry->face(0, face));
+  CHECK(face.scaled);
+  CHECK(face.pixel_height == 16.0f);
+  CHECK(registry->scaled_faces_of(kModA));
+  CHECK_FALSE(registry->scaled_faces_of(kModB));
+}
+

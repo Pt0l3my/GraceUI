@@ -367,6 +367,13 @@ LRESULT CALLBACK window_procedure_ansi(HWND window, UINT message, WPARAM wparam,
 }
 
 bool g_ansi = false;  // the input-ansi scenario: the game's window and message loop are ANSI
+bool g_keep_settings = false;  // the settings-read scenarios: GraceUI starts with what an earlier session kept (D179)
+
+// GraceUI's settings file beside `dll`: user\settings.json in its folder (D84, D179).
+std::wstring settings_file_of(const std::wstring& dll) {
+  const std::size_t slash = dll.find_last_of(L"\\/");
+  return (slash == std::wstring::npos ? std::wstring() : dll.substr(0, slash + 1)) + L"user\\settings.json";
+}
 
 void pump_messages() {
   MSG message;
@@ -752,6 +759,9 @@ struct GraceUi {
   decltype(&GraceUI_Test_GetServer) get_server = nullptr;
 
   bool load(const std::wstring& path) {
+    if (!g_keep_settings) {  // every scenario starts from GraceUI's defaults, unless it reads what another kept (D179)
+      DeleteFileW(settings_file_of(path).c_str());
+    }
     module = LoadLibraryW(path.c_str());
     return module != nullptr && bind();
   }
@@ -2531,7 +2541,8 @@ void run_abi(const std::wstring& dll) {
                        api.has_cap(GRACEUI_CAP_TEXTURES) && api.has_cap(GRACEUI_CAP_FACES) &&
                        api.has_cap(GRACEUI_CAP_INPUT) && api.has_cap(GRACEUI_CAP_WORLD_STATE) &&
                        api.has_cap(GRACEUI_CAP_HOTKEYS) && api.has_cap(GRACEUI_CAP_PAGES) &&
-                       api.has_cap(GRACEUI_CAP_HOLDER_EVENTS) && !api.has_cap("log") &&
+                       api.has_cap(GRACEUI_CAP_HOLDER_EVENTS) && api.has_cap(GRACEUI_CAP_DISPLAY) &&
+                       !api.has_cap("log") &&
                        !api.has_cap("Panels") &&
                        !api.has_cap("") &&
                        !api.has_cap("Notices") && table->has_cap(nullptr, 0) == 0 && table->has_cap(nullptr, 7) == 0;
@@ -2546,7 +2557,7 @@ void run_abi(const std::wstring& dll) {
             GRACEUI_API1_COVERS(table, log),
         "table",
         "%u bytes (this header's %zu), ABI 1.%u, GraceUI %u.%u.%u; every one of the 20 slots %s; majors 0, 2 and "
-        "0xFFFFFFFF %s; has_cap: notices, panels, textures, faces, input, world-state, hotkeys, pages and holder-events yes, log, "
+        "0xFFFFFFFF %s; has_cap: notices, panels, textures, faces, input, world-state, hotkeys, pages, holder-events and display yes, log, "
         "\"Panels\", \"\", \"Notices\" and a null name %s",
         table->size, sizeof(GraceUiApi1), table->abi_minor, GRACEUI_VERSION_MAJOR(table->graceui_version),
         GRACEUI_VERSION_MINOR(table->graceui_version), GRACEUI_VERSION_PATCH(table->graceui_version),
@@ -4798,8 +4809,8 @@ void run_spike(const std::wstring& dll, bool tools_first) {
 
 constexpr std::size_t kHolderEventsKept = 256;  // a holder's events waiting at most (graceui.h)
 
-std::vector<GraceUiEvent> poll_holder(const GraceUiApi1* table, GraceUiConsumer me,
-                                      std::uint32_t size = sizeof(GraceUiEvent)) {
+// At ABI 1.1's event size unless a step names another: a holder's events, without 1.2's display event (D180).
+std::vector<GraceUiEvent> poll_holder(const GraceUiApi1* table, GraceUiConsumer me, std::uint32_t size = 104) {
   std::vector<GraceUiEvent> got;
   for (int i = 0; i < 1000; ++i) {
     GraceUiEvent event{};
@@ -4897,7 +4908,7 @@ void run_holder_events(const std::wstring& dll) {
   const bool cap = table->has_cap(GRACEUI_CAP_HOLDER_EVENTS, std::strlen(GRACEUI_CAP_HOLDER_EVENTS)) != 0;
   const bool covers = GRACEUI_API1_COVERS(table, set_caret) && table->set_caret != nullptr;
   check(made && first.status == GRACEUI_OK && second.status == GRACEUI_OK && third.status == GRACEUI_OK && cap &&
-            covers && table->abi_minor == GRACEUI_ABI1_MINOR && GRACEUI_ABI1_MINOR == 1u,
+            covers && table->abi_minor == GRACEUI_ABI1_MINOR && GRACEUI_ABI1_MINOR >= 1u,
         "holder events: the capability",
         "three mods connected and their panels made (%s); has_cap(\"%s\") %s; the table %u bytes, minor %u, %s "
         "set_caret",
@@ -5203,6 +5214,306 @@ void run_holder_events(const std::wstring& dll) {
   grace.print_log();
 }
 
+// ---- GraceUI's settings kept between sessions (D84, D179): one process changes them in the menu, which writes
+// user\settings.json; the next starts from what it kept, its menu's faces baked at the kept scale, and a reset writes the
+// defaults back (nothing kept); a third finds a file that is not GraceUI's and keeps the defaults.
+
+// A scenario in a process of its own (both defined with the scenario dispatch below).
+std::wstring this_program();
+int run_child(const std::wstring& dll, const wchar_t* scenario, std::wstring program = this_program());
+
+grace::protocol::Json kept_settings(const std::wstring& dll) {
+  const std::vector<unsigned char> bytes = read_file(settings_file_of(dll));
+  return grace::protocol::Json::parse(bytes.begin(), bytes.end(), nullptr, false);
+}
+
+bool no_settings_file(const std::wstring& dll) {
+  return GetFileAttributesW(settings_file_of(dll).c_str()) == INVALID_FILE_ATTRIBUTES;
+}
+
+grace::protocol::Json wait_for_kept(Game& game, const std::wstring& dll, const grace::protocol::Json& want) {
+  grace::protocol::Json kept;
+  for (int i = 0; i < 150; ++i) {
+    kept = kept_settings(dll);
+    if (!kept.is_discarded() && kept.is_object() && kept.value("values", grace::protocol::Json()) == want) {
+      break;
+    }
+    frames(game, 1);
+    Sleep(20);
+  }
+  return kept;
+}
+
+void run_settings_write(const std::wstring& dll) {
+  using grace::protocol::Json;
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  const bool none_at_start = no_settings_file(dll);
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  const bool none_when_opened = no_settings_file(dll);  // nothing changed: nothing written
+  press(window, VK_RIGHT, 0x4D);  // Menu size 1.25 -> 1.30
+  menu = menu_after(game, grace, menu.lists);
+  press(window, VK_DOWN, 0x50);
+  press(window, VK_RIGHT, 0x4D);  // the theme: Grace Clear
+  menu = menu_after(game, grace, menu.lists);
+  press(window, VK_F5, kScanF5);
+  frames(game, 2);
+  const Json want = Json::object({{"ui.scale", 1.3}, {"ui.menu.theme", "clear"}});
+  const Json kept = wait_for_kept(game, dll, want);
+  check(none_at_start && none_when_opened && !kept.is_discarded() && kept.value("graceui_settings", 0) == 1 &&
+            kept.value("values", Json()) == want,
+        "settings: kept for the next session",
+        "no file at the start (%s) or when the menu opened (%s); after → on Menu size and Grace Clear: %s",
+        none_at_start ? "yes" : "NO", none_when_opened ? "yes" : "NO", kept.is_discarded() ? "NO FILE" : kept.dump().c_str());
+}
+
+void run_settings_read(const std::wstring& dll) {
+  using grace::protocol::Json;
+  g_keep_settings = true;
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  const std::string scale = grace.setting("ui.scale");
+  const std::string theme = grace.setting("ui.menu.theme");
+  const bool said = grace.logged("GraceUI's settings: 2 kept from an earlier session, 0 left out");
+  check(scale == "1.3" && theme == "\"clear\"" && std::fabs(menu.baked_scale - 1.3f) < 0.001f &&
+            std::fabs(menu.scale - 1.3f) < 0.001f && said,
+        "settings: the next session starts from them",
+        "ui.scale %s, the theme %s; the menu's faces baked at %.2f and laid out at %.2f; the log %s",
+        scale.c_str(), theme.c_str(), menu.baked_scale, menu.scale, said ? "says so" : "DOES NOT SAY SO");
+  // R on each resets it: nothing differs from its default, so nothing is kept.
+  press(window, 'R', 0x13);
+  menu = menu_after(game, grace, menu.lists);
+  press(window, VK_DOWN, 0x50);
+  press(window, 'R', 0x13);
+  menu = menu_after(game, grace, menu.lists);
+  press(window, VK_F5, kScanF5);
+  frames(game, 2);
+  const Json kept = wait_for_kept(game, dll, Json::object());
+  check(!kept.is_discarded() && kept.value("values", Json(nullptr)) == Json::object() &&
+            grace.setting("ui.scale") == "1.25",
+        "settings: a reset keeps nothing",
+        "after R on both: %s, ui.scale %s", kept.is_discarded() ? "NO FILE" : kept.dump().c_str(),
+        grace.setting("ui.scale").c_str());
+}
+
+void run_settings_bad(const std::wstring& dll) {
+  g_keep_settings = true;
+  const std::wstring file = settings_file_of(dll);
+  CreateDirectoryW(file.substr(0, file.find_last_of(L'\\')).c_str(), nullptr);
+  const HANDLE out = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  const char garbage[] = "{\"values\": {\"ui.scale\": 1.3";  // cut short
+  DWORD written = 0;
+  if (out != INVALID_HANDLE_VALUE) {
+    WriteFile(out, garbage, sizeof garbage - 1, &written, nullptr);
+    CloseHandle(out);
+  }
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  frames(game, 5);
+  const bool said = grace.logged("GraceUI's settings were not read: the file is not GraceUI's settings");
+  check(written > 0 && grace.setting("ui.scale") == "1.25" && said, "settings: a file that is not GraceUI's",
+        "a file cut short: ui.scale %s (the default), the log %s", grace.setting("ui.scale").c_str(),
+        said ? "says it was not read" : "DOES NOT SAY SO");
+  DeleteFileW(file.c_str());
+}
+
+void run_settings(const std::wstring& dll) {
+  DeleteFileW(settings_file_of(dll).c_str());
+  for (const wchar_t* child : {L"settings-write", L"settings-read", L"settings-bad"}) {
+    std::fflush(stdout);
+    const int status = run_child(dll, child);
+    char name[64];
+    std::snprintf(name, sizeof name, "%ls scenario", child);
+    check(status == 0, name, "its process ended with %d", status);
+  }
+  DeleteFileW(settings_file_of(dll).c_str());
+}
+
+// ---- The display (D180): what a mod learns at connect (ui.scale and its default; the size once a swap chain is bound),
+// its GRACEUI_EVENT_DISPLAY once after warm-up and after each change of the size or ui.scale, only at 1.2's event size,
+// and a GRACEUI_FACE_SCALED face baked at its pixel height times the content scale.
+
+GraceUiStatus face_of(const GraceUiApi1* table, GraceUiConsumer me, const std::vector<unsigned char>& data,
+                      std::uint32_t pixels, std::uint32_t flags, std::uint32_t& id) {
+  GraceUiFaceDesc desc{};
+  desc.size = sizeof desc;
+  desc.pixel_height = pixels;
+  desc.data = data.data();
+  desc.data_length = data.size();
+  desc.flags = flags;
+  return table->register_face(me, &desc, &id);
+}
+
+std::vector<GraceUiEvent> displays_of(const GraceUiApi1* table, GraceUiConsumer me,
+                                      std::uint32_t size = sizeof(GraceUiEvent)) {
+  std::vector<GraceUiEvent> out;
+  for (const GraceUiEvent& e : poll_holder(table, me, size)) {
+    if (e.kind == GRACEUI_EVENT_DISPLAY) {
+      out.push_back(e);
+    }
+  }
+  return out;
+}
+
+bool close_to(float a, float b) { return std::fabs(a - b) < 0.002f; }
+
+std::string display_text(const std::vector<GraceUiEvent>& events) {
+  std::string text;
+  for (const GraceUiEvent& e : events) {
+    char one[160];
+    std::snprintf(one, sizeof one, "%ux%u, ui.scale %.2f (default %.2f), scale %.3f, content %.3f, faces %.3f",
+                  e.display_width, e.display_height, e.ui_scale, e.ui_scale_default, e.scale, e.content_scale,
+                  e.faces_scale);
+    text += text.empty() ? "" : "; ";
+    text += one;
+  }
+  return text.empty() ? "none" : text;
+}
+
+void run_display(const std::wstring& dll) {
+  Game game(false, 1280, 720);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  // 1. Connect before the game's swap chain is bound: ui.scale and its default, no size yet. An answer of 1.0's size
+  // is written no further than 1.0 reached.
+  const Connected first = connect(table, request_for("display-mod", GRACEUI_VERSION_PACK(0, 2, 2), "Display mod",
+                                                     "faces display"));
+  GraceUiConnectRequest older_request = request_for("older-mod", GRACEUI_VERSION_PACK(0, 1, 0), "Older mod", "faces");
+  GraceUiConnectAnswer older_answer{};
+  older_answer.ui_scale = 7.0f;  // past a 1.0 answer's end: left alone
+  older_answer.size = 32;
+  const GraceUiStatus older_status = table->connect(&older_request, &older_answer);
+  check(first.status == GRACEUI_OK && close_to(first.answer.ui_scale, 1.25f) &&
+            close_to(first.answer.ui_scale_default, 1.25f) && first.answer.display_width == 0 &&
+            first.answer.display_height == 0 && table->has_cap(GRACEUI_CAP_DISPLAY, std::strlen(GRACEUI_CAP_DISPLAY)) &&
+            older_status == GRACEUI_OK && older_answer.ui_scale == 7.0f && GRACEUI_ABI1_MINOR == 2u,
+        "display: at connect",
+        "ui.scale %.2f, its default %.2f, the size %ux%u (no swap chain bound yet); has_cap(\"display\") %s; a 1.0 "
+        "answer's bytes past its end %s",
+        first.answer.ui_scale, first.answer.ui_scale_default, first.answer.display_width,
+        first.answer.display_height, table->has_cap(GRACEUI_CAP_DISPLAY, 7) != 0 ? "yes" : "NO",
+        older_answer.ui_scale == 7.0f ? "untouched" : "WRITTEN");
+
+  // 2. Before warm-up: a scaled face of 16 px and a plain one; nothing to poll yet.
+  const std::vector<unsigned char> noto = read_file(folder_of_this_program() + L"fonts\\NotoSans-Regular.ttf");
+  std::uint32_t scaled_id = 0;
+  std::uint32_t plain_id = 0;
+  std::uint32_t unknown_id = 0;
+  const GraceUiStatus scaled_status = face_of(table, first.answer.consumer, noto, 16, GRACEUI_FACE_SCALED, scaled_id);
+  const GraceUiStatus plain_status = face_of(table, first.answer.consumer, noto, 16, 0, plain_id);
+  const GraceUiStatus unknown_flag = face_of(table, older_answer.consumer, noto, 16, 2u, unknown_id);
+  const std::vector<GraceUiEvent> early = displays_of(table, first.answer.consumer);
+  start_host(game, grace);
+  for (int i = 0; i < 150 && grace.state().atlas_generation == 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  until_atlas(game, grace);
+
+  // 3. After warm-up: one display event, 1280 by 720 at the default (content 720 / 1080 = 0.667), the scaled face baked
+  // at 16 x 0.667 to a whole pixel (11) and the plain one at 16; a second poll finds nothing; a poll of 1.1's size never gets it.
+  const std::vector<GraceUiEvent> warm = displays_of(table, first.answer.consumer);
+  const std::vector<GraceUiEvent> again = displays_of(table, first.answer.consumer);
+  const std::vector<GraceUiEvent> older_events = displays_of(table, older_answer.consumer, 104);
+  GraceUiGlyphTable scaled_table{};
+  scaled_table.size = sizeof scaled_table;
+  GraceUiGlyphTable plain_table{};
+  plain_table.size = sizeof plain_table;
+  const GraceUiStatus scaled_glyphs = table->glyph_table(first.answer.consumer, scaled_id, &scaled_table);
+  const GraceUiStatus plain_glyphs = table->glyph_table(first.answer.consumer, plain_id, &plain_table);
+  const bool warm_ok = warm.size() == 1 && warm[0].display_width == 1280 && warm[0].display_height == 720 &&
+                       close_to(warm[0].ui_scale, 1.25f) && close_to(warm[0].ui_scale_default, 1.25f) &&
+                       close_to(warm[0].scale, 720.0f / 1080.0f * 1.25f) && close_to(warm[0].content_scale, 720.0f / 1080.0f) &&
+                       close_to(warm[0].faces_scale, 720.0f / 1080.0f);
+  check(scaled_status == GRACEUI_OK && plain_status == GRACEUI_OK && unknown_flag == GRACEUI_REFUSED && early.empty() &&
+            warm_ok && again.empty() && older_events.empty() && scaled_glyphs == GRACEUI_OK &&
+            plain_glyphs == GRACEUI_OK && std::fabs(scaled_table.pixel_height - std::round(16.0f * 720.0f / 1080.0f)) < 0.05f &&
+            std::fabs(plain_table.pixel_height - 16.0f) < 0.05f,
+        "display: after warm-up",
+        "faces: scaled %s, plain %s, an unknown flag %s; before warm-up %s; after it: %s; again: %s; at 1.1's size: %s; "
+        "the scaled face baked at %.2f px, the plain one at %.2f",
+        status_name(scaled_status), status_name(plain_status), status_name(unknown_flag), display_text(early).c_str(),
+        display_text(warm).c_str(), display_text(again).c_str(), display_text(older_events).c_str(),
+        scaled_table.pixel_height, plain_table.pixel_height);
+
+  // 4. ui.scale changed in the menu (1.25 to 1.30): one event, the faces' scale as they were baked.
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  press(window, VK_RIGHT, 0x4D);
+  menu = menu_after(game, grace, menu.lists);
+  press(window, VK_F5, kScanF5);
+  frames(game, 3);
+  std::vector<GraceUiEvent> scaled;
+  for (int i = 0; i < 50 && scaled.empty(); ++i) {
+    scaled = displays_of(table, first.answer.consumer);
+    if (scaled.empty()) {
+      frames(game, 1);
+      Sleep(20);
+    }
+  }
+  check(scaled.size() == 1 && close_to(scaled[0].ui_scale, 1.3f) && close_to(scaled[0].scale, 720.0f / 1080.0f * 1.3f) &&
+            close_to(scaled[0].content_scale, 720.0f / 1080.0f * 1.3f / 1.25f) &&
+            close_to(scaled[0].faces_scale, 720.0f / 1080.0f),
+        "display: a new ui.scale", "→ on Menu size: %s", display_text(scaled).c_str());
+
+  // 5. The game resizes its swap chain: one event with the new size.
+  game.resize(1600, 900);
+  frames(game, 3);
+  std::vector<GraceUiEvent> resized;
+  for (int i = 0; i < 50 && resized.empty(); ++i) {
+    resized = displays_of(table, first.answer.consumer);
+    if (resized.empty()) {
+      frames(game, 1);
+      Sleep(20);
+    }
+  }
+  check(resized.size() == 1 && resized[0].display_width == 1600 && resized[0].display_height == 900 &&
+            close_to(resized[0].scale, 900.0f / 1080.0f * 1.3f) &&
+            close_to(resized[0].content_scale, 900.0f / 1080.0f * 1.3f / 1.25f),
+        "display: a resize", "to 1600x900: %s", display_text(resized).c_str());
+
+  // 6. A mod that connects now: the size in its answer, and the display at its first poll (no scaled face: 0).
+  const Connected late = connect(table, request_for("late-mod", GRACEUI_VERSION_PACK(0, 2, 2), "Late mod", "display"));
+  const std::vector<GraceUiEvent> late_events = displays_of(table, late.answer.consumer);
+  check(late.status == GRACEUI_OK && late.answer.display_width == 1600 && late.answer.display_height == 900 &&
+            close_to(late.answer.ui_scale, 1.3f) && late_events.size() == 1 && late_events[0].faces_scale == 0.0f &&
+            late_events[0].display_width == 1600,
+        "display: a mod that connects later",
+        "its answer: %ux%u, ui.scale %.2f; its first poll: %s", late.answer.display_width, late.answer.display_height,
+        late.answer.ui_scale, display_text(late_events).c_str());
+  DeleteFileW(settings_file_of(dll).c_str());  // the menu kept ui.scale: the next scenario starts from the defaults
+}
+
 void run_absent() {
   GraceUiSysFound found{};
   found.size = sizeof found;
@@ -5405,7 +5716,7 @@ std::wstring this_program() {
 }
 
 // Runs `program` (this one, unless named) for one scenario, in a process of its own; answers its exit code.
-int run_child(const std::wstring& dll, const wchar_t* scenario, std::wstring program = this_program()) {
+int run_child(const std::wstring& dll, const wchar_t* scenario, std::wstring program) {
   std::wstring command = L"\"" + program + L"\" --dll \"" + dll + L"\" --scenario " + scenario;
   STARTUPINFOW startup{};
   startup.cb = sizeof startup;
@@ -5634,6 +5945,21 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"holder-events") {
     std::printf("-- scenario: a holder's events for its mod through ABI 1.1 (D176)\n");
     run_holder_events(dll);
+  } else if (scenario == L"settings") {
+    std::printf("-- scenario: GraceUI's settings kept between sessions (D179)\n");
+    run_settings(dll);
+  } else if (scenario == L"settings-write") {
+    std::printf("-- scenario: the menu changes GraceUI's settings, which are kept (D179)\n");
+    run_settings_write(dll);
+  } else if (scenario == L"settings-read") {
+    std::printf("-- scenario: GraceUI starts from the settings an earlier session kept (D179)\n");
+    run_settings_read(dll);
+  } else if (scenario == L"settings-bad") {
+    std::printf("-- scenario: a settings file that is not GraceUI's (D179)\n");
+    run_settings_bad(dll);
+  } else if (scenario == L"display") {
+    std::printf("-- scenario: the display at connect and in its event, and scaled faces (D180)\n");
+    run_display(dll);
   } else if (scenario == L"absent") {
     std::printf("-- scenario: graceui-sys with GraceUI not installed\n");
     run_absent();
@@ -5661,11 +5987,12 @@ int wmain(int argc, wchar_t** argv) {
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
             L"examples", L"examples-reversed", L"absent", L"menu", L"menu-space", L"spike", L"spike-after",
-            L"holder-events"}) {
+            L"holder-events", L"settings", L"display"}) {
         run(child_scenario, dll, this_program());
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.
       run(L"pages", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
+      DeleteFileW(settings_file_of(folder_of_this_program() + L"..\\GraceUI\\graceui.dll").c_str());  // D179: none left
       // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in
       // GraceUI\graceui.dll, which nothing else loads.
       const std::wstring folder = folder_of_this_program() + L"by-path";

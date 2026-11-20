@@ -35,6 +35,11 @@ class OwnSpace {
   // Rises with every change of a setting, whichever view made it: a view compares it with the last it saw.
   std::uint64_t revision() const noexcept { return revision_; }
 
+  // GraceUI's settings kept between sessions (D84, D179): what to write, and what an earlier session wrote, taken back
+  // before the space is attached (no view has seen the store yet, so nothing is published and the revision stays).
+  protocol::Json saved_settings() const { return store_.saved(); }
+  pages::SettingsStore::Restored restore_settings(const protocol::Json& saved) { return store_.restore(saved); }
+
   // A settings command from the in-game menu: the store's outcome; on a change the settings topic goes out to every
   // view watching it.
   pages::Outcome apply(const protocol::Cmd& command);

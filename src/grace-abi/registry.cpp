@@ -468,7 +468,7 @@ std::uint32_t Registry::textures_ready() const noexcept {
 // ---- Faces.
 
 Registered Registry::begin_face(GraceUiConsumer owner, std::uint32_t budget, float pixel_height,
-                                std::uint32_t& slot) noexcept {
+                                std::uint32_t& slot, bool scaled) noexcept {
   if (owner == 0 || !(pixel_height >= kFacePixelsMin && pixel_height <= kFacePixelsMax)) {
     return Registered::invalid;
   }
@@ -485,6 +485,7 @@ Registered Registry::begin_face(GraceUiConsumer owner, std::uint32_t budget, flo
     if (faces_[i].state.compare_exchange_strong(expected, FaceState::writing, std::memory_order_acq_rel)) {
       faces_[i].owner = owner;
       faces_[i].pixel_height = pixel_height;
+      faces_[i].scaled = scaled;
       ++entry.faces;
       slot = i;
       return Registered::ok;
@@ -559,6 +560,7 @@ bool Registry::face(std::uint32_t index, FaceData& out) const noexcept {
     if (face.state.load(std::memory_order_acquire) == FaceState::committed && index-- == 0) {
       out.id = kFirstModFace + i;
       out.pixel_height = face.pixel_height;
+      out.scaled = face.scaled;
       out.data = &face.data;
       out.ranges = &face.ranges;
       return true;
@@ -573,6 +575,15 @@ std::uint32_t Registry::faces() const noexcept {
     count += face.state.load(std::memory_order_acquire) == FaceState::committed ? 1u : 0u;
   }
   return count;
+}
+
+bool Registry::scaled_faces_of(GraceUiConsumer owner) const noexcept {
+  for (const FaceSlot& face : faces_) {
+    if (face.state.load(std::memory_order_acquire) == FaceState::committed && face.owner == owner && face.scaled) {
+      return true;
+    }
+  }
+  return false;
 }
 
 GraceUiConsumer Registry::face_owner(std::uint32_t face_id) const noexcept {

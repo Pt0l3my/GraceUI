@@ -34,6 +34,7 @@
 #include <type_traits>
 
 #include "counters.h"
+#include "display.h"
 #include "draw_alloc.h"
 #include "draw_atlas.h"
 #include "grace/abi/panels.h"
@@ -603,9 +604,10 @@ bool bake_atlas() {
   QueryPerformanceCounter(&started);
   std::uint32_t mod_faces = session::registry().faces();
   float scale = menu::bake_scale(g.height);  // the menu's faces at the effective scale (§3.13, D167)
+  const float content = display::content_scale(g.height);  // the mods' scaled faces' (D180)
   for (;;) {
     try {
-      atlas::bake(ImGui::GetIO().Fonts, mod_faces, scale);
+      atlas::bake(ImGui::GetIO().Fonts, mod_faces, scale, content);
       break;
     } catch (const ImGuiAssertion& failed) {
       log_line("the shared atlas could not be baked with %u of the mods' faces%s (a Dear ImGui assertion at line %d: "
@@ -639,6 +641,7 @@ bool bake_atlas() {
   log_line("the shared atlas was baked in %lld ms on GraceUI's own thread",
            frequency.QuadPart > 0 ? static_cast<long long>((done.QuadPart - started.QuadPart) * 1000 / frequency.QuadPart)
                                   : 0LL);
+  display::set_faces_scale(content);  // the mods hear of the display from now (D180)
   return true;
 }
 
@@ -812,6 +815,7 @@ void reread_swap_chain() noexcept {
   }
   g.width = desc.Width;
   g.height = desc.Height;
+  display::set_size(g.width, g.height);  // a resize: the mods hear of it (D180)
   g.buffer_count = desc.BufferCount;
   if (desc.Format != g.format) {
     g.format = desc.Format;
@@ -1373,6 +1377,7 @@ void bind(IDXGISwapChain3* swap_chain, ID3D12Device* device, const DXGI_SWAP_CHA
   g.window = window;
   g.width = desc.Width;
   g.height = desc.Height;
+  display::set_size(g.width, g.height);  // a bound swap chain's size (D180)
   g.buffer_count = desc.BufferCount;
   g.format = desc.Format;
   forget_back_buffers();

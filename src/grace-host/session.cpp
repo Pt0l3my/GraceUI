@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <string_view>
 
+#include "display.h"
 #include "grace/abi/text.h"
 #include "grace/host/host.h"
 #include "input.h"
@@ -54,6 +55,7 @@ void allocate() {
   input::make_holder_mail();  // a holder's events for its mod (D176), before any mod has a table
   (void)stores();
   (void)spaces::registry();  // the mods' spaces (D169)
+  (void)spaces::own();  // GraceUI's own settings, with the last session's (D179), before the first connect reads ui.scale
 }
 
 void enter_notice_only(anticheat::Clause clause) noexcept {
@@ -223,13 +225,17 @@ bool log_connect_failure() noexcept {
 bool has_cap(std::string_view name) noexcept {
   return name == GRACEUI_CAP_NOTICES || name == GRACEUI_CAP_PANELS || name == GRACEUI_CAP_TEXTURES ||
          name == GRACEUI_CAP_FACES || name == GRACEUI_CAP_INPUT || name == GRACEUI_CAP_WORLD_STATE ||
-         name == GRACEUI_CAP_HOTKEYS || name == GRACEUI_CAP_PAGES || name == GRACEUI_CAP_HOLDER_EVENTS;
+         name == GRACEUI_CAP_HOTKEYS || name == GRACEUI_CAP_PAGES || name == GRACEUI_CAP_HOLDER_EVENTS ||
+         name == GRACEUI_CAP_DISPLAY;
 }
 
 grace::abi::ConnectResult connect(const grace::abi::ConnectRequest& request) noexcept {
   const grace::abi::ConnectResult result =
       session::consumers().connect(request, session::kVersion, session::inactive());
   const int id_length = static_cast<int>(request.id.size());
+  if (result.status == GRACEUI_OK || result.status == GRACEUI_INACTIVE) {
+    display::connected(result.owner);  // it hears of the display at its first poll of 1.2's size (D180)
+  }
   switch (result.status) {
     case GRACEUI_OK:
       log_line("%.*s %u.%u.%u connected (ABI 1.%u)", id_length, request.id.data(), GRACEUI_VERSION_MAJOR(request.version),

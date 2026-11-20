@@ -25,6 +25,11 @@ grace::spaces::Registry& registry() noexcept;
 grace::spaces::OwnSpace* own() noexcept;
 // Any thread: the same once GraceUI's own thread has loaded it, else null (it never loads it here). For tests to read.
 grace::spaces::OwnSpace* loaded_own() noexcept;
+// GraceUI's thread, after a change of its settings from either view: writes them to user\settings.json for the next
+// session (D84, D179), once a revision.
+void keep_own_settings() noexcept;
+// ui.scale and its default, as the own space holds them, to the display's values (D180).
+void publish_ui_scale(const grace::spaces::OwnSpace& own) noexcept;
 
 // GraceUI's own thread, at every wake: starts or stops the server as it is wanted, answers the browser's views on
 // GraceUI's own space, and answers internal any mod's command left past its deadline.

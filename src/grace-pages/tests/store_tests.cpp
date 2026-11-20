@@ -140,3 +140,38 @@ TEST_CASE("apply takes the framework's commands, their arguments checked by the 
   CHECK(bad.error == ErrorCode::invalid_value);
   CHECK(store.apply(command("lantern.polish", Json::object())).error == ErrorCode::unknown_command);
 }
+
+TEST_CASE("kept between sessions: only what differs from its default, never a secret, taken back as set takes it") {
+  SettingsStore first = store_of("graceui");
+  CHECK(first.saved() == Json::object());  // nothing changed: nothing kept, so a later default reaches the player
+  REQUIRE(first.set("ui.scale", Json(1.3)).ok);
+  REQUIRE(first.set("ui.menu.theme", Json("clear")).ok);
+  const Json kept = first.saved();
+  CHECK(kept == Json::object({{"ui.scale", 1.3}, {"ui.menu.theme", "clear"}}));
+  SettingsStore next = store_of("graceui");
+  const SettingsStore::Restored back = next.restore(kept);
+  CHECK(back.taken == 2);
+  CHECK(back.left_out == 0);
+  CHECK(next.held("ui.scale") == 1.3);
+  CHECK(next.held("ui.menu.theme") == "clear");
+  // A file from another version, or edited by hand: what does not fit is left out, the rest taken.
+  const Json odd = Json::object({{"ui.scale", 9.0}, {"no.such.key", true}, {"ui.menu.theme", 3}, {"ui.menu.reduce_motion", true},
+                                 {"dashboard.lan", true}});
+  SettingsStore third = store_of("graceui");
+  const SettingsStore::Restored mixed = third.restore(odd);
+  CHECK(mixed.taken == 1);
+  CHECK(mixed.left_out == 4);
+  CHECK(third.held("ui.scale") == 1.25);
+  CHECK(third.held("ui.menu.reduce_motion") == true);
+  CHECK(third.restore(Json("not an object")).taken == 0);
+  // A secret is never kept, and never taken back from a file.
+  SettingsStore demo = store_of("demo");
+  for (const auto& s : demo.description().settings) {
+    if (s.type == SettingType::secret) {
+      REQUIRE(demo.set(s.key, Json("a value")).ok);
+      CHECK_FALSE(demo.saved().contains(s.key));
+      SettingsStore again = store_of("demo");
+      CHECK(again.restore(Json::object({{s.key, "a value"}})).left_out == 1);
+    }
+  }
+}

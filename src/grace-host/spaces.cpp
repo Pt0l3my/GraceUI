@@ -6,8 +6,12 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <stdexcept>
 #include <string>
 
+#include "display.h"
 #include "draw_atlas.h"
 #include "grace/serve/server.h"
 #include "grace/spaces/own_space.h"
@@ -24,6 +28,8 @@ constinit std::atomic<grace::spaces::OwnSpace*> g_own{nullptr};  // published on
 constinit bool g_own_failed = false;
 constinit grace::serve::Server* g_server = nullptr;
 constinit std::atomic<bool> g_start_failed{false};
+constinit std::uint64_t g_kept_revision = 1;  // the own space's revision last written to user\settings.json (GraceUI's thread)
+constinit bool g_keep_failed = false;
 constinit std::atomic<bool> g_running{false};
 constinit std::atomic<std::uint32_t> g_port{0};
 
@@ -86,6 +92,90 @@ grace::spaces::Registry& registry() noexcept {
   return *made;
 }
 
+namespace {
+
+// GraceUI's settings kept between sessions (D84, D179): Game\GraceUI\user\settings.json, beside graceui.dll, outside
+// any release. Read and written on GraceUI's own thread only; a line of the log says what happened, never a value.
+constexpr std::uintmax_t kSettingsFileMax = 64 * 1024;
+
+bool settings_path(std::filesystem::path& out) {
+  std::wstring folder;
+  if (!atlas::own_folder(folder)) {
+    return false;
+  }
+  out = std::filesystem::path(folder) / L"user" / L"settings.json";
+  return true;
+}
+
+void restore_saved(grace::spaces::OwnSpace& own) {
+  std::filesystem::path path;
+  std::error_code error;
+  if (!settings_path(path) || !std::filesystem::is_regular_file(path, error)) {
+    return;  // none yet: the defaults
+  }
+  const std::uintmax_t size = std::filesystem::file_size(path, error);
+  if (error || size > kSettingsFileMax) {
+    log_line("GraceUI's settings were not read: the file is %s", error ? "unreadable" : "too large");
+    return;
+  }
+  std::ifstream in(path, std::ios::binary);
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  const protocol::Json file = protocol::Json::parse(text, nullptr, false);
+  if (file.is_discarded() || !file.is_object() || !file.contains("values")) {
+    log_line("GraceUI's settings were not read: the file is not GraceUI's settings; the defaults stand");
+    return;
+  }
+  const grace::pages::SettingsStore::Restored back = own.restore_settings(file["values"]);
+  log_line("GraceUI's settings: %u kept from an earlier session, %u left out", static_cast<unsigned>(back.taken),
+           static_cast<unsigned>(back.left_out));
+}
+
+}  // namespace
+
+void publish_ui_scale(const grace::spaces::OwnSpace& own) noexcept {
+  const protocol::Json& value = own.store().held("ui.scale");
+  const protocol::Setting* setting = own.store().find("ui.scale");
+  const double default_value = setting != nullptr && setting->default_.is_number() ? setting->default_.get<double>() : 1.0;
+  display::set_ui_scale(static_cast<float>(value.is_number() ? value.get<double>() : default_value),
+                        static_cast<float>(default_value));
+}
+
+void keep_own_settings() noexcept {
+  grace::spaces::OwnSpace* own = g_own.load(std::memory_order_acquire);
+  if (own == nullptr || own->revision() == g_kept_revision) {
+    return;
+  }
+  g_kept_revision = own->revision();
+  try {
+    std::filesystem::path path;
+    if (!settings_path(path)) {
+      throw std::runtime_error("no folder");
+    }
+    std::error_code error;
+    std::filesystem::create_directories(path.parent_path(), error);
+    std::filesystem::path partial = path;
+    partial += L".partial";
+    {
+      std::ofstream out(partial, std::ios::binary | std::ios::trunc);
+      const protocol::Json file = {{"graceui_settings", 1}, {"values", own->saved_settings()}};
+      out << file.dump(2) << '\n';
+      if (!out.flush()) {
+        throw std::runtime_error("not written");
+      }
+    }
+    // Whole or not at all: the new file takes the old one's place in one step.
+    if (MoveFileExW(partial.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == FALSE) {
+      throw std::runtime_error("not replaced");
+    }
+    g_keep_failed = false;
+  } catch (...) {
+    if (!g_keep_failed) {
+      log_line("GraceUI's settings could not be kept for the next session (its user folder is not writable)");
+    }
+    g_keep_failed = true;
+  }
+}
+
 grace::spaces::OwnSpace* own() noexcept {
   if (g_own.load(std::memory_order_acquire) == nullptr && !g_own_failed) {
     try {
@@ -97,6 +187,8 @@ grace::spaces::OwnSpace* own() noexcept {
         delete own;
         return nullptr;
       }
+      restore_saved(*own);  // before any view or bake reads the store
+      publish_ui_scale(*own);
       g_own.store(own, std::memory_order_release);
     } catch (...) {
       g_own_failed = true;

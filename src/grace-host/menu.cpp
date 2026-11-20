@@ -390,6 +390,8 @@ void take_effects(State& m) {
   g_clear_theme.store(m.clear, std::memory_order_relaxed);
   own_view(m).view.set_values(store.values());
   m.revision = own_space().revision();
+  spaces::publish_ui_scale(own_space());  // the mods hear of a new ui.scale (D180)
+  spaces::keep_own_settings();  // for the next session (D179): only after a change
 }
 
 std::string key_of(const grace::protocol::Cmd& command) {
@@ -629,15 +631,13 @@ void pad_inputs(std::uint32_t generation) noexcept {
 
 namespace {
 
-// ui.scale's default as GraceUI's own space describes it: the scale of a bake before the menu has read its settings
-// (GraceUI's thread, which reads them too). 1 if the space does not load.
-float default_ui_scale() noexcept {
+// ui.scale as GraceUI's own store holds it, the last session's if it kept one (D179), else its default: the scale of a
+// bake before the menu has read its settings (GraceUI's thread, which reads them too). 1 if the space does not load.
+float stored_ui_scale() noexcept {
   try {
-    if (const grace::pages::SettingsStore& store = own_space().store(); const grace::protocol::Setting* setting =
-                                                                             store.find("ui.scale")) {
-      if (setting->default_.is_number()) {
-        return static_cast<float>(setting->default_.get<double>());
-      }
+    const grace::protocol::Json& scale = own_space().store().held("ui.scale");
+    if (scale.is_number()) {
+      return static_cast<float>(scale.get<double>());
     }
   } catch (...) {
   }
@@ -651,7 +651,7 @@ bool clear_theme() noexcept { return g_clear_theme.load(std::memory_order_relaxe
 float bake_scale(std::uint32_t height) noexcept {
   float ui_scale = g_ui_scale.load(std::memory_order_relaxed);
   if (ui_scale <= 0.0f) {
-    ui_scale = default_ui_scale();
+    ui_scale = stored_ui_scale();
   }
   const float scale = (height > 0 ? static_cast<float>(height) : 1080.0f) / 1080.0f * ui_scale;
   return scale < 0.5f ? 0.5f : scale > 4.0f ? 4.0f : scale;
