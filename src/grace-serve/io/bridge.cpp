@@ -575,6 +575,10 @@ void Engine::command(Connection& c, protocol::Cmd& cmd) {
     send_result_error(c, *port, cmd.id, protocol::ErrorCode::unknown_command);
     return;
   }
+  if (!confirmed(port->description, cmd.name, cmd.args)) {
+    send_result_error(c, *port, cmd.id, protocol::ErrorCode::confirm_required);  // §7.3, D173
+    return;
+  }
   bool full = false;
   {
     std::lock_guard lock(port->mutex);

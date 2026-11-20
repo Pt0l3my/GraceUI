@@ -446,7 +446,8 @@ std::vector<Registry::GameSpace> Registry::game_spaces() const {
   std::vector<GameSpace> out;
   for (const auto& space : spaces_) {
     if ((space->views & kViewGame) != 0) {
-      out.push_back(GameSpace{space->id, space->description.info.name, space->pages, space->settings});
+      out.push_back(GameSpace{space->id, space->description.info.name, space->description.info.increment, space->pages,
+                              space->settings});
     }
   }
   return out;
@@ -500,29 +501,47 @@ bool Registry::game_state(std::string_view space_id, std::string_view topic, std
 }
 
 bool Registry::game_command(std::string_view space_id, protocol::Cmd command, std::uint64_t& ticket) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  for (const auto& space : spaces_) {
-    if (space->id != space_id) {
-      continue;
+  bool answered = false;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& space : spaces_) {
+      if (space->id != space_id) {
+        continue;
+      }
+      const auto& declared = space->description.commands;
+      const bool known = std::find(declared.begin(), declared.end(), command.name) != declared.end();
+      if (!known || !serve::confirmed(space->description, command.name, command.args)) {
+        protocol::Result refused;  // as the server answers a view's (invariant 3, §7.3): the mod never sees it
+        refused.space = space->id;
+        refused.id = command.id;
+        refused.error = known ? protocol::ErrorCode::confirm_required : protocol::ErrorCode::unknown_command;
+        ticket = next_reply_++;
+        game_results_.push_back(GameResult{ticket, std::move(refused)});
+        answered = true;
+        break;
+      }
+      if (pending_.size() >= kMaxPending) {
+        return false;
+      }
+      command.space = space->id;
+      Pending pending;
+      pending.reply = next_reply_++;
+      pending.owner = space->owner;
+      pending.deadline = std::chrono::steady_clock::now() + kAnswerDeadline;
+      pending.game = true;
+      pending.id = command.id;
+      pending_.push_back(pending);
+      std::string frame;
+      protocol::encode_text(protocol::Message(std::move(command)), frame);
+      space->internal.push_back(Space::Internal{EventKind::command, std::move(frame), pending.reply});
+      ticket = pending.reply;
+      return true;
     }
-    if (pending_.size() >= kMaxPending) {
-      return false;
-    }
-    command.space = space->id;
-    Pending pending;
-    pending.reply = next_reply_++;
-    pending.owner = space->owner;
-    pending.deadline = std::chrono::steady_clock::now() + kAnswerDeadline;
-    pending.game = true;
-    pending.id = command.id;
-    pending_.push_back(pending);
-    std::string frame;
-    protocol::encode_text(protocol::Message(std::move(command)), frame);
-    space->internal.push_back(Space::Internal{EventKind::command, std::move(frame), pending.reply});
-    ticket = pending.reply;
-    return true;
   }
-  return false;
+  if (answered) {
+    wake_game();
+  }
+  return answered;
 }
 
 std::vector<Registry::GameResult> Registry::take_game_results() {

@@ -191,7 +191,7 @@ TEST_CASE("a command left unanswered is answered internal after the deadline, wi
   auto view = fixture.join();
   REQUIRE(view != nullptr);
   REQUIRE(view->send_json(frame("cmd", {{"space", "demo"}, {"id", 5}, {"name", "lantern.clear_log"},
-                                        {"args", Json::object()}})));
+                                        {"args", Json::object({{"confirm", true}})}})));
   const Polled command = wait_event(registry);
   REQUIRE(command.kind == EventKind::command);
   CHECK(registry.expire(std::chrono::steady_clock::now()) == 0);
@@ -272,7 +272,7 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
   REQUIRE(result);
   CHECK((*result)["error"] == "not_now");
   REQUIRE(view->send_json(frame("cmd", {{"space", "graceui"}, {"id", 12}, {"name", "dashboard.disconnect"},
-                                        {"args", Json::object()}})));
+                                        {"args", Json::object({{"confirm", true}})}})));
   result = serve_until("result");
   REQUIRE(result);
   CHECK((*result)["ok"] == true);
@@ -379,4 +379,29 @@ TEST_CASE("the menu's command left unanswered: internal after the deadline, in t
   REQUIRE(results.size() == 1);
   CHECK(results[0].ticket == ticket);
   CHECK(results[0].result.error == protocol::ErrorCode::internal);
+}
+
+TEST_CASE("the menu's command is held to the server's rules: declared, and a destructive one confirmed (D173)") {
+  spaces::Registry registry;
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame), why) == Status::ok);
+  std::uint64_t unknown = 0;
+  std::uint64_t unconfirmed = 0;
+  std::uint64_t confirmed = 0;
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 1, "lantern.smoke", Json::object()}, unknown));
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 2, "lantern.clear_log", Json::object()}, unconfirmed));
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 3, "lantern.clear_log",
+                                                      Json::object({{"confirm", true}})}, confirmed));
+  const Polled command = poll(registry);  // the confirmed one alone reaches the mod
+  REQUIRE(command.kind == EventKind::command);
+  CHECK(command.reply == confirmed);
+  CHECK(poll(registry).kind == EventKind::none);
+  const auto results = registry.take_game_results();
+  REQUIRE(results.size() == 2);
+  CHECK(results[0].ticket == unknown);
+  CHECK(results[0].result.error == protocol::ErrorCode::unknown_command);
+  CHECK(results[1].ticket == unconfirmed);
+  CHECK(results[1].result.error == protocol::ErrorCode::confirm_required);
 }

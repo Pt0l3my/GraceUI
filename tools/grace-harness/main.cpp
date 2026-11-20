@@ -47,6 +47,17 @@
 
 namespace {
 
+// The GraceUI this build is (the project's version), for the floors and the words that name it.
+constexpr std::uint32_t kBuildVersion = GRACEUI_VERSION_PACK(GRACE_BUILD_MAJOR, GRACE_BUILD_MINOR, GRACE_BUILD_PATCH);
+constexpr std::uint32_t kNextPatch = GRACEUI_VERSION_PACK(GRACE_BUILD_MAJOR, GRACE_BUILD_MINOR, GRACE_BUILD_PATCH + 1);
+constexpr std::uint32_t kNextMinor = GRACEUI_VERSION_PACK(GRACE_BUILD_MAJOR, GRACE_BUILD_MINOR + 1, 0);
+constexpr std::uint32_t kNextMajor = GRACEUI_VERSION_PACK(GRACE_BUILD_MAJOR + 1, 0, 0);
+
+std::string version_words(std::uint32_t packed) {
+  return std::to_string(GRACEUI_VERSION_MAJOR(packed)) + "." + std::to_string(GRACEUI_VERSION_MINOR(packed)) + "." +
+         std::to_string(GRACEUI_VERSION_PATCH(packed));
+}
+
 // ---- Results
 
 int g_passed = 0;
@@ -1109,7 +1120,7 @@ void run_main(const std::wstring& dll) {
     fatal("graceui.dll did not load, or lacks the test exports (build it with -DGRACEUI_TEST_EXPORTS=ON)");
   }
   const std::uint32_t version = grace.version();
-  check(GRACEUI_VERSION_MAJOR(version) == 0 && GRACEUI_VERSION_MINOR(version) == 1, "version",
+  check(version == kBuildVersion, "version",
         "GraceUI_Version answers %u.%u.%u", GRACEUI_VERSION_MAJOR(version), GRACEUI_VERSION_MINOR(version),
         GRACEUI_VERSION_PATCH(version));
 
@@ -1139,6 +1150,12 @@ void run_main(const std::wstring& dll) {
   check(ok && state.bound == 1 && state.frames_drawn == 0, "untouched",
         "with the test panel off, %s; bound %u, %llu frames drawn", why.c_str(), state.bound,
         static_cast<unsigned long long>(state.frames_drawn));
+  // The atlas is baked on GraceUI's own thread, and the menu's faces make it larger (D167): wait for it, at most 3 s.
+  for (int i = 0; i < 150 && (state.renderer_ready == 0 || state.atlas_ready == 0); ++i) {
+    game.frame(kUntouched, PresentWith::present);
+    Sleep(20);
+    state = grace.state();
+  }
   check(state.queue_method != GRACEUI_TEST_QUEUE_NONE && state.renderer_ready == 1 && state.atlas_ready == 1,
         "warm-up", "present queue: %s; renderer ready %u; atlas %ux%u uploaded %u",
         method_name(state.queue_method), state.renderer_ready, state.atlas_width, state.atlas_height,
@@ -2463,7 +2480,8 @@ void run_abi(const std::wstring& dll) {
                                 consumers[0].floor == GRACEUI_VERSION_PACK(0, 1, 0) &&
                                 std::string_view(consumers[0].caps) == "notices";
   check(example_seen && example_as_named && started.init_threads_started == 1 &&
-            example_text.find("GraceUI 0.1.0, found by name") != std::string::npos && look_of(example_text) >= 2,
+            example_text.find("GraceUI " + version_words(kBuildVersion) + ", found by name") != std::string::npos &&
+            look_of(example_text) >= 2,
         "example mod",
         "hello-notice.dll, loaded before GraceUI, %s (%zu mod connected, as it names itself: %s), and its request "
         "started the host (%u init thread before ours); its notice: \"%s\"",
@@ -2536,10 +2554,11 @@ void run_abi(const std::wstring& dll) {
       {"the example's id", request_for("hello-notice"), GRACEUI_DUPLICATE_ID, 0},
       {"floor 0 (any)", request_for("abi-any", 0), GRACEUI_OK, 0},
       {"floor 0.0.1", request_for("abi-older", GRACEUI_VERSION_PACK(0, 0, 1)), GRACEUI_OK, 0},
-      {"floor 0.1.0", request_for("abi-same"), GRACEUI_OK, 0},
-      {"floor 0.1.1", request_for("abi-patch", GRACEUI_VERSION_PACK(0, 1, 1)), GRACEUI_TOO_OLD, 0},
-      {"floor 0.2.0", request_for("abi-minor", GRACEUI_VERSION_PACK(0, 2, 0)), GRACEUI_TOO_OLD, 0},
-      {"floor 1.0.0", request_for("abi-major", GRACEUI_VERSION_PACK(1, 0, 0)), GRACEUI_TOO_OLD, 0},
+      {"floor 0.1.0", request_for("abi-low"), GRACEUI_OK, 0},
+      {"floor this version", request_for("abi-same", kBuildVersion), GRACEUI_OK, 0},
+      {"floor the next patch", request_for("abi-patch", kNextPatch), GRACEUI_TOO_OLD, 0},
+      {"floor the next minor", request_for("abi-minor", kNextMinor), GRACEUI_TOO_OLD, 0},
+      {"floor the next major", request_for("abi-major", kNextMajor), GRACEUI_TOO_OLD, 0},
       {"id \"ab\"", request_for("ab"), GRACEUI_REFUSED, GRACEUI_REFUSED_ID},
       {"id \"Abi-Upper\"", request_for("Abi-Upper"), GRACEUI_REFUSED, GRACEUI_REFUSED_ID},
       {"an id of 33 bytes", request_for(long_id.c_str()), GRACEUI_REFUSED, GRACEUI_REFUSED_ID},
@@ -2564,7 +2583,7 @@ void run_abi(const std::wstring& dll) {
     if (got.status == GRACEUI_OK) {
       handles.push_back(got.answer.consumer);
     }
-    if (c.status == GRACEUI_TOO_OLD && c.request.floor == GRACEUI_VERSION_PACK(0, 2, 0)) {
+    if (c.status == GRACEUI_TOO_OLD && c.request.floor == kNextMinor) {
       too_old = got.answer;
     }
   }
@@ -2587,15 +2606,16 @@ void run_abi(const std::wstring& dll) {
                             small_request.answer.reason == GRACEUI_REFUSED_ARGUMENT && null_answer == GRACEUI_REFUSED &&
                             short_status == GRACEUI_REFUSED && short_answer.reason == 0xABCDu;
   std::string too_old_notice;
+  const std::string needs =
+      "needs GraceUI " + version_words(kNextMinor) + " or newer; this is GraceUI " + version_words(kBuildVersion);
   for (const GraceUiTestNotice& notice : grace.notices()) {
-    if (notice.owner == 0 && std::strstr(notice.text, "needs GraceUI 0.2.0 or newer; this is GraceUI 0.1.0")) {
+    if (notice.owner == 0 && std::strstr(notice.text, needs.c_str())) {
       too_old_notice = notice.text;
     }
   }
   check(wrong.empty() && arguments_ok && too_old.graceui_version == version &&
-            too_old.floor == GRACEUI_VERSION_PACK(0, 2, 0) &&
-            too_old_notice.rfind("An invented mod needs", 0) == 0 &&
-            grace.logged("abi-minor needs GraceUI 0.2.0 or newer; this is GraceUI 0.1.0"),
+            too_old.floor == kNextMinor && too_old_notice.rfind("An invented mod needs", 0) == 0 &&
+            grace.logged(("abi-minor " + needs).c_str()),
         "connect answers",
         "%zu requests answered as they should%s%s; a null request, one of 60 bytes, a null answer and one of 16 bytes "
         "%s; too_old named GraceUI %u.%u.%u and the floor %u.%u.%u, GraceUI's notice \"%s\" and its log line %s",
@@ -2604,7 +2624,7 @@ void run_abi(const std::wstring& dll) {
         GRACEUI_VERSION_MINOR(too_old.graceui_version), GRACEUI_VERSION_PATCH(too_old.graceui_version),
         GRACEUI_VERSION_MAJOR(too_old.floor), GRACEUI_VERSION_MINOR(too_old.floor),
         GRACEUI_VERSION_PATCH(too_old.floor), too_old_notice.c_str(),
-        grace.logged("abi-minor needs GraceUI 0.2.0") ? "written" : "MISSING");
+        grace.logged(("abi-minor " + needs).c_str()) ? "written" : "MISSING");
   for (const GraceUiConsumer handle : handles) {
     table->disconnect(handle);
   }
@@ -4846,7 +4866,7 @@ void run_examples(const std::wstring& dll, bool notice_first) {
   example_connected(grace, notice_text, notice_owner);
   const std::vector<GraceUiTestConsumer> consumers = grace.consumers();
   check(first_seen && second_seen && consumers.size() == 2 && banner == HELLO_DEBUG_BANNER_CLOSED &&
-            notice_text.find("GraceUI 0.1.0") != std::string::npos,
+            notice_text.find("GraceUI " + version_words(kBuildVersion)) != std::string::npos,
         "two examples",
         "%s, loaded before GraceUI, %s; %s, loaded after the hooks, %s; %zu mods connected; the debug view's banner "
         "\"%s\"; hello-notice's notice \"%s\"",

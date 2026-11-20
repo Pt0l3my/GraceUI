@@ -105,8 +105,10 @@ test("the space refuses what its description refuses", () => {
   assert.equal(refusal(demo, "settings.reset", { scope: "key", target: "lantern.festival" }), "locked");
   assert.equal(refusal(demo, "dashboard.disconnect", {}), "unknown_command");  // not the demo space's
   assert.equal(refusal(graceui, "menu.close", {}), "not_now");  // in game only
-  assert.equal(refusal(graceui, "dashboard.disconnect", {}), "ok");
-  assert.equal(refusal(demo, "lantern.clear_log", {}), "ok");
+  assert.equal(refusal(graceui, "dashboard.disconnect", {}), "confirm_required");  // a destructive action's (D173)
+  assert.equal(refusal(graceui, "dashboard.disconnect", { confirm: true }), "ok");
+  assert.equal(refusal(demo, "lantern.clear_log", {}), "confirm_required");
+  assert.equal(refusal(demo, "lantern.clear_log", { confirm: true }), "ok");
 });
 
 test("a secret is kept only as set, and never published", () => {

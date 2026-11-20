@@ -169,8 +169,12 @@ void load(State& m) {
   view->own = true;
   view->categories = category_links(own.pages());
   std::string why;
-  if (!view->view.load(own.pages(), own.settings(), why) || !view->view.open("graceui.menu")) {
+  if (!view->view.load(own.pages(), own.settings(), why)) {
     throw std::runtime_error("GraceUI's own space does not load");
+  }
+  view->view.set_increment(spaces::increment_text());  // its later pages absent (§4.2.2, D173)
+  if (!view->view.open("graceui.menu")) {
+    throw std::runtime_error("GraceUI's own space has no Menu page");
   }
   m.spaces.push_back(std::move(view));
   m.active = 0;
@@ -252,7 +256,10 @@ bool sync_spaces(State& m) {
       kept->categories = category_links(*listed.pages);
       std::string why;
       const std::string page = kept->categories.empty() ? std::string() : kept->categories[0].page;
-      if (!kept->view.load(*listed.pages, *listed.settings, why) || !kept->view.open(page)) {
+      if (kept->view.load(*listed.pages, *listed.settings, why)) {
+        kept->view.set_increment(listed.increment);  // its later pages absent (§4.2.2, D173)
+      }
+      if (!why.empty() || !kept->view.open(page)) {
         log_line("the menu cannot show %s's space: %s", listed.id.c_str(), why.c_str());
         continue;
       }
@@ -298,6 +305,28 @@ void activate(State& m, const std::string& id, const std::string& page, From fro
   }
 }
 
+// A refusal in words, as §6.7's table gives them and the browser view writes them (refusalWords), when the space gave
+// none of its own.
+const char* refusal_words(grace::protocol::ErrorCode code) noexcept {
+  using grace::protocol::ErrorCode;
+  switch (code) {
+    case ErrorCode::unknown_topic:
+    case ErrorCode::unknown_command:
+    case ErrorCode::unknown_key: return "Not available in this version.";
+    case ErrorCode::invalid_value: return "That value is not allowed here.";
+    case ErrorCode::locked: return "Locked in this version.";
+    case ErrorCode::not_now: return "Not possible right now.";
+    case ErrorCode::busy: return "Already running.";
+    case ErrorCode::confirm_required: return "This needs a confirmation first.";
+    case ErrorCode::rate_limited: return "Too many changes at once: try again in a moment.";
+    case ErrorCode::unauthorised:
+    case ErrorCode::version:
+    case ErrorCode::bad_message:
+    case ErrorCode::internal: break;
+  }
+  return "Something went wrong; the log has the details.";
+}
+
 // What the menu watches came back: the open mod's space's settings (its values, what its inherit tri-states resolve
 // to), and the results of the menu's commands to mods' spaces (a refusal under its row, as GraceUI's own are).
 bool take_from_spaces(State& m) {
@@ -332,7 +361,7 @@ bool take_from_spaces(State& m) {
     }
     if (result.result.error.has_value()) {
       g_refusals.fetch_add(1, std::memory_order_relaxed);
-      std::string detail = "The space refused it.";
+      std::string detail = refusal_words(*result.result.error);
       if (result.result.detail.has_value() && !result.result.detail->empty()) {
         detail = *result.result.detail;  // the space's own words (protocol 1.1)
       }

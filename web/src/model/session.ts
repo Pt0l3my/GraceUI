@@ -10,7 +10,7 @@ import type {
   ErrorCode, Json, JsonObject, PageAction, Rows, Setting, SettingsBody, SpaceInfo, SpacePages, State, Welcome,
 } from "../protocol.ts";
 import { formatValue, isNumeric } from "./format.ts";
-import { pageById, placeOf, railOrder, sectionsOf, tabCount } from "./layout.ts";
+import { pageById, placeOf, railOrder, sectionsOf, tabCount, withinIncrement } from "./layout.ts";
 import type { Answer, Ended, Transport, TransportEvents } from "../transport/transport.ts";
 import { PAGES_TOPIC, SETTINGS_TOPIC } from "../transport/transport.ts";
 
@@ -267,7 +267,7 @@ export class Session {
       return;
     }
     if (state.topic === PAGES_TOPIC) {
-      view.pages.value = state.body as unknown as SpacePages;
+      view.pages.value = withinIncrement(state.body as unknown as SpacePages, view.info.increment);  // §4.2.2, D173
       this.chooseStart();
       return;
     }
@@ -566,6 +566,7 @@ export class Session {
     if (!this.transport) {
       return { ok: false, error: "not_now", local: "Not connected to the game." };
     }
-    return this.transport.command(space, action.command, {});
+    // A destructive action's command carries its confirmation, given by its second press (§7.3, D173).
+    return this.transport.command(space, action.command, action.tone === "destructive" ? { confirm: true } : {});
   }
 }

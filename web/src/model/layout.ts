@@ -68,6 +68,36 @@ export function railOrder(pages: SpacePages): Page[] {
   return out;
 }
 
+function parseIncrement(text: string): [number, number] | null {
+  const match = /^(\d{1,7})\.(\d{1,7})$/.exec(text);
+  return match ? [Number(match[1]), Number(match[2])] : null;
+}
+
+/** The space's page data as its increment shows it (§4.2.2, D173, grace-view's set_increment): a page of a later
+ * increment is absent, from its category (a category left empty goes too) and from related links; a setting whose home
+ * has gone is then neither found nor shown as a shortcut. An increment that does not parse leaves every page. */
+export function withinIncrement(pages: SpacePages, increment: string): SpacePages {
+  const running = parseIncrement(increment);
+  if (!running) {
+    return pages;
+  }
+  const later = (page: Page) => {
+    const ships = page.increment !== undefined ? parseIncrement(page.increment) : null;
+    return ships !== null && (ships[0] > running[0] || (ships[0] === running[0] && ships[1] > running[1]));
+  };
+  const absent = new Set(pages.pages.filter(later).map((p) => p.id));
+  if (absent.size === 0) {
+    return pages;
+  }
+  return {
+    ...pages,
+    categories: pages.categories
+      .map((c) => ({ ...c, pages: c.pages.filter((id) => !absent.has(id)) }))
+      .filter((c) => c.pages.length > 0),
+    pages: pages.pages.filter((p) => !absent.has(p.id)).map((p) => ({ ...p, related: p.related.filter((id) => !absent.has(id)) })),
+  };
+}
+
 export function pageById(pages: SpacePages, id: string): Page | undefined {
   return pages.pages.find((p) => p.id === id);
 }

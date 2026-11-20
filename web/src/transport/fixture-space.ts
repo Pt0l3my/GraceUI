@@ -174,6 +174,11 @@ export class FixtureSpace {
     if (IN_GAME_ONLY.has(name)) {
       return refuse("not_now");
     }
+    const destructive = this.data.pages.pages.some((p) => (p.actions ?? []).some(
+      (a) => a.command === name && a.tone === "destructive"));
+    if (destructive && args.confirm !== true) {
+      return refuse("confirm_required");  // as the server refuses it (§7.3, D173)
+    }
     if (name === "settings.set") {
       const key = args.key;
       if (typeof key !== "string" || !("value" in args)) {

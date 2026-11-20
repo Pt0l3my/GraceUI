@@ -53,7 +53,8 @@ target_include_directories(grace_dev_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # The layout tests' fake face (dump.h says why).
 target_include_directories(grace_dev_core PRIVATE ${CMAKE_SOURCE_DIR}/src/grace-view/tests)
 target_link_libraries(grace_dev_core PUBLIC grace_serve grace_protocol grace_pages grace_view grace_draw)
-target_compile_definitions(grace_dev_core PUBLIC GRACE_DEV_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(grace_dev_core PUBLIC GRACE_DEV_VERSION="${PROJECT_VERSION}"
+  GRACE_DEV_INCREMENT="${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}")
 gu_own_code(grace_dev_core)
 
 add_executable(grace_dev main.cpp)

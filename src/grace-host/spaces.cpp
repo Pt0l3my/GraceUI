@@ -27,11 +27,6 @@ constinit std::atomic<bool> g_start_failed{false};
 constinit std::atomic<bool> g_running{false};
 constinit std::atomic<std::uint32_t> g_port{0};
 
-std::string version_text() {
-  return std::to_string(GRACEUI_BUILD_MAJOR) + "." + std::to_string(GRACEUI_BUILD_MINOR) + "." +
-         std::to_string(GRACEUI_BUILD_PATCH);
-}
-
 void server_log(grace::serve::LogLevel, std::string_view line) {
   log_line("browser view: %.*s", static_cast<int>(line.size()), line.data());
 }
@@ -70,6 +65,15 @@ void start(const grace::spaces::OwnSpace& own) {
 }
 
 }  // namespace
+
+std::string version_text() {
+  return std::to_string(GRACEUI_BUILD_MAJOR) + "." + std::to_string(GRACEUI_BUILD_MINOR) + "." +
+         std::to_string(GRACEUI_BUILD_PATCH);
+}
+
+std::string increment_text() {
+  return std::to_string(GRACEUI_BUILD_MAJOR) + "." + std::to_string(GRACEUI_BUILD_MINOR);
+}
 
 grace::spaces::Registry& registry() noexcept {
   static grace::spaces::Registry* const made = [] {

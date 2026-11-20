@@ -4,7 +4,7 @@
 // place on its home page.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { orderLine, pageById, placeOf, railOrder, tabCount } from "../../src/model/layout.ts";
+import { orderLine, pageById, placeOf, railOrder, tabCount, withinIncrement } from "../../src/model/layout.ts";
 import { builtinSpaces, goldenLines } from "../support/fixtures.ts";
 
 test("every page's rows in grace-view's order, every section and Advanced open (§9.3)", () => {
@@ -45,4 +45,14 @@ test("every setting sits on exactly its home page, on one tab", () => {
   assert.ok(behaviour);
   assert.deepEqual(placeOf(behaviour, "lantern.night_only"), { tab: 1, section: "rhythm", advanced: true });
   assert.deepEqual(placeOf(behaviour, "lantern.oil_token"), { tab: 2, section: "keeper", advanced: false });
+});
+
+test("a page of a later increment is absent, as grace-view's set_increment leaves it (§4.2.2, D173)", () => {
+  const own = builtinSpaces()[0]!.pages;
+  const shown = withinIncrement(own, "0.2");
+  assert.deepEqual(shown.pages.map((p) => p.id), ["graceui.menu", "graceui.browser", "graceui.about"]);
+  assert.deepEqual(shown.categories.map((c) => c.pages), [["graceui.menu", "graceui.browser", "graceui.about"]]);
+  assert.ok(shown.pages.every((p) => p.related.every((id) => shown.pages.some((q) => q.id === id))));
+  assert.equal(withinIncrement(own, "0.6").pages.length, own.pages.length);
+  assert.equal(withinIncrement(own, "").pages.length, own.pages.length, "an increment that does not parse hides nothing");
 });

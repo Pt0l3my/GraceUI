@@ -86,7 +86,13 @@ class PageView {
   void set_values(const protocol::Json& values);
   // What each inherit tri-state on inherit resolves to (the settings body's `inherited`, D163), shown faint beside it.
   void set_inherited(const std::vector<protocol::InheritedValue>& inherited);
-  // Opens a page (its first tab), focus on its first control; false for no such page.
+  // The increment the space runs ("0.2", as its registration names it): a page of a later increment is absent, from the
+  // rail, Page Up and Page Down, search, related links and shortcuts, until that increment (§4.2.2, D173). Empty, the
+  // default: every page is present.
+  void set_increment(std::string_view increment);
+  // Whether a page is present in the space's increment.
+  bool present(std::string_view page_id) const;
+  // Opens a page (its first tab), focus on its first control; false for no such page, or one absent.
   bool open(std::string_view page_id);
 
   // The frame and the open page at `viewport`, drawn with `fonts`' faces, into `out` (cleared first). It keeps the
@@ -121,6 +127,8 @@ class PageView {
   const protocol::Json& value(std::string_view key) const;
   // A value as the view writes it ("2.5 s", "1.00×", "On", a choice's label).
   std::string format(std::string_view key, const protocol::Json& value) const;
+  // A row's availability badge in §4.7's words, or empty: none for live, and "later" replaces the control instead.
+  std::string availability_badge(const protocol::Setting& setting) const;
 
  private:
   enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related };
@@ -166,6 +174,7 @@ class PageView {
   std::size_t page_focus_ = 0;
   std::string confirming_;  // a destructive action's id, waiting for its second press
   float scroll_ = 0;
+  std::set<std::string, std::less<>> absent_;         // pages of a later increment (set_increment)
   protocol::Json null_;                               // a key the space does not have
   std::vector<protocol::PageSection> no_sections_;    // a page with neither tabs nor sections
 };

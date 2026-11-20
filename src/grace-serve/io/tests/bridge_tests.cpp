@@ -227,6 +227,15 @@ TEST_CASE("per-space isolation: a page reaches only the spaces welcome named, an
   CHECK(answer["ok"] == true);
   CHECK(fixture.graceui->commands() == std::vector<std::string>{"menu.close"});
   CHECK(fixture.demo->commands() == std::vector<std::string>{"lantern.trim"});
+  // A destructive action's command without its confirmation is refused, and the space never hears it (§7.3, D173).
+  answer = error_of(cmd("demo", "lantern.clear_log", 13));
+  CHECK(answer["error"] == "confirm_required");
+  answer = error_of(cmd("demo", "lantern.clear_log", 14, {{"confirm", "yes"}}));
+  CHECK(answer["error"] == "confirm_required");
+  CHECK(fixture.demo->commands() == std::vector<std::string>{"lantern.trim"});
+  answer = error_of(cmd("demo", "lantern.clear_log", 15, {{"confirm", true}}));
+  CHECK(answer["ok"] == true);
+  CHECK(fixture.demo->commands() == std::vector<std::string>{"lantern.trim", "lantern.clear_log"});
 }
 
 TEST_CASE("a space's state and rows reach the connections that watch them, from the row each asks") {
@@ -587,7 +596,7 @@ TEST_CASE("dashboard.disconnect: the space's answer, then a new cookie and every
   const std::unique_ptr<WsClient> other = fixture.join();
   WsClient ws;
   REQUIRE(ws.join(fixture.port, old_cookie, fixture.ticket(old_cookie)));
-  ws.send_json(cmd("graceui", "dashboard.disconnect", 3));
+  ws.send_json(cmd("graceui", "dashboard.disconnect", 3, {{"confirm", true}}));
   const std::optional<Json> result = ws.next_of("result");
   REQUIRE(result.has_value());
   CHECK((*result)["ok"] == true);

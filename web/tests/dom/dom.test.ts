@@ -85,6 +85,12 @@ function allPages(): { space: string; category: string; page: string; name: stri
   })));
 }
 
+/** Both spaces as an increment would show them in which every page has shipped (0.6), for the tests that visit every
+ * page; the default, 0.2, leaves the later ones out (§4.2.2, D173). */
+function everyPage(): FixtureSpaceData[] {
+  return builtinSpaces().map((s) => ({ ...s, increment: "0.6" }));
+}
+
 describe("the browser view, built", { skip: built ? false : "build dist/ first (npm run build)" }, () => {
   let browser: PwBrowser;
   let host: FakeHost;
@@ -106,7 +112,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
   }
 
   test("every page of both spaces renders, in both themes, with no error, no CSP violation and every text 4.5:1", async () => {
-    const { page, problems, requests, close } = await fresh();
+    const { page, problems, requests, close } = await fresh(everyPage());
     try {
       // The check itself finds a text too faint: ink.off, which the theme keeps for what is disabled, never for text.
       await page.evaluate(() => {
@@ -176,7 +182,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
   });
 
   test("each page's rows in grace-view's order (the parity golden, §9.3)", async () => {
-    const { page, close } = await fresh();
+    const { page, close } = await fresh(everyPage());
     try {
       const golden = goldenLines("rows-order.txt");
       const ours: string[] = [];
@@ -298,7 +304,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
         await page.waitForTimeout(50);
       }
       assert.equal(sent().length, 1);
-      assert.deepEqual(sent()[0]?.args, {});
+      assert.deepEqual(sent()[0]?.args, { confirm: true });  // its confirmation, which the server requires (D173)
     } finally {
       await close();
     }
@@ -404,6 +410,18 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.deepEqual(host.received.filter((f) => f.t === "cmd").at(-1),
                        { v: 1, t: "cmd", space: "demo", id: 5, name: "settings.reset",
                          args: { scope: "key", target: "lantern.enabled" } });
+    } finally {
+      await close();
+    }
+  });
+
+  test("a page of a later increment is absent from the rail (§4.2.2, D173)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "graceui", "graceui.menu");
+      assert.equal(await page.locator("[data-rail='page:graceui.about']").count(), 1);
+      assert.equal(await page.locator("[data-rail='page:graceui.hotkeys']").count(), 0);  // ships in 0.6
+      assert.equal(await page.locator("[data-rail='page:graceui.compatibility']").count(), 0);
     } finally {
       await close();
     }

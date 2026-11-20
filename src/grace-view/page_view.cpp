@@ -188,9 +188,59 @@ void PageView::set_values(const Json& values) {
   }
 }
 
+namespace {
+
+// "0.6" as (0, 6); false for anything else.
+bool parse_increment(std::string_view text, std::pair<unsigned, unsigned>& out) {
+  const std::size_t dot = text.find('.');
+  if (dot == std::string_view::npos || dot == 0 || dot + 1 >= text.size() || text.size() > 16) {
+    return false;
+  }
+  unsigned parts[2] = {0, 0};
+  for (int part = 0; part < 2; ++part) {
+    const std::string_view digits = part == 0 ? text.substr(0, dot) : text.substr(dot + 1);
+    for (const char ch : digits) {
+      if (ch < '0' || ch > '9') {
+        return false;
+      }
+      parts[part] = parts[part] * 10 + static_cast<unsigned>(ch - '0');
+    }
+  }
+  out = {parts[0], parts[1]};
+  return true;
+}
+
+}  // namespace
+
+void PageView::set_increment(std::string_view increment) {
+  absent_.clear();
+  std::pair<unsigned, unsigned> running{};
+  if (parse_increment(increment, running)) {
+    for (const protocol::Page& page : pages_.pages) {
+      std::pair<unsigned, unsigned> ships{};
+      if (page.increment && parse_increment(*page.increment, ships) && ships > running) {
+        absent_.insert(page.id);
+      }
+    }
+  }
+  if (!pages_.pages.empty() && !present(pages_.pages[page_].id)) {
+    for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
+      if (present(pages_.pages[p].id)) {
+        page_ = p;  // the open page has gone: the first present one
+        tab_ = 0;
+        page_focus_ = 0;
+        break;
+      }
+    }
+  }
+  rebuild();
+}
+
+bool PageView::present(std::string_view page_id) const { return absent_.find(page_id) == absent_.end(); }
+
 bool PageView::open(std::string_view page_id) {
   for (std::size_t i = 0; i < pages_.pages.size(); ++i) {
-    if (pages_.pages[i].id == page_id) {
+    if (pages_.pages[i].id == page_id && present(page_id)) {
       page_ = i;
       tab_ = 0;
       page_focus_ = 0;
@@ -265,11 +315,15 @@ void PageView::rebuild() {
   }
   const std::string& category = current().category;
   for (std::size_t c = 0; c < pages_.categories.size(); ++c) {
+    const auto& listed = pages_.categories[c].pages;
+    if (std::none_of(listed.begin(), listed.end(), [&](const std::string& id) { return present(id); })) {
+      continue;  // every page of it ships in a later increment
+    }
     rail_.push_back({Kind::category, c});
     if (pages_.categories[c].id == category) {  // the accordion: the open category's pages
       for (const std::string& id : pages_.categories[c].pages) {
         for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
-          if (pages_.pages[p].id == id) {
+          if (pages_.pages[p].id == id && present(id)) {
             rail_.push_back({Kind::page, p});
           }
         }
@@ -297,6 +351,9 @@ void PageView::rebuild() {
     const auto add_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
       for (const protocol::PageBlock& block : blocks) {
         for (const std::string& key : block.keys.value_or(std::vector<std::string>{})) {
+          if (block.kind == protocol::BlockKind::shortcuts && !present(settings_[by_key_.at(key)].home)) {
+            continue;  // a shortcut to a page of a later increment
+          }
           focus_.push_back({block.kind == protocol::BlockKind::shortcuts ? FocusKind::shortcut : FocusKind::setting, key,
                             by_key_.at(key)});
         }
@@ -311,6 +368,9 @@ void PageView::rebuild() {
     }
   }
   for (std::size_t r = 0; r < page.related.size(); ++r) {
+    if (!present(page.related[r])) {
+      continue;
+    }
     focus_.push_back({FocusKind::related, page.related[r], r});
   }
   page_focus_ = std::min(page_focus_, focus_.empty() ? std::size_t{0} : focus_.size() - 1);
@@ -400,7 +460,7 @@ std::string PageView::format(std::string_view key, const Json& v) const {
       }
       return "";
     case SettingType::secret:
-      return v.is_string() && !v.get_ref<const std::string&>().empty() ? "Set" : "Not set";
+      return v.is_string() && !v.get_ref<const std::string&>().empty() ? "Set" : "Missing";  // §4.2.4's words
     case SettingType::key_name:
     case SettingType::text:
       return v.is_string() ? v.get<std::string>() : "";
@@ -482,6 +542,24 @@ void PageView::refused(std::string_view key, std::string_view reason) {
   }
 }
 
+std::string PageView::availability_badge(const Setting& st) const {
+  const std::string& a = st.availability;
+  if (a.rfind("check:", 0) == 0) {
+    return "Waits on a game check";
+  }
+  if (a.rfind("version:", 0) == 0) {
+    return "Takes effect in v" + a.substr(8);
+  }
+  if (a.rfind("requires:", 0) == 0) {
+    const std::string key = a.substr(9);
+    const Json& v = value(key);
+    const bool off = (v.is_boolean() && !v.get<bool>()) || (v.is_string() && v.get_ref<const std::string&>() == "off");
+    const Setting* needed = setting(key);
+    return off ? "Off because " + (needed != nullptr ? needed->label : key) + " is off" : std::string();
+  }
+  return a == "inert" ? "No effect in this version" : std::string();
+}
+
 void PageView::restore(std::string_view key, const Json& value) {
   const std::string name(key);
   if (value.is_null()) {
@@ -503,7 +581,9 @@ std::vector<SearchHit> PageView::search(std::string_view query) const {
       match = match || lower(synonym).find(q) != std::string::npos;
     }
     if (match) {
-      hits.push_back({s.key, s.home, s.label});
+      if (present(s.home)) {
+        hits.push_back({s.key, s.home, s.label});
+      }
     }
   }
   std::sort(hits.begin(), hits.end(), [](const SearchHit& a, const SearchHit& b) { return a.label < b.label; });
@@ -546,7 +626,7 @@ Action PageView::input(const Input& in) {
   for (const protocol::Category& c : pages_.categories) {
     for (const std::string& id : c.pages) {
       for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
-        if (pages_.pages[p].id == id) {
+        if (pages_.pages[p].id == id && present(id)) {
           order.push_back(p);
         }
       }
@@ -621,7 +701,7 @@ Action PageView::input(const Input& in) {
           // The accordion: open the category and go to its first page, focus staying on the rail.
           for (const std::string& id : pages_.categories[e.index].pages) {
             for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
-              if (pages_.pages[p].id == id) {
+              if (pages_.pages[p].id == id && present(id)) {
                 return open_index(p, Scope::rail);
               }
             }
@@ -717,7 +797,9 @@ Action PageView::input(const Input& in) {
           action.kind = Action::Kind::command;
           action.command.space = pages_.space;
           action.command.name = a.command;
-          action.command.args = Json::object();
+          // A destructive action's command carries its confirmation, after the second press (§7.3, D173).
+          action.command.args = a.tone == protocol::ActionTone::destructive ? Json::object({{"confirm", true}})
+                                                                            : Json::object();
           return action;
         }
         case FocusKind::tab:
@@ -749,7 +831,7 @@ Action PageView::input(const Input& in) {
         case FocusKind::related: {
           const std::string target = f.kind == FocusKind::shortcut ? settings_[f.index].home : f.id;
           for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
-            if (pages_.pages[p].id == target) {
+            if (pages_.pages[p].id == target && present(target)) {
               Action action = open_index(p, Scope::page);
               if (f.kind == FocusKind::shortcut) {  // the row focused on its home page
                 for (std::size_t i = 0; i < focus_.size(); ++i) {
@@ -965,6 +1047,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
           for (const std::string& key : block.keys.value_or(std::vector<std::string>{})) {
             const Setting& st = settings_[by_key_.at(key)];
             const bool shortcut = block.kind == protocol::BlockKind::shortcuts;
+            if (shortcut && !present(st.home)) {
+              continue;  // a shortcut to a page of a later increment
+            }
             const bool focused_row = page_focus(shortcut ? FocusKind::shortcut : FocusKind::setting, key);
             const auto refusal = refusals_.find(key);
             const float extra = (focused_row ? line_height(TypeRole::ui_sm, s) : 0) +
@@ -988,12 +1073,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               c.text(from, TypeRole::ui_sm, row.x + label_w + std::round(12 * s), label_y + std::round(2 * s),
                      row.w - control_w - label_w - std::round(48 * s), Colour::ink_faint, alpha);
             }
-            if (st.availability != "live" && st.availability != "later") {
-              const char* badge = st.availability.rfind("check:", 0) == 0 ? "Waits on a check"
-                                  : st.availability == "inert"           ? "No effect in this version"
-                                                                         : "Not yet";
+            if (const std::string badge = availability_badge(st); !badge.empty()) {
               c.text(badge, TypeRole::ui_sm, row.x + label_w + std::round(12 * s), label_y + std::round(2 * s),
-                     std::round(200 * s), Colour::ink_faint);
+                     row.w - control_w - label_w - std::round(48 * s), Colour::ink_faint);
             }
             float line_y = y + row_h - std::round(8 * s);
             if (focused_row) {  // the help line opens on focus, and ends with the default (§4.7)
@@ -1132,13 +1214,16 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       y += std::round(16 * s);
     }
     // The Related card at the foot.
-    if (!page.related.empty()) {
+    if (std::any_of(page.related.begin(), page.related.end(), [&](const std::string& id) { return present(id); })) {
       const float top = y;
       const std::size_t card_at = out.items.size();
       y += std::round(16 * s);
       c.text("Related", TypeRole::eyebrow, x0 + card_pad, y, content_w, Colour::gold);
       y += std::round(line_height(TypeRole::eyebrow, s) + 8 * s);
       for (const std::string& link : page.related) {
+        if (!present(link)) {
+          continue;  // a page of a later increment
+        }
         const protocol::Page* target = nullptr;
         for (const protocol::Page& p : pages_.pages) {
           if (p.id == link) {

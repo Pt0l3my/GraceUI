@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace grace::spaces {
 class OwnSpace;
@@ -12,6 +13,10 @@ class Registry;
 }  // namespace grace::spaces
 
 namespace grace::host::spaces {
+
+// GraceUI's version ("0.2.0") and its increment ("0.2"), as its own space names them to the views.
+std::string version_text();
+std::string increment_text();
 
 // Any thread, once the session's stores are made (session::allocate): the mods' spaces.
 grace::spaces::Registry& registry() noexcept;

@@ -36,6 +36,9 @@ struct SpaceDescription {
   protocol::SpaceInfo info;
   std::vector<protocol::TopicInfo> topics;
   std::vector<std::string> commands;
+  // The commands a destructive action of its pages sends: the server refuses one whose args lack `"confirm": true`
+  // with confirm_required, and the space never sees it (§7.3, D173).
+  std::vector<std::string> destructive;
   // The space's page data (space_pages), which the framework's own topic "pages" carries to a view that subscribes to
   // it: the server answers that sub itself, from this, and the space never sees it (D166, D169). Null: no such topic.
   protocol::Json pages;
@@ -47,6 +50,10 @@ inline constexpr std::string_view kPagesTopic = "pages";
 // A description from a space's page data and settings description, as grace-pages and a mod's register_pages give them.
 SpaceDescription describe_space(const protocol::SpacePages& pages, const protocol::SettingsDescription& settings,
                                 std::string version, std::string increment);
+
+// Whether a command may reach its space: one no destructive action sends, or one whose args hold "confirm": true
+// (§7.3, D173). Every view's commands are held to it, the in-game menu's too.
+bool confirmed(const SpaceDescription& description, std::string_view command, const protocol::Json& args) noexcept;
 
 // Where a command's result goes: the connection that sent it (never taken from a payload, §7.2 item 11) and its id.
 struct CommandRef {

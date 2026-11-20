@@ -141,12 +141,14 @@ test("a setting's home: its tab opened and focus asked for its row; Page Up and 
   assert.equal(session.open("demo", "demo.nowhere"), false);
 });
 
-test("a header action sends its command with no arguments, as grace-view's", async () => {
+test("a header action sends its command as grace-view's: a destructive one with its confirmation", async () => {
   const { session, transport } = await started();
   const answer = await session.action("graceui", { id: "disconnect", label: "Disconnect every browser",
                                                    command: "dashboard.disconnect", tone: "destructive" });
   assert.deepEqual(answer, { ok: true });
-  assert.deepEqual(transport.sent, [{ space: "graceui", name: "dashboard.disconnect", args: {} }]);
+  assert.deepEqual(transport.sent, [{ space: "graceui", name: "dashboard.disconnect", args: { confirm: true } }]);
+  assert.deepEqual(await transport.command("graceui", "dashboard.disconnect", {}),
+                   { ok: false, error: "confirm_required" }, "refused without it, as the server refuses it");
 });
 
 test("a topic is watched while shown, and its rows kept to the ring", async () => {

@@ -30,15 +30,22 @@ const EFFECT_WORDS: { [effect: string]: string } = {
   next_launch: "At the next launch",
 };
 
-/** The availability badge, in grace-view's words (page_view.cpp); "later" replaces the control instead. */
-export function availabilityBadge(availability: string): string | null {
-  if (availability === "live" || availability === "later") {
-    return null;
-  }
+/** The availability badge in §4.7's words, as grace-view's (page_view.cpp); none for live, and "later" replaces the
+ * control instead. `valueOf` and `labelOf` read the setting a `requires:` names. */
+export function availabilityBadge(availability: string, valueOf: (key: string) => unknown = () => undefined,
+                                  labelOf: (key: string) => string | undefined = () => undefined): string | null {
   if (availability.startsWith("check:")) {
-    return "Waits on a check";
+    return "Waits on a game check";
   }
-  return availability === "inert" ? "No effect in this version" : "Not yet";
+  if (availability.startsWith("version:")) {
+    return `Takes effect in v${availability.slice(8)}`;
+  }
+  if (availability.startsWith("requires:")) {
+    const key = availability.slice(9);
+    const v = valueOf(key);
+    return v === false || v === "off" ? `Off because ${labelOf(key) ?? key} is off` : null;
+  }
+  return availability === "inert" ? "No effect in this version" : null;
 }
 
 let handledFocus = 0;  // the last focus request a row took (one row answers each)
@@ -351,6 +358,9 @@ export function SettingRow({ space, settingKey, shortcut }: { space: string; set
   const rowKind = shortcut ? "shortcut" : "setting";
   if (shortcut) {
     const home = pages ? pageById(pages, s.home) : undefined;
+    if (pages && !home) {
+      return null;  // a shortcut to a page of a later increment (D173), as grace-view leaves it out
+    }
     return (
       <div ref={row} class="row row--shortcut" data-row={`${rowKind}:${settingKey}`} data-space={space}>
         <div class="row__text">
@@ -373,7 +383,8 @@ export function SettingRow({ space, settingKey, shortcut }: { space: string; set
   const changed = !sameJson(shown, s.default);
   const later = s.availability === "later";
   const disabled = s.locked || later;
-  const badge = availabilityBadge(s.availability);
+  const badge = availabilityBadge(s.availability, (key) => session.shown(space, key),
+                                  (key) => session.setting(space, key)?.label);
   const inherited = s.type === "tri_state" && shown === "inherit"
     ? session.space(space)?.settings.value?.inherited?.find((one) => one.key === settingKey) : undefined;
   const inheritedLink = inherited?.page ? parseLink(space, inherited.page) : undefined;

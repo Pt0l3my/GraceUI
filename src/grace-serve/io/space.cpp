@@ -1,5 +1,6 @@
 // space.cpp: SpacePort (space.h), on the space's own thread: its events from the I/O thread, and what it publishes and
 // answers, encoded here once as WebSocket text frames, so that the I/O thread only routes bytes (D55).
+#include <algorithm>
 #include <utility>
 
 #include "grace/protocol/frame.h"
@@ -59,8 +60,26 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
   description.info.settings_schema = settings.schema;
   description.topics = pages.topics;
   description.commands = pages.commands;
+  for (const protocol::Page& page : pages.pages) {
+    for (const protocol::PageAction& action : page.actions.value_or(std::vector<protocol::PageAction>{})) {
+      if (action.tone == protocol::ActionTone::destructive &&
+          std::find(description.destructive.begin(), description.destructive.end(), action.command) ==
+              description.destructive.end()) {
+        description.destructive.push_back(action.command);
+      }
+    }
+  }
   description.pages = protocol::encode(pages);
   return description;
+}
+
+bool confirmed(const SpaceDescription& description, std::string_view command, const protocol::Json& args) noexcept {
+  if (std::find(description.destructive.begin(), description.destructive.end(), command) ==
+      description.destructive.end()) {
+    return true;
+  }
+  const auto it = args.is_object() ? args.find("confirm") : args.end();
+  return args.is_object() && it != args.end() && it->is_boolean() && it->get<bool>();
 }
 
 SpacePort::SpacePort(std::shared_ptr<detail::Hub> hub, std::shared_ptr<detail::PortState> state) noexcept

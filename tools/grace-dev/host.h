@@ -30,9 +30,9 @@
 
 namespace grace::dev {
 
-// The increment this branch builds (§10), which welcome names for every space grace-dev serves: views show a page from
-// its increment on (§4.2.2). --increment changes it.
-inline constexpr std::string_view kIncrement = "0.2";
+// The increment this build is (§10, the project's version's first two numbers), which welcome names for every space
+// grace-dev serves: views show a page from its increment on (§4.2.2, D173). --increment changes it.
+inline constexpr std::string_view kIncrement = GRACE_DEV_INCREMENT;
 // The scenario's speeds grace-dev takes: from a hundredth to a thousand times as fast.
 inline constexpr double kMinSpeed = 0.01;
 inline constexpr double kMaxSpeed = 1000;

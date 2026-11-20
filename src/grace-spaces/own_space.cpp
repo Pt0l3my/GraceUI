@@ -42,7 +42,11 @@ pages::Outcome OwnSpace::apply(const protocol::Cmd& command) {
 
 void OwnSpace::attach(serve::Server& server, const std::string& version, Hooks hooks, serve::SpaceWake wake) {
   hooks_ = std::move(hooks);
-  port_ = server.add_space(serve::describe_space(pages_, settings_, version, "0.2"), std::move(wake));
+  // Its increment is GraceUI's own, the version's first two numbers ("0.2.0": "0.2").
+  const std::size_t dot = version.find('.');
+  const std::size_t second = dot == std::string::npos ? std::string::npos : version.find('.', dot + 1);
+  port_ = server.add_space(serve::describe_space(pages_, settings_, version, version.substr(0, second)),
+                           std::move(wake));
 }
 
 protocol::SettingsBody OwnSpace::settings_body() const {

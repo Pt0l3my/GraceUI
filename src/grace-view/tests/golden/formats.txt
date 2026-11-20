@@ -17,5 +17,5 @@ demo	lantern.wicks	default=3	right={"key":"lantern.wicks","value":4}|4	left={"ke
 demo	lantern.night_only	default=Off	right={"key":"lantern.night_only","value":true}|On	left={"key":"lantern.night_only","value":true}|On	shift_right={"key":"lantern.night_only","value":true}|On	shift_left={"key":"lantern.night_only","value":true}|On
 demo	lantern.keeper	default=The north keeper	right=none	left=none	shift_right=none	shift_left=none
 demo	lantern.trim_key	default=F9	right=none	left=none	shift_right=none	shift_left=none
-demo	lantern.oil_token	default=Not set	right=none	left=none	shift_right=none	shift_left=none	set=Set	unset=Not set
+demo	lantern.oil_token	default=Missing	right=none	left=none	shift_right=none	shift_left=none	set=Set	unset=Missing
 demo	lantern.festival	default=Off	right=none	left=none	shift_right=none	shift_left=none

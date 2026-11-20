@@ -423,7 +423,7 @@ TEST_CASE("the scenario's reactions: lantern.clear_log empties the log and start
   View view(dev->port());
   view.sub("demo", "lantern.log");
   REQUIRE(seqs(*view.rows("lantern.log")) == std::vector<std::uint64_t>{1, 2, 3});
-  const std::uint32_t id = view.cmd("demo", "lantern.clear_log");
+  const std::uint32_t id = view.cmd("demo", "lantern.clear_log", Json::object({{"confirm", true}}));
   std::optional<Json> answer;
   std::optional<Json> cleared;
   std::optional<Json> fresh;
@@ -478,7 +478,8 @@ TEST_CASE("GraceUI's own commands: dashboard.disconnect renews the session; menu
   REQUIRE(closed.has_value());
   CHECK((*closed)["error"] == "not_now");
   const std::string old_cookie = view.cookie;
-  const std::optional<Json> answer = view.result(view.cmd("graceui", "dashboard.disconnect"));
+  const std::optional<Json> answer =
+      view.result(view.cmd("graceui", "dashboard.disconnect", Json::object({{"confirm", true}})));
   REQUIRE(answer.has_value());
   CHECK((*answer)["ok"] == true);
   const std::optional<Json> bye = view.wait([](const Json& j) { return j["t"] == "bye"; });

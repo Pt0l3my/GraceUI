@@ -112,6 +112,7 @@ TEST_CASE("a destructive action asks for its second press; any other key lets it
   const Action a = press(view, Key::activate);
   REQUIRE(a.kind == Action::Kind::command);
   CHECK(a.command.name == "dashboard.disconnect");
+  CHECK(a.command.args == Json::object({{"confirm", true}}));  // its confirmation, which the server requires (D173)
 }
 
 TEST_CASE("a locked setting does not change; a refusal returns focus with its reason") {
@@ -503,4 +504,27 @@ TEST_CASE("a refused change shows the space's own value again, or the default (D
   view.restore("lantern.brightness", Json());
   CHECK(view.value("lantern.brightness") == Json(0.8));
   CHECK(view.focused() == "setting:lantern.brightness");
+}
+
+TEST_CASE("a page of a later increment is absent: rail, Page Down, search, related links and open (§4.2.2, D173)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  view.set_increment("0.2");
+  CHECK_FALSE(view.present("graceui.hotkeys"));  // 0.6
+  CHECK(view.present("graceui.browser"));        // 0.2
+  CHECK_FALSE(view.open("graceui.mods"));
+  CHECK(view.search("menu key").empty());  // hotkeys.menu lives on Hotkeys, a 0.6 page
+  // Page Down from Menu skips Hotkeys: Browser view, then About past Installed mods and Compatibility.
+  press(view, Key::next_page);
+  CHECK(view.page() == "graceui.browser");
+  press(view, Key::next_page);
+  CHECK(view.page() == "graceui.about");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  const std::string dump = list.dump();
+  CHECK(dump.find("Installed mods") == std::string::npos);  // neither on the rail nor among About's related pages
+  CHECK(dump.find("Compatibility") == std::string::npos);
+  view.set_increment("0.6");
+  CHECK(view.open("graceui.hotkeys"));
+  view.set_increment("");
+  CHECK(view.present("graceui.mods"));
 }

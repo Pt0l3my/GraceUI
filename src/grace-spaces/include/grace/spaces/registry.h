@@ -90,6 +90,7 @@ class Registry {
   struct GameSpace {
     std::string id;
     std::string name;
+    std::string increment;  // as it registered: a page of a later one is absent (D173)
     std::shared_ptr<const protocol::SpacePages> pages;
     std::shared_ptr<const protocol::SettingsDescription> settings;
   };

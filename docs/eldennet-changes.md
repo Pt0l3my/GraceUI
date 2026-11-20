@@ -778,3 +778,15 @@ scenario.json of timed steps, invented content only). grace-dev checks them as `
    every view clears that stream at once; the next rows follow on from that `from_seq`. A batch past a gap with rows in
    it starts the stream over there, as before.
 3. **Nothing breaks**: 1.0 frames are still taken (GraceUI checks the major only); `hello` may say "1.1".
+
+## 29. D166's follow-ups and GraceUI 0.2.0 (2026-11-20, D173, D174)
+
+1. **Destructive commands arrive confirmed**: a command one of EldenNet's destructive actions sends (tone
+   `destructive`) reaches EldenNet's space only with `"confirm": true` in its args; GraceUI refuses one without it
+   `confirm_required`, from the browser and the in-game menu alike. EldenNet may rely on it, and keeps its own checks.
+2. **Pages by increment**: a page whose `increment` is later than the increment EldenNet registers is absent from both
+   views (rail, Page Up and Page Down, search, related links, shortcuts). Register the increment EldenNet's release
+   is, and give each page the increment it ships in; a page with none (a later-version statement page) always shows.
+3. **Words**: a secret reads Set or Missing; availability badges read "Waits on a game check", "Takes effect in
+   v1.5", "Off because … is off" (for `requires:<key>` while that key is off) and "No effect in this version" (inert).
+4. **GraceUI 0.2.0**: the `pages` capability and protocol 1.1 come with it; a floor of 0.2.0 asks for both.

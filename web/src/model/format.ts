@@ -114,7 +114,7 @@ export function formatValue(s: Setting, v: Json | undefined): string {
       return "";
     }
     case "secret":
-      return typeof v === "string" && v.length > 0 ? "Set" : "Not set";
+      return typeof v === "string" && v.length > 0 ? "Set" : "Missing";  // §4.2.4's words
     case "key_name":
     case "text":
       return typeof v === "string" ? v : "";
