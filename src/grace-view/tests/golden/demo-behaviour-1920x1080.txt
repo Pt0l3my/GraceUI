@@ -33,10 +33,10 @@ fill    gold         1812, 265   40x22   r11 clip1
 circle  on.gold      1833, 268   16x16   clip1
 line    rule          292, 320 1560x1    clip1
 text    ink.hi        292, 333   75x22   clip1 glyphs 10 "Brightness"
-text    ink.body     1824, 334   28x20   clip1 glyphs 4 "0.80"
-fill    ground.well  1572, 342  216x4    r2 clip1
-fill    gold         1572, 342  173x4    r2 clip1
-circle  gold.hi      1738, 337   14x14   clip1
+text    ink.body     1812, 334   28x20   clip1 glyphs 4 "0.80"
+fill    ground.well  1584, 342  192x4    r2 clip1
+fill    gold         1584, 342  154x4    r2 clip1
+circle  gold.hi      1731, 337   14x14   clip1
 line    rule          292, 368 1560x1    clip1
 text    ink.hi        292, 381   90x22   clip1 glyphs 11 "Flame colour"
 stroke  edge         1572, 377  280x30   r2 w1 clip1

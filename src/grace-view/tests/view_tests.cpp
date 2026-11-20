@@ -52,14 +52,14 @@ TEST_CASE("the Menu page: focus on its first control, and each key's command") {
   REQUIRE(a.kind == Action::Kind::command);
   CHECK(a.command.space == "graceui");
   CHECK(a.command.name == "settings.set");
-  CHECK(a.command.args == Json::object({{"key", "ui.scale"}, {"value", 1.05}}));
-  CHECK(view.format("ui.scale", view.value("ui.scale")) == "1.05×");
+  CHECK(a.command.args == Json::object({{"key", "ui.scale"}, {"value", 1.3}}));
+  CHECK(view.format("ui.scale", view.value("ui.scale")) == "1.30×");
   a = press(view, Key::right, true);  // ten steps, held to the maximum
   CHECK(a.command.args["value"].get<double>() == doctest::Approx(1.5));
   a = press(view, Key::reset);
   CHECK(a.command.name == "settings.reset");
   CHECK(a.command.args == Json::object({{"scope", "key"}, {"target", "ui.scale"}}));
-  CHECK(view.value("ui.scale").get<double>() == 1.0);
+  CHECK(view.value("ui.scale").get<double>() == 1.25);
   press(view, Key::down);
   CHECK(view.focused() == "setting:ui.menu.theme");
   a = press(view, Key::right);
@@ -362,7 +362,7 @@ TEST_CASE("every setting's value as grace-view writes it, and each press's comma
 TEST_CASE("the Menu page's layout, as its structure dump says (§9.3)") {
   PageView view = loaded("graceui", "graceui.menu");
   DisplayList list;
-  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);  // at 1080 lines, ui.scale's default
   golden("menu-1920x1080.txt", list.dump());
   DisplayList large;
   view.layout(Viewport{1280, 800, 1.5f}, test::fonts(), large);
@@ -371,7 +371,7 @@ TEST_CASE("the Menu page's layout, as its structure dump says (§9.3)") {
   // host draws with: the items name their colours by role, grace-draw's tests).
   view.set_values(Json::object({{"ui.menu.theme", "clear"}}));
   DisplayList again;
-  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), again);
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), again);
   CHECK(again.items.size() == list.items.size() + 1);
   // Every item lies within the display, and the page's within its clip.
   for (const Item& item : list.items) {

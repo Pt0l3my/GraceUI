@@ -238,7 +238,7 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
   REQUIRE(view->send_json(frame("sub", {{"space", "graceui"}, {"id", 1}, {"topic", "settings"}})));
   auto state = serve_until("state");
   REQUIRE(state);
-  CHECK((*state)["body"]["values"]["ui.scale"] == 1.0);
+  CHECK((*state)["body"]["values"]["ui.scale"] == 1.25);
   CHECK((*state)["body"]["changed"].empty());
 
   // The browser sets a value: answered ok, and the topic goes out again.

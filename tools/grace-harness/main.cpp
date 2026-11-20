@@ -4045,10 +4045,12 @@ void run_menu(const std::wstring& dll) {
   }
   const GraceUiTestState warm = grace.state();
   const GraceUiTestMenu faces = grace.menu();
-  check(warm.atlas_ready == 1 && warm.faces_baked == 1 && faces.faces == 11, "menu's faces",
-        "the atlas, %ux%u, holds the notices' face and the menu's %u, one a type role, baked at the effective scale "
-        "(1080 / 1080 x ui.scale 1.00)",
-        warm.atlas_width, warm.atlas_height, faces.faces);
+  check(warm.atlas_ready == 1 && warm.faces_baked == 1 && faces.faces == 11 &&
+            std::fabs(faces.baked_scale - 1.25f) < 0.001f,
+        "menu's faces",
+        "the atlas, %ux%u, holds the notices' face and the menu's %u, one a type role, baked at %.2f, the effective "
+        "scale (1080 / 1080 x ui.scale's default 1.25)",
+        warm.atlas_width, warm.atlas_height, faces.faces, faces.baked_scale);
 
   // 1. F5 opens the menu: the menu holds input (GraceUI's, owner 0), its first list is laid out on GraceUI's thread and
   // drawn; the Menu page, focus on its first control; the press never reaches the game.
@@ -4059,13 +4061,14 @@ void run_menu(const std::wstring& dll) {
   const Frame grace_shot = game.frame_and_read(kInputColour, PresentWith::present);
   check(menu.open == 1 && input.holder_kind == GRACEUI_TEST_KIND_MENU && input.holder_owner == 0 && menu.frames > 0 &&
             std::strcmp(menu.page, "graceui.menu") == 0 && std::strcmp(menu.focused, "setting:ui.scale") == 0 &&
-            g_seen.key_down[VK_F5] + g_seen.key_up[VK_F5] == 0,
+            std::fabs(menu.scale - 1.25f) < 0.001f && g_seen.key_down[VK_F5] + g_seen.key_up[VK_F5] == 0,
         "menu opens",
-        "F5: the menu %s input (holder kind %u, owner %u); %llu lists laid out, %llu frames drawn; page %s, focus %s; "
+        "F5: the menu %s input (holder kind %u, owner %u); %llu lists laid out at %.2f, %llu frames drawn; page %s, "
+        "focus %s; "
         "the last layout took %u us on GraceUI's thread, %u vertices, %u indices, %u commands; F5's messages reaching "
         "the game: %d",
         menu.open != 0 ? "holds" : "DOES NOT HOLD", input.holder_kind, input.holder_owner,
-        static_cast<unsigned long long>(menu.lists), static_cast<unsigned long long>(menu.frames), menu.page,
+        static_cast<unsigned long long>(menu.lists), menu.scale, static_cast<unsigned long long>(menu.frames), menu.page,
         menu.focused, menu.layout_us, menu.vertices, menu.indices, menu.commands,
         g_seen.key_down[VK_F5] + g_seen.key_up[VK_F5]);
   // The page drew: the rail's ground at the left, the page's at the right, neither the game's clear colour.
@@ -4081,7 +4084,7 @@ void run_menu(const std::wstring& dll) {
   press(window, VK_RIGHT, 0x4D);
   menu = menu_after(game, grace, menu.lists);
   const std::string scale = grace.setting("ui.scale");
-  check(scale == "1.05" && std::fabs(menu.scale - 1.05f) < 0.001f && menu.refusals == 0, "menu: a slider",
+  check(scale == "1.3" && std::fabs(menu.scale - 1.3f) < 0.001f && menu.refusals == 0, "menu: a slider",
         "→ on Interface scale: ui.scale %s, laid out again at %.2f", scale.c_str(), menu.scale);
 
   // 3. ↓ and → choose Grace Clear: its colours replace Grace's in the next frame; R resets it, and the scale too.
@@ -4101,7 +4104,7 @@ void run_menu(const std::wstring& dll) {
   press(window, 'R', 0x13);
   menu = menu_after(game, grace, menu.lists);
   check(clear == "\"clear\"" && colours_changed && grace.setting("ui.menu.theme") == "\"grace\"" &&
-            grace.setting("ui.scale") == "1.0" && std::strcmp(menu.focused, "setting:ui.scale") == 0,
+            grace.setting("ui.scale") == "1.25" && std::strcmp(menu.focused, "setting:ui.scale") == 0,
         "menu: a choice and reset",
         "→ on Theme: %s, %d pixels redrawn in Grace Clear; R reset it to %s and, on Interface scale, ui.scale to %s",
         clear.c_str(), changed_pixels, grace.setting("ui.menu.theme").c_str(), grace.setting("ui.scale").c_str());

@@ -48,6 +48,7 @@ struct TestView {
   std::uint32_t off;            // 1 once a fault turned the menu off for the session
   float scale;                  // the effective scale of the last layout
   std::uint32_t faces;          // the menu's faces in the atlas
+  float baked_scale;            // the effective scale they were baked at (0 if left out)
   char page[64];
   char focused[96];
 };

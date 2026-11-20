@@ -61,7 +61,7 @@ constinit std::atomic<grace::abi::DrawListBuffers*> g_lists{nullptr};  // made b
 constinit std::atomic<bool> g_off{false};
 constinit std::atomic<std::uint32_t> g_width{0};
 constinit std::atomic<std::uint32_t> g_height{0};
-constinit std::atomic<float> g_ui_scale{1.0f};  // ui.scale as the store holds it, for the next bake's scale
+constinit std::atomic<float> g_ui_scale{0.0f};  // ui.scale as the store holds it, for the next bake's scale; 0 unread
 
 // The test exports' view (and nothing else reads it).
 constinit std::atomic<std::uint64_t> g_published{0};
@@ -625,9 +625,31 @@ void pad_inputs(std::uint32_t generation) noexcept {
 
 }  // namespace
 
+namespace {
+
+// ui.scale's default as GraceUI's own space describes it: the scale of a bake before the menu has read its settings
+// (GraceUI's thread, which reads them too). 1 if the space does not load.
+float default_ui_scale() noexcept {
+  try {
+    if (const grace::pages::SettingsStore& store = own_space().store(); const grace::protocol::Setting* setting =
+                                                                             store.find("ui.scale")) {
+      if (setting->default_.is_number()) {
+        return static_cast<float>(setting->default_.get<double>());
+      }
+    }
+  } catch (...) {
+  }
+  return 1.0f;
+}
+
+}  // namespace
+
 float bake_scale(std::uint32_t height) noexcept {
-  const float scale = (height > 0 ? static_cast<float>(height) : 1080.0f) / 1080.0f *
-                      g_ui_scale.load(std::memory_order_relaxed);
+  float ui_scale = g_ui_scale.load(std::memory_order_relaxed);
+  if (ui_scale <= 0.0f) {
+    ui_scale = default_ui_scale();
+  }
+  const float scale = (height > 0 ? static_cast<float>(height) : 1080.0f) / 1080.0f * ui_scale;
   return scale < 0.5f ? 0.5f : scale > 4.0f ? 4.0f : scale;
 }
 
@@ -743,6 +765,7 @@ void test_view(TestView& out) noexcept {
   out.off = g_off.load(std::memory_order_relaxed) ? 1 : 0;
   out.scale = g_scale.load(std::memory_order_relaxed);
   out.faces = atlas::menu_fonts() != nullptr ? static_cast<std::uint32_t>(grace::tokens::kTypeCount) : 0;
+  out.baked_scale = atlas::menu_scale();
   g_view_lock.lock();
   if (g_state != nullptr) {
     std::snprintf(out.page, sizeof out.page, "%s", g_state->page.c_str());

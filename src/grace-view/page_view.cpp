@@ -1122,12 +1122,15 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                             control.y + std::round((control.h - knob) / 2), knob, knob},
                        on ? Colour::on_gold : Colour::ink_mute, alpha);
             } else if (numeric(st.type)) {
+              // Inside its column by a margin on each side, so that neither the value nor the knob at either end
+              // meets the focus outline drawn around the column.
+              const float inset = std::round(12 * s);
               const std::string shown = format(key, v);
               const float vw = c.width(shown, TypeRole::num);
-              c.text(shown, TypeRole::num, col.right() - vw,
+              c.text(shown, TypeRole::num, col.right() - inset - vw,
                      y + std::round((row_h - line_height(TypeRole::num, s)) / 2), vw + 1, Colour::ink_body, alpha);
-              const float track_w = control_w - std::round(64 * s);
-              const Rect track{col.x, y + std::round((row_h - 4 * s) / 2), track_w, std::round(4 * s)};
+              const float track_w = control_w - std::round(64 * s) - 2 * inset;
+              const Rect track{col.x + inset, y + std::round((row_h - 4 * s) / 2), track_w, std::round(4 * s)};
               c.fill(track, Colour::ground_well, track.h / 2, alpha);
               const double lo = st.min_.value_or(0), hi = st.max_.value_or(1);
               const double n = v.is_number() ? v.get<double>() : lo;
@@ -1136,7 +1139,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               const float knob = std::round(14 * s);
               c.circle(Rect{track.x + std::round(track.w * t - knob / 2), y + std::round((row_h - knob) / 2), knob, knob},
                        Colour::gold_hi, alpha);
-              control = Rect{track.x, y + std::round(10 * s), control_w, row_h - std::round(20 * s)};
+              control = Rect{col.x, y + std::round(10 * s), control_w, row_h - std::round(20 * s)};
             } else if (st.type == SettingType::choice || st.type == SettingType::tri_state) {
               std::vector<std::pair<std::string, bool>> segments;
               if (st.type == SettingType::tri_state) {

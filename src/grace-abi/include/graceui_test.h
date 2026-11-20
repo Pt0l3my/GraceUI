@@ -309,6 +309,8 @@ typedef struct GraceUiTestMenu {
   uint32_t faces;       /* the menu's faces in the atlas: one a type role (11), or 0 if they were left out */
   char page[64];        /* the open page's id */
   char focused[96];     /* the focused element, as grace-view names it ("setting:ui.scale") */
+  float baked_scale;    /* the effective scale the menu's faces were baked at, at warm-up; 0 if they were left out */
+  uint32_t reserved;
 } GraceUiTestMenu;
 
 /* Fills *out (out->size set by the caller); answers 1, or 0 if the size is too small. */

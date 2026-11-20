@@ -43,7 +43,7 @@ Cmd command(std::string name, Json args) {
 
 TEST_CASE("GraceUI's own settings start at their defaults and take what their descriptions allow") {
   SettingsStore store = store_of("graceui");
-  CHECK(store.held("ui.scale") == 1.0);
+  CHECK(store.held("ui.scale") == 1.25);  // its default (the owner, 2026-11-20)
   CHECK(store.changed().empty());
   Outcome out = store.set("ui.scale", Json(1.05));
   CHECK(out.ok);
@@ -134,7 +134,7 @@ TEST_CASE("apply takes the framework's commands, their arguments checked by the 
   SettingsStore store = store_of("graceui");
   CHECK(store.apply(command("settings.set", Json::object({{"key", "ui.scale"}, {"value", 1.1}}))).ok);
   CHECK(store.apply(command("settings.reset", Json::object({{"scope", "key"}, {"target", "ui.scale"}}))).ok);
-  CHECK(store.held("ui.scale") == 1.0);
+  CHECK(store.held("ui.scale") == 1.25);
   const Outcome bad = store.apply(command("settings.set", Json::object({{"value", 1.1}})));
   CHECK_FALSE(bad.ok);
   CHECK(bad.error == ErrorCode::invalid_value);
