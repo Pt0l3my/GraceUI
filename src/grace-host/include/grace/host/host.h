@@ -133,6 +133,7 @@ void test_set_atlas_limit(std::uint32_t side) noexcept;
 std::uint64_t test_panel_published(std::uint64_t panel) noexcept;
 void test_fill_menu(GraceUiTestMenu& out) noexcept;
 std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capacity) noexcept;
+std::uint32_t test_copy_topic(const char* topic, char* out, std::uint32_t capacity) noexcept;
 void test_fill_server(GraceUiTestServer& out) noexcept;
 #endif
 

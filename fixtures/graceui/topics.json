@@ -25,12 +25,22 @@
       {"id": "mod", "label": "Mod"},
       {"id": "version", "label": "Version", "numeric": true},
       {"id": "uses", "label": "Uses"},
-      {"id": "state", "label": "State"}
+      {"id": "notices", "label": "Notices", "switch": {"command": "mods.notices", "key": "id", "on": "Shown", "off": "Quiet"}}
     ],
     "rows": [
-      {"mod": "Demo space", "version": "1.0.0", "uses": "Pages, notices", "state": "Connected"},
-      {"mod": "Tide Charts", "version": "0.4.2", "uses": "Panels, hotkeys", "state": "Connected"},
-      {"mod": "Quiet Camp", "version": "2.1.0", "uses": "Notices, hotkeys", "state": "Connected, one hotkey unbound"}
+      {"id": "demo", "mod": "Demo space", "version": "1.0.0", "uses": "Pages, notices", "notices": "Shown"},
+      {"id": "tide-charts", "mod": "Tide Charts", "version": "0.4.2", "uses": "Panels, hotkeys", "notices": "Shown"},
+      {"id": "quiet-camp", "mod": "Quiet Camp", "version": "2.1.0", "uses": "Notices, hotkeys", "notices": "Quiet"}
+    ]
+  },
+  "graceui.notices": {
+    "columns": [
+      {"id": "mod", "label": "Mod"},
+      {"id": "text", "label": "Notice"}
+    ],
+    "rows": [
+      {"mod": "Quiet Camp", "text": "The camp is pitched by the river."},
+      {"mod": "Quiet Camp", "text": "Firewood is running low."}
     ]
   },
   "graceui.compatibility": {

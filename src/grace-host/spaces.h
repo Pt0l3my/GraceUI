@@ -50,6 +50,8 @@ struct TestView {
   std::uint32_t failed;    // 1 if it could not start this session
 };
 void test_view(TestView& out) noexcept;
+// One of GraceUI's own topics as JSON text (GraceUI_Test_GetTopic): its length, 0 for none or if it does not fit.
+std::uint32_t test_topic(const char* topic, char* out, std::uint32_t capacity) noexcept;
 #endif
 
 }  // namespace grace::host::spaces

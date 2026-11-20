@@ -119,6 +119,7 @@ struct State {
   std::uint32_t next_command = 1;
   std::map<std::uint64_t, std::pair<std::string, std::string>> commands;  // a ticket: its space and its key
   std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
+  std::uint64_t states = 0;    // its other topics', as the menu last took them (D181)
   grace::view::DisplayList list;
   std::string page;  // as the test exports read it, under its lock
   std::string focused;
@@ -394,6 +395,22 @@ void take_effects(State& m) {
   spaces::keep_own_settings();  // for the next session (D179): only after a change
 }
 
+// GraceUI's own topics other than its settings (the Mods page's, D181), as its space last published them, to the menu's
+// view of it. True if any changed.
+bool take_topics(State& m) {
+  const grace::spaces::OwnSpace& own = own_space();
+  if (m.states == own.states_revision()) {
+    return false;
+  }
+  m.states = own.states_revision();
+  for (const grace::protocol::TopicInfo& topic : own.pages().topics) {
+    if (const grace::protocol::Json* body = own.state_of(topic.id); body != nullptr) {
+      own_view(m).view.set_topic(topic.id, *body);
+    }
+  }
+  return true;
+}
+
 std::string key_of(const grace::protocol::Cmd& command) {
   const grace::protocol::Json& args = command.args;
   for (const char* field : {"key", "target"}) {
@@ -439,8 +456,15 @@ void run(State& m, const grace::protocol::Cmd& command) {
     log_line("the menu's Disconnect: every browser's session ended");
     return;
   }
-  g_refusals.fetch_add(1, std::memory_order_relaxed);
-  own_view(m).view.refused(key_of(command), "Not a command of GraceUI's.");
+  // Its other commands (a Mods page switch, D181) go to the one entry point the browser's views use too.
+  const grace::pages::Outcome outcome = own_space().apply(command);
+  if (!outcome.ok) {
+    g_refusals.fetch_add(1, std::memory_order_relaxed);
+    const std::string focused = own_view(m).view.focused();
+    own_view(m).view.refused(focused.rfind("cell:", 0) == 0 ? focused.substr(5) : key_of(command),
+                             outcome.detail.empty() ? "Not possible right now." : outcome.detail);
+  }
+  take_topics(m);
 }
 
 void take(State& m, const MenuInput& in, bool& dirty) {
@@ -540,6 +564,9 @@ void serve_menu() {
   if (m.revision != own_space().revision()) {
     take_effects(m);  // a browser changed a setting: the menu shows it, and its scale and theme follow (D169)
     dirty = true;
+  }
+  if (take_topics(m)) {
+    dirty = true;  // a mod came or went, or a switch turned (D181)
   }
   if (!m.open || m.generation != holder.generation) {
     m.open = true;

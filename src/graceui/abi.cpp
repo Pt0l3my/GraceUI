@@ -169,6 +169,14 @@ GRACEUI_API uint32_t GraceUI_Test_GetSetting(const char* key, char* out, uint32_
   }
 }
 
+GRACEUI_API uint32_t GraceUI_Test_GetTopic(const char* topic, char* out, uint32_t capacity) {
+  try {
+    return grace::host::test_copy_topic(topic, out, capacity);
+  } catch (...) {
+    return 0;
+  }
+}
+
 GRACEUI_API void GraceUI_Test_SetAtlasLimit(uint32_t side) {
   try {
     grace::host::test_set_atlas_limit(side);

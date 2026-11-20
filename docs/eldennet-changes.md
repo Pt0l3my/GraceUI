@@ -856,3 +856,15 @@ In GraceUI 0.2.2 (ABI 1.2):
 4. **Settings**: Menu size, the theme and GraceUI's other settings are kept in `Game\GraceUI\user\settings.json`
    between sessions; nothing for EldenNet to do, but a release must not carry a `user\` folder (the manifest skips it).
 
+## 34. A mod's notices may be quiet (2026-11-20, G32, D181)
+
+In GraceUI 0.2.3 (no change of the ABI):
+
+1. **The player may quiet EldenNet's notices** on GraceUI's Installed mods page, as any mod's. A quiet mod's notice is
+   still answered `ok` (EldenNet learns nothing of the switch, by design) and is kept in a list on that page, not drawn
+   over the game; a withdrawal goes on as usual. So never rely on a notice being seen: what the player must know (the
+   banner of EldenNet's F11 view, a failed start) should also be in EldenNet's own pages or its log. Nothing to change
+   in code.
+2. **GraceUI's own notices always show** (the player's exit, why the menu cannot open, a too-old mod).
+3. **The switch is kept** between sessions in `Game\GraceUI\user\settings.json` (`"quiet_mods"`, mods' ids only); a
+   release must still not carry a `user\` folder.

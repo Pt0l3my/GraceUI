@@ -32,6 +32,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <string>
@@ -756,6 +757,7 @@ struct GraceUi {
   decltype(&GraceUI_Test_GetPanelPublished) panel_published = nullptr;
   decltype(&GraceUI_Test_GetMenu) get_menu = nullptr;
   decltype(&GraceUI_Test_GetSetting) get_setting = nullptr;
+  decltype(&GraceUI_Test_GetTopic) get_topic = nullptr;
   decltype(&GraceUI_Test_GetServer) get_server = nullptr;
 
   bool load(const std::wstring& path) {
@@ -801,8 +803,9 @@ struct GraceUi {
     panel_published = function_of<decltype(panel_published)>(module, "GraceUI_Test_GetPanelPublished");
     get_menu = function_of<decltype(get_menu)>(module, "GraceUI_Test_GetMenu");
     get_setting = function_of<decltype(get_setting)>(module, "GraceUI_Test_GetSetting");
+    get_topic = function_of<decltype(get_topic)>(module, "GraceUI_Test_GetTopic");
     get_server = function_of<decltype(get_server)>(module, "GraceUI_Test_GetServer");
-    return get_server != nullptr && get_menu != nullptr && get_setting != nullptr && panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
+    return get_server != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr && panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
            request_input != nullptr && release_input != nullptr && set_world != nullptr && set_caret != nullptr &&
@@ -5355,6 +5358,261 @@ void run_settings(const std::wstring& dll) {
   DeleteFileW(settings_file_of(dll).c_str());
 }
 
+// ---- Quiet notices (G32, D181): the Mods page's switch quiets a mod's notices, which are kept in its list instead of
+// drawn over the game; the mod learns nothing; GraceUI's own notices still show; the next session keeps the switch.
+
+// The mods' notices showing now (GraceUI's own left out): their texts, oldest first.
+std::vector<std::string> mod_notices(const GraceUi& grace) {
+  std::vector<std::string> out;
+  for (const GraceUiTestNotice& notice : grace.notices()) {
+    if (notice.owner != 0) {
+      out.emplace_back(notice.text);
+    }
+  }
+  return out;
+}
+
+std::string joined(const std::vector<std::string>& texts) {
+  std::string out;
+  for (const std::string& text : texts) {
+    out += (out.empty() ? "\"" : ", \"") + text + "\"";
+  }
+  return out.empty() ? "none" : out;
+}
+
+// One of GraceUI's own topics as its space last published it, once GraceUI's thread has caught up.
+grace::protocol::Json own_topic(Game& game, const GraceUi& grace, const char* topic,
+                                const std::function<bool(const grace::protocol::Json&)>& until) {
+  using grace::protocol::Json;
+  Json body;
+  for (int i = 0; i < 100; ++i) {
+    std::vector<char> text(16 * 1024);
+    const std::uint32_t length = grace.get_topic(topic, text.data(), static_cast<std::uint32_t>(text.size()));
+    body = length == 0 ? Json() : Json::parse(text.data(), text.data() + length, nullptr, false);
+    if (!body.is_discarded() && !body.is_null() && until(body)) {
+      break;
+    }
+    frames(game, 1);
+    Sleep(20);
+  }
+  return body;
+}
+
+// The Notices word of mod `id`'s row on the Mods page, or "" if it has no row.
+std::string notices_word(const grace::protocol::Json& mods, const char* id) {
+  if (!mods.is_object() || !mods.contains("rows") || !mods["rows"].is_array()) {
+    return {};
+  }
+  for (const grace::protocol::Json& row : mods["rows"]) {
+    if (row.value("id", std::string()) == id) {
+      return row.value("notices", std::string());
+    }
+  }
+  return {};
+}
+
+// The Mods page's rows in a few words: "quiet-camp Shown (Notices, 2.3.4); ...".
+std::string rows_text(const grace::protocol::Json& mods) {
+  if (!mods.is_object() || !mods.contains("rows") || !mods["rows"].is_array()) {
+    return "NO BODY";
+  }
+  std::string out;
+  for (const grace::protocol::Json& row : mods["rows"]) {
+    out += (out.empty() ? "" : "; ") + row.value("id", std::string()) + " " + row.value("notices", std::string()) + " (" +
+           row.value("uses", std::string()) + ", " + row.value("version", std::string()) + ")";
+  }
+  return out.empty() ? "none" : out;
+}
+
+// The kept list's rows in a few words: "Quiet Camp: \"...\"; ...".
+std::string kept_text(const grace::protocol::Json& list) {
+  if (!list.is_object() || !list.contains("rows") || !list["rows"].is_array()) {
+    return "NO BODY";
+  }
+  std::string out;
+  for (const grace::protocol::Json& row : list["rows"]) {
+    out += (out.empty() ? "" : "; ") + row.value("mod", std::string()) + ": \"" + row.value("text", std::string()) + "\"";
+  }
+  return out.empty() ? "none" : out;
+}
+
+// Opens the menu and walks to mod `id`'s switch on the Mods page: Page Down to the page, ↓ to its row.
+GraceUiTestMenu to_switch(Game& game, const GraceUi& grace, HWND window, const char* id) {
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  for (int i = 0; i < 4 && std::string_view(menu.page) != "graceui.mods"; ++i) {
+    press(window, VK_NEXT, 0x51);
+    menu = menu_after(game, grace, menu.lists);
+  }
+  const std::string want = std::string("cell:graceui.mods/") + id;
+  for (int i = 0; i < 10 && menu.focused != want; ++i) {
+    press(window, VK_DOWN, 0x50);
+    menu = menu_after(game, grace, menu.lists);
+  }
+  return menu;
+}
+
+grace::protocol::Json wait_for_quiet(Game& game, const std::wstring& dll, const grace::protocol::Json& want) {
+  grace::protocol::Json kept;
+  for (int i = 0; i < 150; ++i) {
+    kept = kept_settings(dll);
+    if (!kept.is_discarded() && kept.is_object() && kept.value("quiet_mods", grace::protocol::Json()) == want) {
+      break;
+    }
+    frames(game, 1);
+    Sleep(20);
+  }
+  return kept;
+}
+
+void run_quiet_write(const std::wstring& dll) {
+  using grace::protocol::Json;
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  const Connected camp = connect(table, request_for("quiet-camp", GRACEUI_VERSION_PACK(0, 1, 0), "Quiet Camp", "notices"));
+  const Connected tide =
+      connect(table, request_for("tide-charts", GRACEUI_VERSION_PACK(0, 1, 0), "Tide Charts", "notices panels"));
+  start_host(game, grace);
+  until_atlas(game, grace);
+
+  // 1. Both shown; the Mods page lists both, its switches on.
+  const GraceUiStatus first = post(table, camp.answer.consumer, "The camp is pitched.", GRACEUI_TONE_NORMAL, 1);
+  post(table, tide.answer.consumer, "The tide is in.");
+  const Json mods = own_topic(game, grace, "graceui.mods", [](const Json& b) { return b["rows"].size() == 2; });
+  const std::vector<std::string> shown = mod_notices(grace);
+  const bool rows_ok = notices_word(mods, "quiet-camp") == "Shown" && notices_word(mods, "tide-charts") == "Shown" &&
+                       mods["rows"][1].value("uses", std::string()) == "Notices, panels" &&
+                       mods["rows"][1].value("version", std::string()) == "2.3.4";
+  check(camp.status == GRACEUI_OK && tide.status == GRACEUI_OK && first == GRACEUI_OK && shown.size() == 2 && rows_ok,
+        "quiet: the Mods page lists the mods connected", "notices showing: %s; the page's rows: %s",
+        joined(shown).c_str(), rows_text(mods).c_str());
+
+  // 2. Enter on Quiet Camp's switch in the menu: its notice goes, Tide Charts' stays.
+  GraceUiTestMenu menu = to_switch(game, grace, window, "quiet-camp");
+  const std::string focused_on = menu.focused;
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  const Json quieted = own_topic(game, grace, "graceui.mods",
+                                 [](const Json& b) { return notices_word(b, "quiet-camp") == "Quiet"; });
+  const std::vector<std::string> after = mod_notices(grace);
+  check(focused_on == "cell:graceui.mods/quiet-camp" && notices_word(quieted, "quiet-camp") == "Quiet" &&
+            notices_word(quieted, "tide-charts") == "Shown" && after == std::vector<std::string>{"The tide is in."} &&
+            menu.refusals == 0 && grace.logged("quiet-camp's notices are quiet"),
+        "quiet: the switch, from the menu", "focus on %s; Enter → %s; notices showing: %s; refusals %u",
+        focused_on.c_str(), rows_text(quieted).c_str(), joined(after).c_str(), menu.refusals);
+
+  // 3. What it posts now: accepted (the mod learns nothing), kept in the page's list, never drawn; a notice that is not
+  // a notice's is still refused; a withdrawal is accepted. GraceUI's own still show.
+  const GraceUiStatus kept_status = post(table, camp.answer.consumer, "Firewood is running low.");
+  const GraceUiStatus keyed = post(table, camp.answer.consumer, "The camp is struck.", GRACEUI_TONE_WARNING, 1);
+  const GraceUiStatus bad_tone = post(table, camp.answer.consumer, "A bad tone.", 9);
+  GraceUiNotice withdraw{};
+  withdraw.size = sizeof withdraw;
+  withdraw.key = 1;
+  const GraceUiStatus withdrawn = table->notice(camp.answer.consumer, &withdraw);
+  const Json list = own_topic(game, grace, "graceui.notices", [](const Json& b) { return b["rows"].size() == 2; });
+  const bool list_ok = list.is_object() && list["rows"].size() == 2 &&
+                       list["rows"][0] == Json::object({{"mod", "Quiet Camp"}, {"text", "The camp is struck."}}) &&
+                       list["rows"][1] == Json::object({{"mod", "Quiet Camp"}, {"text", "Firewood is running low."}});
+  const Connected future = connect(table, request_for("future-mod", GRACEUI_VERSION_PACK(9, 0, 0), "Future mod"));
+  frames(game, 3);
+  bool own_shown = false;
+  for (const GraceUiTestNotice& notice : grace.notices()) {
+    own_shown = own_shown || (notice.owner == 0 && std::string_view(notice.text).find("Future mod needs") == 0);
+  }
+  const std::vector<std::string> still = mod_notices(grace);
+  check(kept_status == GRACEUI_OK && keyed == GRACEUI_OK && bad_tone == GRACEUI_REFUSED && withdrawn == GRACEUI_OK &&
+            list_ok && still == std::vector<std::string>{"The tide is in."} && future.status == GRACEUI_TOO_OLD &&
+            own_shown,
+        "quiet: a quiet mod's notices are kept, not drawn",
+        "posts %s, %s, a bad tone %s, a withdrawal %s; the list: %s; showing: %s; GraceUI's own %s",
+        status_name(kept_status), status_name(keyed), status_name(bad_tone), status_name(withdrawn),
+        kept_text(list).c_str(), joined(still).c_str(), own_shown ? "shown" : "NOT SHOWN");
+  menu = menu_after(game, grace, menu.lists);  // the page laid out again with the kept list
+  save_shot(game.frame_and_read(kInputColour, PresentWith::present), "mods-grace-1920x1080.bmp");
+
+  // 4. Kept for the next session: the file names the quiet mod, and only its id.
+  press(window, VK_F5, kScanF5);
+  frames(game, 2);
+  const Json file = wait_for_quiet(game, dll, Json::array({"quiet-camp"}));
+  check(!file.is_discarded() && file.value("quiet_mods", Json()) == Json::array({"quiet-camp"}) &&
+            file.value("values", Json()) == Json::object(),
+        "quiet: kept for the next session", "the file: %s", file.is_discarded() ? "NO FILE" : file.dump().c_str());
+}
+
+void run_quiet_read(const std::wstring& dll) {
+  using grace::protocol::Json;
+  g_keep_settings = true;
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  const Connected camp = connect(table, request_for("quiet-camp", GRACEUI_VERSION_PACK(0, 1, 0), "Quiet Camp", "notices"));
+  start_host(game, grace);
+  until_atlas(game, grace);
+  const GraceUiStatus posted = post(table, camp.answer.consumer, "Smoke rises from the camp.");
+  const Json mods = own_topic(game, grace, "graceui.mods",
+                              [](const Json& b) { return notices_word(b, "quiet-camp") == "Quiet"; });
+  const std::vector<std::string> shown = mod_notices(grace);
+  check(posted == GRACEUI_OK && shown.empty() && notices_word(mods, "quiet-camp") == "Quiet" &&
+            grace.logged("GraceUI's settings: 1 mods' notices kept quiet"),
+        "quiet: the next session keeps it quiet", "a post %s; showing: %s; the page's rows: %s",
+        status_name(posted), joined(shown).c_str(), rows_text(mods).c_str());
+
+  // → on its switch: shown again, at once and for the next session.
+  GraceUiTestMenu menu = to_switch(game, grace, window, "quiet-camp");
+  press(window, VK_RIGHT, 0x4D);
+  menu = menu_after(game, grace, menu.lists);
+  const Json back = own_topic(game, grace, "graceui.mods",
+                              [](const Json& b) { return notices_word(b, "quiet-camp") == "Shown"; });
+  press(window, VK_F5, kScanF5);
+  frames(game, 2);
+  const GraceUiStatus again = post(table, camp.answer.consumer, "The fire is lit.");
+  frames(game, 2);
+  const std::vector<std::string> now = mod_notices(grace);
+  Json file;
+  for (int i = 0; i < 150; ++i) {
+    file = kept_settings(dll);
+    if (!file.is_discarded() && file.is_object() && !file.contains("quiet_mods")) {
+      break;
+    }
+    frames(game, 1);
+    Sleep(20);
+  }
+  check(notices_word(back, "quiet-camp") == "Shown" && again == GRACEUI_OK &&
+            now == std::vector<std::string>{"The fire is lit."} && !file.is_discarded() && !file.contains("quiet_mods"),
+        "quiet: shown again", "→: %s; a post %s, showing: %s; the file: %s", rows_text(back).c_str(), status_name(again),
+        joined(now).c_str(), file.is_discarded() ? "NO FILE" : file.dump().c_str());
+}
+
+void run_quiet(const std::wstring& dll) {
+  DeleteFileW(settings_file_of(dll).c_str());
+  for (const wchar_t* child : {L"quiet-write", L"quiet-read"}) {
+    std::fflush(stdout);
+    const int status = run_child(dll, child);
+    char name[64];
+    std::snprintf(name, sizeof name, "%ls scenario", child);
+    check(status == 0, name, "its process ended with %d", status);
+  }
+  DeleteFileW(settings_file_of(dll).c_str());
+}
+
 // ---- The display (D180): what a mod learns at connect (ui.scale and its default; the size once a swap chain is bound),
 // its GRACEUI_EVENT_DISPLAY once after warm-up and after each change of the size or ui.scale, only at 1.2's event size,
 // and a GRACEUI_FACE_SCALED face baked at its pixel height times the content scale.
@@ -5961,6 +6219,15 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"settings-bad") {
     std::printf("-- scenario: a settings file that is not GraceUI's (D179)\n");
     run_settings_bad(dll);
+  } else if (scenario == L"quiet") {
+    std::printf("-- scenario: a mod's notices quieted from the Mods page (G32, D181)\n");
+    run_quiet(dll);
+  } else if (scenario == L"quiet-write") {
+    std::printf("-- scenario: the Mods page's switch quiets a mod's notices, which are kept (D181)\n");
+    run_quiet_write(dll);
+  } else if (scenario == L"quiet-read") {
+    std::printf("-- scenario: the next session keeps the switch (D181)\n");
+    run_quiet_read(dll);
   } else if (scenario == L"display") {
     std::printf("-- scenario: the display at connect and in its event, and scaled faces (D180)\n");
     run_display(dll);
@@ -5991,7 +6258,7 @@ int wmain(int argc, wchar_t** argv) {
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
             L"examples", L"examples-reversed", L"absent", L"menu", L"menu-space", L"spike", L"spike-after",
-            L"holder-events", L"settings", L"display"}) {
+            L"holder-events", L"settings", L"display", L"quiet"}) {
         run(child_scenario, dll, this_program());
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.

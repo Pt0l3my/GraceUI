@@ -8,7 +8,9 @@ import { useEffect, useState } from "preact/hooks";
 import type { Signal } from "@preact/signals";
 import type { Json, JsonObject, PageBlock } from "../protocol.ts";
 import type { TopicData } from "../model/session.ts";
+import { refusalWords } from "../model/session.ts";
 import { useSession } from "./context.ts";
+import { Warning } from "./icons.tsx";
 
 function text(value: Json | undefined): string | null {
   return typeof value === "string" ? value : typeof value === "number" ? String(value) : null;
@@ -98,27 +100,97 @@ function KeyValues({ body }: { body: JsonObject }) {
   );
 }
 
-function Table({ body }: { body: JsonObject }) {
+interface SwitchColumn {
+  command: string;
+  key: string;
+  on: string;
+  off: string;
+}
+
+// A column whose cells are a switch (D181): its command, the row's field that names the row, and its two words.
+function switchOf(column: JsonObject): SwitchColumn | null {
+  const sw = column.switch;
+  if (typeof sw !== "object" || sw === null || Array.isArray(sw)) {
+    return null;
+  }
+  const { command, key, on, off } = sw;
+  return typeof command === "string" && typeof key === "string" && typeof on === "string" && typeof off === "string" &&
+    command !== "" && key !== "" ? { command, key, on, off } : null;
+}
+
+// A table (D166); a column with a switch (D181) shows each row's state as the space published it, never flipped here
+// (invariant 1): a press sends the space's command, and the space's next body shows the change.
+function Table({ space, body }: { space: string; body: JsonObject }) {
+  const session = useSession();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const columns = objects(body.columns).filter((c) => text(c.id) !== null && text(c.label) !== null);
   const rows = objects(body.rows);
   if (columns.length === 0 || rows.length === 0) {
     return <Empty />;
   }
+  const first = columns.find((c) => switchOf(c) === null && c.numeric !== true);
+  const flip = async (sw: SwitchColumn, row: JsonObject, on: boolean) => {
+    const name = row[sw.key];
+    if ((typeof name !== "string" && typeof name !== "number") || busy !== null) {
+      return;
+    }
+    setRefusal(null);
+    setBusy(String(name));
+    const answer = await session.command(space, sw.command, { [sw.key]: name, on: !on });
+    setBusy(null);
+    if (!answer.ok) {
+      setRefusal(refusalWords(answer));
+    }
+  };
   return (
-    <table class="table">
-      <thead>
-        <tr>{columns.map((c) => <th scope="col" key={text(c.id)} class={c.numeric === true ? "num" : undefined}>{text(c.label)}</th>)}</tr>
-      </thead>
-      <tbody>
-        {rows.map((r, i) => (
-          <tr key={i}>
-            {columns.map((c) => (
-              <td key={text(c.id)} class={c.numeric === true ? "num" : undefined}>{text(r[text(c.id) ?? ""])}</td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <>
+      <table class="table">
+        <thead>
+          <tr>{columns.map((c) => <th scope="col" key={text(c.id)} class={c.numeric === true ? "num" : undefined}>{text(c.label)}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              {columns.map((c) => {
+                const id = text(c.id) ?? "";
+                const sw = switchOf(c);
+                if (sw === null) {
+                  return <td key={id} class={c.numeric === true ? "num" : undefined}>{text(r[id])}</td>;
+                }
+                const word = text(r[id]);
+                const on = word === sw.on;
+                const rowName = first ? text(r[text(first.id) ?? ""]) : null;
+                const name = r[sw.key];
+                const named = typeof name === "string" || typeof name === "number";
+                return (
+                  <td key={id} class="table__switch">
+                    {word !== null && named && (
+                      <span class="switch-wrap">
+                        <button type="button" role="switch" class="switch" aria-checked={on}
+                                aria-label={rowName !== null ? `${text(c.label)}: ${rowName}` : text(c.label) ?? undefined}
+                                aria-disabled={busy !== null || undefined} data-control=""
+                                onClick={() => void flip(sw, r, on)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                                    e.preventDefault();
+                                    void flip(sw, r, on);
+                                  }
+                                }}>
+                          <span class="switch__knob" />
+                        </button>
+                        <span class="switch__word" aria-hidden="true">{on ? sw.on : sw.off}</span>
+                      </span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {refusal !== null && <p class="table__notice" role="alert"><Warning /> {refusal}</p>}
+    </>
   );
 }
 
@@ -166,7 +238,7 @@ export function ComponentBlock({ space, block }: { space: string; block: PageBlo
     case "key_value_list":
       return data?.kind === "state" ? <KeyValues body={data.body} /> : <Empty />;
     case "table":
-      return data?.kind === "state" ? <Table body={data.body} /> : <Empty />;
+      return data?.kind === "state" ? <Table space={space} body={data.body} /> : <Empty />;
     case "check_list":
       return data?.kind === "state" ? <CheckList body={data.body} /> : <Empty />;
     default:

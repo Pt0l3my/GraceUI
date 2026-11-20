@@ -173,12 +173,12 @@
       "id": "graceui.mods",
       "category": "graceui",
       "name": "Installed mods",
-      "description": "Every mod connected to GraceUI this session, and what each uses.",
+      "description": "Every mod connected to GraceUI this session, what each uses, and whether its notices show.",
       "help": {
-        "purpose": "See which mods drew through GraceUI this session, and in what state.",
+        "purpose": "See which mods drew through GraceUI this session, and quiet one whose notices you do not want over the game.",
         "steps": [
           "Find a mod by its name.",
-          "Read what it uses: notices, panels, hotkeys, pages.",
+          "Turn its notices off to keep them here instead of over the game; GraceUI's own notices always show.",
           "A mod that is not listed did not connect; its own log says why."
         ]
       },
@@ -186,7 +186,7 @@
         "graceui.compatibility",
         "graceui.hotkeys"
       ],
-      "increment": "0.6",
+      "increment": "0.2",
       "sections": [
         {
           "id": "mods",
@@ -196,6 +196,18 @@
               "kind": "component",
               "component": "table",
               "topic": "graceui.mods"
+            }
+          ]
+        },
+        {
+          "id": "quiet-notices",
+          "title": "Quiet notices",
+          "description": "What the mods with their notices off have said this session, newest first.",
+          "blocks": [
+            {
+              "kind": "component",
+              "component": "table",
+              "topic": "graceui.notices"
             }
           ]
         }
@@ -284,6 +296,10 @@
       "shape": "state"
     },
     {
+      "id": "graceui.notices",
+      "shape": "state"
+    },
+    {
       "id": "graceui.compatibility",
       "shape": "state"
     },
@@ -296,6 +312,7 @@
     "settings.set",
     "settings.reset",
     "menu.close",
-    "dashboard.disconnect"
+    "dashboard.disconnect",
+    "mods.notices"
   ]
 }

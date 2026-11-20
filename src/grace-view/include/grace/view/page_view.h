@@ -107,6 +107,11 @@ class PageView {
   void restore(std::string_view key, const protocol::Json& value);
   // The rail's other spaces (D79, D171): the host sets them whenever the spaces or the open one change.
   void set_rail(RailContext context);
+  // A component's topic body, as the host has it (D181). A table whose topic body the view has is drawn in game: one row
+  // a row, its first column's words, the others' after them, and a switch column's switch, which ↵, A, ← and → turn
+  // (the column's command, with the row's key and "on"). Any other component, or a table without its body, is shown in
+  // the browser view. Focus stays on the row it was on.
+  void set_topic(std::string_view topic, const protocol::Json& body);
   // Focus on the rail, as a link from another space's rail leaves it: on the switcher, or on the open page's entry, as
   // opening a category leaves it (D171).
   void focus_rail(bool switcher);
@@ -121,7 +126,7 @@ class PageView {
   std::string_view page() const noexcept;
   Scope scope() const noexcept { return scope_; }
   // The focused element, as "rail:<page or category>", "search", "action:<id>", "tab:<id>", "section:<id>",
-  // "advanced:<section>", "setting:<key>", "shortcut:<key>" or "related:<page>".
+  // "advanced:<section>", "setting:<key>", "shortcut:<key>", "related:<page>" or "cell:<topic>/<row's key>".
   std::string focused() const;
   // A setting's value as the view shows it: its value, or its default.
   const protocol::Json& value(std::string_view key) const;
@@ -131,11 +136,11 @@ class PageView {
   std::string availability_badge(const protocol::Setting& setting) const;
 
  private:
-  enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related };
+  enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related, cell };
   struct Focus {
     FocusKind kind;
-    std::string id;     // an action's, tab's or section's id, a setting's key, a related page
-    std::size_t index;  // into page().actions, tabs, sections; a setting's index
+    std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key
+    std::size_t index;  // into page().actions, tabs, sections; a setting's index; a cell's row
   };
   struct RailEntry {
     enum class Kind : std::uint8_t { category, page, head, foot, switcher };
@@ -153,6 +158,9 @@ class PageView {
   Action change(const protocol::Setting& setting, int direction, bool shift);
   Action set(const protocol::Setting& setting, protocol::Json value);
   Action open_index(std::size_t index, Scope scope);
+  // A table component's body, if the view has its topic's and it has columns and rows; and its switch column, if any.
+  const protocol::Json* table_of(const protocol::PageBlock& block) const;
+  Action toggle_cell(const Focus& focus) const;
   std::size_t rail_index_of_page() const;
   void focus_first_control();
 
@@ -162,6 +170,7 @@ class PageView {
   protocol::Json values_ = protocol::Json::object();
   std::map<std::string, std::string, std::less<>> refusals_;
   std::map<std::string, protocol::InheritedValue, std::less<>> inherited_;
+  std::map<std::string, protocol::Json, std::less<>> topics_;  // components' topic bodies (D181)
   std::set<std::string, std::less<>> collapsed_;
   std::set<std::string, std::less<>> advanced_open_;
   std::size_t page_ = 0;

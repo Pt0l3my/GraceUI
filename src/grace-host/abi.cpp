@@ -351,6 +351,10 @@ std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capaci
   return menu::test_setting(key, out, capacity);
 }
 
+std::uint32_t test_copy_topic(const char* topic, char* out, std::uint32_t capacity) noexcept {
+  return spaces::test_topic(topic, out, capacity);
+}
+
 std::uint64_t test_panel_published(std::uint64_t panel) noexcept {
   grace::abi::Panels& panels = session::panels();
   for (std::uint32_t i = 0; i < grace::abi::kMaxPanels; ++i) {

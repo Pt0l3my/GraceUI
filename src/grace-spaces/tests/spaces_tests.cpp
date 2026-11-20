@@ -212,7 +212,7 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
   std::string why;
   REQUIRE_MESSAGE(own.load(why), why);
   int disconnects = 0;
-  own.attach(fixture.server, "0.2.0", spaces::OwnSpace::Hooks{[&] { ++disconnects; }});
+  own.attach(fixture.server, "0.2.0", spaces::OwnSpace::Hooks{[&] { ++disconnects; }, {}});
   REQUIRE(fixture.wait_files());
   auto view = fixture.join();
   REQUIRE(view != nullptr);
@@ -277,6 +277,83 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
   REQUIRE(result);
   CHECK((*result)["ok"] == true);
   CHECK(disconnects == 1);
+}
+
+TEST_CASE("GraceUI's other topics and commands (D181): bodies the host sets, published to a watching view") {
+  Fixture fixture(no_spaces());
+  REQUIRE(fixture.started == serve::StartResult::ok);
+  spaces::OwnSpace own;
+  std::string why;
+  REQUIRE_MESSAGE(own.load(why), why);
+  std::vector<protocol::Cmd> taken;
+  spaces::OwnSpace::Hooks hooks;
+  hooks.command = [&](const protocol::Cmd& command) {
+    taken.push_back(command);
+    pages::Outcome outcome;
+    outcome.ok = command.args.value("on", true);
+    if (!outcome.ok) {
+      outcome.error = protocol::ErrorCode::not_now;
+      outcome.detail = "Not now.";
+    }
+    return outcome;
+  };
+  own.attach(fixture.server, "0.2.0", hooks);
+  REQUIRE(fixture.wait_files());
+  // Before the host sets it, a topic has no body; an undeclared topic is never taken.
+  CHECK(own.state_of("graceui.mods") == nullptr);
+  CHECK_FALSE(own.set_state("graceui.nothing", Json::object()));
+  const Json mods = {{"columns", Json::array()}, {"rows", Json::array({{{"id", "demo"}}})}};
+  REQUIRE(own.set_state("graceui.mods", mods));
+  REQUIRE(own.state_of("graceui.mods") != nullptr);
+  CHECK(*own.state_of("graceui.mods") == mods);
+  CHECK(own.states_revision() == 1);
+
+  auto view = fixture.join();
+  REQUIRE(view != nullptr);
+  REQUIRE(view->send_json(frame("sub", {{"space", "graceui"}, {"id", 1}, {"topic", "graceui.mods"}})));
+  std::optional<Json> state;
+  for (int i = 0; i < 300 && !state; ++i) {
+    own.serve();
+    if (auto json = view->next_json(std::chrono::milliseconds(10)); json && (*json)["t"] == "state") {
+      state = json;
+    }
+  }
+  REQUIRE(state);
+  CHECK((*state)["topic"] == "graceui.mods");
+  CHECK((*state)["body"] == mods);
+  // A newer body reaches the watching view.
+  const Json quieter = {{"columns", Json::array()}, {"rows", Json::array()}};
+  REQUIRE(own.set_state("graceui.mods", quieter));
+  std::optional<Json> newer;
+  for (int i = 0; i < 300 && !newer; ++i) {
+    own.serve();
+    if (auto json = view->next_json(std::chrono::milliseconds(10)); json && (*json)["t"] == "state") {
+      newer = json;
+    }
+  }
+  REQUIRE(newer);
+  CHECK((*newer)["body"] == quieter);
+
+  // A declared command of the host's, from the browser and from the menu, reaches the hook; its refusal carries its words.
+  REQUIRE(view->send_json(frame("cmd", {{"space", "graceui"}, {"id", 5}, {"name", "mods.notices"},
+                                        {"args", {{"id", "demo"}, {"on", false}}}})));
+  std::optional<Json> result;
+  for (int i = 0; i < 300 && !result; ++i) {
+    own.serve();
+    if (auto json = view->next_json(std::chrono::milliseconds(10)); json && (*json)["t"] == "result") {
+      result = json;
+    }
+  }
+  REQUIRE(result);
+  CHECK((*result)["error"] == "not_now");
+  CHECK((*result)["detail"] == "Not now.");
+  CHECK(own.apply(protocol::Cmd{"graceui", 0, "mods.notices", Json::object({{"id", "demo"}, {"on", true}})}).ok);
+  REQUIRE(taken.size() == 2);
+  CHECK(taken[0].args["id"] == "demo");
+  // dashboard.disconnect and menu.close never reach the command hook; an undeclared command is refused.
+  CHECK_FALSE(own.apply(protocol::Cmd{"graceui", 0, "menu.close", Json::object()}).ok);
+  CHECK_FALSE(own.apply(protocol::Cmd{"graceui", 0, "mods.everything", Json::object()}).ok);
+  CHECK(taken.size() == 2);
 }
 
 TEST_CASE("the menu's side, with no server: the space listed, a watch, its state, a command and its result (D171)") {

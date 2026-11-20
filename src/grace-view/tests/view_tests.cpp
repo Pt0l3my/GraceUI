@@ -511,20 +511,92 @@ TEST_CASE("a page of a later increment is absent: rail, Page Down, search, relat
   view.set_increment("0.2");
   CHECK_FALSE(view.present("graceui.hotkeys"));  // 0.6
   CHECK(view.present("graceui.browser"));        // 0.2
-  CHECK_FALSE(view.open("graceui.mods"));
+  CHECK(view.present("graceui.mods"));           // 0.2 since D181 (G32's switches)
+  CHECK_FALSE(view.open("graceui.compatibility"));
   CHECK(view.search("menu key").empty());  // hotkeys.menu lives on Hotkeys, a 0.6 page
-  // Page Down from Menu skips Hotkeys: Browser view, then About past Installed mods and Compatibility.
+  // Page Down from Menu skips Hotkeys: Browser view, Installed mods, then About past Compatibility.
   press(view, Key::next_page);
   CHECK(view.page() == "graceui.browser");
+  press(view, Key::next_page);
+  CHECK(view.page() == "graceui.mods");
   press(view, Key::next_page);
   CHECK(view.page() == "graceui.about");
   DisplayList list;
   view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
   const std::string dump = list.dump();
-  CHECK(dump.find("Installed mods") == std::string::npos);  // neither on the rail nor among About's related pages
-  CHECK(dump.find("Compatibility") == std::string::npos);
+  CHECK(dump.find("Compatibility") == std::string::npos);  // neither on the rail nor among About's related pages
+  CHECK(dump.find("Hotkeys") == std::string::npos);
   view.set_increment("0.6");
   CHECK(view.open("graceui.hotkeys"));
   view.set_increment("");
-  CHECK(view.present("graceui.mods"));
+  CHECK(view.present("graceui.compatibility"));
+}
+
+TEST_CASE("a table in game (D181): its rows, a switch a row by its key, turned to the column's command") {
+  PageView view = loaded("graceui", "graceui.mods");
+  view.set_increment("0.2");
+  const Json switch_column = {{"id", "notices"},
+                              {"label", "Notices"},
+                              {"switch", {{"command", "mods.notices"}, {"key", "id"}, {"on", "Shown"}, {"off", "Quiet"}}}};
+  const Json mods = {{"columns", Json::array({{{"id", "mod"}, {"label", "Mod"}},
+                                              {{"id", "version"}, {"label", "Version"}, {"numeric", true}},
+                                              {{"id", "uses"}, {"label", "Uses"}},
+                                              switch_column})},
+                     {"rows", Json::array({{{"id", "demo"}, {"mod", "Demo space"}, {"version", "1.0.0"},
+                                            {"uses", "Pages, notices"}, {"notices", "Shown"}},
+                                           {{"id", "quiet-camp"}, {"mod", "Quiet Camp"}, {"version", "2.1.0"},
+                                            {"uses", "Notices"}, {"notices", "Quiet"}}})}};
+  // Without its body the table is the browser's, and no row takes focus.
+  DisplayList before;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), before);
+  CHECK(before.dump().find("Shown in the browser view.") != std::string::npos);
+  CHECK(view.focused().rfind("cell:", 0) != 0);
+
+  view.set_topic("graceui.mods", mods);
+  view.set_topic("graceui.notices",
+                 Json{{"columns", Json::array({{{"id", "mod"}, {"label", "Mod"}}, {{"id", "text"}, {"label", "Notice"}}})},
+                      {"rows", Json::array({{{"mod", "Quiet Camp"}, {"text", "Firewood is running low."}}})}});
+  view.open("graceui.mods");
+  CHECK(view.focused() == "cell:graceui.mods/demo");
+  Action a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.name == "mods.notices");
+  CHECK(a.command.args == Json::object({{"id", "demo"}, {"on", false}}));
+  press(view, Key::down);
+  CHECK(view.focused() == "cell:graceui.mods/quiet-camp");
+  a = press(view, Key::right);
+  CHECK(a.command.args == Json::object({{"id", "quiet-camp"}, {"on", true}}));
+  // A newer body with the rows in another order: focus stays on the same mod's switch; a read-only table takes none.
+  Json reordered = mods;
+  std::swap(reordered["rows"][0], reordered["rows"][1]);
+  view.set_topic("graceui.mods", reordered);
+  CHECK(view.focused() == "cell:graceui.mods/quiet-camp");
+  press(view, Key::down);
+  CHECK(view.focused() == "cell:graceui.mods/demo");
+  press(view, Key::down);
+  CHECK(view.focused().rfind("cell:graceui.notices", 0) != 0);
+
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  golden("mods-1920x1080.txt", list.dump());
+  const std::string dump = list.dump();
+  CHECK(dump.find("Quiet Camp") != std::string::npos);
+  CHECK(dump.find("2.1.0  ·  Notices") != std::string::npos);
+  CHECK(dump.find("Firewood is running low.") != std::string::npos);
+  CHECK(dump.find("Shown in the browser view.") == std::string::npos);
+  // An empty table says so.
+  view.set_topic("graceui.notices", Json{{"columns", Json::array()}, {"rows", Json::array()}});
+  DisplayList empty;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), empty);
+  CHECK(empty.dump().find("Nothing here yet.") != std::string::npos);
+  // A refused switch: the space's reason under its row, focus on it; a new body of the table takes the line away.
+  view.refused("graceui.mods/quiet-camp", "That mod is not connected now.");
+  CHECK(view.focused() == "cell:graceui.mods/quiet-camp");
+  DisplayList refused;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), refused);
+  CHECK(refused.dump().find("That mod is not connected now.") != std::string::npos);
+  view.set_topic("graceui.mods", mods);
+  DisplayList answered;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), answered);
+  CHECK(answered.dump().find("That mod is not connected now.") == std::string::npos);
 }

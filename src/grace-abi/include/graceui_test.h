@@ -319,6 +319,10 @@ GRACEUI_API uint32_t GraceUI_Test_GetMenu(GraceUiTestMenu* out);
  * GraceUI's own thread has loaded its space (at its first wake after the first request) or for no such key. One store
  * holds it for the menu and the browser's views alike (D169). Read it while GraceUI is idle. */
 GRACEUI_API uint32_t GraceUI_Test_GetSetting(const char* key, char* out, uint32_t capacity);
+/* A topic of GraceUI's own space other than its settings ("graceui.mods", D181) as JSON text, as the space last published
+ * it, NUL-terminated; answers its length, or 0 before it is first published, for no such topic, or if it does not fit.
+ * A copy kept under a lock: safe to read while GraceUI's thread is busy. */
+GRACEUI_API uint32_t GraceUI_Test_GetTopic(const char* topic, char* out, uint32_t capacity);
 
 /* ---- The spaces and the browser view's server (D169). */
 typedef struct GraceUiTestServer {

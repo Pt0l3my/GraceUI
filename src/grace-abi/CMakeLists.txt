@@ -12,6 +12,7 @@ add_library(grace_abi_rules STATIC
   drawlist.cpp
   notices.cpp
   panels.cpp
+  quiet.cpp
   registry.cpp
   text.cpp
   world.cpp)
@@ -37,6 +38,7 @@ if(GRACEUI_UNIT_TESTS)
     tests/drawlist_tests.cpp
     tests/notices_tests.cpp
     tests/panels_tests.cpp
+    tests/quiet_tests.cpp
     tests/registry_tests.cpp
     tests/text_tests.cpp
     tests/world_tests.cpp)

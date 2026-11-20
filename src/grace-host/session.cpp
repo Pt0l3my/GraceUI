@@ -10,6 +10,7 @@
 #include "display.h"
 #include "grace/abi/text.h"
 #include "grace/host/host.h"
+#include "hooks.h"
 #include "input.h"
 #include "log.h"
 #include "spaces.h"
@@ -31,6 +32,7 @@ struct Stores {
   grace::abi::Panels panels;
   grace::abi::Registry registry;
   grace::abi::World world;
+  grace::abi::QuietNotices quiet;
 };
 
 Stores& stores() {
@@ -51,6 +53,7 @@ grace::abi::Notices& notices() noexcept { return g_notices; }
 grace::abi::Panels& panels() noexcept { return stores().panels; }
 grace::abi::Registry& registry() noexcept { return stores().registry; }
 grace::abi::World& world() noexcept { return stores().world; }
+grace::abi::QuietNotices& quiet() noexcept { return stores().quiet; }
 void allocate() {
   input::make_holder_mail();  // a holder's events for its mod (D176), before any mod has a table
   (void)stores();
@@ -235,6 +238,7 @@ grace::abi::ConnectResult connect(const grace::abi::ConnectRequest& request) noe
   const int id_length = static_cast<int>(request.id.size());
   if (result.status == GRACEUI_OK || result.status == GRACEUI_INACTIVE) {
     display::connected(result.owner);  // it hears of the display at its first poll of 1.2's size (D180)
+    hooks::wake();                     // the Mods page lists it (D181)
   }
   switch (result.status) {
     case GRACEUI_OK:
@@ -286,6 +290,7 @@ GraceUiStatus disconnect(GraceUiConsumer consumer) noexcept {
     session::notices().withdraw_owner(owner, input::now_ms());
     forget(consumer, owner);
     session::consumers().left(owner);
+    hooks::wake();  // the Mods page lists it no more (D181)
     log_line("%s disconnected", known ? info.id : "a mod");
   }
   return status;
@@ -300,6 +305,24 @@ GraceUiStatus notice(GraceUiConsumer consumer, std::uint32_t tone, std::uint32_t
   const grace::abi::Inactive inactive = session::inactive();
   if (inactive != grace::abi::Inactive::none && inactive != grace::abi::Inactive::anti_cheat) {
     return GRACEUI_INACTIVE;  // nothing can be drawn this session; in the notice-only mode notices still show (D88)
+  }
+  if (!text.empty()) {
+    // A quiet mod's notice (G32, D181): accepted as any other, so the mod learns nothing, but kept in the Mods page's
+    // list rather than drawn over the game. Its withdrawals go on as usual: one it posted before it was quiet goes.
+    grace::abi::ConsumerInfo info;
+    try {
+      if (session::consumers().info_of(owner, info) && session::quiet().quiet(info.id)) {
+        if (!grace::abi::valid_notice_text(text) || tone > GRACEUI_TONE_DANGER) {
+          refused("notice", "a text that is not a notice's (UTF-8 text of 1 to 512 bytes), or an unknown tone");
+          return GRACEUI_REFUSED;
+        }
+        session::quiet().keep(info.id, info.name, key, text);
+        hooks::wake();  // the Mods page's list shows it
+        return GRACEUI_OK;
+      }
+    } catch (...) {
+      return GRACEUI_FULL;  // no room to keep it
+    }
   }
   grace::abi::NoticeIn in;
   in.owner = owner;

@@ -286,6 +286,89 @@ void PageView::set_rail(RailContext context) {
   rail_focus_ = rail_index_of_page();
 }
 
+namespace {
+
+// A table body's switch column (D181): {command, key, on, off}; null if it has none, or one not whole.
+const Json* switch_of(const Json& column) {
+  const auto found = column.find("switch");
+  if (found == column.end() || !found->is_object()) {
+    return nullptr;
+  }
+  const Json& sw = *found;
+  const auto is_text = [&](const char* name) { return sw.contains(name) && sw[name].is_string(); };
+  return is_text("command") && is_text("key") && is_text("on") && is_text("off") ? &sw : nullptr;
+}
+
+// A cell's words: a string as it is, a number as JSON writes it, anything else nothing.
+std::string cell_words(const Json& row, const std::string& column) {
+  const auto found = row.find(column);
+  if (found == row.end()) {
+    return {};
+  }
+  if (found->is_string()) {
+    return found->get<std::string>();
+  }
+  return found->is_number() ? found->dump() : std::string();
+}
+
+}  // namespace
+
+void PageView::set_topic(std::string_view topic, const Json& body) {
+  const std::string was = focused();
+  topics_[std::string(topic)] = body;
+  const std::string prefix = std::string(topic) + "/";
+  for (auto at = refusals_.lower_bound(prefix); at != refusals_.end() && at->first.rfind(prefix, 0) == 0;) {
+    at = refusals_.erase(at);  // a new body answers what was refused of its rows
+  }
+  rebuild();
+  if (was.rfind("cell:", 0) == 0) {  // the same row, wherever it now is
+    for (std::size_t i = 0; i < focus_.size(); ++i) {
+      if (focus_[i].kind == FocusKind::cell && "cell:" + focus_[i].id == was) {
+        page_focus_ = i;
+      }
+    }
+  }
+}
+
+const Json* PageView::table_of(const protocol::PageBlock& block) const {
+  if (block.kind != protocol::BlockKind::component || block.component != protocol::Component::table || !block.topic) {
+    return nullptr;
+  }
+  const auto found = topics_.find(*block.topic);
+  if (found == topics_.end() || !found->second.is_object()) {
+    return nullptr;
+  }
+  const Json& body = found->second;
+  return body.contains("columns") && body["columns"].is_array() && body.contains("rows") && body["rows"].is_array()
+             ? &body
+             : nullptr;
+}
+
+Action PageView::toggle_cell(const Focus& f) const {
+  const std::size_t slash = f.id.find('/');
+  const auto found = topics_.find(std::string_view(f.id).substr(0, slash));
+  if (found == topics_.end()) {
+    return {};
+  }
+  const Json& body = found->second;
+  for (const Json& column : body["columns"]) {
+    const Json* sw = switch_of(column);
+    if (sw == nullptr || !column.contains("id") || !column["id"].is_string() || f.index >= body["rows"].size()) {
+      continue;
+    }
+    const Json& row = body["rows"][f.index];
+    const bool on = cell_words(row, column["id"].get<std::string>()) == (*sw)["on"].get<std::string>();
+    Action action;
+    action.kind = Action::Kind::command;
+    action.command.space = pages_.space;
+    action.command.name = (*sw)["command"].get<std::string>();
+    const std::string key = (*sw)["key"].get<std::string>();
+    action.command.args = Json::object({{key, row.contains(key) ? row[key] : Json()}, {"on", !on}});
+    return action;
+  }
+  return {};
+}
+
 void PageView::focus_rail(bool switcher) {
   scope_ = Scope::rail;
   rail_focus_ = rail_index_of_page();
@@ -350,6 +433,23 @@ void PageView::rebuild() {
     }
     const auto add_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
       for (const protocol::PageBlock& block : blocks) {
+        if (const Json* table = table_of(block); table != nullptr) {
+          // A table with a switch column: each row's switch takes focus, by the row's key (D181).
+          for (const Json& column : (*table)["columns"]) {
+            const Json* sw = switch_of(column);
+            if (sw == nullptr) {
+              continue;
+            }
+            const std::string key = (*sw)["key"].get<std::string>();
+            for (std::size_t r = 0; r < (*table)["rows"].size(); ++r) {
+              const Json& row = (*table)["rows"][r];
+              const std::string id = row.is_object() ? cell_words(row, key) : std::string();
+              focus_.push_back({FocusKind::cell, *block.topic + "/" + (id.empty() ? std::to_string(r) : id), r});
+            }
+            break;  // one switch column a table
+          }
+          continue;
+        }
         for (const std::string& key : block.keys.value_or(std::vector<std::string>{})) {
           if (block.kind == protocol::BlockKind::shortcuts && !present(settings_[by_key_.at(key)].home)) {
             continue;  // a shortcut to a page of a later increment
@@ -417,7 +517,8 @@ std::string PageView::focused() const {
   if (focus_.empty()) {
     return "";
   }
-  static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related"};
+  static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
+                                          "cell"};
   const Focus& f = focus_[page_focus_];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -535,7 +636,7 @@ Action PageView::change(const Setting& s, int direction, bool shift) {
 void PageView::refused(std::string_view key, std::string_view reason) {
   refusals_[std::string(key)] = std::string(reason);
   for (std::size_t i = 0; i < focus_.size(); ++i) {
-    if (focus_[i].kind == FocusKind::setting && focus_[i].id == key) {
+    if ((focus_[i].kind == FocusKind::setting || focus_[i].kind == FocusKind::cell) && focus_[i].id == key) {
       scope_ = Scope::page;
       page_focus_ = i;
     }
@@ -763,6 +864,10 @@ Action PageView::input(const Input& in) {
           s->type != SettingType::secret) {
         return change(*s, in.key == Key::right ? 1 : -1, in.shift);
       }
+      if (f.kind == FocusKind::cell) {
+        refusals_.erase(f.id);  // a new try: the last refusal's line goes
+        return toggle_cell(f);  // a switch turns with ← and →, as a setting's does
+      }
       if (in.key == Key::left) {
         scope_ = Scope::rail;  // ← at the page's left edge goes back to the rail
         rail_focus_ = rail_index_of_page();
@@ -827,6 +932,9 @@ Action PageView::input(const Input& in) {
             return change(*s, 1, false);
           }
           return {};
+        case FocusKind::cell:
+          refusals_.erase(f.id);
+          return toggle_cell(f);
         case FocusKind::shortcut:
         case FocusKind::related: {
           const std::string target = f.kind == FocusKind::shortcut ? settings_[f.index].home : f.id;
@@ -1039,9 +1147,88 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const auto draw_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
         for (const protocol::PageBlock& block : blocks) {
           if (block.kind == protocol::BlockKind::component) {
-            c.text("Shown in the browser view.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
-                   content_w - 2 * card_pad, Colour::ink_mute);
-            y += row_h;
+            const Json* table = table_of(block);
+            if (table == nullptr) {
+              c.text("Shown in the browser view.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
+                     content_w - 2 * card_pad, Colour::ink_mute);
+              y += row_h;
+              continue;
+            }
+            // A table in game (D181): a row a row, its first column's words, the others' after them, and a switch
+            // column's switch at the right, as a setting's.
+            std::vector<std::string> text_columns;
+            std::string switch_column;
+            const Json* sw = nullptr;
+            for (const Json& column : (*table)["columns"]) {
+              if (!column.is_object() || !column.contains("id") || !column["id"].is_string()) {
+                continue;
+              }
+              if (const Json* found = switch_of(column); found != nullptr && sw == nullptr) {
+                sw = found;
+                switch_column = column["id"].get<std::string>();
+              } else {
+                text_columns.push_back(column["id"].get<std::string>());
+              }
+            }
+            const Json& rows = (*table)["rows"];
+            if (rows.empty()) {
+              c.line(x0 + card_pad, y, content_w - 2 * card_pad, Colour::rule);
+              c.text("Nothing here yet.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
+                     content_w - 2 * card_pad, Colour::ink_mute);
+              y += row_h;
+              continue;
+            }
+            for (std::size_t r = 0; r < rows.size(); ++r) {
+              const Json& line = rows[r];
+              if (!line.is_object()) {
+                continue;
+              }
+              const std::string row_key = sw != nullptr ? cell_words(line, (*sw)["key"].get<std::string>()) : std::string();
+              const std::string cell_id = *block.topic + "/" + (row_key.empty() ? std::to_string(r) : row_key);
+              const auto refusal = sw != nullptr ? refusals_.find(cell_id) : refusals_.end();
+              const Rect row{x0 + card_pad, y, content_w - 2 * card_pad, row_h};
+              c.line(row.x, row.y, row.w, Colour::rule);
+              const std::string label = text_columns.empty() ? std::string() : cell_words(line, text_columns[0]);
+              std::string rest;
+              for (std::size_t k = 1; k < text_columns.size(); ++k) {
+                const std::string words = cell_words(line, text_columns[k]);
+                if (!words.empty()) {
+                  rest += (rest.empty() ? "" : "  ·  ") + words;
+                }
+              }
+              const float label_y = y + std::round((row_h - line_height(TypeRole::ui, s)) / 2);
+              c.text(label, TypeRole::ui, row.x, label_y, row.w / 3 - std::round(12 * s), Colour::ink_hi);
+              const float rest_w = (sw != nullptr ? row.w - control_w : row.w) - row.w / 3 - std::round(12 * s);
+              c.text(rest, TypeRole::ui_sm, row.x + row.w / 3,
+                     y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2), rest_w, Colour::ink_mute);
+              if (sw != nullptr) {
+                const std::string words = cell_words(line, switch_column);
+                const bool on = words == (*sw)["on"].get<std::string>();
+                const Rect control{row.right() - std::round(40 * s), y + std::round((row_h - 22 * s) / 2),
+                                   std::round(40 * s), std::round(22 * s)};
+                const float word_w = c.width(words, TypeRole::ui_sm);
+                c.text(words, TypeRole::ui_sm, control.x - std::round(12 * s) - word_w,
+                       y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2), word_w + 1, Colour::ink_body);
+                if (on) {
+                  c.fill(control, Colour::gold, control.h / 2);
+                } else {
+                  c.fill(control, Colour::ground_well, control.h / 2);
+                  c.stroke(control, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), control.h / 2);
+                }
+                const float knob = std::round(16 * s);
+                c.circle(Rect{on ? control.right() - knob - std::round(3 * s) : control.x + std::round(3 * s),
+                              control.y + std::round((control.h - knob) / 2), knob, knob},
+                         on ? Colour::on_gold : Colour::ink_mute);
+                if (page_focus(FocusKind::cell, cell_id)) {
+                  c.focused(control);
+                }
+              }
+              y += row_h;
+              if (refusal != refusals_.end()) {  // the space's reason, under its row (§5.7)
+                c.text(refusal->second, TypeRole::ui_sm, row.x, y - std::round(8 * s), row.w, Colour::rot);
+                y += std::round(line_height(TypeRole::ui_sm, s));
+              }
+            }
             continue;
           }
           for (const std::string& key : block.keys.value_or(std::vector<std::string>{})) {
@@ -1280,6 +1467,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         if (st.locked) {
           hints = "Locked in this version    Esc  Back";
         }
+      } else if (f.kind == FocusKind::cell) {
+        hints = "Enter  Toggle    Esc  Back";  // a table's switch, as a setting's but with no default to reset to
       } else {
         hints = "Enter  Open    Esc  Back";
       }
