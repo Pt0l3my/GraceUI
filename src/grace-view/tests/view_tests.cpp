@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -777,4 +778,94 @@ TEST_CASE("a space's state components in game (D184): a key-value list, a check 
   CHECK(log.component_topics().empty());  // a live feed and a log tail: streams, the browser's for now
   log.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
   CHECK(list.dump().find("Shown in the browser view.") != std::string::npos);
+}
+
+namespace {
+
+// The demo space's page data, changed by `edit`, loaded and open on `page`.
+PageView demo_edited(const std::function<void(Json&)>& edit, std::string_view page) {
+  const auto& s = test::space("demo");
+  Json pages = Json::parse(s.pages);
+  edit(pages);
+  PageView view;
+  std::string why;
+  REQUIRE(view.load(test::decoded<grace::protocol::SpacePages>(pages.dump()),
+                    test::decoded<grace::protocol::SettingsDescription>(s.settings), why));
+  REQUIRE(view.open(page));
+  return view;
+}
+
+Json& overview_blocks(Json& pages) { return pages["pages"][0]["sections"][0]["blocks"]; }
+
+}  // namespace
+
+TEST_CASE("props.field and props.empty (D185, D186): a topic's member, and the space's words once it has spoken") {
+  PageView view = demo_edited(
+      [](Json& pages) { overview_blocks(pages)[0]["props"] = Json{{"field", "now"}, {"empty", "All quiet."}}; },
+      "demo.overview");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("Nothing to show yet.") != std::string::npos);  // nothing published: never "All quiet."
+  CHECK(list.dump().find("All quiet.") == std::string::npos);
+  view.set_topic("lantern.status", Json{{"now", {{"tiles", Json::array({{{"label", "Oil"}, {"value", "40%"}}})}}},
+                                        {"sentence", "Low on oil."}});
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("\"40%\"") != std::string::npos);         // the tiles from the member
+  CHECK(list.dump().find("\"Low on oil.\"") != std::string::npos);  // the sentence block, with no field, the whole body
+  view.set_topic("lantern.status", Json{{"now", {{"tiles", Json::array()}}}});
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("\"All quiet.\"") != std::string::npos);
+}
+
+TEST_CASE("space.state greys pages (D188): their words, inert controls; a page not named stays usable") {
+  const auto with_state = [](Json& pages) {
+    pages["topics"].push_back(Json{{"id", "space.state"}, {"shape", "state"}});
+  };
+  PageView view = demo_edited(with_state, "demo.behaviour");
+  CHECK(view.component_topics() == std::vector<std::string>{"space.state"});
+  view.set_topic("space.state", Json{{"greyed", {{"demo.behaviour", "Load a lantern to see this."}}}});
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("\"Load a lantern to see this.\"") != std::string::npos);
+  CHECK(view.focused() == "setting:lantern.enabled");
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // inert
+  CHECK(press(view, Key::right).kind == Action::Kind::none);
+  CHECK(press(view, Key::reset).kind == Action::Kind::none);
+  // The overview is not named: usable, but its shortcut to Behaviour's setting is inert, its home being greyed.
+  view.open("demo.overview");
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("Load a lantern") == std::string::npos);
+  // The whole space, every page not named, with the shorthand; and lifted again.
+  view.set_topic("space.state", Json{{"inactive", "The lantern is out."}});
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("\"The lantern is out.\"") != std::string::npos);
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // the overview's Trim action, inert
+  view.set_topic("space.state", Json::object());
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("The lantern is out.") == std::string::npos);
+}
+
+TEST_CASE("a shortcut row's control in game (D189): ← → change its home's setting, Enter follows its link") {
+  PageView view = loaded("demo", "demo.overview");
+  for (int i = 0; i < 6 && view.focused() != "shortcut:lantern.brightness"; ++i) {
+    press(view, Key::down);
+  }
+  REQUIRE(view.focused() == "shortcut:lantern.brightness");
+  const Action a = press(view, Key::right);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.args["key"] == "lantern.brightness");
+  CHECK(a.command.args["value"].get<double>() == doctest::Approx(0.85));
+  press(view, Key::activate);
+  CHECK(view.page() == "demo.behaviour");
+  CHECK(view.focused() == "setting:lantern.brightness");
+  // Greyed at its home: the shortcut changes nothing, and its link still goes there.
+  PageView greyed = demo_edited(
+      [](Json& pages) { pages["topics"].push_back(Json{{"id", "space.state"}, {"shape", "state"}}); }, "demo.overview");
+  greyed.set_topic("space.state", Json{{"greyed", {{"demo.behaviour", "Not now."}}}});
+  for (int i = 0; i < 6 && greyed.focused() != "shortcut:lantern.brightness"; ++i) {
+    press(greyed, Key::down);
+  }
+  CHECK(press(greyed, Key::right).kind == Action::Kind::none);
+  press(greyed, Key::activate);
+  CHECK(greyed.page() == "demo.behaviour");
 }

@@ -4,12 +4,13 @@
 // what its topic's body holds, as text: a space formats its own words (§6.1), and no string is ever markup (D81). A topic
 // with nothing published yet shows an empty state, and nothing it might hold (invariant 2). Until protocol.toml defines
 // the components' bodies, each reads the shape the demo space's fixtures give (D166).
-import { useEffect, useState } from "preact/hooks";
+import { useContext, useEffect, useState } from "preact/hooks";
+import type { JSX } from "preact";
 import type { Signal } from "@preact/signals";
 import type { Json, JsonObject, PageBlock } from "../protocol.ts";
 import type { TopicData } from "../model/session.ts";
 import { refusalWords } from "../model/session.ts";
-import { useSession } from "./context.ts";
+import { GreyedContext, useSession } from "./context.ts";
 import { Warning } from "./icons.tsx";
 
 function text(value: Json | undefined): string | null {
@@ -21,7 +22,11 @@ function objects(value: Json | undefined): JsonObject[] {
     ? value.filter((v): v is JsonObject => typeof v === "object" && v !== null && !Array.isArray(v)) : [];
 }
 
-function Empty() {
+// The empty state: the space's own words once its topic has published an empty body (D186), else the framework's.
+function Empty({ own }: { own?: string | null }) {
+  if (own) {
+    return <div class="empty"><p class="empty__line">{own}</p></div>;
+  }
   return (
     <div class="empty">
       <p class="empty__line">Nothing to show yet.</p>
@@ -30,7 +35,7 @@ function Empty() {
   );
 }
 
-function useTopic(space: string, topic: string | undefined): TopicData | undefined {
+export function useTopic(space: string, topic: string | undefined): TopicData | undefined {
   const session = useSession();
   const [watched, setWatched] = useState<Signal<TopicData | undefined> | null>(null);
   useEffect(() => {
@@ -44,10 +49,10 @@ function useTopic(space: string, topic: string | undefined): TopicData | undefin
   return watched?.value;
 }
 
-function StatTiles({ body }: { body: JsonObject }) {
+function StatTiles({ body, empty }: { body: JsonObject; empty: JSX.Element }) {
   const tiles = objects(body.tiles).filter((t) => text(t.label) !== null && text(t.value) !== null);
   if (tiles.length === 0) {
-    return <Empty />;
+    return empty;
   }
   return (
     <dl class="tiles">
@@ -64,10 +69,12 @@ function StatTiles({ body }: { body: JsonObject }) {
   );
 }
 
-function Feed({ rows, newestFirst, live }: { rows: JsonObject[]; newestFirst: boolean; live: boolean }) {
+function Feed({ rows, newestFirst, live, empty }: {
+  rows: JsonObject[]; newestFirst: boolean; live: boolean; empty: JSX.Element;
+}) {
   const lines = rows.filter((r) => text(r.line) !== null);
   if (lines.length === 0) {
-    return <Empty />;
+    return empty;
   }
   const ordered = newestFirst ? [...lines].reverse() : lines;
   const list = (
@@ -83,10 +90,10 @@ function Feed({ rows, newestFirst, live }: { rows: JsonObject[]; newestFirst: bo
   return live ? <div role="log" aria-live="polite">{list}</div> : list;
 }
 
-function KeyValues({ body }: { body: JsonObject }) {
+function KeyValues({ body, empty }: { body: JsonObject; empty: JSX.Element }) {
   const items = objects(body.items).filter((t) => text(t.label) !== null && text(t.value) !== null);
   if (items.length === 0) {
-    return <Empty />;
+    return empty;
   }
   return (
     <dl class="kv">
@@ -120,19 +127,21 @@ function switchOf(column: JsonObject): SwitchColumn | null {
 
 // A table (D166); a column with a switch (D181) shows each row's state as the space published it, never flipped here
 // (invariant 1): a press sends the space's command, and the space's next body shows the change.
-function Table({ space, body }: { space: string; body: JsonObject }) {
+function Table({ space, body, empty }: { space: string; body: JsonObject; empty: JSX.Element }) {
   const session = useSession();
   const [busy, setBusy] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
+  const greyed = useContext(GreyedContext);
+  const inert = greyed.words(greyed.page) !== null;  // a greyed page's switches do nothing (D188)
   const columns = objects(body.columns).filter((c) => text(c.id) !== null && text(c.label) !== null);
   const rows = objects(body.rows);
   if (columns.length === 0 || rows.length === 0) {
-    return <Empty />;
+    return empty;
   }
   const first = columns.find((c) => switchOf(c) === null && c.numeric !== true);
   const flip = async (sw: SwitchColumn, row: JsonObject, on: boolean) => {
     const name = row[sw.key];
-    if ((typeof name !== "string" && typeof name !== "number") || busy !== null) {
+    if ((typeof name !== "string" && typeof name !== "number") || busy !== null || inert) {
       return;
     }
     setRefusal(null);
@@ -169,7 +178,7 @@ function Table({ space, body }: { space: string; body: JsonObject }) {
                       <span class="switch-wrap">
                         <button type="button" role="switch" class="switch" aria-checked={on}
                                 aria-label={rowName !== null ? `${text(c.label)}: ${rowName}` : text(c.label) ?? undefined}
-                                aria-disabled={busy !== null || undefined} data-control=""
+                                aria-disabled={busy !== null || inert || undefined} data-control=""
                                 onClick={() => void flip(sw, r, on)}
                                 onKeyDown={(e) => {
                                   if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
@@ -196,10 +205,10 @@ function Table({ space, body }: { space: string; body: JsonObject }) {
 
 const CHECK_WORDS: { [state: string]: string } = { pass: "Passed", warn: "Warning", fail: "Failed", wait: "Waiting" };
 
-function CheckList({ body }: { body: JsonObject }) {
+function CheckList({ body, empty }: { body: JsonObject; empty: JSX.Element }) {
   const checks = objects(body.checks).filter((c) => text(c.label) !== null);
   if (checks.length === 0) {
-    return <Empty />;
+    return empty;
   }
   return (
     <ul class="checks">
@@ -220,27 +229,37 @@ function CheckList({ body }: { body: JsonObject }) {
 /** A component block: its topic watched while it is shown, its body drawn by its kind. */
 export function ComponentBlock({ space, block }: { space: string; block: PageBlock }) {
   const data = useTopic(space, block.component === "statement" ? undefined : block.topic);
+  const props = block.props ?? {};
+  // D185: one topic feeding several blocks, each drawing the member its props.field names.
+  const field = typeof props.field === "string" ? props.field : undefined;
+  const whole = data?.kind === "state" ? data.body : undefined;
+  const member = whole !== undefined && field !== undefined ? whole[field] : whole;
+  const body = typeof member === "object" && member !== null && !Array.isArray(member) ? member as JsonObject : undefined;
+  // D186: the space's own words for an empty block, once its topic has spoken.
+  const own = whole !== undefined && typeof props.empty === "string" ? props.empty : null;
+  const empty = <Empty own={own} />;
   switch (block.component) {
     case "statement": {
-      const line = text(block.props?.text);
+      const line = text(props.text);
       return line !== null ? <p class="statement">{line}</p> : null;
     }
     case "stat_tiles":
-      return data?.kind === "state" ? <StatTiles body={data.body} /> : <Empty />;
+      return body ? <StatTiles body={body} empty={empty} /> : empty;
     case "computed_sentence": {
-      const line = data?.kind === "state" ? text(data.body.sentence) : null;
-      return line !== null ? <p class="sentence">{line}</p> : <Empty />;
+      const line = body ? text(body.sentence) : null;
+      return line !== null ? <p class="sentence">{line}</p> : empty;
     }
     case "live_feed":
-      return <Feed rows={data?.kind === "rows" ? data.rows : []} newestFirst live />;
-    case "log_tail":
-      return <Feed rows={data?.kind === "rows" ? data.rows : []} newestFirst={false} live={false} />;
+      return <Feed rows={data?.kind === "rows" ? data.rows : []} newestFirst live empty={empty} />;
+    case "log_tail":  // D187: newest first if the page says so
+      return <Feed rows={data?.kind === "rows" ? data.rows : []} newestFirst={props.newest_first === true} live={false}
+                   empty={data?.kind === "rows" ? <Empty own={typeof props.empty === "string" ? props.empty : null} /> : empty} />;
     case "key_value_list":
-      return data?.kind === "state" ? <KeyValues body={data.body} /> : <Empty />;
+      return body ? <KeyValues body={body} empty={empty} /> : empty;
     case "table":
-      return data?.kind === "state" ? <Table space={space} body={data.body} /> : <Empty />;
+      return body ? <Table space={space} body={body} empty={empty} /> : empty;
     case "check_list":
-      return data?.kind === "state" ? <CheckList body={data.body} /> : <Empty />;
+      return body ? <CheckList body={body} empty={empty} /> : empty;
     default:
       return <p class="empty__line">Not shown in this version of the browser view.</p>;
   }

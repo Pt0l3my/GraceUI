@@ -699,3 +699,8 @@ both views; 4 a framework topic name and both views' grey; 5 grace-view alone. N
 per page from the start (its PAGES §4.4 greys some pages at L1 and others at the title screen, keeping the rest
 usable). The recommendation for (4) is now (b), a map from page id to its words, with (a) as a shorthand beside it
 (proposal 0006 §4, §8); EldenNet's session recommends the proposal with that change.
+
+**Decision (2026-11-20).** All five, as recommended, with (4) as revised: a framework topic `space.state` mapping each
+greyed page to its words, and a whole-space shorthand beside it. Built as D185 to D189 in GraceUI 0.2.7.
+
+**Owner's words.** "Agreed to proposal 0006".

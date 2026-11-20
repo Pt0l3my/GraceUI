@@ -36,7 +36,11 @@ text    ink.hi        589, 168   48x19   clip1 glyphs 5 "14 min"
 text    ink.body      203, 210  323x14   clip1 glyphs 58 "The north lantern burns steady amber, with oil for about three hours."
 line    rule          203, 235  561x1    clip1
 text    ink.hi        203, 244   52x15   clip1 glyphs 10 "Brightness"
-text    gold          680, 245   84x14   clip1 glyphs 16 "Lives in Behaviour"
+text    gold          469, 245   84x14   clip1 glyphs 16 "Lives in Behaviour"
+text    ink.body      737, 245   19x14   clip1 glyphs 4 "0.80"
+fill    ground.well   578, 250  134x3    r2 clip1
+fill    gold          578, 250  107x3    r2 clip1
+circle  gold.hi       680, 247   10x10   clip1
 fill    ground.2      189, 287  589x98   r3 clip1
 stroke  rule          189, 287  589x98   r3 w1 clip1
 text    gold          203, 298   37x11   clip1 glyphs 7 "Related"
@@ -51,4 +55,4 @@ text    gold          753, 349    5x15   clip1 glyphs 1 "→"
 line    rule          167, 575  633x1   
 text    ink.faint     189, 581  112x14   glyphs 16 "Enter  Open    Esc  Back"
 stroke  gold.hi       687,  49   92x24   r3 w1 clip1
-# 52 items, 1936 vertices, 3846 indices, 4 commands; check_draw_list: passes
+# 56 items, 2024 vertices, 4176 indices, 4 commands; check_draw_list: passes
