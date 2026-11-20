@@ -634,6 +634,17 @@ run-time read, a texture EldenNet registers for GraceUI at load, and (a) as the 
 
 **Follows from.** The owner's look review of the in-game menu (EldenNet's roadmap S11.2.d), 2026-11-20; §3, §5.5.
 
+*Later (2026-11-20):* the owner sent a cursor of another game's theme as a reference ("how about cursor like this one,
+but with elden ring colors and more rounded edges?"): a hollow arrowhead with a notched back and a looping glint. It
+was read only, never copied, and kept out of the repository; a mock-up of our own was shown, in three forms: A still,
+B with a lit edge, C with one glint played once (a loop being against invariant 14).
+
+**Decision (2026-11-20).** (a), as recommended, in form A: our own pointer, a notched arrowhead with rounded corners,
+`gold.hi` edge on a dark fill over a soft dark halo, still, with no glint; a text beam over fields. Built as D178.
+
+**Owner's words.** "the white animation is not required" (of the mock-up's glint, form C), after asking for a pointer
+"like this one, but with elden ring colors and more rounded edges".
+
 ## G32
 
 **Quieting a mod's notices** · *Open since 2026-11-20*
