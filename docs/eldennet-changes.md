@@ -702,3 +702,37 @@ The server library is built (S11.2.i). What EldenNet's launcher does with it, of
 4. It uses only the routes `/api/ticket` and `/api/ws`, and loopback only (§7.2 item 26).
 5. The page paces bursts: every message counts against 20 a second before it is parsed, subscriptions included.
 
+## 23. The ABI's protocol slots (2026-11-20, D169, agreed with EldenNet's session)
+
+GraceUI 0.2's table provides `register_pages`, `publish` and `answer`, and `poll` gives the space's events
+(`GRACEUI_CAP_PAGES`). What EldenNet does with them, on T6:
+
+1. **Register once**, after `connect`: `register_pages` with `GRACEUI_VIEW_GAME | GRACEUI_VIEW_BROWSER`, its version,
+   its increment, and its page data and settings description as JSON (GraceUI's format, D160), its `space` "eldennet".
+   GraceUI's server starts for it (the browser view, G4), on `dashboard.port`, only while `dashboard.enabled` is on and
+   never in the notice-only mode. With `graceui_sys.hpp`: `api.register_pages(consumer, views, version, pages,
+   settings, increment)`.
+2. **Poll with a buffer**: `api.poll(consumer, event, buffer, GRACEUI_FRAME_FROM_PAGE_MAX)`. Hotkeys come first, then
+   `GRACEUI_EVENT_WATCHED` / `_UNWATCHED` (a sub or unsub frame: start or stop building that topic) and
+   `GRACEUI_EVENT_COMMAND` (a cmd frame and `event.reply`). The old `poll(consumer, event)` still gives hotkeys alone.
+3. **Publish** state and rows frames of its own declared topics (at most 256 KiB each; EldenNet's kinds go as pages of
+   rows); a topic nobody watches is dropped.
+4. **Answer** every command exactly once with `api.answer(consumer, event.reply, result_frame)`: ok, or an error with
+   `body.detail` in words. A command left 10 s is answered `internal` by GraceUI with a log line naming the space: slow
+   work (self-test, finding servers, preparing lines) answers at once and publishes its progress.
+5. **The vendored headers** (graceui.h, graceui_sys.hpp, graceui_test.h) move to the commit that brings these; the
+   event's struct grew at its end, so code built against 0.1's headers keeps working, with hotkeys alone.
+6. **In game**, EldenNet's pages appear in GraceUI's menu once the menu shows a mod's space (D169's "not yet"), through
+   the same events: nothing more to do on EldenNet's side.
+
+## 24. The browser view's web shell (2026-11-20, D166)
+
+1. **The status lamp** shows only when a space publishes a state topic `status`, whose body is
+   `{"word": …, "tone": …, "reason": …, "page": …}` (the word in the top bar, its tone, the reason on hover and focus,
+   the page a click opens). EldenNet's L1 to L4 words and its Paused and Dormant (§4.2.3) map onto it.
+2. **Its pages and settings** reach the browser as registered (D169): GraceUI's server answers each space's `pages`
+   topic itself; EldenNet publishes its `settings` topic (a settings body: description, values, changed, inherited)
+   and answers `settings.set` and `settings.reset` at its one entry point.
+3. **Destructive commands** will carry `confirm: true` from both views (§7.3), and GraceUI will refuse one without it
+   `confirm_required`: EldenNet's destructive commands need not check it themselves, but may.
+
