@@ -157,7 +157,9 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
 
   test("components draw their topics: tiles, a sentence, a live feed newest first, a log tail; nothing published, an empty state",
        async () => {
-    const { page, close } = await fresh();
+    const spaces = builtinSpaces();
+    delete spaces[0]?.topics?.["graceui.about"];  // a topic its space has published nothing on
+    const { page, close } = await fresh(spaces);
     try {
       await page.locator(".tile").first().waitFor();
       assert.deepEqual(await page.locator(".tile__value").evaluateAll((els) => els.map((e) => e.textContent)),
