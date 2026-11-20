@@ -2084,7 +2084,7 @@ void run_input(const std::wstring& dll) {
     const std::uint32_t second_after = poll_all(second, second_id, second_count);
     api.disconnect(second);
     check(first_answer.status == GRACEUI_OK && second_answer.status == GRACEUI_OK && api.has_cap("hotkeys") &&
-              f11_status == GRACEUI_OK && chat_status == GRACEUI_OK && taken_status == GRACEUI_OK && taken != 0 &&
+              f11_status == GRACEUI_OK && chat_status == GRACEUI_OK && taken_status == GRACEUI_UNBOUND && taken != 0 &&
               unbound_logged && escape_status == GRACEUI_REFUSED && again_status == GRACEUI_REFUSED &&
               bad_action == GRACEUI_REFUSED && chord_status == GRACEUI_NOT_YET && nothing_yet == 0 && !f11_read &&
               f11_fired && second_events == 0 && f11_messages == 0 && k_hidden && chat_fired && k_with_ctrl == 0 &&
@@ -2251,6 +2251,7 @@ const char* status_name(GraceUiStatus status) {
     case GRACEUI_FAULT: return "fault";
     case GRACEUI_NOT_READY: return "not_ready";
     case GRACEUI_TOO_LATE: return "too_late";
+    case GRACEUI_UNBOUND: return "unbound";
     default: return "UNKNOWN";
   }
 }
@@ -3820,6 +3821,27 @@ void run_copies(const std::wstring& dll) {
 }
 
 // The example finds a copy of GraceUI under another file name by its scan of the loaded modules (D70).
+// ---- graceui-sys with GraceUI not installed (D164): nothing answers, no module is named graceui.dll and the folder
+// holds no GraceUI\graceui.dll, so a look says so and GRACEUI_SYS_STOP_IF_ABSENT stops at once, not after 30 s.
+void run_absent() {
+  GraceUiSysFound found{};
+  found.size = sizeof found;
+  const ULONGLONG start = GetTickCount64();
+  const GraceUiApi1* api = graceui_sys_find(GRACEUI_SYS_LOAD | GRACEUI_SYS_STOP_IF_ABSENT, 30000, &found);
+  const ULONGLONG took = GetTickCount64() - start;
+  GraceUiSysFound without{};
+  without.size = sizeof without;
+  const ULONGLONG start_without = GetTickCount64();
+  graceui_sys_find(GRACEUI_SYS_LOAD, 700, &without);  // without the flag: it looks until its time is up
+  const ULONGLONG took_without = GetTickCount64() - start_without;
+  check(api == nullptr && found.installed == 0 && found.attempts == 1 && took < 1000 && without.attempts >= 3 &&
+            took_without >= 650,
+        "not installed",
+        "with GraceUI absent: %s, installed %u, after %u look(s) and %llu ms; without the flag, %u looks in %llu ms",
+        api == nullptr ? "nothing found" : "A TABLE", found.installed, found.attempts,
+        static_cast<unsigned long long>(took), without.attempts, static_cast<unsigned long long>(took_without));
+}
+
 void run_found_by_scan(const std::wstring& dll) {
   const std::wstring folder = folder_of_this_program() + L"renamed";
   CreateDirectoryW(folder.c_str(), nullptr);
@@ -4214,6 +4236,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"device-change") {
     std::printf("-- scenario: the game moves to a new device\n");
     run_device_change(dll);
+  } else if (scenario == L"absent") {
+    std::printf("-- scenario: graceui-sys with GraceUI not installed\n");
+    run_absent();
   } else if (scenario == L"examples") {
     std::printf("-- scenario: hello-notice before GraceUI, hello-debug-view after\n");
     run_examples(dll, true);
@@ -4237,7 +4262,7 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed"}) {
+            L"examples", L"examples-reversed", L"absent"}) {
         run(child_scenario, dll, this_program());
       }
       // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in

@@ -646,3 +646,21 @@ into EldenNet's design yet.
    off, its source in words (the chain's link that decides: the named slot, the type, the live kind, the base kind or
    the shipped default) and, if it has one, the page that sets it. Both views show it faint beside the row, the
    browser with the source as a link.
+
+## 20. From part 12's run (2026-11-20, D164)
+
+What GraceUI changed after EldenNet's part 12 ran end to end against f51bcc7. None of it is folded into EldenNet's design
+yet.
+
+1. **An unbound hotkey answers so**: `register_hotkey` answers `GRACEUI_UNBOUND` (11) with the hotkey's id when the
+   hotkey is registered but unbound (its default taken, or none), and `GRACEUI_OK` only when it is bound. EldenNet's
+   launcher keeps its own Pause key while EldenNet's GraceUI Pause is unbound; F11 likewise. With `graceui_sys.hpp`, the
+   wrapper returns the status as it comes. §17 item 1 reads accordingly.
+2. **Not installed, stop at once**: `GraceUiSysFound` has `installed` (1 if a module named `graceui.dll` was loaded or
+   `GraceUI\graceui.dll` was in the game's folder at the last look, else 0), and `graceui_sys_find` takes the flag
+   `GRACEUI_SYS_STOP_IF_ABSENT`, which ends the looking at the first look that finds GraceUI not installed. EldenNet's
+   own rule for this can go, using the flag instead.
+3. **The vendored headers**: EldenNet's copy of `graceui-sys` (with `graceui_test.h`) is updated to the commit that
+   brings these; every struct keeps its size field.
+4. **Imports of a consumer's Dear ImGui core**: built with `/Zc:threadSafeInit-`, the core does not import the
+   runtime's thread-safe statics; `ReadConsoleW` comes with `sscanf` either way.

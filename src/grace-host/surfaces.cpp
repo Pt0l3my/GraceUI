@@ -462,7 +462,7 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
     return GRACEUI_NOT_CONNECTED;
   }
   id = added_id;
-  return GRACEUI_OK;
+  return added == grace::input::Added::unbound ? GRACEUI_UNBOUND : GRACEUI_OK;  // D164: the mod learns which
 }
 
 GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out) noexcept {

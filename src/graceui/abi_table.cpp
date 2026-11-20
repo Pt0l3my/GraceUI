@@ -436,7 +436,7 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, const GraceUiHotkeyDesc*
     std::uint32_t id = 0;
     const GraceUiStatus status = grace::host::abi1::register_hotkey(consumer, in.key, in.modifiers, in.pad_chord,
                                                                     action_view, name_view, id);
-    if (status == GRACEUI_OK) {
+    if (status == GRACEUI_OK || status == GRACEUI_UNBOUND) {
       *hotkey_id = id;  // SAFETY: checked not null above
     }
     return status;
