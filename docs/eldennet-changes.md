@@ -874,3 +874,21 @@ In GraceUI 0.2.3 (no change of the ABI):
 In GraceUI 0.2.4 (no change of the ABI): the in-game menu takes the mouse on every space's pages, EldenNet's included:
 a click does what Enter does, a slider follows a held button, the wheel scrolls. Nothing for EldenNet to do; its
 pages' settings and actions arrive as the same commands as from the keys.
+
+## 36. The security review's fixes (2026-11-20, D183)
+
+In GraceUI 0.2.5 (no change of the ABI's shape; `register_pages` and `publish` refuse more):
+
+1. **A destructive action needs its `confirm` text**: `register_pages` refuses page data with an action of tone
+   `destructive` and no `confirm` (its words are what the second press shows). Check EldenNet's pages before your slice
+   registers them.
+2. **The space id `graceui` is reserved**; and a space may not declare a topic named `pages` (the server's own).
+3. **The `settings` topic is held to the registration**: if you publish `schema` or `description`, they must be the
+   ones you registered (compared decoded), or the frame is refused; a secret's value is replaced by `"set"` or `""`,
+   with one log line. Publish secrets' status only, as GraceUI's own store does.
+4. **Your anti-cheat flag now works**: `set_world_state` with `GRACEUI_WORLD_ANTI_CHEAT` closes the browser view's
+   server for the rest of the session, whatever any space asks; GraceUI also re-checks the process's modules every
+   60 s while the server runs. The menu stays.
+5. **Not yet: which view sent a command** (§7.3). Both views are this PC's until pairing; telling a space the view is
+   an addition to ABI 1 (a field in the command's event), to agree with you before the home network comes, since your
+   refusal of `secrets.set` and `providers.update` from paired devices (§7.2 item 16) needs it.
