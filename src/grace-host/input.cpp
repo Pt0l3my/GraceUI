@@ -615,7 +615,7 @@ void before_imgui_frame(std::uint32_t width, std::uint32_t height) noexcept {
                           scaled(cursor.y, height, g_client_height.load(std::memory_order_relaxed)));
     }
   }
-  io.MouseDrawCursor = active && holder.takes(grace::input::want_mouse);  // ImGui draws its own cursor (§5.5)
+  io.MouseDrawCursor = active && holder.takes(grace::input::want_mouse);  // the holder's pointer: the Grace pointer (D178)
   HolderEvent event;
   if (!active) {
     for (int i = 0; i < 256 && g_events.pop(event); ++i) {

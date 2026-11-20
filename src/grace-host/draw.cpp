@@ -38,6 +38,7 @@
 #include "draw_atlas.h"
 #include "grace/abi/panels.h"
 #include "grace/abi/registry.h"
+#include "grace/draw/pointer.h"
 #include "grace/tokens.h"
 #include "imgui.h"
 #include "imgui_impl_dx12.h"
@@ -113,7 +114,7 @@ static_assert(kNoticeMargin == GRACEUI_TEST_NOTICE_MARGIN && kNoticeWidth == GRA
 
 // The foreground draw list's room, reserved at warm-up for the most one frame draws: five notices of three lines (Dear
 // ImGui reserves four vertices and six indices for every byte of a text it draws, then gives back what it did not
-// use), the test panel and a holder's cursor.
+// use), the test panel and a holder's pointer (D178).
 constexpr int kReservedVertices = 8192;
 constexpr int kReservedIndices = 12288;
 constexpr int kFrameLists = static_cast<int>(grace::abi::kMaxPanels) + 32;  // the frame's draw lists, all layers
@@ -900,6 +901,47 @@ void draw_icon(ImDrawList* list, std::uint32_t tone, float x, float centre_y) {
   list->AddRectFilled(ImVec2(x + half - 1.0f, centre_y + 2.5f), ImVec2(x + half + 1.0f, centre_y + 4.5f), mark);
 }
 
+// The Grace pointer (G31, D178), drawn in Dear ImGui's place for a holder that takes the mouse: at `at`, the hotspot, at
+// the effective scale `s` and in the theme's colours. A text beam where Dear ImGui asks for one. Into the foreground
+// list, within the room reserved at warm-up; warm-up's frame draws both once, so that their first use in play allocates
+// nothing (invariant 10).
+constexpr ImU32 tinted(std::uint32_t rgb, float alpha) noexcept {
+  return (static_cast<ImU32>(alpha * 255.0f + 0.5f) << IM_COL32_A_SHIFT) | (opaque(rgb) & ~IM_COL32_A_MASK);
+}
+
+void draw_pointer(ImDrawList* list, ImVec2 at, ImGuiMouseCursor shape, float s, bool clear) {
+  namespace pointer = grace::draw;
+  const grace::tokens::Palette& colours = clear ? grace::tokens::kClear.colour : grace::tokens::kGrace.colour;
+  const ImU32 edge = opaque(colours.gold_hi.rgb());
+  const ImU32 fill = tinted(colours.ground_0.rgb(), pointer::kPointerFillAlpha);
+  const ImU32 halo = tinted(colours.ground_0.rgb(), pointer::kPointerHaloAlpha);
+  const float edge_width = (clear ? pointer::kPointerEdgeClear : pointer::kPointerEdge) * s;
+  if (shape == ImGuiMouseCursor_TextInput) {
+    const float half = pointer::kBeamHeight * s * 0.5f;
+    const float stem = pointer::kBeamStem * s * 0.5f;
+    const float bar = pointer::kBeamBar * s * 0.5f;
+    const float pad = (pointer::kPointerHalo - pointer::kPointerEdge) * 0.5f * s;
+    const ImVec4 parts[3] = {{at.x - stem, at.y - half, at.x + stem, at.y + half},
+                             {at.x - bar, at.y - half, at.x + bar, at.y - half + edge_width},
+                             {at.x - bar, at.y + half - edge_width, at.x + bar, at.y + half}};
+    for (const ImVec4& r : parts) {
+      list->AddRectFilled(ImVec2(r.x - pad, r.y - pad), ImVec2(r.z + pad, r.w + pad), halo, pad + stem);
+    }
+    for (const ImVec4& r : parts) {
+      list->AddRectFilled(ImVec2(r.x, r.y), ImVec2(r.z, r.w), edge, stem);
+    }
+    return;
+  }
+  ImVec2 points[pointer::kPointerPoints];
+  for (std::size_t i = 0; i < pointer::kPointerPoints; ++i) {
+    points[i] = ImVec2(at.x + pointer::kPointerOutline[i].x * s, at.y + pointer::kPointerOutline[i].y * s);
+  }
+  constexpr int count = static_cast<int>(pointer::kPointerPoints);
+  list->AddPolyline(points, count, halo, pointer::kPointerHalo * s, ImDrawFlags_Closed);
+  list->AddConcavePolyFilled(points, count, fill);
+  list->AddPolyline(points, count, edge, edge_width, ImDrawFlags_Closed);
+}
+
 void draw_notices(const grace::abi::NoticeList& notices, std::int64_t now_ms) {
   const float display_width = static_cast<float>(g.width);
   const float width = std::min(kNoticeWidth, display_width - 2.0f * kNoticeMargin);
@@ -1077,6 +1119,10 @@ void prime_frame() {
     list->IdxBuffer.reserve(kReservedIndices);
     list->CmdBuffer.reserve(16);
   }
+  // The pointer's shapes once, off the display: their scratch room grows here, not at their first use in play.
+  for (const ImGuiMouseCursor shape : {ImGuiMouseCursor_Arrow, ImGuiMouseCursor_TextInput}) {
+    draw_pointer(ImGui::GetForegroundDrawList(), ImVec2(-1000.0f, -1000.0f), shape, 4.0f, true);
+  }
   ImGui::Render();
   for (ImDrawList*& list : g_panel_lists) {
     list = IM_NEW(ImDrawList)(ImGui::GetDrawListSharedData());
@@ -1111,8 +1157,16 @@ ImDrawData* build_frame(const grace::abi::NoticeList& notices, std::int64_t now_
   ImGui::NewFrame();
   input::after_new_frame();
   draw_test_panel();
-  draw_notices(notices, now_ms);  // the foreground list: above every layer but the holder's cursor (D76)
+  draw_notices(notices, now_ms);  // the foreground list: above every layer but the holder's pointer (D76)
   ImDrawList* const foreground = ImGui::GetForegroundDrawList();
+  if (io.MouseDrawCursor) {
+    // The Grace pointer in Dear ImGui's place (G31, D178): the shape it asked for, and none of its own drawn.
+    const ImGuiMouseCursor shape = ImGui::GetMouseCursor();
+    ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+    if (shape != ImGuiMouseCursor_None && ImGui::IsMousePosValid()) {
+      draw_pointer(foreground, io.MousePos, shape, menu::bake_scale(g.height), menu::clear_theme());
+    }
+  }
   ImGui::Render();
   const ImDrawData* own = ImGui::GetDrawData();
 

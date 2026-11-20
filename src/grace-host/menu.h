@@ -16,6 +16,8 @@ namespace grace::host::menu {
 
 // The effective scale the menu's faces are baked at (§3.13): (height / 1080) times ui.scale.
 float bake_scale(std::uint32_t height) noexcept;
+// Whether GraceUI's theme is Grace Clear (ui.menu.theme), for what the present thread draws in it: the pointer.
+bool clear_theme() noexcept;
 
 // The window procedure, on a fresh press of the menu key with no holder: asks for input as the menu; granted, GraceUI's
 // thread lays out the first frame; not now, one of GraceUI's notices says why (§5.1).

@@ -177,7 +177,7 @@ typedef struct GraceUiTestInput {
   uint32_t events_dropped;     /* the holder's events the ring had no room for */
   uint32_t chars_seen;         /* code points Dear ImGui received since the last reset (GraceUI_Test_GetChars) */
   uint32_t imgui_keys_down;    /* Dear ImGui's keys down after the last frame, mouse buttons not counted */
-  uint32_t imgui_draws_cursor; /* 1 if the last frame drew Dear ImGui's own cursor */
+  uint32_t imgui_draws_cursor; /* 1 if the last frame drew the holder's pointer (the Grace pointer, D178) */
   int32_t imgui_mouse_x;       /* Dear ImGui's mouse position after the last frame, in back-buffer pixels */
   int32_t imgui_mouse_y;
   uint64_t frames_fed;         /* frames whose input came from a holder */

@@ -61,6 +61,7 @@ constinit std::atomic<grace::abi::DrawListBuffers*> g_lists{nullptr};  // made b
 constinit std::atomic<bool> g_off{false};
 constinit std::atomic<std::uint32_t> g_width{0};
 constinit std::atomic<std::uint32_t> g_height{0};
+constinit std::atomic<bool> g_clear_theme{false};  // ui.menu.theme is Grace Clear: the pointer's colours (G31)
 constinit std::atomic<float> g_ui_scale{0.0f};  // ui.scale as the store holds it, for the next bake's scale; 0 unread
 
 // The test exports' view (and nothing else reads it).
@@ -386,6 +387,7 @@ void take_effects(State& m) {
   m.ui_scale = scale.is_number() ? scale.get<double>() : 1.0;
   g_ui_scale.store(static_cast<float>(m.ui_scale), std::memory_order_relaxed);
   m.clear = store.held("ui.menu.theme") == "clear";
+  g_clear_theme.store(m.clear, std::memory_order_relaxed);
   own_view(m).view.set_values(store.values());
   m.revision = own_space().revision();
 }
@@ -643,6 +645,8 @@ float default_ui_scale() noexcept {
 }
 
 }  // namespace
+
+bool clear_theme() noexcept { return g_clear_theme.load(std::memory_order_relaxed); }
 
 float bake_scale(std::uint32_t height) noexcept {
   float ui_scale = g_ui_scale.load(std::memory_order_relaxed);

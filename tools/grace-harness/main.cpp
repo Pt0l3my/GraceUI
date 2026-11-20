@@ -4079,6 +4079,17 @@ void run_menu(const std::wstring& dll) {
         "36000 in the rail, %d of 180000 in the page)",
         game_left, game_right);
   save_shot(grace_shot, "menu-grace-1920x1080.bmp");
+  // The Grace pointer (G31, D178) at the mouse: its gold edge in the box it covers at 1.25, and none of Dear ImGui's
+  // white arrow.
+  {
+    const GraceUiTestInput at = grace.input();
+    const UINT x = static_cast<UINT>(std::max(at.imgui_mouse_x, 2));
+    const UINT y = static_cast<UINT>(std::max(at.imgui_mouse_y, 2));
+    const int gold = count_near(grace_shot, x, y, x + 20, y + 26, Colour{0xE3, 0xC5, 0x79}, 24);
+    const int white = count_near(grace_shot, x - 2, y - 2, x + 22, y + 28, Colour{255, 255, 255}, 8);
+    check(at.imgui_draws_cursor == 1 && gold >= 30 && white == 0, "menu: the Grace pointer",
+          "at %u,%u: %d pixels of its gold edge, %d white", x, y, gold, white);
+  }
 
   // 2. → raises ui.scale by its step: GraceUI's store takes it, and the page is laid out again at the new scale.
   press(window, VK_RIGHT, 0x4D);

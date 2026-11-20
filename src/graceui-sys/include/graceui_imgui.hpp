@@ -41,6 +41,7 @@ static_assert(sizeof(ImDrawVert) == sizeof(GraceUiDrawVert) && sizeof(ImDrawIdx)
 // The flags a headless Dear ImGui sets for GraceUI: commands keep their vertex offsets, and nothing is written to disk.
 inline void prepare(ImGuiIO& io) noexcept {
   io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
+  io.MouseDrawCursor = false;  // GraceUI's host draws the Grace pointer for a holder that takes the mouse (D178)
   io.IniFilename = nullptr;
   io.LogFilename = nullptr;
 }

@@ -8,6 +8,7 @@
 
 #include "alloc_counter.h"
 #include "fake_face.h"
+#include "grace/draw/pointer.h"
 #include "grace/draw/tessellate.h"
 #include "grace/view/page_view.h"
 
@@ -164,3 +165,64 @@ TEST_CASE("at 150%, on a smaller display, the page still passes the checker") {
   context.atlas_generation = 1;
   CHECK(abi::check_draw_list(out, context) == abi::Refusal::none);
 }
+
+// ---- The Grace pointer (G31, D178).
+
+namespace {
+
+float cross(draw::PointerPoint o, draw::PointerPoint a, draw::PointerPoint b) {
+  return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+}
+
+bool segments_cross(draw::PointerPoint a, draw::PointerPoint b, draw::PointerPoint c, draw::PointerPoint d) {
+  const float d1 = cross(c, d, a);
+  const float d2 = cross(c, d, b);
+  const float d3 = cross(a, b, c);
+  const float d4 = cross(a, b, d);
+  return ((d1 > 0) != (d2 > 0)) && ((d3 > 0) != (d4 > 0)) && d1 != 0 && d2 != 0 && d3 != 0 && d4 != 0;
+}
+
+}  // namespace
+
+TEST_CASE("the pointer: its tip at the hotspot, its size, and an outline that never crosses itself") {
+  const auto& outline = draw::kPointerOutline;
+  REQUIRE(outline.size() == draw::kPointerPoints);
+  float nearest = 1e9f;
+  float min_x = 1e9f, max_x = -1e9f, min_y = 1e9f, max_y = -1e9f;
+  for (const draw::PointerPoint& p : outline) {
+    nearest = std::min(nearest, std::hypot(p.x, p.y));
+    min_x = std::min(min_x, p.x);
+    max_x = std::max(max_x, p.x);
+    min_y = std::min(min_y, p.y);
+    max_y = std::max(max_y, p.y);
+  }
+  CHECK(nearest < 0.6f);  // the rounded tip stays within about half a pixel of the hotspot
+  CHECK(min_x >= 0.0f);
+  CHECK(min_y >= 0.0f);
+  CHECK(max_x < 14.2f);
+  CHECK(max_y < 19.0f);
+  CHECK(max_y > 17.5f);  // about 24 px tall at the default 1.25 at 1080 lines
+  // A simple polygon: no edge crosses another that it does not share a point with, so Dear ImGui's concave fill takes it.
+  const std::size_t n = outline.size();
+  int crossings = 0;
+  for (std::size_t i = 0; i < n; ++i) {
+    for (std::size_t j = i + 2; j < n; ++j) {
+      if (i == 0 && j == n - 1) {
+        continue;  // the closing edge meets the first
+      }
+      crossings += segments_cross(outline[i], outline[(i + 1) % n], outline[j], outline[(j + 1) % n]) ? 1 : 0;
+    }
+  }
+  CHECK(crossings == 0);
+  // One winding all round but at the notch, which turns the other way: the arrowhead's back.
+  int left_turns = 0;
+  int right_turns = 0;
+  for (std::size_t i = 0; i < n; ++i) {
+    const float turn = cross(outline[i], outline[(i + 1) % n], outline[(i + 2) % n]);
+    left_turns += turn > 1e-6f ? 1 : 0;
+    right_turns += turn < -1e-6f ? 1 : 0;
+  }
+  CHECK(std::min(left_turns, right_turns) > 0);
+  CHECK(std::min(left_turns, right_turns) <= static_cast<int>(draw::kPointerArcPoints) + 1);
+}
+
