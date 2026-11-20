@@ -278,3 +278,105 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
   CHECK((*result)["ok"] == true);
   CHECK(disconnects == 1);
 }
+
+TEST_CASE("the menu's side, with no server: the space listed, a watch, its state, a command and its result (D171)") {
+  spaces::Registry registry;
+  int wakes = 0;
+  registry.set_game_wake([&] { ++wakes; });
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame), why) == Status::ok);
+  const auto listed = registry.game_spaces();
+  REQUIRE(listed.size() == 1);
+  CHECK(listed[0].id == "demo");
+  CHECK(listed[0].name == "Demo space");
+  CHECK(listed[0].pages->pages.size() == 4);
+  CHECK(listed[0].settings->settings.size() == 12);
+
+  registry.game_watch("demo", "settings", true);
+  registry.game_watch("demo", "settings", true);  // twice: still one watch, one event
+  Polled watched = poll(registry);
+  REQUIRE(watched.kind == EventKind::watched);
+  CHECK(Json::parse(watched.frame)["topic"] == "settings");
+  CHECK(poll(registry).kind == EventKind::none);
+
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"settings","rev":4,"body":{"values":{"lantern.wicks":5}}})",
+                         why) == Status::ok);
+  Json body;
+  std::uint64_t rev = 0;
+  REQUIRE(registry.game_state("demo", "settings", 0, body, rev));
+  CHECK(rev == 4);
+  CHECK(body["values"]["lantern.wicks"] == 5);
+  CHECK_FALSE(registry.game_state("demo", "settings", 4, body, rev));  // nothing newer
+  CHECK(wakes >= 1);
+
+  std::uint64_t ticket = 0;
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 3, "settings.set",
+                                                      Json::object({{"key", "lantern.wicks"}, {"value", 6}})},
+                                ticket));
+  CHECK_FALSE(registry.game_command("elsewhere", protocol::Cmd{}, ticket));
+  const Polled command = poll(registry);
+  REQUIRE(command.kind == EventKind::command);
+  CHECK(Json::parse(command.frame)["name"] == "settings.set");
+  CHECK(registry.answer(kMod, command.reply,
+                        R"({"v":1,"t":"result","space":"demo","id":0,"error":"invalid_value","body":{"detail":"No."}})",
+                        why) == Status::ok);
+  const auto results = registry.take_game_results();
+  REQUIRE(results.size() == 1);
+  CHECK(results[0].ticket == command.reply);
+  CHECK(results[0].result.id == 3);
+  CHECK(results[0].result.error == protocol::ErrorCode::invalid_value);
+  CHECK(registry.take_game_results().empty());
+
+  registry.game_watch("demo", "settings", false);
+  CHECK(poll(registry).kind == EventKind::unwatched);
+  CHECK_FALSE(registry.game_state("demo", "settings", 0, body, rev));  // forgotten with the watch
+}
+
+TEST_CASE("the menu's watch and the browser's merge: one WATCHED, one UNWATCHED, whichever comes first") {
+  Fixture fixture(no_spaces());
+  REQUIRE(fixture.started == serve::StartResult::ok);
+  spaces::Registry registry;
+  registry.attach(fixture.server);
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame | spaces::kViewBrowser),
+                       why) == Status::ok);
+  REQUIRE(fixture.wait_files());
+  auto view = fixture.join();
+  REQUIRE(view != nullptr);
+  REQUIRE(view->send_json(frame("sub", {{"space", "demo"}, {"id", 1}, {"topic", "lantern.status"}})));
+  REQUIRE(wait_event(registry).kind == EventKind::watched);
+  registry.game_watch("demo", "lantern.status", true);  // the mod builds it already
+  CHECK(poll(registry).kind == EventKind::none);
+  // A state goes to both: the browser's view, and the menu's copy.
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.status","rev":2,"body":{"tiles":[]}})",
+                         why) == Status::ok);
+  REQUIRE(view->next_of("state"));
+  Json body;
+  std::uint64_t rev = 0;
+  CHECK(registry.game_state("demo", "lantern.status", 0, body, rev));
+  REQUIRE(view->send_json(frame("unsub", {{"space", "demo"}, {"id", 2}, {"topic", "lantern.status"}})));
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  CHECK(poll(registry).kind == EventKind::none);  // the menu still watches it
+  registry.game_watch("demo", "lantern.status", false);
+  CHECK(poll(registry).kind == EventKind::unwatched);
+}
+
+TEST_CASE("the menu's command left unanswered: internal after the deadline, in the menu's results") {
+  spaces::Registry registry;
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame), why) == Status::ok);
+  std::uint64_t ticket = 0;
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 9, "lantern.trim", Json::object()}, ticket));
+  REQUIRE(poll(registry).kind == EventKind::command);
+  CHECK(registry.expire(std::chrono::steady_clock::now() + spaces::kAnswerDeadline + std::chrono::seconds(1)) == 1);
+  const auto results = registry.take_game_results();
+  REQUIRE(results.size() == 1);
+  CHECK(results[0].ticket == ticket);
+  CHECK(results[0].result.error == protocol::ErrorCode::internal);
+}

@@ -83,6 +83,35 @@ class Registry {
   std::size_t expire(std::chrono::steady_clock::time_point now);
   std::size_t pending() const noexcept;
 
+  // ---- The in-game view's side (D171), for the menu on GraceUI's own thread. The menu watches a topic as a view does:
+  // the mod hears WATCHED when the first of the menu and the browser's views watches it, and UNWATCHED when neither
+  // does. A state the mod publishes to a topic the menu watches is kept, the newest, for the menu to take. The menu's
+  // commands reach the mod as any view's do, with a reply handle and the same deadline; their results wait for it.
+  struct GameSpace {
+    std::string id;
+    std::string name;
+    std::shared_ptr<const protocol::SpacePages> pages;
+    std::shared_ptr<const protocol::SettingsDescription> settings;
+  };
+  struct GameResult {
+    std::uint64_t ticket = 0;  // game_command's
+    protocol::Result result;
+  };
+  // Called (outside the lock, from any thread) when something waits for the menu: a space came or went, a state it
+  // watches was published, a result of its came back.
+  void set_game_wake(std::function<void()> wake);
+  // The spaces that asked for the game's view, in the order they registered.
+  std::vector<GameSpace> game_spaces() const;
+  std::uint64_t spaces_revision() const noexcept;
+  void game_watch(std::string_view space, std::string_view topic, bool on);
+  // The newest state of a topic the menu watches, if newer than `seen`.
+  bool game_state(std::string_view space, std::string_view topic, std::uint64_t seen, protocol::Json& body,
+                  std::uint64_t& rev) const;
+  // The menu's command to a mod's space: false if the space is not there or too many commands wait; `ticket` names
+  // its result.
+  bool game_command(std::string_view space, protocol::Cmd command, std::uint64_t& ticket);
+  std::vector<GameResult> take_game_results();
+
  private:
   struct Space;
   struct Pending;
@@ -95,6 +124,10 @@ class Registry {
   std::vector<std::unique_ptr<Space>> spaces_;
   std::vector<Pending> pending_;
   std::uint64_t next_reply_ = 1;
+  std::uint64_t spaces_revision_ = 1;
+  std::vector<GameResult> game_results_;
+  std::function<void()> game_wake_;
+  void wake_game() const;
 };
 
 }  // namespace grace::spaces

@@ -402,3 +402,105 @@ TEST_CASE("the demo's Behaviour page, every control drawn; focus scrolled into v
   }
   CHECK(ring_in_view);
 }
+
+TEST_CASE("a content space's rail with GraceUI's at its foot: the link answers switch_space (D79, D171)") {
+  PageView view = loaded("demo", "demo.overview");
+  RailContext context;
+  context.foot.push_back(RailLink{"GraceUI", "graceui", "graceui.menu", true});
+  view.set_rail(context);
+  press(view, Key::back);
+  CHECK(view.scope() == Scope::rail);
+  while (view.focused() != "rail:graceui/graceui.menu") {
+    const std::string before = view.focused();
+    press(view, Key::down);
+    REQUIRE(view.focused() != before);
+  }
+  const Action a = press(view, Key::activate);
+  CHECK(a.kind == Action::Kind::switch_space);
+  CHECK(a.space == "graceui");
+  CHECK(a.page == "graceui.menu");
+  // Pinned to the rail's bottom, under a rule.
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  const std::string dump = list.dump();
+  CHECK(dump.find("\"Demo space\"") != std::string::npos);
+  bool foot_low = false;
+  for (const Item& item : list.items) {
+    foot_low = foot_low || (item.shape == Shape::text && item.rect.y > 900 && item.rect.x < 240);
+  }
+  CHECK(foot_low);
+}
+
+TEST_CASE("GraceUI's space open under a content space: its categories first, the content space's wordmark") {
+  PageView view = loaded("graceui", "graceui.menu");
+  RailContext context;
+  context.title = "Demo space";
+  context.head.push_back(RailLink{"Lanterns", "demo", "demo.overview", true});
+  context.head.push_back(RailLink{"Records", "demo", "demo.log", true});
+  view.set_rail(context);
+  press(view, Key::back);
+  CHECK(view.focused() == "rail:graceui.menu");  // focus where the open page is
+  press(view, Key::up);
+  press(view, Key::up);
+  CHECK(view.focused() == "rail:demo/demo.log");
+  const Action a = press(view, Key::activate);
+  CHECK(a.kind == Action::Kind::switch_space);
+  CHECK(a.space == "demo");
+  CHECK(a.page == "demo.log");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  CHECK(list.dump().find("\"Demo space\"") != std::string::npos);
+  CHECK(list.dump().find("\"Records\"") != std::string::npos);
+}
+
+TEST_CASE("from two content spaces, a switcher heads the rail: ← and → open the previous and the next") {
+  PageView view = loaded("demo", "demo.overview");
+  RailContext context;
+  context.switcher = "Demo space, 1 of 2";
+  context.previous = RailLink{"Other", "other", "other.home", true};
+  context.next = RailLink{"Other", "other", "other.home", true};
+  view.set_rail(context);
+  press(view, Key::back);
+  while (view.focused() != "rail:switcher") {
+    press(view, Key::up);
+  }
+  Action a = press(view, Key::left);
+  CHECK(a.kind == Action::Kind::switch_space);
+  CHECK(a.space == "other");
+  a = press(view, Key::right);
+  CHECK(a.kind == Action::Kind::switch_space);
+  CHECK(view.scope() == Scope::rail);  // → on the switcher opens the next space, rather than entering the page
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  CHECK(list.dump().find("Demo space, 1 of 2") != std::string::npos);
+}
+
+TEST_CASE("a space opened from another's rail keeps focus on the rail: the switcher, or the page's entry (D171)") {
+  PageView view = loaded("demo", "demo.overview");
+  RailContext context;
+  context.switcher = "Demo space, 2 of 2";
+  context.previous = RailLink{"Other", "other", "other.home", true};
+  context.next = RailLink{"Other", "other", "other.home", true};
+  view.set_rail(context);
+  CHECK(view.scope() == Scope::page);
+  view.focus_rail(true);
+  CHECK(view.scope() == Scope::rail);
+  CHECK(view.focused() == "rail:switcher");
+  view.focus_rail(false);
+  CHECK(view.focused() == "rail:demo.overview");
+  press(view, Key::up);
+  press(view, Key::up);
+  CHECK(view.focused() == "rail:switcher");
+}
+
+TEST_CASE("a refused change shows the space's own value again, or the default (D171)") {
+  PageView view = loaded("demo", "demo.behaviour");
+  view.set_values(Json{{"lantern.brightness", 0.5}});
+  view.restore("lantern.brightness", Json(0.5));
+  CHECK(view.value("lantern.brightness") == Json(0.5));
+  view.set_values(Json{{"lantern.brightness", 0.55}});
+  view.refused("lantern.brightness", "Not now: the keeper is trimming the wick.");
+  view.restore("lantern.brightness", Json());
+  CHECK(view.value("lantern.brightness") == Json(0.8));
+  CHECK(view.focused() == "setting:lantern.brightness");
+}

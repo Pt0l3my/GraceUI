@@ -43,10 +43,33 @@ struct Action {
     command,      // `command` is ready to send to the space (its id 0: the host numbers it)
     opened_page,  // the view moved to `page`
     close,        // back from the rail: the menu closes (the host runs its close routine)
+    switch_space, // a link on the rail to another space's page: the host opens `page` of `space` (D79, D171)
   };
   Kind kind = Kind::none;
   protocol::Cmd command{};
   std::string page;
+  std::string space;  // with switch_space
+};
+
+// A link on the rail to a page of another space (D79, D171): drawn as a category row (or a page row, indented), and
+// activated, it answers switch_space.
+struct RailLink {
+  std::string label;
+  std::string space;
+  std::string page;
+  bool category = true;
+};
+
+// The other spaces around this one on the rail (D79, D171): the content space's wordmark, its categories before
+// GraceUI's own when GraceUI's page is open, GraceUI's at the rail's foot when a content space's is, and from two
+// content spaces a switcher under the wordmark, whose ← and → open the previous and next one. Empty: this space alone.
+struct RailContext {
+  std::string title;     // the wordmark; empty, this space's own name
+  std::vector<RailLink> head;
+  std::vector<RailLink> foot;  // pinned to the rail's bottom, under a rule
+  std::string switcher;  // its label ("Lanterns, 1 of 2"); empty, no switcher
+  RailLink previous;     // what ← on the switcher opens
+  RailLink next;         // what → (or Enter) on the switcher opens
 };
 
 struct SearchHit {
@@ -74,6 +97,14 @@ class PageView {
   Action input(const Input& input);
   // A command the space refused: the reason, in words, under its control, focus back on it (§5.7).
   void refused(std::string_view key, std::string_view reason);
+  // A setting's value as the space last gave it, after a refusal: `value`, or its default if null (D171).
+  void restore(std::string_view key, const protocol::Json& value);
+  // The rail's other spaces (D79, D171): the host sets them whenever the spaces or the open one change.
+  void set_rail(RailContext context);
+  // Focus on the rail, as a link from another space's rail leaves it: on the switcher, or on the open page's entry, as
+  // opening a category leaves it (D171).
+  void focus_rail(bool switcher);
+
   // The menu's close routine (§5.1): a destructive action waiting for its second press asks again at the next open; the
   // page, tab and focused row stay for the next open in the session.
   void cancel_confirmation() noexcept { confirming_.clear(); }
@@ -99,9 +130,13 @@ class PageView {
     std::size_t index;  // into page().actions, tabs, sections; a setting's index
   };
   struct RailEntry {
-    bool category;
-    std::size_t index;  // into categories, or pages
+    enum class Kind : std::uint8_t { category, page, head, foot, switcher };
+    Kind kind;
+    std::size_t index;  // into categories, pages, or the context's head or foot links
+    bool category() const noexcept { return kind == Kind::category; }
+    bool own_page() const noexcept { return kind == Kind::page; }
   };
+  Action follow(const RailLink& link) const;
 
   const protocol::Page& current() const { return pages_.pages[page_]; }
   const std::vector<protocol::PageSection>& sections() const;
@@ -124,6 +159,7 @@ class PageView {
   std::size_t page_ = 0;
   std::size_t tab_ = 0;
   std::vector<RailEntry> rail_;
+  RailContext context_;
   std::vector<Focus> focus_;
   Scope scope_ = Scope::page;
   std::size_t rail_focus_ = 0;

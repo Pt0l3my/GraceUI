@@ -171,6 +171,7 @@ TEST_CASE("the player's exit: a second menu-key press within 2 s") {
   CHECK(decision.menu == MenuKey::player_exit);
   CHECK(decision.closed.owner == 1);
   CHECK(decision.closed.kind == Kind::panel);
+  CHECK(decision.closed.holds());
   CHECK_FALSE(world.capture.holder().holds());
   CHECK(world.capture.last_close().why == Closed::player);
   CHECK(world.release(kF5, kVkF5, kStart + 750).route == Route::consume);
@@ -182,6 +183,7 @@ TEST_CASE("the menu key closes the menu when the menu holds input") {
   const Decision decision = world.press(kF5, kVkF5, kStart + 100);
   CHECK(decision.menu == MenuKey::closed_menu);
   CHECK(decision.closed.kind == Kind::menu);
+  CHECK(decision.closed.holds());  // the host's close bookkeeping (its log line, the cursor, the menu's wake) runs
   CHECK(world.capture.last_close().why == Closed::menu_key);
 }
 

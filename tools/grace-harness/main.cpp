@@ -4356,6 +4356,214 @@ void run_pages(const std::wstring& dll) {
   grace.print_log();
 }
 
+// ---- The menu on mods' spaces (D171), end to end in graceui.dll under Wine: a mod registers the demo space for the
+// game's view only, and F5 opens the menu on it; the menu watches its settings as a view does, its commands reach the
+// mod with a reply handle, a refusal's words show under the row; a second mod's space puts a switcher on the rail; a
+// link at the rail's foot opens GraceUI's own, whose head links back.
+
+GraceUiSpaceDesc game_space(std::string_view pages, std::string_view settings) {
+  GraceUiSpaceDesc desc{};
+  desc.size = sizeof desc;
+  desc.views = GRACEUI_VIEW_GAME;
+  desc.version = GRACEUI_VERSION_PACK(1, 0, 0);
+  desc.pages = pages.data();
+  desc.pages_length = pages.size();
+  desc.settings = settings.data();
+  desc.settings_length = settings.size();
+  desc.increment = "0.2";
+  desc.increment_length = 3;
+  return desc;
+}
+
+// The mod's next event of `kind`, the others it polls on the way dropped, at most 3 s.
+SpaceEvent wait_kind(Game& game, const GraceUiApi1* table, GraceUiConsumer mod, std::uint32_t kind) {
+  SpaceEvent event;
+  for (int i = 0; i < 150; ++i) {
+    event = poll_space(table, mod);
+    if (event.status != GRACEUI_OK || event.kind == kind) {
+      return event;
+    }
+    if (event.kind == GRACEUI_EVENT_NONE) {
+      game.frame(kInputColour, PresentWith::present);
+      Sleep(20);
+    }
+  }
+  return event;
+}
+
+void run_menu_space(const std::wstring& dll) {
+  using grace::protocol::Json;
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+
+  // 1. The demo space, for the game's view only: registered, and no server, which only a browser space starts.
+  const Connected demo = connect(table, request_for("demo", GRACEUI_VERSION_PACK(0, 1, 0), "The demo space", "notices"));
+  const grace::pages::BuiltinSpace& space = grace::pages::builtin_spaces()[1];
+  const GraceUiSpaceDesc desc = game_space(space.pages, space.settings);
+  const GraceUiStatus registered = table->register_pages(demo.answer.consumer, &desc);
+  frames(game, 5);
+  const GraceUiTestServer server = grace.server();
+  check(registered == GRACEUI_OK && server.running == 0 && server.spaces == 1, "menu space: register",
+        "the demo space for the game's view: %s; the server %s, %u space(s)", status_name(registered),
+        server.running == 0 ? "not started" : "RUNS", server.spaces);
+
+  // 2. F5 opens the menu on the mod's space, its first page; the menu watches its settings, and its state reaches it.
+  g_seen = Seen{};
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  const SpaceEvent watched = wait_kind(game, table, demo.answer.consumer, GRACEUI_EVENT_WATCHED);
+  const std::string state_frame =
+      R"({"v":1,"t":"state","space":"demo","topic":"settings","rev":3,"body":{"values":{"lantern.brightness":0.5}}})";
+  const GraceUiStatus published = table->publish(demo.answer.consumer, state_frame.data(), state_frame.size());
+  check(menu.open == 1 && std::strcmp(menu.page, "demo.overview") == 0 && watched.kind == GRACEUI_EVENT_WATCHED &&
+            watched.frame.find("\"settings\"") != std::string::npos && published == GRACEUI_OK &&
+            g_seen.key_down[VK_F5] + g_seen.key_up[VK_F5] == 0,
+        "menu space: opens on the mod's", "F5: page %s, focus %s; the mod polled %s; its settings state %s",
+        menu.page, menu.focused, watched.kind == GRACEUI_EVENT_WATCHED ? watched.frame.c_str() : "NO SUB",
+        status_name(published));
+
+  // 3. Page Down to Behaviour, ↓ to Brightness, →: the mod's command, from the value its state gave (0.5, not the
+  // default 0.8), reaches it as a view's does; the mod refuses it in words, which show under the row.
+  press(window, VK_NEXT, 0x51);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string behaviour = menu.page;
+  press(window, VK_DOWN, 0x50);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string on_row = menu.focused;
+  press(window, VK_RIGHT, 0x4D);
+  const SpaceEvent command = wait_kind(game, table, demo.answer.consumer, GRACEUI_EVENT_COMMAND);
+  Json cmd;
+  if (command.kind == GRACEUI_EVENT_COMMAND) {
+    cmd = Json::parse(command.frame);
+  }
+  const bool command_right = cmd.is_object() && cmd["name"] == "settings.set" &&
+                             cmd["args"]["key"] == "lantern.brightness" && cmd["args"]["value"].is_number() &&
+                             std::fabs(cmd["args"]["value"].get<double>() - 0.55) < 1e-6 && command.reply != 0;
+  const std::uint32_t refusals_before = grace.menu().refusals;
+  const std::string refusal =
+      R"({"v":1,"t":"result","space":"demo","id":0,"error":"not_now","body":{"detail":"Not now: the keeper is trimming the wick."}})";
+  const GraceUiStatus answered = table->answer(demo.answer.consumer, command.reply, refusal.data(), refusal.size());
+  for (int i = 0; i < 100 && grace.menu().refusals == refusals_before; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  menu = menu_after(game, grace, grace.menu().lists);
+  const Frame shot = game.frame_and_read(kInputColour, PresentWith::present);
+  // → again: from the mod's own 0.5, shown again after the refusal, not from the refused 0.55.
+  press(window, VK_RIGHT, 0x4D);
+  const SpaceEvent again = wait_kind(game, table, demo.answer.consumer, GRACEUI_EVENT_COMMAND);
+  Json retry;
+  if (again.kind == GRACEUI_EVENT_COMMAND) {
+    retry = Json::parse(again.frame);
+  }
+  const bool from_its_own = retry.is_object() && retry["args"]["value"].is_number() &&
+                            std::fabs(retry["args"]["value"].get<double>() - 0.55) < 1e-6;
+  const std::string ok = R"({"v":1,"t":"result","space":"demo","id":0,"ok":true})";
+  const GraceUiStatus accepted = table->answer(demo.answer.consumer, again.reply, ok.data(), ok.size());
+  const std::string taken =
+      R"({"v":1,"t":"state","space":"demo","topic":"settings","rev":4,"body":{"values":{"lantern.brightness":0.55}}})";
+  table->publish(demo.answer.consumer, taken.data(), taken.size());
+  menu = menu_after(game, grace, grace.menu().lists);
+  check(behaviour == "demo.behaviour" && on_row == "setting:lantern.brightness" && command_right &&
+            answered == GRACEUI_OK && from_its_own && accepted == GRACEUI_OK &&
+            menu.refusals == refusals_before + 1 && std::strcmp(menu.focused, "setting:lantern.brightness") == 0,
+        "menu space: a command and its refusal",
+        "Page Down: %s; ↓: %s; →: the mod polled %s; its refusal %s, shown under the row (%u refusal(s), focus %s); "
+        "→ again: %s, accepted %s",
+        behaviour.c_str(), on_row.c_str(), command.frame.c_str(), status_name(answered), menu.refusals - refusals_before,
+        menu.focused, again.frame.c_str(), status_name(accepted));
+  save_shot(shot, "menu-space-1920x1080.bmp");
+
+  // 4. A second mod's space for the game's view, registered while the menu is open: a switcher heads the rail, and →
+  // on it opens the other space; the menu stops watching the first's settings and watches the second's.
+  std::string other_pages = std::string(space.pages);
+  const std::string from = "\"space\":\"demo\"";
+  const std::size_t at = other_pages.find(from);
+  if (at != std::string::npos) {
+    other_pages.replace(at, from.size(), "\"space\":\"lantern\"");
+  }
+  const std::size_t named = other_pages.find("\"Demo space\"");
+  if (named != std::string::npos) {
+    other_pages.replace(named, 12, "\"The second lantern\"");
+  }
+  const Connected lantern = connect(table, request_for("lantern"));
+  const GraceUiSpaceDesc other = game_space(other_pages, space.settings);
+  const GraceUiStatus second = table->register_pages(lantern.answer.consumer, &other);
+  frames(game, 3);
+  press(window, VK_ESCAPE, kScanEscape);
+  for (int i = 0; i < 6; ++i) {
+    press(window, VK_UP, 0x48);
+  }
+  menu = menu_after(game, grace, grace.menu().lists);
+  const std::string switcher = menu.focused;
+  press(window, VK_RIGHT, 0x4D);
+  const SpaceEvent left_demo = wait_kind(game, table, demo.answer.consumer, GRACEUI_EVENT_UNWATCHED);
+  const SpaceEvent joined = wait_kind(game, table, lantern.answer.consumer, GRACEUI_EVENT_WATCHED);
+  menu = menu_after(game, grace, grace.menu().lists);
+  check(second == GRACEUI_OK && switcher == "rail:switcher" && left_demo.kind == GRACEUI_EVENT_UNWATCHED &&
+            joined.kind == GRACEUI_EVENT_WATCHED && std::strcmp(menu.focused, "rail:switcher") == 0,
+        "menu space: a switcher between two",
+        "the second space %s; Esc, ↑: %s; →: the demo mod polled %s, the second %s; focus %s", status_name(second),
+        switcher.c_str(), left_demo.kind == GRACEUI_EVENT_UNWATCHED ? left_demo.frame.c_str() : "NO UNSUB",
+        joined.kind == GRACEUI_EVENT_WATCHED ? joined.frame.c_str() : "NO SUB", menu.focused);
+
+  // 5. The rail's foot opens GraceUI's own space; its head, the open mod's categories, leads back.
+  std::string foot;
+  for (int i = 0; i < 12 && foot.rfind("rail:graceui/", 0) != 0; ++i) {
+    press(window, VK_DOWN, 0x50);
+    menu = menu_after(game, grace, grace.menu().lists);
+    foot = menu.focused;
+  }
+  press(window, VK_RETURN, 0x1C);
+  const SpaceEvent left_lantern = wait_kind(game, table, lantern.answer.consumer, GRACEUI_EVENT_UNWATCHED);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const std::string own_page = menu.page;
+  const std::string own_focus = menu.focused;
+  for (int i = 0; i < 12; ++i) {
+    press(window, VK_UP, 0x48);
+  }
+  menu = menu_after(game, grace, grace.menu().lists);
+  const std::string head = menu.focused;
+  press(window, VK_RETURN, 0x1C);
+  const SpaceEvent back = wait_kind(game, table, lantern.answer.consumer, GRACEUI_EVENT_WATCHED);
+  menu = menu_after(game, grace, grace.menu().lists);
+  check(foot.rfind("rail:graceui/", 0) == 0 && left_lantern.kind == GRACEUI_EVENT_UNWATCHED &&
+            own_page.rfind("graceui.", 0) == 0 && own_focus == "rail:" + own_page &&
+            head == "rail:lantern/demo.overview" && back.kind == GRACEUI_EVENT_WATCHED &&
+            std::strcmp(menu.page, "demo.overview") == 0,
+        "menu space: GraceUI's at the foot, the mod's at the head",
+        "↓ to %s, Enter: page %s, focus %s, the second mod polled %s; ↑ to %s, Enter: %s, the second mod polled %s",
+        foot.c_str(), own_page.c_str(), own_focus.c_str(),
+        left_lantern.kind == GRACEUI_EVENT_UNWATCHED ? "its unsub" : "NO UNSUB", head.c_str(), menu.page,
+        back.kind == GRACEUI_EVENT_WATCHED ? "its sub" : "NO SUB");
+
+  // 6. F5 closes it: the mod hears the menu stop watching. Both mods go while it is closed, and F5 opens GraceUI's.
+  press(window, VK_F5, kScanF5);
+  const SpaceEvent closed = wait_kind(game, table, lantern.answer.consumer, GRACEUI_EVENT_UNWATCHED);
+  table->disconnect(demo.answer.consumer);
+  table->disconnect(lantern.answer.consumer);
+  frames(game, 5);
+  press(window, VK_F5, kScanF5);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const GraceUiTestServer after = grace.server();
+  check(closed.kind == GRACEUI_EVENT_UNWATCHED && after.spaces == 0 && menu.open == 1 &&
+            menu.page == own_page && menu.off == 0 && grace.state().render_off == 0 &&
+            g_seen.key_down[VK_F5] + g_seen.key_up[VK_F5] + g_seen.key_down[VK_ESCAPE] + g_seen.key_up[VK_ESCAPE] == 0,
+        "menu space: the mods go",
+        "F5 closed it: the mod polled %s; both disconnected (%u space(s) left); F5 opened %s; no fault; F5's and "
+        "Esc's messages reaching the game: %d",
+        closed.kind == GRACEUI_EVENT_UNWATCHED ? "its unsub" : "NO UNSUB", after.spaces, menu.page,
+        g_seen.key_down[VK_F5] + g_seen.key_up[VK_F5] + g_seen.key_down[VK_ESCAPE] + g_seen.key_up[VK_ESCAPE]);
+  grace.print_log();
+}
+
 void run_absent() {
   GraceUiSysFound found{};
   found.size = sizeof found;
@@ -4775,6 +4983,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"pages") {
     std::printf("-- scenario: a mod's space across the ABI and the browser view's server (D169)\n");
     run_pages(dll);
+  } else if (scenario == L"menu-space") {
+    std::printf("-- scenario: the in-game menu on mods' spaces, with GraceUI's at the rail's foot (D171)\n");
+    run_menu_space(dll);
   } else if (scenario == L"absent") {
     std::printf("-- scenario: graceui-sys with GraceUI not installed\n");
     run_absent();
@@ -4801,7 +5012,7 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu"}) {
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-space"}) {
         run(child_scenario, dll, this_program());
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.

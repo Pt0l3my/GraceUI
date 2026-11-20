@@ -230,20 +230,54 @@ const Json& PageView::value(std::string_view key) const {
   return s != nullptr ? s->default_ : null_;
 }
 
+void PageView::set_rail(RailContext context) {
+  context_ = std::move(context);
+  rebuild();
+  rail_focus_ = rail_index_of_page();
+}
+
+void PageView::focus_rail(bool switcher) {
+  scope_ = Scope::rail;
+  rail_focus_ = rail_index_of_page();
+  if (switcher && !rail_.empty() && rail_[0].kind == RailEntry::Kind::switcher) {
+    rail_focus_ = 0;
+  }
+}
+
+Action PageView::follow(const RailLink& link) const {
+  Action action;
+  if (!link.space.empty()) {
+    action.kind = Action::Kind::switch_space;
+    action.space = link.space;
+    action.page = link.page;
+  }
+  return action;
+}
+
 void PageView::rebuild() {
+  using Kind = RailEntry::Kind;
   rail_.clear();
+  if (!context_.switcher.empty()) {
+    rail_.push_back({Kind::switcher, 0});
+  }
+  for (std::size_t h = 0; h < context_.head.size(); ++h) {
+    rail_.push_back({Kind::head, h});
+  }
   const std::string& category = current().category;
   for (std::size_t c = 0; c < pages_.categories.size(); ++c) {
-    rail_.push_back({true, c});
+    rail_.push_back({Kind::category, c});
     if (pages_.categories[c].id == category) {  // the accordion: the open category's pages
       for (const std::string& id : pages_.categories[c].pages) {
         for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
           if (pages_.pages[p].id == id) {
-            rail_.push_back({false, p});
+            rail_.push_back({Kind::page, p});
           }
         }
       }
     }
+  }
+  for (std::size_t f = 0; f < context_.foot.size(); ++f) {
+    rail_.push_back({Kind::foot, f});
   }
   focus_.clear();
   const protocol::Page& page = current();
@@ -295,7 +329,7 @@ void PageView::focus_first_control() {
 
 std::size_t PageView::rail_index_of_page() const {
   for (std::size_t i = 0; i < rail_.size(); ++i) {
-    if (!rail_[i].category && rail_[i].index == page_) {
+    if (rail_[i].own_page() && rail_[i].index == page_) {
       return i;
     }
   }
@@ -311,7 +345,14 @@ std::string PageView::focused() const {
       return "rail:";
     }
     const RailEntry& e = rail_[rail_focus_];
-    return "rail:" + (e.category ? pages_.categories[e.index].id : pages_.pages[e.index].id);
+    switch (e.kind) {
+      case RailEntry::Kind::category: return "rail:" + pages_.categories[e.index].id;
+      case RailEntry::Kind::page: return "rail:" + pages_.pages[e.index].id;
+      case RailEntry::Kind::head: return "rail:" + context_.head[e.index].space + "/" + context_.head[e.index].page;
+      case RailEntry::Kind::foot: return "rail:" + context_.foot[e.index].space + "/" + context_.foot[e.index].page;
+      case RailEntry::Kind::switcher: return "rail:switcher";
+    }
+    return "rail:";
   }
   if (focus_.empty()) {
     return "";
@@ -441,6 +482,15 @@ void PageView::refused(std::string_view key, std::string_view reason) {
   }
 }
 
+void PageView::restore(std::string_view key, const Json& value) {
+  const std::string name(key);
+  if (value.is_null()) {
+    values_.erase(name);
+  } else {
+    values_[name] = value;
+  }
+}
+
 std::vector<SearchHit> PageView::search(std::string_view query) const {
   std::vector<SearchHit> hits;
   const std::string q = lower(query);
@@ -546,13 +596,28 @@ Action PageView::input(const Input& in) {
       case Key::down:
         rail_focus_ = std::min(rail_focus_ + 1, rail_.size() - 1);
         return {};
+      case Key::left:
+        if (rail_[rail_focus_].kind == RailEntry::Kind::switcher) {
+          return follow(context_.previous);
+        }
+        return {};
       case Key::right:
       case Key::next:
+        if (in.key == Key::right && rail_[rail_focus_].kind == RailEntry::Kind::switcher) {
+          return follow(context_.next);
+        }
         scope_ = in.key == Key::next ? Scope::top : Scope::page;
         return {};
       case Key::activate: {
         const RailEntry e = rail_[rail_focus_];
-        if (e.category) {
+        switch (e.kind) {
+          case RailEntry::Kind::switcher: return follow(context_.next);
+          case RailEntry::Kind::head: return follow(context_.head[e.index]);
+          case RailEntry::Kind::foot: return follow(context_.foot[e.index]);
+          case RailEntry::Kind::category:
+          case RailEntry::Kind::page: break;
+        }
+        if (e.category()) {
           // The accordion: open the category and go to its first page, focus staying on the rail.
           for (const std::string& id : pages_.categories[e.index].pages) {
             for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
@@ -727,18 +792,44 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     c.fill(Rect{menu_x, 0, rail_w, H}, Colour::ground_0);
     const float pad = std::round(size::rail_padding * s);
     float y = pad;
-    c.text(pages_.name, TypeRole::display_md, menu_x + pad, y, rail_w - 2 * pad, Colour::gold);
+    c.text(context_.title.empty() ? pages_.name : context_.title, TypeRole::display_md, menu_x + pad, y,
+           rail_w - 2 * pad, Colour::gold);
     y += std::round(line_height(TypeRole::display_md, s) + 16 * s);
+    // GraceUI's links at the rail's foot, pinned to its bottom under a rule (§4.2.2's foot, D79).
+    float foot_y = H - pad;
+    for (const RailLink& link : context_.foot) {
+      foot_y -= std::round((link.category ? size::rail_category : size::rail_page) * s);
+    }
     for (std::size_t i = 0; i < rail_.size(); ++i) {
       const RailEntry& e = rail_[i];
-      const bool is_page = !e.category;
+      const bool link = e.kind == RailEntry::Kind::head || e.kind == RailEntry::Kind::foot;
+      const RailLink* other = e.kind == RailEntry::Kind::head   ? &context_.head[e.index]
+                              : e.kind == RailEntry::Kind::foot ? &context_.foot[e.index]
+                                                                : nullptr;
+      const bool is_page = e.own_page() || (other != nullptr && !other->category);
       const float h = std::round((is_page ? size::rail_page : size::rail_category) * s);
-      const Rect row{menu_x, y, rail_w, h};
-      if (e.category && i != 0) {
+      if (e.kind == RailEntry::Kind::foot && (i == 0 || rail_[i - 1].kind != RailEntry::Kind::foot)) {
+        y = std::max(y, foot_y);
         c.line(menu_x + pad, y, rail_w - 2 * pad, Colour::rule);
       }
-      const bool open_category = e.category && pages_.categories[e.index].id == current().category;
-      const bool current_page = is_page && e.index == page_;
+      const Rect row{menu_x, y, rail_w, h};
+      if ((e.category() || (link && other->category && e.kind == RailEntry::Kind::head)) && i != 0 &&
+          rail_[i - 1].kind != RailEntry::Kind::switcher) {
+        c.line(menu_x + pad, y, rail_w - 2 * pad, Colour::rule);
+      }
+      if (e.kind == RailEntry::Kind::switcher) {
+        // The content spaces' switcher: ‹ and › around the open one's place among them.
+        const std::string label = "\u2039  " + context_.switcher + "  \u203A";
+        c.text(label, TypeRole::ui_sm, menu_x + pad, y + std::round((h - line_height(TypeRole::ui_sm, s)) / 2),
+               rail_w - 2 * pad, Colour::ink_mute);
+        if (scope_ == Scope::rail && i == rail_focus_) {
+          c.focused(row);
+        }
+        y += h;
+        continue;
+      }
+      const bool open_category = e.category() && pages_.categories[e.index].id == current().category;
+      const bool current_page = e.own_page() && e.index == page_;
       if (current_page) {
         c.fill(row, Colour::tint_select);
         c.fill(Rect{menu_x, y, std::round(2 * s), h}, Colour::gold);
@@ -746,7 +837,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const TypeRole role = is_page ? TypeRole::ui_sm : TypeRole::rail;
       const float indent = is_page ? std::round(16 * s) : 0;
       const Colour ink = current_page ? Colour::gold_hi : (open_category ? Colour::ink_hi : Colour::ink_mute);
-      const std::string& label = e.category ? pages_.categories[e.index].name : pages_.pages[e.index].name;
+      const std::string& label = other != nullptr ? other->label
+                                 : e.category()  ? pages_.categories[e.index].name
+                                                 : pages_.pages[e.index].name;
       c.text(label, role, menu_x + pad + indent, y + std::round((h - line_height(role, s)) / 2),
              rail_w - 2 * pad - indent, ink);
       if (scope_ == Scope::rail && i == rail_focus_) {

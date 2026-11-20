@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <cstring>
+#include <deque>
+#include <map>
+#include <set>
 #include <optional>
 #include <utility>
 #include <variant>
@@ -19,7 +22,20 @@ struct Registry::Space {
   std::string id;
   std::uint32_t views = 0;
   serve::SpaceDescription description;
+  std::shared_ptr<const protocol::SpacePages> pages;
+  std::shared_ptr<const protocol::SettingsDescription> settings;
   std::shared_ptr<serve::SpacePort> port;  // while it is a browser space and a server is attached
+  // The in-game view's side (D171): what the browser's views and the menu watch, the menu's events for the mod, the
+  // newest state of each topic the menu watches.
+  std::set<std::string, std::less<>> browser_watched;
+  std::set<std::string, std::less<>> game_watched;
+  struct Internal {
+    EventKind kind;
+    std::string frame;
+    std::uint64_t reply;
+  };
+  std::deque<Internal> internal;
+  std::map<std::string, std::pair<std::uint64_t, protocol::Json>, std::less<>> game_states;
   std::string held_frame;                  // an event the mod's buffer was too small for, kept for its next poll
   EventKind held_kind = EventKind::none;
   std::uint64_t held_reply = 0;
@@ -30,6 +46,8 @@ struct Registry::Pending {
   std::uint64_t owner = 0;
   serve::CommandRef ref;
   std::chrono::steady_clock::time_point deadline;
+  bool game = false;    // the menu's: its result waits in game_results_
+  std::uint32_t id = 0; // the command's id, as its view numbered it
 };
 
 namespace {
@@ -103,6 +121,8 @@ Status Registry::add(std::uint64_t owner, std::string_view mod_id, const Registr
   space->id = std::string(mod_id);
   space->views = in.views;
   space->description = serve::describe_space(pages, settings, in.version, in.increment);
+  space->pages = std::make_shared<const protocol::SpacePages>(std::move(pages));
+  space->settings = std::make_shared<const protocol::SettingsDescription>(std::move(settings));
 
   std::lock_guard<std::mutex> lock(mutex_);
   if (find(owner) != nullptr) {
@@ -122,22 +142,36 @@ Status Registry::add(std::uint64_t owner, std::string_view mod_id, const Registr
   if (server_ != nullptr && (space->views & kViewBrowser) != 0) {
     space->port = server_->add_space(space->description);
   }
+  const bool game = (space->views & kViewGame) != 0;
   spaces_.push_back(std::move(space));
+  if (game) {
+    ++spaces_revision_;
+  }
   return Status::ok;
 }
 
 void Registry::remove_owner(std::uint64_t owner) noexcept {
-  std::lock_guard<std::mutex> lock(mutex_);
-  const auto it = std::find_if(spaces_.begin(), spaces_.end(), [&](const auto& s) { return s->owner == owner; });
-  if (it == spaces_.end()) {
-    return;
+  bool game = false;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto it = std::find_if(spaces_.begin(), spaces_.end(), [&](const auto& s) { return s->owner == owner; });
+    if (it == spaces_.end()) {
+      return;
+    }
+    if (server_ != nullptr && (*it)->port != nullptr) {
+      server_->remove_space((*it)->id);
+    }
+    game = ((*it)->views & kViewGame) != 0;
+    if (game) {
+      ++spaces_revision_;
+    }
+    spaces_.erase(it);
+    pending_.erase(std::remove_if(pending_.begin(), pending_.end(), [&](const Pending& p) { return p.owner == owner; }),
+                   pending_.end());
   }
-  if (server_ != nullptr && (*it)->port != nullptr) {
-    server_->remove_space((*it)->id);
+  if (game) {
+    wake_game();
   }
-  spaces_.erase(it);
-  pending_.erase(std::remove_if(pending_.begin(), pending_.end(), [&](const Pending& p) { return p.owner == owner; }),
-                 pending_.end());
 }
 
 bool Registry::wants_browser() const noexcept {
@@ -183,6 +217,7 @@ Status Registry::publish(std::uint64_t owner, std::string_view frame, std::strin
     return Status::refused;
   }
   std::shared_ptr<serve::SpacePort> port;
+  bool for_game = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     const Space* space = find(owner);
@@ -203,6 +238,15 @@ Status Registry::publish(std::uint64_t owner, std::string_view frame, std::strin
       return Status::refused;
     }
     port = space->port;
+    if (shape == protocol::TopicShape::state && space->game_watched.count(*topic) != 0) {
+      const auto& state = std::get<protocol::State>(message);
+      Space* writable = find(owner);
+      writable->game_states[*topic] = {state.rev, state.body};  // the menu's copy, the newest
+      for_game = true;
+    }
+  }
+  if (for_game) {
+    wake_game();
   }
   if (port != nullptr && !port->publish(std::move(message))) {
     why = "past the frame's limit";
@@ -221,7 +265,15 @@ Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity,
   if (space == nullptr) {
     return Status::ok;
   }
-  if (space->held_kind == EventKind::none) {
+  if (space->held_kind == EventKind::none && !space->internal.empty()) {
+    // The menu's events first (D171): already a frame, with its reply handle.
+    Space::Internal next = std::move(space->internal.front());
+    space->internal.pop_front();
+    space->held_kind = next.kind;
+    space->held_frame = std::move(next.frame);
+    space->held_reply = next.reply;
+  }
+  while (space->held_kind == EventKind::none) {
     serve::SpaceEvent event;
     if (space->port == nullptr || !space->port->poll(event)) {
       return Status::ok;
@@ -229,10 +281,18 @@ Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity,
     protocol::Message message;
     switch (event.kind) {
       case serve::SpaceEvent::Kind::watched:
+        space->browser_watched.insert(event.topic);
+        if (space->game_watched.count(event.topic) != 0) {
+          continue;  // the menu watches it already: the mod is building it
+        }
         message = protocol::Sub{space->id, 0, event.topic, std::nullopt};
         space->held_kind = EventKind::watched;
         break;
       case serve::SpaceEvent::Kind::unwatched:
+        space->browser_watched.erase(event.topic);
+        if (space->game_watched.count(event.topic) != 0) {
+          continue;  // the menu still watches it
+        }
         message = protocol::Unsub{space->id, 0, event.topic};
         space->held_kind = EventKind::unwatched;
         break;
@@ -243,13 +303,18 @@ Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity,
           busy.id = event.reply.id;
           busy.error = protocol::ErrorCode::busy;
           space->port->answer(event.reply, std::move(busy));
-          return Status::ok;
+          continue;
         }
         message = protocol::Cmd{space->id, event.reply.id, event.command, std::move(event.args)};
         space->held_kind = EventKind::command;
         space->held_reply = next_reply_++;
-        pending_.push_back(Pending{space->held_reply, owner, event.reply,
-                                   std::chrono::steady_clock::now() + kAnswerDeadline});
+        Pending pending;
+        pending.reply = space->held_reply;
+        pending.owner = owner;
+        pending.ref = event.reply;
+        pending.deadline = std::chrono::steady_clock::now() + kAnswerDeadline;
+        pending.id = event.reply.id;
+        pending_.push_back(pending);
         break;
       }
       case serve::SpaceEvent::Kind::none:
@@ -285,6 +350,7 @@ Status Registry::answer(std::uint64_t owner, std::uint64_t reply, std::string_vi
   }
   std::shared_ptr<serve::SpacePort> port;
   serve::CommandRef ref;
+  bool game = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto it = std::find_if(pending_.begin(), pending_.end(), [&](const Pending& p) {
@@ -296,12 +362,18 @@ Status Registry::answer(std::uint64_t owner, std::uint64_t reply, std::string_vi
       return Status::refused;
     }
     ref = it->ref;
+    game = it->game;
+    result->space = space->id;
+    result->id = it->id;
     pending_.erase(it);
     port = space->port;
-    result->space = space->id;
-    result->id = ref.id;
+    if (game) {
+      game_results_.push_back(GameResult{reply, std::move(*result)});  // the menu's (D171)
+    }
   }
-  if (port != nullptr) {
+  if (game) {
+    wake_game();
+  } else if (port != nullptr) {
     port->answer(ref, std::move(*result));
   }
   return Status::ok;
@@ -323,17 +395,25 @@ std::size_t Registry::expire(std::chrono::steady_clock::time_point now) {
       it = pending_.erase(it);
     }
   }
+  bool game = false;
   for (std::size_t i = 0; i < late.size(); ++i) {
-    if (late[i].first != nullptr) {
-      protocol::Result result;
-      result.space = names[i];
-      result.id = late[i].second.ref.id;
-      result.error = protocol::ErrorCode::internal;
+    protocol::Result result;
+    result.space = names[i];
+    result.id = late[i].second.id;
+    result.error = protocol::ErrorCode::internal;
+    if (late[i].second.game) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      game_results_.push_back(GameResult{late[i].second.reply, std::move(result)});
+      game = true;
+    } else if (late[i].first != nullptr) {
       late[i].first->answer(late[i].second.ref, std::move(result));
     }
     if (log_) {
       log_("space " + names[i] + " left a command unanswered for 10 s: answered internal");
     }
+  }
+  if (game) {
+    wake_game();
   }
   return late.size();
 }
@@ -341,6 +421,115 @@ std::size_t Registry::expire(std::chrono::steady_clock::time_point now) {
 std::size_t Registry::pending() const noexcept {
   std::lock_guard<std::mutex> lock(mutex_);
   return pending_.size();
+}
+
+// ---- The in-game view's side (D171).
+
+void Registry::set_game_wake(std::function<void()> wake) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  game_wake_ = std::move(wake);
+}
+
+void Registry::wake_game() const {
+  std::function<void()> wake;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    wake = game_wake_;
+  }
+  if (wake) {
+    wake();
+  }
+}
+
+std::vector<Registry::GameSpace> Registry::game_spaces() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  std::vector<GameSpace> out;
+  for (const auto& space : spaces_) {
+    if ((space->views & kViewGame) != 0) {
+      out.push_back(GameSpace{space->id, space->description.info.name, space->pages, space->settings});
+    }
+  }
+  return out;
+}
+
+std::uint64_t Registry::spaces_revision() const noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return spaces_revision_;
+}
+
+void Registry::game_watch(std::string_view space_id, std::string_view topic, bool on) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (const auto& space : spaces_) {
+    if (space->id != space_id) {
+      continue;
+    }
+    const std::string name(topic);
+    const bool browser = space->browser_watched.count(name) != 0;
+    if (on && space->game_watched.insert(name).second && !browser) {
+      std::string frame;
+      protocol::encode_text(protocol::Message(protocol::Sub{space->id, 0, name, std::nullopt}), frame);
+      space->internal.push_back(Space::Internal{EventKind::watched, std::move(frame), 0});
+    } else if (!on && space->game_watched.erase(name) != 0) {
+      space->game_states.erase(name);
+      if (!browser) {
+        std::string frame;
+        protocol::encode_text(protocol::Message(protocol::Unsub{space->id, 0, name}), frame);
+        space->internal.push_back(Space::Internal{EventKind::unwatched, std::move(frame), 0});
+      }
+    }
+    return;
+  }
+}
+
+bool Registry::game_state(std::string_view space_id, std::string_view topic, std::uint64_t seen, protocol::Json& body,
+                          std::uint64_t& rev) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (const auto& space : spaces_) {
+    if (space->id != space_id) {
+      continue;
+    }
+    const auto it = space->game_states.find(topic);
+    if (it == space->game_states.end() || it->second.first == seen) {
+      return false;
+    }
+    rev = it->second.first;
+    body = it->second.second;
+    return true;
+  }
+  return false;
+}
+
+bool Registry::game_command(std::string_view space_id, protocol::Cmd command, std::uint64_t& ticket) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (const auto& space : spaces_) {
+    if (space->id != space_id) {
+      continue;
+    }
+    if (pending_.size() >= kMaxPending) {
+      return false;
+    }
+    command.space = space->id;
+    Pending pending;
+    pending.reply = next_reply_++;
+    pending.owner = space->owner;
+    pending.deadline = std::chrono::steady_clock::now() + kAnswerDeadline;
+    pending.game = true;
+    pending.id = command.id;
+    pending_.push_back(pending);
+    std::string frame;
+    protocol::encode_text(protocol::Message(std::move(command)), frame);
+    space->internal.push_back(Space::Internal{EventKind::command, std::move(frame), pending.reply});
+    ticket = pending.reply;
+    return true;
+  }
+  return false;
+}
+
+std::vector<Registry::GameResult> Registry::take_game_results() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  std::vector<GameResult> out;
+  out.swap(game_results_);
+  return out;
 }
 
 }  // namespace grace::spaces

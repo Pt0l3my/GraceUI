@@ -72,9 +72,13 @@ void start(const grace::spaces::OwnSpace& own) {
 }  // namespace
 
 grace::spaces::Registry& registry() noexcept {
-  static grace::spaces::Registry* const made = new grace::spaces::Registry([](std::string_view line) {
-    log_line("%.*s", static_cast<int>(line.size()), line.data());
-  });
+  static grace::spaces::Registry* const made = [] {
+    auto* made = new grace::spaces::Registry([](std::string_view line) {
+      log_line("%.*s", static_cast<int>(line.size()), line.data());
+    });
+    made->set_game_wake([] { hooks::wake(); });  // the menu's: a space came or went, a state or a result came back
+    return made;
+  }();
   return *made;
 }
 

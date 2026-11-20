@@ -88,7 +88,7 @@ enum class MenuKey : std::uint8_t {
 enum class Source : std::uint8_t { messages = 0, direct_input = 1 };
 
 struct LastClose {
-  Holder holder{};
+  Holder holder{};  // as it was while it held (active), or none before the first close
   Closed why = Closed::none;
 };
 

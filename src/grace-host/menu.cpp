@@ -15,7 +15,10 @@
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
+#include <map>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "draw_atlas.h"
 #include "grace/abi/drawlist.h"
@@ -25,6 +28,7 @@
 #include "grace/input/queue.h"
 #include "grace/pages/settings_store.h"
 #include "grace/spaces/own_space.h"
+#include "grace/spaces/registry.h"
 #include "grace/tokens.h"
 #include "grace/view/page_view.h"
 #include "hooks.h"
@@ -84,7 +88,19 @@ constinit PadSeen g_pad_seen{};
 
 constexpr float kStickPress = 16384.0f;  // half the left stick's travel: a press of the d-pad (EST)
 
-// GraceUI's thread's: the page view, the space's settings and what was laid out last.
+// A space the menu shows (D79, D171): GraceUI's own, or a mod's that asked for the game's view.
+struct SpaceView {
+  std::string id;
+  std::string name;
+  bool own = false;
+  grace::view::PageView view;
+  std::vector<grace::view::RailLink> categories;  // its categories, as links to their first pages
+  std::uint64_t settings_rev = 0;                 // its settings topic's, as the menu last took it
+  grace::protocol::Json values = grace::protocol::Json::object();  // its values, as its settings state last gave them
+  bool watching = false;                          // the menu watches its settings topic (while it is open on it)
+};
+
+// GraceUI's thread's: the spaces' page views, GraceUI's settings and what was laid out last.
 struct State {
   bool loaded = false;
   bool open = false;
@@ -94,7 +110,13 @@ struct State {
   std::uint64_t serial = 0;
   double ui_scale = 1.0;
   bool clear = false;  // ui.menu.theme is Grace Clear
-  grace::view::PageView view;
+  std::vector<std::unique_ptr<SpaceView>> spaces;  // the mods' first, in the order they registered, GraceUI's last
+  std::size_t active = 0;                          // the space whose page is open
+  std::string last_content;                        // the mod's space last open: its wordmark heads GraceUI's rail
+  std::uint64_t spaces_rev = 0;                    // the registry's, as the menu last took it
+  bool ever_opened = false;
+  std::uint32_t next_command = 1;
+  std::map<std::uint64_t, std::pair<std::string, std::string>> commands;  // a ticket: its space and its key
   std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
   grace::view::DisplayList list;
   std::string page;  // as the test exports read it, under its lock
@@ -124,13 +146,208 @@ grace::spaces::OwnSpace& own_space() {
   return *own;
 }
 
+grace::view::PageView& active_view(State& m) { return m.spaces[m.active]->view; }
+SpaceView& own_view(State& m) { return *m.spaces.back(); }
+
+std::string first_page(const grace::protocol::SpacePages& pages, const grace::protocol::Category& category) {
+  return category.pages.empty() ? (pages.pages.empty() ? std::string() : pages.pages[0].id) : category.pages[0];
+}
+
+std::vector<grace::view::RailLink> category_links(const grace::protocol::SpacePages& pages) {
+  std::vector<grace::view::RailLink> links;
+  for (const grace::protocol::Category& category : pages.categories) {
+    links.push_back(grace::view::RailLink{category.name, pages.space, first_page(pages, category), true});
+  }
+  return links;
+}
+
 void load(State& m) {
   grace::spaces::OwnSpace& own = own_space();
+  auto view = std::make_unique<SpaceView>();
+  view->id = own.pages().space;
+  view->name = own.pages().name;
+  view->own = true;
+  view->categories = category_links(own.pages());
   std::string why;
-  if (!m.view.load(own.pages(), own.settings(), why) || !m.view.open("graceui.menu")) {
+  if (!view->view.load(own.pages(), own.settings(), why) || !view->view.open("graceui.menu")) {
     throw std::runtime_error("GraceUI's own space does not load");
   }
+  m.spaces.push_back(std::move(view));
+  m.active = 0;
   m.loaded = true;
+}
+
+// The rails around each space (D79): a mod's space with GraceUI's at its foot, and from two mods' spaces a switcher;
+// GraceUI's own under the wordmark and the categories of the mod's space last open.
+void update_rails(State& m) {
+  std::vector<SpaceView*> content;
+  for (auto& space : m.spaces) {
+    if (!space->own) {
+      content.push_back(space.get());
+    }
+  }
+  const std::size_t n = content.size();
+  for (std::size_t i = 0; i < n; ++i) {
+    grace::view::RailContext context;
+    context.foot = own_view(m).categories;
+    if (n >= 2) {
+      const SpaceView& previous = *content[(i + n - 1) % n];
+      const SpaceView& next = *content[(i + 1) % n];
+      context.switcher = content[i]->name + ", " + std::to_string(i + 1) + " of " + std::to_string(n);
+      context.previous = grace::view::RailLink{previous.name, previous.id, previous.categories.empty()
+                                                                              ? std::string()
+                                                                              : previous.categories[0].page, true};
+      context.next = grace::view::RailLink{next.name, next.id, next.categories.empty() ? std::string()
+                                                                                       : next.categories[0].page, true};
+    }
+    content[i]->view.set_rail(std::move(context));
+  }
+  grace::view::RailContext own_context;
+  if (n != 0) {
+    const SpaceView* last = content[0];
+    for (SpaceView* space : content) {
+      if (space->id == m.last_content) {
+        last = space;
+      }
+    }
+    own_context.title = last->name;
+    own_context.head = last->categories;
+  }
+  own_view(m).view.set_rail(std::move(own_context));
+}
+
+void watch(State& m, bool on) {
+  SpaceView& space = *m.spaces[m.active];
+  if (space.own || space.watching == on) {
+    return;
+  }
+  spaces::registry().game_watch(space.id, "settings", on);
+  space.watching = on;
+  if (on) {
+    space.settings_rev = 0;  // the newest state again, whatever came before
+  }
+}
+
+// The spaces that asked for the game's view, as the registry has them now: a new one gets a page view, open on its
+// first page; one that has gone is dropped, and if it was open, GraceUI's own is (D171).
+bool sync_spaces(State& m) {
+  const std::uint64_t revision = spaces::registry().spaces_revision();
+  if (revision == m.spaces_rev) {
+    return false;
+  }
+  m.spaces_rev = revision;
+  const std::string active_id = m.spaces[m.active]->id;
+  std::vector<std::unique_ptr<SpaceView>> next;
+  for (const auto& listed : spaces::registry().game_spaces()) {
+    std::unique_ptr<SpaceView> kept;
+    for (auto& space : m.spaces) {
+      if (space != nullptr && !space->own && space->id == listed.id) {
+        kept = std::move(space);
+      }
+    }
+    if (kept == nullptr) {
+      kept = std::make_unique<SpaceView>();
+      kept->id = listed.id;
+      kept->name = listed.name;
+      kept->categories = category_links(*listed.pages);
+      std::string why;
+      const std::string page = kept->categories.empty() ? std::string() : kept->categories[0].page;
+      if (!kept->view.load(*listed.pages, *listed.settings, why) || !kept->view.open(page)) {
+        log_line("the menu cannot show %s's space: %s", listed.id.c_str(), why.c_str());
+        continue;
+      }
+    }
+    next.push_back(std::move(kept));
+  }
+  next.push_back(std::move(m.spaces.back()));  // GraceUI's own, at the foot
+  m.spaces = std::move(next);
+  m.active = m.spaces.size() - 1;
+  for (std::size_t i = 0; i < m.spaces.size(); ++i) {
+    if (m.spaces[i]->id == active_id) {
+      m.active = i;
+    }
+  }
+  update_rails(m);
+  return true;
+}
+
+// Opens `page` of the space `id`. From a link on another space's rail, focus stays on the rail: on the switcher if it
+// was the switcher, else on the page's entry, as opening a category leaves it.
+enum class From : std::uint8_t { open, link, switcher };
+void activate(State& m, const std::string& id, const std::string& page, From from) {
+  for (std::size_t i = 0; i < m.spaces.size(); ++i) {
+    if (m.spaces[i]->id != id) {
+      continue;
+    }
+    watch(m, false);
+    m.active = i;
+    if (!page.empty()) {
+      m.spaces[i]->view.open(page);
+    }
+    if (!m.spaces[i]->own) {
+      m.last_content = id;
+    }
+    update_rails(m);
+    if (from != From::open) {
+      m.spaces[i]->view.focus_rail(from == From::switcher);
+    }
+    if (m.open) {
+      watch(m, true);
+    }
+    return;
+  }
+}
+
+// What the menu watches came back: the open mod's space's settings (its values, what its inherit tri-states resolve
+// to), and the results of the menu's commands to mods' spaces (a refusal under its row, as GraceUI's own are).
+bool take_from_spaces(State& m) {
+  bool changed = false;
+  SpaceView& space = *m.spaces[m.active];
+  grace::protocol::Json body;
+  std::uint64_t rev = 0;
+  if (!space.own && space.watching &&
+      spaces::registry().game_state(space.id, "settings", space.settings_rev, body, rev)) {
+    space.settings_rev = rev;
+    if (body.is_object() && body.contains("values") && body["values"].is_object()) {
+      space.values = body["values"];
+      space.view.set_values(space.values);
+    }
+    if (body.is_object() && body.contains("inherited") && body["inherited"].is_array()) {
+      std::vector<grace::protocol::InheritedValue> inherited;
+      for (const grace::protocol::Json& item : body["inherited"]) {
+        grace::protocol::InheritedValue value;
+        grace::protocol::DecodeError error;
+        if (decode(item, value, "", error)) {
+          inherited.push_back(std::move(value));
+        }
+      }
+      space.view.set_inherited(inherited);
+    }
+    changed = true;
+  }
+  for (const auto& result : spaces::registry().take_game_results()) {
+    const auto it = m.commands.find(result.ticket);
+    if (it == m.commands.end()) {
+      continue;
+    }
+    if (result.result.error.has_value()) {
+      g_refusals.fetch_add(1, std::memory_order_relaxed);
+      std::string detail = "The space refused it.";
+      if (result.result.body && result.result.body->contains("detail") && (*result.result.body)["detail"].is_string()) {
+        detail = (*result.result.body)["detail"].get<std::string>();
+      }
+      for (auto& view : m.spaces) {
+        if (view->id == it->second.first && !it->second.second.empty()) {
+          const std::string& key = it->second.second;
+          view->view.refused(key, detail);
+          view->view.restore(key, view->values.contains(key) ? view->values[key] : grace::protocol::Json());
+        }
+      }
+    }
+    m.commands.erase(it);
+    changed = true;
+  }
+  return changed;
 }
 
 // What a changed setting does at once (its effect "now"): the scale, the theme. The rest are kept for their users.
@@ -140,7 +357,7 @@ void take_effects(State& m) {
   m.ui_scale = scale.is_number() ? scale.get<double>() : 1.0;
   g_ui_scale.store(static_cast<float>(m.ui_scale), std::memory_order_relaxed);
   m.clear = store.held("ui.menu.theme") == "clear";
-  m.view.set_values(store.values());
+  own_view(m).view.set_values(store.values());
   m.revision = own_space().revision();
 }
 
@@ -154,17 +371,32 @@ std::string key_of(const grace::protocol::Cmd& command) {
   return {};
 }
 
-// A command from the page view: GraceUI's own space answers it here, at its one entry point (invariant 3).
+// A command from the page view: GraceUI's own space answers it here, at its one entry point (invariant 3); a mod's
+// space's goes to the mod, as a view's command does, and its result comes back to the menu (D171).
 void run(State& m, const grace::protocol::Cmd& command) {
   if (command.name == "menu.close") {
     input::close_holder(grace::input::Closed::released, m.generation);
+    return;
+  }
+  SpaceView& space = *m.spaces[m.active];
+  if (!space.own) {
+    grace::protocol::Cmd sent = command;
+    sent.space = space.id;
+    sent.id = m.next_command++;
+    std::uint64_t ticket = 0;
+    if (spaces::registry().game_command(space.id, std::move(sent), ticket)) {
+      m.commands[ticket] = {space.id, key_of(command)};
+    } else {
+      g_refusals.fetch_add(1, std::memory_order_relaxed);
+      space.view.refused(key_of(command), "Not now: the space has too many commands waiting.");
+    }
     return;
   }
   if (command.name == "settings.set" || command.name == "settings.reset") {
     const grace::pages::Outcome outcome = own_space().apply(command);  // the browser's views see it too
     if (!outcome.ok) {
       g_refusals.fetch_add(1, std::memory_order_relaxed);
-      m.view.refused(key_of(command), outcome.detail);
+      own_view(m).view.refused(key_of(command), outcome.detail);
     }
     take_effects(m);
     return;
@@ -175,14 +407,15 @@ void run(State& m, const grace::protocol::Cmd& command) {
     return;
   }
   g_refusals.fetch_add(1, std::memory_order_relaxed);
-  m.view.refused(key_of(command), "Not a command of GraceUI's.");
+  own_view(m).view.refused(key_of(command), "Not a command of GraceUI's.");
 }
 
 void take(State& m, const MenuInput& in, bool& dirty) {
   if (in.generation != m.generation) {
     return;  // pressed for an earlier holder
   }
-  const grace::view::Action action = m.view.input(grace::view::Input{in.key, in.shift != 0});
+  const grace::view::Action action = active_view(m).input(grace::view::Input{in.key, in.shift != 0});
+  const bool on_switcher = active_view(m).focused() == "rail:switcher";
   g_inputs.fetch_add(1, std::memory_order_relaxed);
   dirty = true;
   switch (action.kind) {
@@ -191,6 +424,9 @@ void take(State& m, const MenuInput& in, bool& dirty) {
       break;
     case grace::view::Action::Kind::close:
       input::close_holder(grace::input::Closed::released, m.generation);  // back from the rail (§5.3)
+      break;
+    case grace::view::Action::Kind::switch_space:
+      activate(m, action.space, action.page, on_switcher ? From::switcher : From::link);  // another space (D79, D171)
       break;
     case grace::view::Action::Kind::opened_page:
     case grace::view::Action::Kind::none:
@@ -206,8 +442,8 @@ void publish(State& m) {
   }
   const std::int64_t started = qpc();
   const float scale = static_cast<float>(m.height) / 1080.0f * static_cast<float>(m.ui_scale);  // §3.13
-  m.view.layout(grace::view::Viewport{static_cast<float>(m.width), static_cast<float>(m.height), scale}, *fonts,
-                m.list);
+  active_view(m).layout(grace::view::Viewport{static_cast<float>(m.width), static_cast<float>(m.height), scale},
+                        *fonts, m.list);
   grace::draw::Atlas atlas{grace::abi::kAtlasTexture, 0.0f, 0.0f};
   atlas::white_pixel(atlas.white_u, atlas.white_v);
   const grace::tokens::Palette& palette = m.clear ? grace::tokens::kClear.colour : grace::tokens::kGrace.colour;
@@ -228,8 +464,8 @@ void publish(State& m) {
   g_commands.store(stats.commands, std::memory_order_relaxed);
   g_scale.store(scale, std::memory_order_relaxed);
   g_view_lock.lock();
-  m.page.assign(m.view.page());
-  m.focused = m.view.focused();
+  m.page.assign(active_view(m).page());
+  m.focused = active_view(m).focused();
   g_view_lock.unlock();
 }
 
@@ -250,10 +486,14 @@ void serve_menu() {
   }
   State& m = *g_state;
   const grace::input::Holder holder = input::capture().holder();
+  if (m.loaded) {
+    sync_spaces(m);  // a mod's space came or went, open or not
+  }
   if (!ours(holder)) {
     if (m.open) {
       m.open = false;
-      m.view.cancel_confirmation();  // the close routine's part for the menu (§5.1): changes stay, the page is kept
+      active_view(m).cancel_confirmation();  // the close routine's part (§5.1): changes stay, the page is kept
+      watch(m, false);                       // a mod builds nothing the menu no longer shows
     }
     drain();
     return;
@@ -261,6 +501,7 @@ void serve_menu() {
   if (!m.loaded) {
     load(m);
     take_effects(m);
+    sync_spaces(m);
   }
   bool dirty = false;
   if (m.revision != own_space().revision()) {
@@ -270,7 +511,15 @@ void serve_menu() {
   if (!m.open || m.generation != holder.generation) {
     m.open = true;
     m.generation = holder.generation;
-    m.view.cancel_confirmation();
+    if (!m.ever_opened && m.spaces.size() > 1) {
+      activate(m, m.spaces[0]->id, std::string(), From::open);  // the first open: the first mod's space, its first page
+    }
+    m.ever_opened = true;
+    active_view(m).cancel_confirmation();
+    watch(m, true);
+    dirty = true;
+  }
+  if (take_from_spaces(m)) {
     dirty = true;
   }
   MenuInput in;

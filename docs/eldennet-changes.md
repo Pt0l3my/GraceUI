@@ -753,3 +753,18 @@ pages.json and settings.json EldenNet's page build writes (and, if it likes, a t
 scenario.json of timed steps, invented content only). grace-dev checks them as `register_pages` does, and
 `grace-dev --dump eldennet <page> --size 1920x1080` prints a page's in-game structure.
 
+
+## 27. The menu shows mods' spaces (2026-11-20, D171)
+
+1. **EldenNet's pages in game, through GraceUI's menu**: a space registered with `GRACEUI_VIEW_GAME` is shown by F5's
+   menu, first on the session's first open, with GraceUI's own categories at its rail's foot. EldenNet's space needs
+   nothing new for it: the same `register_pages`, `poll`, `publish` and `answer` as for the browser.
+2. **The menu is a view of the `settings` topic**: while it shows EldenNet's space it watches `settings`, so EldenNet
+   hears WATCHED when the menu or a browser starts watching and UNWATCHED when neither does (the menu's close included).
+   Its state's `values` (and `inherited`, for tri-states that inherit) set the rows; publish every value, or the menu
+   shows a value missing from it as its default.
+3. **Commands from the menu** come as any view's do, with a reply handle and the same 10 s deadline; a refusal's words
+   (for now in the result's `body.detail`, from protocol 1.1 in its own `detail` field) are shown under the row, and the
+   row shows the last published value again.
+4. **Component blocks** (status tiles, feeds) read "Shown in the browser view." in game (G16); only their settings are
+   drawn there in 0.2.
