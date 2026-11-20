@@ -4,6 +4,8 @@
 // redirects of item 23, and the notice page when a listed file fails its check (invariants 4 to 6).
 #include <doctest/doctest.h>
 
+#include <fstream>
+#include <iterator>
 #include <string>
 
 #include "harness.h"
@@ -322,6 +324,20 @@ TEST_CASE("a missing web folder or graceui.toml: the notice page; files from mem
     CHECK(page.body == fixture.folder->index);
     CHECK(request(fixture.port, plain_get(fixture.port, "/stray.html")).status == 404);
   }
+}
+
+TEST_CASE("graceui.toml as GraceUI's release tool writes it (D165): its web files, and nothing else, listed") {
+  std::ifstream file(std::string(GRACE_FIXTURES) + "/release/graceui.toml", std::ios::binary);
+  REQUIRE(file.good());
+  const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+  std::vector<ListedFile> files;
+  std::string why;
+  REQUIRE_MESSAGE(parse_manifest(text, files, why), why);
+  REQUIRE(files.size() == 2);
+  CHECK(files[0].name == "assets/app-1a2b3c.js");
+  CHECK(files[0].size == 4096);
+  CHECK(files[0].sha256[0] == 0x44);
+  CHECK(files[1].name == "index.html");
 }
 
 TEST_CASE("graceui.toml's subset: what it takes and what fails the list") {

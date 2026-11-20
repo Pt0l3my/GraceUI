@@ -92,22 +92,31 @@ count must answer without a crash or undefined behaviour, and the count never ex
 `grace_abi_layout_cpp` compile `graceui.h` as C and as C++ with a `static_assert` on every struct's size and every
 field's offset; CTest runs both on Linux, and both Windows builds compile them.
 
-`grace-serve`'s 48 cases (`grace_serve_tests`, D158) cover the head parser's every refusal with its status and the
+`grace-serve`'s 49 cases (`grace_serve_tests`, D158) cover the head parser's every refusal with its status and the
 order of its decisions; the caps at and past their limits; the Host, Origin, Fetch Metadata and cookie checks (an
 `en_session` of a narrower Path, a flood of cookies); the response writer's headers on every status; the redirect's
 Location; the RFC 3174, RFC 4648 and RFC 6455 vectors; every frame failure with its close code; UTF-8 across fragments;
 Ping, Pong and Close in a session; a chunking differential (whole, byte by byte, random splits); and no allocation. Its
-head parser and frame decoder have libFuzzer targets, `grace_head_fuzz` and `grace_frame_fuzz`, built as the protocol's
-fuzzer below (`--target grace_head_fuzz grace_frame_fuzz`), each run with a corpus folder of its own and the committed
+head parser and frame decoder have libFuzzer targets, `grace_head_fuzz` and `grace_ws_frame_fuzz`, built as the protocol's
+fuzzer below (`--target grace_head_fuzz grace_ws_frame_fuzz`), each run with a corpus folder of its own and the committed
 seeds as a second, read-only one:
 
 ```sh
 build-linux-fuzz/bin/grace_head_fuzz -max_total_time=60 -max_len=16640 -dict=src/grace-serve/fuzz/head.dict \
   <corpus> src/grace-serve/fuzz/corpus/head
-build-linux-fuzz/bin/grace_frame_fuzz -max_total_time=60 -max_len=49152 <corpus> src/grace-serve/fuzz/corpus/frame
+build-linux-fuzz/bin/grace_ws_frame_fuzz -max_total_time=60 -max_len=49152 <corpus> src/grace-serve/fuzz/corpus/frame
 ```
 
 `-len_control=0` reaches the caps sooner. On 2026-11-20 they ran 384,505 and 395,309 times in 60 s, none failing.
+
+`grace_serve_io_tests` is the server security suite (§9.1, D161): 35 cases over real loopback sockets with GraceUI's own
+space and the demo space, in seconds, through short deadlines. CTest runs it in every Linux build, and TSan covers its
+threads. The Windows test builds (`-DGRACEUI_TEST_EXPORTS=ON`, clang-cl and MinGW-w64) build
+`bin/grace_serve_io_tests.exe`: run it with `unset TMPDIR; WINEPREFIX=<dir> WINEDEBUG=-all wine64
+build-.../bin/grace_serve_io_tests.exe`; it needs no Xvfb, and exercises the Winsock code (WSAPoll, the self-connected
+UDP wake, `SO_EXCLUSIVEADDRUSE`, non-inheritable handles, BCryptGenRandom). On Linux the server never sets
+`SO_REUSEADDR`, so a restart on the same port within TIME_WAIT reports the port taken; the suite takes a fresh port each
+time. Where the system has no IPv6, the `::1` listener's test skips itself.
 
 ## The tokens
 

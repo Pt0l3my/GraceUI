@@ -688,3 +688,17 @@ GraceUI's menu now opens on F5, drawn by the host: GraceUI's own space, with Gra
 4. **S4's measurements** (EldenNet's roadmap S11.2.c) come from the harness's "menu" scenario until the game: frame cost,
    atlas size and screenshots (with `GRACE_SHOTS` set). The owner's look review (S11.2.d) has the two screenshots.
 
+## 22. grace-serve for EldenNet's launcher (2026-11-20, D161, G29 (a))
+
+The server library is built (S11.2.i). What EldenNet's launcher does with it, off game:
+
+1. It links `grace_serve` and makes its own `Server`, from ordinary code, never DllMain; `start` and `stop` are plain
+   calls, and `stop` joins both of the server's threads.
+2. It hands EldenNet's space over with `add_space(describe_space(pages, settings, version, increment))`, from EldenNet's
+   page data and settings description (GraceUI's format, D160), and serves the web files of GraceUI's folder
+   (`graceui.toml`, checked, D165) or files it hands in from memory.
+3. On its `SpacePort` it answers each command exactly once (ok or an error); on `watched` it publishes the state, or a
+   stream from its oldest row, since the server keeps nothing for a topic nobody watches.
+4. It uses only the routes `/api/ticket` and `/api/ws`, and loopback only (§7.2 item 26).
+5. The page paces bursts: every message counts against 20 a second before it is parsed, subscriptions included.
+

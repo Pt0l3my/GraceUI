@@ -79,6 +79,16 @@ class Manifest(unittest.TestCase):
         with self.assertRaisesRegex(manifest.ManifestError, "not a plain file"):
             manifest.write(self.folder, "2026-11-20")
 
+    def test_the_golden_grace_serve_reads(self):
+        # fixtures/release/graceui.toml is what grace-serve's reader is tested on (grace_serve_io_tests): the writer's
+        # form, kept in one file the two sides share.
+        files = [("LICENSE.txt", 1064, "1" * 64), ("fonts/Cinzel-Regular.ttf", 66996, "2" * 64),
+                 ("graceui.dll", 1229824, "3" * 64), ("web/assets/app-1a2b3c.js", 4096, "4" * 64),
+                 ("web/index.html", 2311, "5" * 64)]
+        golden = manifest.ROOT / "fixtures" / "release" / "graceui.toml"
+        self.assertEqual(manifest.render("0.2.0", [1, 0], [1, 0], [], "2026-11-20", files),
+                         golden.read_text(encoding="utf-8"))
+
     def test_refuses_a_bad_date_and_a_bad_entry(self):
         with self.assertRaises(manifest.ManifestError):
             manifest.write(self.folder, "2026-13-01")
