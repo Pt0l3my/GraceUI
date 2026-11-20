@@ -8,7 +8,13 @@ import type { ByeReason, ErrorCode, JsonObject, Rows, State, Welcome } from "../
 /** One command's answer: ok with an optional body, or refused with the space's error code. */
 export type Answer =
   | { ok: true; body?: JsonObject }
-  | { ok: false; error: ErrorCode; body?: JsonObject; /** a reason the view itself gave (no space answered) */ local?: string };
+  | {
+      ok: false;
+      error: ErrorCode;
+      body?: JsonObject;
+      /** the space's reason in words (protocol 1.1) */ detail?: string;
+      /** a reason the view itself gave (no space answered) */ local?: string;
+    };
 
 /** Why the transport stopped: GraceUI's bye, or the connection lost. */
 export type Ended = { reason: ByeReason } | { reason: "lost" };

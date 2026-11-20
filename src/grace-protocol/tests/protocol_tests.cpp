@@ -85,7 +85,9 @@ TEST_CASE("every kind survives its own encoding") {
   messages.push_back(State{"demo", "settings", 7, Json::object({{"a", 1}})});
   messages.push_back(Rows{"demo", "lantern.log", 3, {Json::object({{"line", "Lit."}})}, 2});
   messages.push_back(Cmd{"demo", 9, "menu.close", Json::object()});
-  messages.push_back(Result{"demo", 9, true, std::nullopt, std::nullopt});
+  messages.push_back(Result{"demo", 9, true, std::nullopt, std::nullopt, std::nullopt});
+  messages.push_back(Result{"demo", 10, std::nullopt, ErrorCode::not_now, std::nullopt,
+                            std::string("Not now: the keeper is trimming the wick.")});  // detail, 1.1
   messages.push_back(Error{std::nullopt, ErrorCode::busy, "Already running."});
   messages.push_back(Bye{ByeReason::shutdown});
   messages.push_back(Ping{});

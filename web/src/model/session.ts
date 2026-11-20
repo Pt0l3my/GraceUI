@@ -19,7 +19,7 @@ export const GRACEUI_SPACE = "graceui";
 
 export type TopicData =
   | { kind: "state"; rev: number; body: JsonObject }
-  | { kind: "rows"; rows: JsonObject[]; dropped: number };
+  | { kind: "rows"; rows: JsonObject[]; dropped: number; /** the seq of the row after the last one held */ next: number };
 
 export interface SpaceView {
   info: SpaceInfo;
@@ -71,6 +71,9 @@ export function refusalWords(answer: Answer, setting?: Setting): string {
   }
   if (answer.local !== undefined) {
     return answer.local;
+  }
+  if (answer.detail !== undefined && answer.detail.length > 0) {
+    return answer.detail;  // the space's own words for it (protocol 1.1)
   }
   const code: ErrorCode = answer.error;
   switch (code) {
@@ -298,10 +301,15 @@ export class Session {
     if (!topic) {
       return;
     }
-    const held = topic.data.value?.kind === "rows" ? topic.data.value.rows : [];
+    const before = topic.data.value?.kind === "rows" ? topic.data.value : undefined;
+    // A batch past the row after the last one held is a gap: the stream starts over there, and an empty one clears it
+    // (protocol 1.1, §6.3). Rows held already are never shown twice.
+    const held = before !== undefined && rows.from_seq <= before.next ? before.rows : [];
+    const skip = before !== undefined && rows.from_seq < before.next ? before.next - rows.from_seq : 0;
     const ring = this.view(rows.space)?.pages.value?.topics.find((t) => t.id === rows.topic)?.ring ?? 500;
-    const all = [...held, ...rows.rows];
-    topic.data.value = { kind: "rows", rows: all.slice(Math.max(0, all.length - ring)), dropped: rows.dropped };
+    const all = [...held, ...rows.rows.slice(skip)];
+    const next = Math.max(rows.from_seq + rows.rows.length, before !== undefined && rows.from_seq <= before.next ? before.next : 0);
+    topic.data.value = { kind: "rows", rows: all.slice(Math.max(0, all.length - ring)), dropped: rows.dropped, next };
   }
 
   // ---- What the view reads.

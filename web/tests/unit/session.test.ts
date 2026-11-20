@@ -4,7 +4,7 @@
 // focus on its row; a locked setting sends nothing; edits made while one is on its way coalesce; a secret is never held.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Session } from "../../src/model/session.ts";
+import { Session, refusalWords } from "../../src/model/session.ts";
 import { FixtureTransport } from "../../src/transport/fixture.ts";
 import type { Ended, Transport, TransportEvents } from "../../src/transport/transport.ts";
 import { builtinSpaces } from "../support/fixtures.ts";
@@ -157,4 +157,32 @@ test("a topic is watched while shown, and its rows kept to the ring", async () =
   assert.equal(watched.data.value?.kind === "rows" ? watched.data.value.rows.length : 0, 3);
   watched.release();
   watched.release();  // twice is harmless
+});
+
+test("a stream starts over at a gap, an empty batch past it clears it, and rows held are not shown twice (1.1)", async () => {
+  const { session, transport } = await started();
+  const watched = session.watch("demo", "lantern.log");
+  await tick(20);
+  const seqs = () => (watched.data.value?.kind === "rows" ? watched.data.value.rows.map((row) => row.seq) : []);
+  const held = seqs();
+  const next = watched.data.value?.kind === "rows" ? watched.data.value.next : 0;
+  assert.ok(held.length > 0 && next > 0);
+  const events = (transport as unknown as { events: TransportEvents }).events;
+  const batch = (from: number, rows: number[]) =>
+    events.rows({ v: 1, t: "rows", space: "demo", topic: "lantern.log", from_seq: from,
+                  rows: rows.map((seq) => ({ seq, text: "A line." })), dropped: 0 });
+  batch(next - 1, [next - 1, next]);  // its first row is held already
+  assert.deepEqual(seqs(), [...held, next]);
+  batch(next + 6, []);  // a gap, and nothing after it: the space cleared the stream
+  assert.deepEqual(seqs(), []);
+  batch(next + 6, [next + 6]);
+  assert.deepEqual(seqs(), [next + 6]);
+  watched.release();
+});
+
+test("a refusal's words are the space's own when it gives them (1.1), else the code's", () => {
+  assert.equal(refusalWords({ ok: false, error: "not_now", detail: "Not now: the keeper is trimming the wick." }),
+               "Not now: the keeper is trimming the wick.");
+  assert.equal(refusalWords({ ok: false, error: "not_now" }), "Not possible right now.");
+  assert.equal(refusalWords({ ok: false, error: "not_now", detail: "" }), "Not possible right now.");
 });

@@ -4448,7 +4448,7 @@ void run_menu_space(const std::wstring& dll) {
                              std::fabs(cmd["args"]["value"].get<double>() - 0.55) < 1e-6 && command.reply != 0;
   const std::uint32_t refusals_before = grace.menu().refusals;
   const std::string refusal =
-      R"({"v":1,"t":"result","space":"demo","id":0,"error":"not_now","body":{"detail":"Not now: the keeper is trimming the wick."}})";
+      R"({"v":1,"t":"result","space":"demo","id":0,"error":"not_now","detail":"Not now: the keeper is trimming the wick."})";
   const GraceUiStatus answered = table->answer(demo.answer.consumer, command.reply, refusal.data(), refusal.size());
   for (int i = 0; i < 100 && grace.menu().refusals == refusals_before; ++i) {
     frames(game, 1);

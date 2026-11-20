@@ -1543,6 +1543,15 @@ static bool decode_result(Json& in, Result& out, DecodeError& e) {
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "detail", false, path, e)) {
+    const std::string p = path.empty() ? std::string("detail") : path + ".detail";
+    out.detail.emplace();
+    if (!read_string(*v, 256, *out.detail, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -1771,6 +1780,9 @@ Json encode_message(const Message& message) {
       if (in.body) {
         out["body"] = Json(*in.body);
       }
+      if (in.detail) {
+        out["detail"] = Json(*in.detail);
+      }
     } else if constexpr (std::is_same_v<T, Error>) {
       out["t"] = "error";
       if (in.space) {
@@ -1885,6 +1897,9 @@ void encode_text(const Message& message, std::string& out) {
       }
       if (in.body) {
         append_field(out, "body", *in.body);
+      }
+      if (in.detail) {
+        append_field(out, "detail", Json(*in.detail));
       }
     } else if constexpr (std::is_same_v<T, Error>) {
       out += ",\"t\":\"error\"";

@@ -333,8 +333,8 @@ bool take_from_spaces(State& m) {
     if (result.result.error.has_value()) {
       g_refusals.fetch_add(1, std::memory_order_relaxed);
       std::string detail = "The space refused it.";
-      if (result.result.body && result.result.body->contains("detail") && (*result.result.body)["detail"].is_string()) {
-        detail = (*result.result.body)["detail"].get<std::string>();
+      if (result.result.detail.has_value() && !result.result.detail->empty()) {
+        detail = *result.result.detail;  // the space's own words (protocol 1.1)
       }
       for (auto& view : m.spaces) {
         if (view->id == it->second.first && !it->second.second.empty()) {

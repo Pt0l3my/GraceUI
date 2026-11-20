@@ -11,7 +11,7 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 0 }
+protocol = { major = 1, minor = 1 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -287,7 +287,7 @@ fields = [
 [messages.rows]
 from = "space"
 space = true
-doc = "Stream rows, in order"
+doc = "Stream rows, in order; a batch whose from_seq is past the view's next row starts the stream over there, so an empty one clears it (1.1)"
 fields = [
   { name = "topic", type = "id" },
   { name = "from_seq", type = "u64" },
@@ -308,12 +308,13 @@ fields = [
 [messages.result]
 from = "space"
 space = true
-doc = "The answer to one command: ok, or an error"
+doc = "The answer to one command: ok, or an error with its reason in words a player reads (detail, 1.1)"
 fields = [
   { name = "id", type = "u32" },
   { name = "ok", type = "bool", optional = true },
   { name = "error", type = "enum.error_code", optional = true },
   { name = "body", type = "object", max = 262144, optional = true },
+  { name = "detail", type = "string", max = 256, optional = true },
 ]
 
 [messages.error]

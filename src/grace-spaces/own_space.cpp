@@ -98,7 +98,7 @@ void OwnSpace::serve() {
             result.ok = true;
           } else {
             result.error = outcome.error;
-            result.body = protocol::Json::object({{"detail", outcome.detail}});
+            result.detail = outcome.detail;  // its reason in words (protocol 1.1)
           }
         } else if (event.command == "dashboard.disconnect") {
           result.ok = true;

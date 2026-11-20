@@ -259,6 +259,9 @@ export class WebSocketTransport implements Transport {
         if (body) {
           answer.body = body;
         }
+        if (typeof frame.detail === "string") {
+          answer.detail = frame.detail;
+        }
         waiting.resolve(answer);
       }
     }

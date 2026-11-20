@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 0;
-inline constexpr std::string_view kProtocolVersion = "1.0";
+inline constexpr std::uint32_t kProtocolMinor = 1;
+inline constexpr std::string_view kProtocolVersion = "1.1";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -414,7 +414,7 @@ struct State {
   Json body{};
   bool operator==(const State&) const = default;
 };
-// Stream rows, in order.
+// Stream rows, in order; a batch whose from_seq is past the view's next row starts the stream over there, so an empty one clears it (1.1).
 struct Rows {
   std::string space{};
   std::string topic{};
@@ -431,13 +431,14 @@ struct Cmd {
   Json args{};
   bool operator==(const Cmd&) const = default;
 };
-// The answer to one command: ok, or an error.
+// The answer to one command: ok, or an error with its reason in words a player reads (detail, 1.1).
 struct Result {
   std::string space{};
   std::uint32_t id{};
   std::optional<bool> ok{};
   std::optional<ErrorCode> error{};
   std::optional<Json> body{};
+  std::optional<std::string> detail{};
   bool operator==(const Result&) const = default;
 };
 // A protocol-level error not tied to a command.

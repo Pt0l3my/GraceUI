@@ -250,8 +250,8 @@ TEST_CASE("each refusal is the store's: its code, and its words in the result's 
     REQUIRE(answer.has_value());
     CHECK((*answer)["error"] == c.code);
     CHECK_FALSE(answer->contains("ok"));
-    REQUIRE((*answer)["body"]["detail"].is_string());
-    CHECK_FALSE((*answer)["body"]["detail"].get<std::string>().empty());
+    REQUIRE((*answer)["detail"].is_string());
+    CHECK_FALSE((*answer)["detail"].get<std::string>().empty());
   }
   // Confirmed, a page's reset is taken.
   const std::optional<Json> reset = view.result(
@@ -363,7 +363,7 @@ TEST_CASE("an author's space folder: its fixtures, its scripted steps near their
   const std::optional<Json> refused = view.result(view.cmd("tidepool", "pool.count"));
   REQUIRE(refused.has_value());
   CHECK((*refused)["error"] == "not_now");
-  CHECK((*refused)["body"]["detail"] == "The crabs are hiding; count them at low water.");
+  CHECK((*refused)["detail"] == "The crabs are hiding; count them at low water.");
 }
 
 TEST_CASE("a fast, looping scenario plays its passes again, each from the fixture's states") {
@@ -406,15 +406,18 @@ TEST_CASE("the scenario's reactions: lantern.clear_log empties the log and start
   REQUIRE(seqs(*view.rows("lantern.log")) == std::vector<std::uint64_t>{1, 2, 3});
   const std::uint32_t id = view.cmd("demo", "lantern.clear_log");
   std::optional<Json> answer;
+  std::optional<Json> cleared;
   std::optional<Json> fresh;
-  for (int i = 0; i < 2 && (!answer || !fresh); ++i) {
+  for (int i = 0; i < 3 && (!answer || !cleared || !fresh); ++i) {
     const std::optional<Json> next = view.wait([&](const Json& j) {
       return (j["t"] == "result" && j["id"] == id) || (j["t"] == "rows" && j["topic"] == "lantern.log");
     });
     REQUIRE(next.has_value());
-    (((*next)["t"] == "result") ? answer : fresh) = next;
+    (((*next)["t"] == "result") ? answer : (*next)["rows"].empty() ? cleared : fresh) = next;
   }
   CHECK((*answer)["ok"] == true);
+  REQUIRE(cleared.has_value());
+  CHECK((*cleared)["from_seq"] == 5);  // an empty batch past a gap: every view clears the log now (protocol 1.1)
   REQUIRE(fresh.has_value());
   CHECK((*fresh)["from_seq"] == 5);  // past a gap: the stream starts over there
   CHECK(seqs(*fresh) == std::vector<std::uint64_t>{5});

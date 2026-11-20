@@ -118,6 +118,9 @@ void Engine::dispatch(Outgoing& item) {
 
 void Engine::forward_rows(Connection& c, Subscription& sub, const Outgoing& item) {
   const std::uint64_t end = item.from_seq + item.rows.size();
+  if (item.rows.empty() && sub.next_seq >= item.from_seq) {
+    return;  // an empty batch clears only past a gap (protocol 1.1): for this view there is none
+  }
   if (sub.next_seq <= item.from_seq) {
     sub.next_seq = end;
     enqueue(c, item.frame);

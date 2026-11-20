@@ -764,7 +764,17 @@ scenario.json of timed steps, invented content only). grace-dev checks them as `
    Its state's `values` (and `inherited`, for tri-states that inherit) set the rows; publish every value, or the menu
    shows a value missing from it as its default.
 3. **Commands from the menu** come as any view's do, with a reply handle and the same 10 s deadline; a refusal's words
-   (for now in the result's `body.detail`, from protocol 1.1 in its own `detail` field) are shown under the row, and the
-   row shows the last published value again.
+   (the result's own `detail`, protocol 1.1, §28) are shown under the row, and the row shows the last published value
+   again.
 4. **Component blocks** (status tiles, feeds) read "Shown in the browser view." in game (G16); only their settings are
    drawn there in 0.2.
+
+## 28. Protocol 1.1 (2026-11-20, D172)
+
+1. **A refusal's words in `result.detail`**: optional, at most 256 bytes, a sentence a player reads ("Not now: the
+   ritual is under way."), shown under the row in both views in place of the error code's words. Put EldenNet's in
+   `detail`, not in `body`; nothing personal, no value, no path (PV rules, §6.7).
+2. **Clearing a stream**: publish an empty `rows` batch whose `from_seq` is past the next row (skip one number), and
+   every view clears that stream at once; the next rows follow on from that `from_seq`. A batch past a gap with rows in
+   it starts the stream over there, as before.
+3. **Nothing breaks**: 1.0 frames are still taken (GraceUI checks the major only); `hello` may say "1.1".

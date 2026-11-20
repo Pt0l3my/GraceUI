@@ -265,7 +265,7 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
   result = serve_until("result");
   REQUIRE(result);
   CHECK((*result)["error"] == "locked");
-  CHECK((*result)["body"]["detail"] == "Only in a later version.");
+  CHECK((*result)["detail"] == "Only in a later version.");
   REQUIRE(view->send_json(frame("cmd", {{"space", "graceui"}, {"id", 11}, {"name", "menu.close"},
                                         {"args", Json::object()}})));
   result = serve_until("result");
@@ -320,7 +320,7 @@ TEST_CASE("the menu's side, with no server: the space listed, a watch, its state
   REQUIRE(command.kind == EventKind::command);
   CHECK(Json::parse(command.frame)["name"] == "settings.set");
   CHECK(registry.answer(kMod, command.reply,
-                        R"({"v":1,"t":"result","space":"demo","id":0,"error":"invalid_value","body":{"detail":"No."}})",
+                        R"({"v":1,"t":"result","space":"demo","id":0,"error":"invalid_value","detail":"No."})",
                         why) == Status::ok);
   const auto results = registry.take_game_results();
   REQUIRE(results.size() == 1);

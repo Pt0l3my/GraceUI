@@ -110,8 +110,9 @@ bool SpacePort::publish(protocol::Message message) noexcept {
       out.rev = state->rev;
     } else if (auto* rows = std::get_if<protocol::Rows>(&message)) {
       out.topic = state_->topic_index(rows->topic);
+      // An empty batch is a stream's clearing, past a gap (protocol 1.1).
       if (out.topic == detail::npos || state_->description.topics[out.topic].shape != protocol::TopicShape::stream ||
-          rows->rows.empty() || rows->rows.size() > protocol::kRowsPerBatch) {
+          rows->rows.size() > protocol::kRowsPerBatch) {
         return false;
       }
       for (const protocol::Json& row : rows->rows) {

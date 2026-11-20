@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 0,
+  "minor": 1,
   "categories": [
     {
       "id": "lanterns",

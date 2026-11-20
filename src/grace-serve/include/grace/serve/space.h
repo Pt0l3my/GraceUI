@@ -89,7 +89,7 @@ class SpacePort {
   // to this space's id, whatever it held): false if it is neither, names another topic or shape, is past the frame's
   // limit (256 KiB, or 100 rows), or the space was removed. Taken only while the topic is watched; once it is not, it
   // is dropped. A stream's rows follow on from the last ones (from_seq the next sequence number, or a gap, which
-  // starts the stream over there).
+  // starts the stream over there); an empty batch past a gap clears the stream in every view (protocol 1.1).
   bool publish(protocol::Message message) noexcept;
 
   // The result of one command: ok, or an error code, with an optional body. False if it is both or neither, or the

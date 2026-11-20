@@ -34,7 +34,7 @@ TEST_CASE("every built-in space decodes as the protocol's types") {
     const SpacePages pages = decoded<SpacePages>(space.pages);
     const SettingsDescription settings = decoded<SettingsDescription>(space.settings);
     CHECK(pages.space == space.id);
-    CHECK(pages.minor == kProtocolMinor);
+    CHECK(pages.minor <= kProtocolMinor);  // the minor its components need
     CHECK(settings.schema.hash.size() == 16);
     CHECK(encode(pages) == Json::parse(space.pages));  // nothing lost in the decoding
   }

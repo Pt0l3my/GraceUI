@@ -44,7 +44,7 @@ TEST_CASE("hello with a ticket: welcome names both spaces, the protocol and an o
   const std::string cookie = fixture.cookie();
   WsClient ws;
   REQUIRE(ws.join(fixture.port, cookie, fixture.ticket(cookie), &welcome));
-  CHECK(welcome["protocol"] == "1.0");
+  CHECK(welcome["protocol"] == "1.1");
   CHECK(welcome["graceui"] == "0.2.0");
   REQUIRE(welcome["spaces"].size() == 2);
   CHECK(welcome["spaces"][0]["id"] == "graceui");
@@ -304,6 +304,40 @@ TEST_CASE("a space's state and rows reach the connections that watch them, from 
   b->socket().close();
   CHECK(fixture.demo->wait_for([&] { return !has(fixture.demo->watched(), "lantern.log"); }));
   CHECK(has(fixture.demo->watched(), "lantern.status"));
+}
+
+TEST_CASE("an empty batch past a gap clears a stream: it reaches its watchers, and a later watcher gets no old rows (1.1)") {
+  Fixture fixture;
+  const std::unique_ptr<WsClient> a = fixture.join();
+  a->send_json(sub("demo", "lantern.log", 1));
+  const std::optional<Json> held = a->next_of("rows");
+  REQUIRE(held.has_value());
+  const std::uint64_t next = (*held)["from_seq"].get<std::uint64_t>() + (*held)["rows"].size();
+
+  grace::protocol::Rows cleared;  // the space cleared its log: nothing held, its next row past a gap
+  cleared.topic = "lantern.log";
+  cleared.from_seq = next + 1;
+  REQUIRE(fixture.demo->port->publish(grace::protocol::Message{cleared}));
+  const std::optional<Json> empty = a->next_of("rows");
+  REQUIRE(empty.has_value());
+  CHECK((*empty)["from_seq"] == next + 1);
+  CHECK((*empty)["rows"].empty());
+
+  const std::unique_ptr<WsClient> b = fixture.join();  // a later watcher: the cleared rows are not replayed
+  b->send_json(sub("demo", "lantern.log", 2));
+  CHECK(b->quiet(150ms));
+
+  grace::protocol::Rows after;
+  after.topic = "lantern.log";
+  after.from_seq = next + 1;
+  after.rows = {Json{{"seq", next + 1}, {"time", "20:05"}, {"line", "The log begins again."}}};
+  REQUIRE(fixture.demo->port->publish(grace::protocol::Message{after}));
+  for (WsClient* client : {a.get(), b.get()}) {
+    const std::optional<Json> fresh = client->next_of("rows");
+    REQUIRE(fresh.has_value());
+    CHECK((*fresh)["from_seq"] == next + 1);
+    CHECK((*fresh)["rows"].size() == 1);
+  }
 }
 
 TEST_CASE("a command's result goes to the connection that asked, and to no other") {

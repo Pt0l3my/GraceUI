@@ -351,7 +351,13 @@ struct DevHost::Live {
     StreamTopic& topic = streams[action.topic];
     if (action.kind == Action::Kind::clear) {
       topic.rows.clear();
-      ++topic.next_seq;  // a gap: the next rows start the stream over, for the server and every view (D161)
+      ++topic.next_seq;  // a gap: the stream starts over there, for the server and every view (D161)
+      if (is_watched(action.topic)) {
+        protocol::Rows cleared;  // an empty batch past the gap clears it in every view now (protocol 1.1)
+        cleared.topic = action.topic;
+        cleared.from_seq = topic.next_seq;
+        publish(protocol::Message{std::move(cleared)}, action.topic);
+      }
       return;
     }
     const std::size_t before = topic.rows.size();
@@ -450,7 +456,7 @@ struct DevHost::Live {
     std::string done;
     const auto refuse = [&](protocol::ErrorCode code, std::string detail) {
       result.error = code;
-      result.body = Json{{"detail", std::move(detail)}};  // the reason in words, never a value (§6.7)
+      result.detail = std::move(detail);  // the reason in words, never a value (§6.7; protocol 1.1)
     };
     bool renew = false;
     if (event.command == "settings.set" || event.command == "settings.reset") {
