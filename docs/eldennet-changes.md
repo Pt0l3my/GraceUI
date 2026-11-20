@@ -639,4 +639,10 @@ into EldenNet's design yet.
    tool does for GraceUI's built-in spaces, and hands both over at `register_pages` (S11.2.b types the slot). Its
    settings description's hash is the first 16 hex digits of the SHA-256 of its canonical JSON.
 4. **Availability and tri-states**: a setting's availability is `live`, `later`, `inert`, `check:<id>`,
-   `version:<x.y>` or `requires:<key>`, a later one locked; a tri-state's values are `on`, `off` and `auto`.
+   `version:<x.y>` or `requires:<key>`, a later one locked; a tri-state's values are `on`, `off` and `auto`. *Later
+   (2026-11-20, D163, at EldenNet's request):* a tri-state names its third value, `third = "auto"` or
+   `third = "inherit"`; EldenNet's allowances and per-reaction switches are `inherit` tri-states (on, off, inherit).
+   For each one on `inherit`, EldenNet's `settings` topic body lists in `inherited` the key, whether it resolves on or
+   off, its source in words (the chain's link that decides: the named slot, the type, the live kind, the base kind or
+   the shipped default) and, if it has one, the page that sets it. Both views show it faint beside the row, the
+   browser with the source as a link.
