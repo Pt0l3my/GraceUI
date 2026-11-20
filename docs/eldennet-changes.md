@@ -736,3 +736,13 @@ GraceUI 0.2's table provides `register_pages`, `publish` and `answer`, and `poll
 3. **Destructive commands** will carry `confirm: true` from both views (§7.3), and GraceUI will refuse one without it
    `confirm_required`: EldenNet's destructive commands need not check it themselves, but may.
 
+## 25. From part 12's second run (2026-11-20, D170)
+
+1. **installed on the by-name path**: graceui-sys's find sets `installed` to 1 when it finds a loaded graceui.dll by
+   name (D164's rule; the branch returned before it). EldenNet's work-around (installed, or a find by name) can go once
+   it vendors graceui-sys from the commit that brings this.
+2. **No Direct3D DLL at load**: graceui.dll no longer imports dxgi.dll, d3d12.dll or d3dcompiler_47.dll; it binds the
+   three functions it needs on its init thread, after the game's window, from System32 alone. A mod (or EldenNet's
+   launcher with --also) that loads graceui.dll early no longer meets Wine's loader hang through GraceUI. Nothing for
+   EldenNet to change.
+
