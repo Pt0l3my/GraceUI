@@ -61,8 +61,8 @@ With EldenNet, injected early.
    stand still once the menu is open, and must not start walking again when it closes.
 6. If you have a pad: open GraceUI's menu with F5, then press B twice (the first goes back to the list on the left, the
    second closes the menu): the Tarnished must not dodge or roll.
-7. Once: in GraceUI's menu, on the Menu page, set Interface scale to 1.50, close the menu and open it again. Then set
-   it back.
+7. Once: in GraceUI's menu, on the Menu page, set Menu size to 1.50, close the menu and open it again. Then set
+   it back to 1.25, its default (or press R on it).
 8. Quit from the game's own menu.
 
 If you have them, the Steam floating keyboard and Proton are rows of their own: tell us what happened.

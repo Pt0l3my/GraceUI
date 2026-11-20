@@ -4107,7 +4107,7 @@ void run_menu(const std::wstring& dll) {
   menu = menu_after(game, grace, menu.lists);
   const std::string scale = grace.setting("ui.scale");
   check(scale == "1.3" && std::fabs(menu.scale - 1.3f) < 0.001f && menu.refusals == 0, "menu: a slider",
-        "→ on Interface scale: ui.scale %s, laid out again at %.2f", scale.c_str(), menu.scale);
+        "→ on Menu size: ui.scale %s, laid out again at %.2f", scale.c_str(), menu.scale);
 
   // 3. ↓ and → choose Grace Clear: its colours replace Grace's in the next frame; R resets it, and the scale too.
   press(window, VK_DOWN, 0x50);
@@ -4128,7 +4128,7 @@ void run_menu(const std::wstring& dll) {
   check(clear == "\"clear\"" && colours_changed && grace.setting("ui.menu.theme") == "\"grace\"" &&
             grace.setting("ui.scale") == "1.25" && std::strcmp(menu.focused, "setting:ui.scale") == 0,
         "menu: a choice and reset",
-        "→ on Theme: %s, %d pixels redrawn in Grace Clear; R reset it to %s and, on Interface scale, ui.scale to %s",
+        "→ on Theme: %s, %d pixels redrawn in Grace Clear; R reset it to %s and, on Menu size, ui.scale to %s",
         clear.c_str(), changed_pixels, grace.setting("ui.menu.theme").c_str(), grace.setting("ui.scale").c_str());
 
   // 4. Its frames cost the present thread little and allocate nothing (invariant 10): the list is lent, never copied.
