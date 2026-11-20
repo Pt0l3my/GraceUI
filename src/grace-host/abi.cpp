@@ -34,6 +34,7 @@
 #include "log.h"
 #include "menu.h"
 #include "session.h"
+#include "spaces.h"
 #include "state.h"
 
 namespace grace::host {
@@ -333,6 +334,16 @@ void test_fill_menu(GraceUiTestMenu& out) noexcept {
   out.faces = view.faces;
   std::memcpy(out.page, view.page, sizeof out.page);
   std::memcpy(out.focused, view.focused, sizeof out.focused);
+}
+
+void test_fill_server(GraceUiTestServer& out) noexcept {
+  spaces::TestView view{};
+  spaces::test_view(view);
+  out.running = view.running;
+  out.port = view.port;
+  out.spaces = view.spaces;
+  out.pending = view.pending;
+  out.failed = view.failed;
 }
 
 std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capacity) noexcept {

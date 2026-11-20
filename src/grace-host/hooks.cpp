@@ -31,6 +31,7 @@
 #include "input.h"
 #include "log.h"
 #include "menu.h"
+#include "spaces.h"
 #include "state.h"
 
 namespace grace::host::hooks {
@@ -882,14 +883,16 @@ void move_filter() noexcept {
 [[noreturn]] void serve() noexcept {
   for (;;) {
     if (g_wake != nullptr) {
-      WaitForSingleObject(g_wake, INFINITE);
+      // About once a second by itself while the browser view's server runs: its commands' deadlines (D169).
+      WaitForSingleObject(g_wake, spaces::wants_timer() ? 1000 : INFINITE);
     } else {
       Sleep(50);
     }
     log_drain();
     draw::serve_bake();
     move_filter();
-    menu::serve();  // the menu's layout and commands (D167)
+    spaces::serve();  // the spaces and the browser view's server (D169), before the menu reads GraceUI's settings
+    menu::serve();    // the menu's layout and commands (D167)
     log_drain();
   }
 }

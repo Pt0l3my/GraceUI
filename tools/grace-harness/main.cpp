@@ -38,6 +38,8 @@
 #include <thread>
 #include <vector>
 
+#include "client.h"  // the server suite's test client: the "pages" scenario is a browser too
+#include "grace/pages/builtin.h"
 #include "graceui_sys.hpp"
 #include "graceui_test.h"
 #include "hello_debug_view.h"
@@ -733,6 +735,7 @@ struct GraceUi {
   decltype(&GraceUI_Test_GetPanelPublished) panel_published = nullptr;
   decltype(&GraceUI_Test_GetMenu) get_menu = nullptr;
   decltype(&GraceUI_Test_GetSetting) get_setting = nullptr;
+  decltype(&GraceUI_Test_GetServer) get_server = nullptr;
 
   bool load(const std::wstring& path) {
     module = LoadLibraryW(path.c_str());
@@ -773,7 +776,8 @@ struct GraceUi {
     panel_published = function_of<decltype(panel_published)>(module, "GraceUI_Test_GetPanelPublished");
     get_menu = function_of<decltype(get_menu)>(module, "GraceUI_Test_GetMenu");
     get_setting = function_of<decltype(get_setting)>(module, "GraceUI_Test_GetSetting");
-    return get_menu != nullptr && get_setting != nullptr && panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
+    get_server = function_of<decltype(get_server)>(module, "GraceUI_Test_GetServer");
+    return get_server != nullptr && get_menu != nullptr && get_setting != nullptr && panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
            request_input != nullptr && release_input != nullptr && set_world != nullptr && set_caret != nullptr &&
@@ -825,6 +829,15 @@ struct GraceUi {
     out.size = sizeof out;
     if (get_state(&out) == 0) {
       fatal("GraceUI_Test_GetState refused");
+    }
+    return out;
+  }
+
+  GraceUiTestServer server() const {
+    GraceUiTestServer out{};
+    out.size = sizeof out;
+    if (get_server(&out) == 0) {
+      fatal("GraceUI_Test_GetServer refused");
     }
     return out;
   }
@@ -2336,9 +2349,9 @@ std::vector<GraceUiStatus> unbuilt_answers(const GraceUiApi1* table, GraceUiCons
   GraceUiEvent event{};
   event.size = sizeof event;
   return {table->register_pages(consumer, nullptr),
-          table->publish(consumer, nullptr),
+          table->publish(consumer, nullptr, 0),
           table->poll(consumer, &event),
-          table->answer(consumer, nullptr),
+          table->answer(consumer, 0, nullptr, 0),
           table->register_texture(consumer, &texture, &id64),
           table->register_face(consumer, &face, &id32),
           table->glyph_table(consumer, 1, &glyphs),
@@ -2353,11 +2366,15 @@ std::vector<GraceUiStatus> unbuilt_answers(const GraceUiApi1* table, GraceUiCons
           table->log(consumer, GRACEUI_LOG_INFO, "invented", 8)};
 }
 
-// The four slots GraceUI 0.1 still only declares (three of the bridge protocol's four, and log): not yet. Its poll gives
-// hotkey events alone, and register_hotkey takes keys (D155).
+// The one slot GraceUI 0.2 still only declares, log: not yet (the bridge protocol's three are built, D169).
 std::vector<GraceUiStatus> declared_answers(const GraceUiApi1* table, GraceUiConsumer consumer) {
-  return {table->register_pages(consumer, nullptr), table->publish(consumer, nullptr),
-          table->answer(consumer, nullptr), table->log(consumer, GRACEUI_LOG_INFO, "invented", 8)};
+  return {table->log(consumer, GRACEUI_LOG_INFO, "invented", 8)};
+}
+
+// The bridge protocol's three with nothing to read: refused, before anything else (D169).
+std::vector<GraceUiStatus> protocol_nulls(const GraceUiApi1* table, GraceUiConsumer consumer) {
+  return {table->register_pages(consumer, nullptr), table->publish(consumer, nullptr, 0),
+          table->answer(consumer, 0, nullptr, 0)};
 }
 
 // "16 slots: not_yet", or each slot's answer where they differ.
@@ -2473,7 +2490,8 @@ void run_abi(const std::wstring& dll) {
   const bool caps_ok = api.has_cap(GRACEUI_CAP_NOTICES) && api.has_cap(GRACEUI_CAP_PANELS) &&
                        api.has_cap(GRACEUI_CAP_TEXTURES) && api.has_cap(GRACEUI_CAP_FACES) &&
                        api.has_cap(GRACEUI_CAP_INPUT) && api.has_cap(GRACEUI_CAP_WORLD_STATE) &&
-                       api.has_cap(GRACEUI_CAP_HOTKEYS) && !api.has_cap("pages") && !api.has_cap("Panels") &&
+                       api.has_cap(GRACEUI_CAP_HOTKEYS) && api.has_cap(GRACEUI_CAP_PAGES) && !api.has_cap("log") &&
+                       !api.has_cap("Panels") &&
                        !api.has_cap("") &&
                        !api.has_cap("Notices") && table->has_cap(nullptr, 0) == 0 && table->has_cap(nullptr, 7) == 0;
   bool slots_present = true;
@@ -2487,8 +2505,8 @@ void run_abi(const std::wstring& dll) {
             GRACEUI_API1_COVERS(table, log),
         "table",
         "%u bytes (this header's %zu), ABI 1.%u, GraceUI %u.%u.%u; every one of the 20 slots %s; majors 0, 2 and "
-        "0xFFFFFFFF %s; has_cap: notices, panels, textures, faces, input, world-state and hotkeys yes, pages, \"Panels\", "
-        "\"\", \"Notices\" and a null name %s",
+        "0xFFFFFFFF %s; has_cap: notices, panels, textures, faces, input, world-state, hotkeys and pages yes, log, "
+        "\"Panels\", \"\", \"Notices\" and a null name %s",
         table->size, sizeof(GraceUiApi1), table->abi_minor, GRACEUI_VERSION_MAJOR(table->graceui_version),
         GRACEUI_VERSION_MINOR(table->graceui_version), GRACEUI_VERSION_PATCH(table->graceui_version),
         slots_present ? "set" : "NOT SET", only_major_1 ? "answered null" : "ANSWERED A TABLE",
@@ -2668,11 +2686,12 @@ void run_abi(const std::wstring& dll) {
   // handle that names nobody.
   const Connected waiting = connect(table, request_for("abi-waiting"));
   const std::vector<GraceUiStatus> unbuilt = declared_answers(table, waiting.answer.consumer);
+  const std::vector<GraceUiStatus> nulls = protocol_nulls(table, waiting.answer.consumer);
   const std::vector<GraceUiStatus> nobody = unbuilt_answers(table, 0);
-  check(all_answer(unbuilt, GRACEUI_NOT_YET) && all_answer(nobody, GRACEUI_NOT_CONNECTED) && unbuilt.size() == 4 &&
-            nobody.size() == 16,
-        "not yet", "a connected mod: %s; a handle of 0: %s", answers_text(unbuilt).c_str(),
-        answers_text(nobody).c_str());
+  check(all_answer(unbuilt, GRACEUI_NOT_YET) && all_answer(nulls, GRACEUI_REFUSED) &&
+            all_answer(nobody, GRACEUI_NOT_CONNECTED) && unbuilt.size() == 1 && nobody.size() == 16,
+        "not yet", "a connected mod: log %s, the protocol's three with nothing to read %s; a handle of 0: %s",
+        answers_text(unbuilt).c_str(), answers_text(nulls).c_str(), answers_text(nobody).c_str());
 
   // 8. Notices: replaced in place by key, withdrawn by an empty text, timed, bounded, and refused when they should be.
   const GraceUiConsumer mod = waiting.answer.consumer;
@@ -4103,6 +4122,192 @@ void run_menu(const std::wstring& dll) {
   grace.print_log();
 }
 
+// ---- The spaces across the ABI (D169), end to end in graceui.dll under Wine: a mod registers the demo space for both
+// views, and GraceUI's server starts for it; the harness is a browser too (the server suite's client), taking the
+// session's cookie from the GraceUI folder's page, a ticket, and a WebSocket whose welcome names both spaces. A view's
+// sub reaches the mod as a frame from poll and its state reaches the view; a command reaches it with a reply handle (a
+// buffer too small kept for the next poll), and its answer reaches the one view that asked, once. A setting the browser
+// changes is the menu's too (one store). When the mod disconnects, its space goes, and the server stops: no socket.
+
+struct SpaceEvent {
+  GraceUiStatus status = GRACEUI_FAULT;
+  std::uint32_t kind = GRACEUI_EVENT_NONE;
+  std::uint64_t reply = 0;
+  std::uint64_t length = 0;
+  std::string frame;
+};
+
+SpaceEvent poll_space(const GraceUiApi1* table, GraceUiConsumer mod, std::uint64_t capacity = 16384) {
+  std::vector<char> buffer(static_cast<std::size_t>(capacity) + 1);
+  GraceUiEvent event{};
+  event.size = sizeof event;
+  event.frame = buffer.data();
+  event.frame_capacity = capacity;
+  SpaceEvent out;
+  out.status = table->poll(mod, &event);
+  out.kind = event.kind;
+  out.reply = event.reply;
+  out.length = event.frame_length;
+  if (out.status == GRACEUI_OK) {
+    out.frame.assign(buffer.data(), static_cast<std::size_t>(event.frame_length));
+  }
+  return out;
+}
+
+// Polls (with frames between) until the mod has an event of its space, at most 3 s.
+SpaceEvent wait_space(Game& game, const GraceUiApi1* table, GraceUiConsumer mod, std::uint64_t capacity = 16384) {
+  SpaceEvent event;
+  for (int i = 0; i < 150; ++i) {
+    event = poll_space(table, mod, capacity);
+    if (event.status != GRACEUI_OK || event.kind != GRACEUI_EVENT_NONE) {
+      return event;
+    }
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+  }
+  return event;
+}
+
+void run_pages(const std::wstring& dll) {
+  namespace io = grace::serve::iotest;
+  using grace::protocol::Json;
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+
+  // 1. Registration: checked, one space a mod, its id the mod's; the server starts for a browser space.
+  const Connected demo = connect(table, request_for("demo", GRACEUI_VERSION_PACK(0, 1, 0), "The demo space", "notices"));
+  const Connected other = connect(table, request_for("lantern"));
+  const grace::pages::BuiltinSpace& space = grace::pages::builtin_spaces()[1];
+  const auto describe = [&](std::string_view pages, std::uint32_t views) {
+    GraceUiSpaceDesc desc{};
+    desc.size = sizeof desc;
+    desc.views = views;
+    desc.version = GRACEUI_VERSION_PACK(1, 0, 0);
+    desc.pages = pages.data();
+    desc.pages_length = pages.size();
+    desc.settings = space.settings.data();
+    desc.settings_length = space.settings.size();
+    desc.increment = "0.2";
+    desc.increment_length = 3;
+    return desc;
+  };
+  const GraceUiSpaceDesc both = describe(space.pages, GRACEUI_VIEW_GAME | GRACEUI_VIEW_BROWSER);
+  const GraceUiStatus registered = table->register_pages(demo.answer.consumer, &both);
+  const GraceUiStatus twice = table->register_pages(demo.answer.consumer, &both);
+  const GraceUiStatus not_its_own = table->register_pages(other.answer.consumer, &both);
+  const GraceUiSpaceDesc no_view = describe(space.pages, 0);
+  const GraceUiStatus viewless = table->register_pages(other.answer.consumer, &no_view);
+  GraceUiTestServer server = grace.server();
+  for (int i = 0; i < 150 && server.running == 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+    server = grace.server();
+  }
+  check(registered == GRACEUI_OK && twice == GRACEUI_DUPLICATE_ID && not_its_own == GRACEUI_REFUSED &&
+            viewless == GRACEUI_REFUSED && server.running == 1 && server.spaces == 1 && server.port == 8642,
+        "spaces: register",
+        "the demo space: %s, again %s; another mod's register of it %s, with no view %s; the server %s on port %u "
+        "with %u space(s)",
+        status_name(registered), status_name(twice), status_name(not_its_own), status_name(viewless),
+        server.running != 0 ? "runs" : "DOES NOT RUN", server.port, server.spaces);
+  if (server.running == 0) {
+    grace.print_log();
+    return;
+  }
+
+  // 2. The browser: the page's cookie, a ticket, and a WebSocket whose welcome names GraceUI's space and the demo's.
+  io::start_client_network();
+  const std::uint16_t port = static_cast<std::uint16_t>(server.port);
+  const io::Reply page = io::request(port, io::page_load(port));
+  const std::string cookie = io::cookie_from(page);
+  const std::string ticket = cookie.empty() ? std::string() : io::fetch_ticket(port, cookie);
+  io::WsClient view;
+  Json welcome;
+  const bool joined = !ticket.empty() && view.join(port, cookie, ticket, &welcome);
+  std::string names;
+  if (joined) {
+    for (const Json& named : welcome["spaces"]) {
+      names += (names.empty() ? "" : ", ") + named["id"].get<std::string>();
+    }
+  }
+  check(page.status == 200 && !cookie.empty() && joined && names == "graceui, demo", "browser view: joins",
+        "the page %d with %s; a ticket %s; the WebSocket %s, its welcome naming %s", page.status,
+        cookie.empty() ? "NO COOKIE" : "the session's cookie", ticket.empty() ? "REFUSED" : "taken",
+        joined ? "joined" : "REFUSED", names.c_str());
+  if (!joined) {
+    grace.print_log();
+    return;
+  }
+
+  // 3. A view's sub reaches the mod as a sub frame; its state reaches the view.
+  view.send_json({{"v", 1}, {"t", "sub"}, {"space", "demo"}, {"id", 1}, {"topic", "lantern.status"}});
+  const SpaceEvent watched = wait_space(game, table, demo.answer.consumer);
+  const std::string state_frame =
+      R"({"v":1,"t":"state","space":"demo","topic":"lantern.status","rev":1,"body":{"sentence":"Burning steady."}})";
+  const GraceUiStatus published = table->publish(demo.answer.consumer, state_frame.data(), state_frame.size());
+  const std::string wrong_topic =
+      R"({"v":1,"t":"state","space":"demo","topic":"lantern.smoke","rev":1,"body":{}})";
+  const GraceUiStatus undeclared = table->publish(demo.answer.consumer, wrong_topic.data(), wrong_topic.size());
+  const std::optional<Json> state = view.next_of("state", std::chrono::milliseconds(3000));
+  check(watched.kind == GRACEUI_EVENT_WATCHED && watched.frame.find("\"lantern.status\"") != std::string::npos &&
+            published == GRACEUI_OK && undeclared == GRACEUI_REFUSED && state &&
+            (*state)["body"]["sentence"] == "Burning steady.",
+        "spaces: sub and state", "the mod polled %s; its state %s and reached the view: %s; an undeclared topic's %s",
+        watched.kind == GRACEUI_EVENT_WATCHED ? watched.frame.c_str() : "NO SUB", status_name(published),
+        state ? "yes" : "NO", status_name(undeclared));
+
+  // 4. A command: a buffer too tight keeps it; its answer reaches the view that asked, once.
+  view.send_json({{"v", 1}, {"t", "cmd"}, {"space", "demo"}, {"id", 7}, {"name", "lantern.trim"},
+                  {"args", Json::object()}});
+  const SpaceEvent tight = wait_space(game, table, demo.answer.consumer, 8);
+  const SpaceEvent command = poll_space(table, demo.answer.consumer);
+  const std::string ok = R"({"v":1,"t":"result","space":"demo","id":0,"ok":true})";
+  const GraceUiStatus answered = table->answer(demo.answer.consumer, command.reply, ok.data(), ok.size());
+  const GraceUiStatus again = table->answer(demo.answer.consumer, command.reply, ok.data(), ok.size());
+  const std::optional<Json> result = view.next_of("result", std::chrono::milliseconds(3000));
+  check(tight.status == GRACEUI_FULL && tight.kind == GRACEUI_EVENT_COMMAND && tight.length == command.length &&
+            command.kind == GRACEUI_EVENT_COMMAND && command.reply != 0 &&
+            command.frame.find("\"lantern.trim\"") != std::string::npos && answered == GRACEUI_OK &&
+            again == GRACEUI_REFUSED && result && (*result)["id"] == 7 && (*result)["ok"] == true,
+        "spaces: a command and its answer",
+        "8 bytes: %s (%llu needed); then %s with reply %llu; answered %s, again %s; the view's result %s",
+        status_name(tight.status), static_cast<unsigned long long>(tight.length), command.frame.c_str(),
+        static_cast<unsigned long long>(command.reply), status_name(answered), status_name(again),
+        result ? result->dump().c_str() : "NONE");
+
+  // 5. GraceUI's own space in the browser: a setting set there is the menu's too.
+  view.send_json({{"v", 1}, {"t", "cmd"}, {"space", "graceui"}, {"id", 8}, {"name", "settings.set"},
+                  {"args", {{"key", "ui.scale"}, {"value", 1.1}}}});
+  std::optional<Json> set;
+  for (int i = 0; i < 30 && !set; ++i) {
+    frames(game, 1);
+    set = view.next_of("result", std::chrono::milliseconds(100));
+  }
+  const std::string scale = grace.setting("ui.scale");
+  check(set && (*set)["ok"] == true && scale == "1.1", "spaces: one store for both views",
+        "settings.set ui.scale 1.1 from the browser: %s; the menu's store holds %s", set ? set->dump().c_str() : "NONE",
+        scale.c_str());
+
+  // 6. The mod disconnects: its space goes, the server stops, the view is told and closed.
+  table->disconnect(demo.answer.consumer);
+  table->disconnect(other.answer.consumer);
+  for (int i = 0; i < 150 && grace.server().running != 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  server = grace.server();
+  const bool closed = view.closed(std::chrono::milliseconds(3000));
+  check(server.running == 0 && server.spaces == 0 && closed && grace.state().render_off == 0, "spaces: disconnect",
+        "the server %s with %u space(s) left; the view %s", server.running == 0 ? "stopped" : "STILL RUNS",
+        server.spaces, closed ? "closed" : "STILL OPEN");
+  grace.print_log();
+}
+
 void run_absent() {
   GraceUiSysFound found{};
   found.size = sizeof found;
@@ -4519,6 +4724,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"menu") {
     std::printf("-- scenario: the in-game menu, GraceUI's own space drawn by the host on F5 (D167)\n");
     run_menu(dll);
+  } else if (scenario == L"pages") {
+    std::printf("-- scenario: a mod's space across the ABI and the browser view's server (D169)\n");
+    run_pages(dll);
   } else if (scenario == L"absent") {
     std::printf("-- scenario: graceui-sys with GraceUI not installed\n");
     run_absent();
@@ -4548,6 +4756,8 @@ int wmain(int argc, wchar_t** argv) {
             L"examples", L"examples-reversed", L"absent", L"menu"}) {
         run(child_scenario, dll, this_program());
       }
+      // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.
+      run(L"pages", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
       // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in
       // GraceUI\graceui.dll, which nothing else loads.
       const std::wstring folder = folder_of_this_program() + L"by-path";

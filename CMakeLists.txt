@@ -83,6 +83,7 @@ add_subdirectory(src/grace-draw)
 add_subdirectory(src/grace-input)
 add_subdirectory(src/grace-abi)
 add_subdirectory(src/grace-serve)
+add_subdirectory(src/grace-spaces)
 
 if(WIN32)
   add_subdirectory(src/grace-host)

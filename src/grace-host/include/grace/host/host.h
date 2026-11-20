@@ -81,8 +81,15 @@ GraceUiStatus set_world_state(GraceUiConsumer consumer, std::uint32_t flags) noe
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::uint32_t modifiers,
                               std::uint32_t pad_chord, std::string_view action, std::string_view name,
                               std::uint32_t& id) noexcept;
-// The mod's next event (D155): hotkey presses in GraceUI 0.1; `out` is GraceUI's own, zeroed by the caller.
-GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out) noexcept;
+// The mod's next event (D155, D169): hotkey presses first, then, with `protocol` (the mod's event is large enough), its
+// space's events, written into out.frame (the mod's buffer, out.frame_capacity bytes); `out` is GraceUI's own, zeroed
+// by the caller but for those two. GRACEUI_FULL with out.frame_length the size needed when the buffer is too small.
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol) noexcept;
+// The mod's space (D169): its JSON already copied or seen whole within the call.
+GraceUiStatus register_pages(GraceUiConsumer consumer, std::uint32_t views, std::uint32_t version,
+                             std::string_view pages, std::string_view settings, std::string_view increment) noexcept;
+GraceUiStatus publish(GraceUiConsumer consumer, std::string_view frame) noexcept;
+GraceUiStatus answer(GraceUiConsumer consumer, std::uint64_t reply, std::string_view frame) noexcept;
 // A mod disconnected: its panels, textures, claims and input go with it.
 void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept;
 // A connect refused before it reached the rules (a string longer than its bound, a struct below its first size): its log
@@ -119,6 +126,7 @@ void test_set_atlas_limit(std::uint32_t side) noexcept;
 std::uint64_t test_panel_published(std::uint64_t panel) noexcept;
 void test_fill_menu(GraceUiTestMenu& out) noexcept;
 std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capacity) noexcept;
+void test_fill_server(GraceUiTestServer& out) noexcept;
 #endif
 
 }  // namespace grace::host

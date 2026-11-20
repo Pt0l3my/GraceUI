@@ -11,7 +11,16 @@ gu_dll_module(graceui)
 # NOTICE.txt, fonts/ and the graceui.toml that lists them (D52), for a consumer's own tests to install from. A test
 # build's folder carries the test exports and is never a release; the release job lays out its folder the same way,
 # with the web app once it is built.
+# Its web/ is the browser view's app as web/'s build leaves it (web/dist), or, in a test build before that exists, the
+# harness's stand-in page, which the "pages" scenario loads for the session's cookie.
 find_package(Python3 3.11 COMPONENTS Interpreter)
+set(GU_WEB_COPY "")
+if(EXISTS ${CMAKE_SOURCE_DIR}/web/dist/index.html)
+  set(GU_WEB_COPY COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/web/dist ${CMAKE_BINARY_DIR}/GraceUI/web)
+elseif(GRACEUI_TEST_EXPORTS)
+  set(GU_WEB_COPY COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/tools/grace-harness/web
+                  ${CMAKE_BINARY_DIR}/GraceUI/web)
+endif()
 if(Python3_FOUND)
   set(GU_FOLDER ${CMAKE_BINARY_DIR}/GraceUI)
   add_custom_command(TARGET graceui POST_BUILD
@@ -20,6 +29,7 @@ if(Python3_FOUND)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/LICENSE ${GU_FOLDER}/LICENSE.txt
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/NOTICE ${GU_FOLDER}/NOTICE.txt
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/bin/fonts ${GU_FOLDER}/fonts
+    ${GU_WEB_COPY}
     COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/release/manifest.py write ${GU_FOLDER}
     VERBATIM)
 endif()

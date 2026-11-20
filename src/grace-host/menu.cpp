@@ -23,14 +23,15 @@
 #include "grace/draw/tessellate.h"
 #include "grace/input/devices.h"
 #include "grace/input/queue.h"
-#include "grace/pages/builtin.h"
 #include "grace/pages/settings_store.h"
+#include "grace/spaces/own_space.h"
 #include "grace/tokens.h"
 #include "grace/view/page_view.h"
 #include "hooks.h"
 #include "input.h"
 #include "log.h"
 #include "session.h"
+#include "spaces.h"
 
 namespace grace::host::menu {
 namespace {
@@ -94,7 +95,7 @@ struct State {
   double ui_scale = 1.0;
   bool clear = false;  // ui.menu.theme is Grace Clear
   grace::view::PageView view;
-  grace::pages::SettingsStore store;
+  std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
   grace::view::DisplayList list;
   std::string page;  // as the test exports read it, under its lock
   std::string focused;
@@ -114,36 +115,33 @@ std::uint32_t micros_since(std::int64_t start) noexcept {
   return frequency.QuadPart > 0 ? static_cast<std::uint32_t>((qpc() - start) * 1000000 / frequency.QuadPart) : 0;
 }
 
-template <class T>
-T decoded(std::string_view text) {
-  T out;
-  grace::protocol::DecodeError error;
-  const grace::protocol::Json json = grace::protocol::Json::parse(text.begin(), text.end(), nullptr, false);
-  if (json.is_discarded() || !decode(json, out, "", error)) {
-    throw std::runtime_error("GraceUI's own space does not decode");
-  }
-  return out;
-}
-
-// GraceUI's own space (D115), as grace-pages compiled it.
-void load(State& m) {
-  const grace::pages::BuiltinSpace& own = grace::pages::builtin_spaces()[0];
-  const auto pages = decoded<grace::protocol::SpacePages>(own.pages);
-  const auto settings = decoded<grace::protocol::SettingsDescription>(own.settings);
-  std::string why;
-  if (!m.store.load(settings, why) || !m.view.load(pages, settings, why) || !m.view.open("graceui.menu")) {
+// GraceUI's own space (D115), shared with the browser's views through one settings store (D169).
+grace::spaces::OwnSpace& own_space() {
+  grace::spaces::OwnSpace* own = spaces::own();
+  if (own == nullptr) {
     throw std::runtime_error("GraceUI's own space does not load");
   }
-  m.view.set_values(m.store.values());
+  return *own;
+}
+
+void load(State& m) {
+  grace::spaces::OwnSpace& own = own_space();
+  std::string why;
+  if (!m.view.load(own.pages(), own.settings(), why) || !m.view.open("graceui.menu")) {
+    throw std::runtime_error("GraceUI's own space does not load");
+  }
   m.loaded = true;
 }
 
 // What a changed setting does at once (its effect "now"): the scale, the theme. The rest are kept for their users.
 void take_effects(State& m) {
-  const grace::protocol::Json& scale = m.store.held("ui.scale");
+  const grace::pages::SettingsStore& store = own_space().store();
+  const grace::protocol::Json& scale = store.held("ui.scale");
   m.ui_scale = scale.is_number() ? scale.get<double>() : 1.0;
   g_ui_scale.store(static_cast<float>(m.ui_scale), std::memory_order_relaxed);
-  m.clear = m.store.held("ui.menu.theme") == "clear";
+  m.clear = store.held("ui.menu.theme") == "clear";
+  m.view.set_values(store.values());
+  m.revision = own_space().revision();
 }
 
 std::string key_of(const grace::protocol::Cmd& command) {
@@ -163,18 +161,17 @@ void run(State& m, const grace::protocol::Cmd& command) {
     return;
   }
   if (command.name == "settings.set" || command.name == "settings.reset") {
-    const grace::pages::Outcome outcome = m.store.apply(command);
+    const grace::pages::Outcome outcome = own_space().apply(command);  // the browser's views see it too
     if (!outcome.ok) {
       g_refusals.fetch_add(1, std::memory_order_relaxed);
       m.view.refused(key_of(command), outcome.detail);
     }
     take_effects(m);
-    m.view.set_values(m.store.values());
     return;
   }
   if (command.name == "dashboard.disconnect") {
-    // The browser view comes with the server (S11.2.i): with no server there is no session to renew.
-    log_line("the menu's Disconnect: no browser is connected, as no server runs in this build");
+    spaces::disconnect_browsers();  // a new session cookie; every browser must load the page again (§7.2 item 17)
+    log_line("the menu's Disconnect: every browser's session ended");
     return;
   }
   g_refusals.fetch_add(1, std::memory_order_relaxed);
@@ -266,6 +263,10 @@ void serve_menu() {
     take_effects(m);
   }
   bool dirty = false;
+  if (m.revision != own_space().revision()) {
+    take_effects(m);  // a browser changed a setting: the menu shows it, and its scale and theme follow (D169)
+    dirty = true;
+  }
   if (!m.open || m.generation != holder.generation) {
     m.open = true;
     m.generation = holder.generation;
@@ -473,12 +474,16 @@ void test_view(TestView& out) noexcept {
 }
 
 std::uint32_t test_setting(const char* key, char* out, std::uint32_t capacity) noexcept {
-  // Read on the caller's thread while GraceUI's thread may be writing: a test reads it only once the menu is idle.
-  if (g_state == nullptr || !g_state->loaded || key == nullptr || out == nullptr || capacity == 0) {
+  // Read on the caller's thread while GraceUI's thread may be writing: a test reads it only once GraceUI is idle.
+  if (key == nullptr || out == nullptr || capacity == 0) {
     return 0;
   }
   try {
-    const grace::protocol::Json values = g_state->store.values();
+    grace::spaces::OwnSpace* own = spaces::loaded_own();
+    if (own == nullptr) {
+      return 0;
+    }
+    const grace::protocol::Json values = own->store().values();
     if (!values.contains(key)) {
       return 0;
     }

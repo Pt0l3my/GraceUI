@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include "graceui.h"
 
@@ -46,6 +47,9 @@ bool glyph_table(std::uint32_t face_id, GraceUiGlyphTable& out) noexcept;
 ImFont* notice_font() noexcept;
 bool notice_face_is_grace() noexcept;
 std::uint32_t faces_baked() noexcept;  // GraceUI's and the mods' faces in the atlas
+
+// GraceUI's own folder (graceui.dll's), as a path with its last separator: false if it cannot be named.
+bool own_folder(std::wstring& out) noexcept;
 
 // Any thread, once the generation is not 0: the menu's faces by type role, or null if they were left out (D167); the
 // atlas's white pixel, which solid shapes sample; and the scale they were baked at.

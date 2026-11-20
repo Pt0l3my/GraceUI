@@ -290,8 +290,22 @@ typedef struct GraceUiTestMenu {
 /* Fills *out (out->size set by the caller); answers 1, or 0 if the size is too small. */
 GRACEUI_API uint32_t GraceUI_Test_GetMenu(GraceUiTestMenu* out);
 /* A setting of GraceUI's own space as JSON text ("1.05", "\"clear\""), NUL-terminated; answers its length, or 0 before
- * the menu has first opened or for no such key. Read it while the menu is idle. */
+ * GraceUI's own thread has loaded its space (at its first wake after the first request) or for no such key. One store
+ * holds it for the menu and the browser's views alike (D169). Read it while GraceUI is idle. */
 GRACEUI_API uint32_t GraceUI_Test_GetSetting(const char* key, char* out, uint32_t capacity);
+
+/* ---- The spaces and the browser view's server (D169). */
+typedef struct GraceUiTestServer {
+  uint32_t size;     /* set by the caller to sizeof(GraceUiTestServer) */
+  uint32_t running;  /* 1 while the server runs */
+  uint32_t port;     /* its port, while it runs */
+  uint32_t spaces;   /* mods' spaces registered */
+  uint32_t pending;  /* mods' commands polled and not yet answered */
+  uint32_t failed;   /* 1 if it could not start this session */
+} GraceUiTestServer;
+
+/* Fills *out (out->size set by the caller); answers 1, or 0 if the size is too small. */
+GRACEUI_API uint32_t GraceUI_Test_GetServer(GraceUiTestServer* out);
 
 #ifdef __cplusplus
 }

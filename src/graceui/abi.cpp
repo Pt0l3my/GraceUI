@@ -149,6 +149,18 @@ GRACEUI_API uint32_t GraceUI_Test_GetMenu(GraceUiTestMenu* out) {
   }
 }
 
+GRACEUI_API uint32_t GraceUI_Test_GetServer(GraceUiTestServer* out) {
+  try {
+    if (out == nullptr || out->size < sizeof(GraceUiTestServer)) {
+      return 0;
+    }
+    grace::host::test_fill_server(*out);
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
 GRACEUI_API uint32_t GraceUI_Test_GetSetting(const char* key, char* out, uint32_t capacity) {
   try {
     return grace::host::test_copy_setting(key, out, capacity);

@@ -160,11 +160,27 @@ GU_AT(GraceUiHotkeyDesc, action_length, 24);
 GU_AT(GraceUiHotkeyDesc, name, 32);
 GU_AT(GraceUiHotkeyDesc, name_length, 40);
 
-GU_SIZE(GraceUiEvent, 16);
+GU_SIZE(GraceUiEvent, 48);
 GU_AT(GraceUiEvent, size, 0);
 GU_AT(GraceUiEvent, kind, 4);
 GU_AT(GraceUiEvent, hotkey_id, 8);
 GU_AT(GraceUiEvent, count, 12);
+GU_AT(GraceUiEvent, reply, 16);
+GU_AT(GraceUiEvent, frame, 24);
+GU_AT(GraceUiEvent, frame_capacity, 32);
+GU_AT(GraceUiEvent, frame_length, 40);
+
+GU_SIZE(GraceUiSpaceDesc, 64);
+GU_AT(GraceUiSpaceDesc, size, 0);
+GU_AT(GraceUiSpaceDesc, views, 4);
+GU_AT(GraceUiSpaceDesc, version, 8);
+GU_AT(GraceUiSpaceDesc, reserved, 12);
+GU_AT(GraceUiSpaceDesc, pages, 16);
+GU_AT(GraceUiSpaceDesc, pages_length, 24);
+GU_AT(GraceUiSpaceDesc, settings, 32);
+GU_AT(GraceUiSpaceDesc, settings_length, 40);
+GU_AT(GraceUiSpaceDesc, increment, 48);
+GU_AT(GraceUiSpaceDesc, increment_length, 56);
 
 GU_SIZE(GraceUiWorldState, 8);
 GU_AT(GraceUiWorldState, size, 0);

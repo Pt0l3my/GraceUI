@@ -210,8 +210,14 @@ Outcome SettingsStore::set(std::string_view key, const Json& value) {
     return refused(ErrorCode::unknown_key, "no such setting");
   }
   const protocol::Setting& s = description_.settings[i];
-  if (s.locked || s.availability != "live") {
-    return refused(ErrorCode::locked, s.locked ? "This setting is locked." : "Only in a later version.");
+  if (s.availability == "later") {
+    return refused(ErrorCode::locked, "Only in a later version.");
+  }
+  if (s.locked) {
+    return refused(ErrorCode::locked, "This setting is locked.");
+  }
+  if (s.availability != "live") {
+    return refused(ErrorCode::not_now, "Not available now.");  // a check, a version or a dependency holds it (§6.9)
   }
   std::string why;
   if (!valid_value(s, value, why)) {

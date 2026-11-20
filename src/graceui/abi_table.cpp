@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <string_view>
 
 #include "grace/abi/drawlist.h"
@@ -418,6 +419,10 @@ GraceUiStatus set_world_state(GraceUiConsumer consumer, const GraceUiWorldState*
 
 constexpr std::uint32_t kHotkey10 = 48;
 constexpr std::uint32_t kEvent10 = 16;
+constexpr std::uint32_t kEvent02 = 48;       // with reply, frame, frame_capacity and frame_length (D169)
+constexpr std::uint32_t kSpaceDesc02 = 64;   // GraceUiSpaceDesc as GraceUI 0.2 first gave it
+constexpr std::uint64_t kPagesMax = 1u << 20;  // a space's page data or settings description: 1 MiB (EST)
+static_assert(sizeof(GraceUiEvent) == kEvent02 && sizeof(GraceUiSpaceDesc) == kSpaceDesc02);
 
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, const GraceUiHotkeyDesc* hotkey,
                               std::uint32_t* hotkey_id) noexcept {
@@ -454,8 +459,16 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent* event) noexcept {
     }
     GraceUiEvent out{};
     out.size = static_cast<std::uint32_t>(sizeof out);
-    const GraceUiStatus status = grace::host::abi1::poll(consumer, out);
-    if (status == GRACEUI_OK) {
+    // From 0.2 (D169): an event that holds the frame's fields takes the space's events too, into the mod's buffer.
+    const bool protocol = event_size >= kEvent02;
+    if (protocol) {
+      GraceUiEvent in{};
+      read_in(event, kEvent02, in);
+      out.frame = in.frame;
+      out.frame_capacity = in.frame == nullptr ? 0 : in.frame_capacity;
+    }
+    const GraceUiStatus status = grace::host::abi1::poll(consumer, out, protocol);
+    if (status == GRACEUI_OK || status == GRACEUI_FULL) {
       write_out(event, event_size, out);
     }
     return status;
@@ -476,9 +489,67 @@ GraceUiStatus not_yet(GraceUiConsumer consumer, const char* slot) noexcept {
   }
 }
 
-GraceUiStatus register_pages(GraceUiConsumer consumer, const void*) noexcept { return not_yet(consumer, "register_pages"); }
-GraceUiStatus publish(GraceUiConsumer consumer, const void*) noexcept { return not_yet(consumer, "publish"); }
-GraceUiStatus answer(GraceUiConsumer consumer, const void*) noexcept { return not_yet(consumer, "answer"); }
+// ---- D169's slots: a mod's space, the bridge protocol's frames across the ABI.
+
+// A mod's JSON, seen whole within the call: null with a length of 0 is empty; longer than `limit` fails.
+bool frame_text(const char* text, std::uint64_t length, std::uint64_t limit, std::string_view& out) noexcept {
+  if (length > limit || (text == nullptr && length != 0)) {
+    return false;
+  }
+  out = length == 0 ? std::string_view() : std::string_view(text, static_cast<std::size_t>(length));
+  return true;
+}
+
+GraceUiStatus register_pages(GraceUiConsumer consumer, const GraceUiSpaceDesc* space) noexcept {
+  try {
+    GraceUiSpaceDesc in{};
+    std::string_view pages;
+    std::string_view settings;
+    std::string_view increment;
+    if (!read_in(space, kSpaceDesc02, in) || !frame_text(in.pages, in.pages_length, kPagesMax, pages) ||
+        !frame_text(in.settings, in.settings_length, kPagesMax, settings) ||
+        !frame_text(in.increment, in.increment_length, 16, increment)) {
+      return refused_argument(consumer, "register_pages", "a space that is null, below its first size, or too long");
+    }
+    // Copied before the registry parses them: a mod's other thread that changes its buffers meanwhile changes nothing.
+    const std::string pages_copy(pages);
+    const std::string settings_copy(settings);
+    const std::string increment_copy(increment);
+    return grace::host::abi1::register_pages(consumer, in.views, in.version, pages_copy, settings_copy, increment_copy);
+  } catch (...) {
+    grace::host::abi1::fault("register_pages");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus publish(GraceUiConsumer consumer, const char* frame, std::uint64_t frame_length) noexcept {
+  try {
+    std::string_view text;
+    if (!frame_text(frame, frame_length, GRACEUI_FRAME_TO_PAGE_MAX, text) || text.empty()) {
+      return refused_argument(consumer, "publish", "a frame that is null, empty or too long");
+    }
+    const std::string copy(text);
+    return grace::host::abi1::publish(consumer, copy);
+  } catch (...) {
+    grace::host::abi1::fault("publish");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus answer(GraceUiConsumer consumer, std::uint64_t reply, const char* frame,
+                     std::uint64_t frame_length) noexcept {
+  try {
+    std::string_view text;
+    if (!frame_text(frame, frame_length, GRACEUI_FRAME_TO_PAGE_MAX, text) || text.empty()) {
+      return refused_argument(consumer, "answer", "a frame that is null, empty or too long");
+    }
+    const std::string copy(text);
+    return grace::host::abi1::answer(consumer, reply, copy);
+  } catch (...) {
+    grace::host::abi1::fault("answer");
+    return GRACEUI_FAULT;
+  }
+}
 GraceUiStatus log(GraceUiConsumer consumer, std::uint32_t, const char*, std::uint64_t) noexcept {
   return not_yet(consumer, "log");
 }

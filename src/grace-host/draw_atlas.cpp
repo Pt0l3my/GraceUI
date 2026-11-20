@@ -393,6 +393,20 @@ ImFont* notice_font() noexcept { return g_notice_font; }
 bool notice_face_is_grace() noexcept { return g_generation.load(std::memory_order_acquire) != 0 && g_notice_grace; }
 std::uint32_t faces_baked() noexcept { return g_generation.load(std::memory_order_acquire) != 0 ? g_table_count : 0; }
 
+bool own_folder(std::wstring& out) noexcept {
+  try {
+    std::vector<wchar_t> path;
+    DWORD length = 0;
+    if (!own_folder(path, length)) {
+      return false;
+    }
+    out.assign(path.data(), length);
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
 const grace::view::Fonts* menu_fonts() noexcept {
   return g_generation.load(std::memory_order_acquire) != 0 && g_menu_scale > 0.0f ? g_menu_fonts : nullptr;
 }

@@ -94,6 +94,8 @@ TEST_CASE("the demo's kinds: whole numbers, steps, the inherit tri-state, a key'
   CHECK(store.set("lantern.shield", Json("auto")).error == ErrorCode::invalid_value);
   CHECK(store.set("lantern.trim_key", Json("Ctrl+Shift+F9")).ok);
   CHECK(store.set("lantern.trim_key", Json("Hyper+F9")).error == ErrorCode::invalid_value);
+  CHECK(store.set("lantern.night_only", Json(true)).error == ErrorCode::not_now);  // its sundial's check holds it
+  CHECK(store.set("lantern.festival", Json(true)).error == ErrorCode::locked);     // later
 }
 
 TEST_CASE("a secret is write-only (invariant 5)") {

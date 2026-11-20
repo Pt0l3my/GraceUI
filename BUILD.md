@@ -109,6 +109,8 @@ build-linux-fuzz/bin/grace_ws_frame_fuzz -max_total_time=60 -max_len=49152 <corp
 
 `-len_control=0` reaches the caps sooner. On 2026-11-20 they ran 384,505 and 395,309 times in 60 s, none failing.
 
+`grace_spaces_tests` (D169) take a mod's space across the ABI end to end through the real server: registration's checks, sub, state, cmd, answer once, a buffer too small, the 10 s deadline, a disconnect, and GraceUI's own space's settings shared by both views; CTest runs them on Linux (TSan included), and the Windows test builds build `bin/grace_spaces_tests.exe` for Wine.
+
 `grace_serve_io_tests` is the server security suite (§9.1, D161): 35 cases over real loopback sockets with GraceUI's own
 space and the demo space, in seconds, through short deadlines. CTest runs it in every Linux build, and TSan covers its
 threads. The Windows test builds (`-DGRACEUI_TEST_EXPORTS=ON`, clang-cl and MinGW-w64) build
@@ -260,7 +262,7 @@ wined3d. It plays the game's part: it presents frames of a known clear colour, l
 `GraceUI_RequestApi(1)` and reads each checked frame back after GraceUI drew on it. A different clear colour for each
 check keeps a stale frame from passing for a new one.
 
-It runs twenty scenarios, each in a process of its own: the render half's checks ("main"); two direct queues; the input
+It runs twenty-one scenarios, each in a process of its own: the render half's checks ("main"); two direct queues; the input
 half ("input"), in a process whose game loads three XInput DLLs before GraceUI starts; the input half on an ANSI window
 ("input-ansi"); ABI 1 ("abi"), whose first request is the example mod's; panels and the rest of S10.4.c ("panels"),
 whose warm-up comes after the second example mod and a mod of the harness's own have registered their faces and
@@ -269,7 +271,7 @@ example finding a copy under another name ("found-by-scan") and GraceUI's own fo
 of the harness from `bin\by-path`, beside the example and `GraceUI\graceui.dll`, as a game's folder); and a simulated
 anti-cheat hit by each clause ("anti-cheat", "anti-cheat-parent"); two example mods at once, `hello-notice` and
 `hello-debug-view`, the one loaded before GraceUI and the other after the hooks, and the other way round ("examples",
-"examples-reversed", D156); graceui-sys with GraceUI not installed ("absent", D164); the in-game menu at 1920 by 1080 ("menu", D167); and five from the host's review: a larger window
+"examples-reversed", D156); graceui-sys with GraceUI not installed ("absent", D164); the in-game menu at 1920 by 1080 ("menu", D167); a mod's space across the ABI with the browser view's server, run from the build's GraceUI folder ("pages", D169); and five from the host's review: a larger window
 found before the game's ("decoy-window"), the shared atlas running out of room ("atlas-full"), a request made while
 the first is still running ("slow-first"), a second copy with a long name ("long-name") and the game moving to a new
 device ("device-change"). Each scenario whose first `GraceUI_RequestApi`
@@ -364,6 +366,7 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | both notices | The banner and `hello-notice`'s notice are drawn, in the order they connected, and nothing else: the debug view is hidden |
 | debug view opened | Injected F11 reaches neither DirectInput nor the game's window; the debug view takes it through `poll`, and its panel is drawn at the bottom left (its ground and its own font's ink, the edges outside it clear), its banner's text replaced in place |
 | debug view closed | F11 again: the panel gone, the banner as it was, both notices drawn and nothing else |
+| a mod's space | (the pages scenario, D169) A mod registers the demo space for both views (again: duplicate_id; another mod's id, or no view: refused) and GraceUI's server starts on port 8642; the harness, a browser through the server suite's client, takes the cookie from the GraceUI folder's page, a ticket and a WebSocket whose welcome names GraceUI's space and the demo's; a sub reaches the mod as a sub frame and its state reaches the view; a command reaches it with a reply handle (an 8-byte buffer answers full, with the size needed), and its answer the view, once; a setting the browser changes is the menu's too; when the mod disconnects the server stops and the view is closed |
 | the menu | (the menu scenario, D167) F5 opens GraceUI › Menu as the holder of kind menu: its first list laid out on GraceUI's thread and drawn over the game, the page and focus as expected; → raises `ui.scale` by its step and the page is laid out again at the new scale; ↓ → chooses Grace Clear and the frame's colours change; R resets each; with the menu open, the present thread's own work is held to p99 1 ms at 640 by 360 (and measured at 1920 by 1080) with nothing allocated; Esc twice, F5 and danger each end it through the one close routine, F5 then says why it does not open, and no press reaches the game. With `GRACE_SHOTS` set to a folder (a Windows path, `Z:\...` under Wine), it keeps two screenshots there as BMP for the owner's look review |
 | not installed | (the absent scenario, D164) With no GraceUI loaded and no `GraceUI\graceui.dll`, `graceui_sys_find` with `GRACEUI_SYS_STOP_IF_ABSENT` answers null after one look, `installed` 0; without the flag it looks until its time is up |
 | two copies at once | (the copies scenario) Of two copies asked at once from two threads, exactly one answers a table; the other idles, and the active one names it once |

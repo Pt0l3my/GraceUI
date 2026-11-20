@@ -43,8 +43,9 @@ class SettingsStore {
   // The keys whose values differ from their defaults, in the description's order (a view's "changed" lozenges).
   std::vector<std::string> changed() const;
 
-  // settings.set: unknown_key, locked (locked, or not live: its availability is not "live"), invalid_value, or ok with
-  // the key in `changed` if its value changed.
+  // settings.set: unknown_key; locked (a later setting, or a locked one); not_now (a check, a version or a dependency
+  // holds it: its availability is neither "live" nor "later"); invalid_value; or ok, with the key in `changed` if its
+  // value changed.
   Outcome set(std::string_view key, const protocol::Json& value);
   // settings.reset: a key (its target a key), a page (its target a page id: every setting homed there) or all of them;
   // a page or all needs `confirm` (confirm_required). Locked settings keep their values.

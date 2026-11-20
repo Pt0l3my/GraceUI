@@ -2,9 +2,12 @@
 # D85): the render half, the input half through DirectInput, XInput and the window's messages, ABI 1's table, the
 # example mods (examples/), two copies, and simulated anti-cheat hits. It links no hook library and no Dear ImGui: it is
 # the game here, and a mod through graceui-sys, nothing more. BUILD.md says how to run it under Wine.
-add_executable(grace_harness main.cpp)
+# The "pages" scenario is a browser too: it reaches graceui.dll's server with the server suite's own test client.
+add_executable(grace_harness main.cpp ${CMAKE_SOURCE_DIR}/src/grace-serve/io/tests/client.cpp)
 set_target_properties(grace_harness PROPERTIES OUTPUT_NAME grace-harness)
-target_link_libraries(grace_harness PRIVATE grace_abi graceui_sys d3d12 dxgi user32 dinput8 dxguid imm32)
+target_link_libraries(grace_harness PRIVATE grace_abi graceui_sys grace_pages grace_protocol d3d12 dxgi user32 dinput8
+  dxguid imm32 ws2_32)
+target_include_directories(grace_harness PRIVATE ${CMAKE_SOURCE_DIR}/src/grace-serve/io/tests)
 target_compile_definitions(grace_harness PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 target_include_directories(grace_harness PRIVATE ${CMAKE_SOURCE_DIR}/examples/hello-panel  # what the examples draw
   ${CMAKE_SOURCE_DIR}/examples/hello-debug-view)

@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstring>
 #include <new>
+#include <string>
 #include <string_view>
 
 #include "draw_atlas.h"
@@ -15,9 +16,12 @@
 #include "grace/abi/text.h"
 #include "grace/abi/world.h"
 #include "grace/host/host.h"
+#include "grace/spaces/registry.h"
+#include "hooks.h"
 #include "input.h"
 #include "log.h"
 #include "session.h"
+#include "spaces.h"
 #include "state.h"
 
 namespace grace::host::abi1 {
@@ -465,7 +469,7 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
   return added == grace::input::Added::unbound ? GRACEUI_UNBOUND : GRACEUI_OK;  // D164: the mod learns which
 }
 
-GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out) noexcept {
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol) noexcept {
   GraceUiStatus status = GRACEUI_OK;
   const std::uint32_t owner = admitted(consumer, status);
   if (owner == 0) {
@@ -476,10 +480,118 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out) noexcept {
     out.kind = GRACEUI_EVENT_HOTKEY;
     out.hotkey_id = press.id;
     out.count = press.count;
-  } else {
-    out.kind = GRACEUI_EVENT_NONE;
+    return GRACEUI_OK;
   }
-  return GRACEUI_OK;
+  out.kind = GRACEUI_EVENT_NONE;
+  if (!protocol) {
+    return GRACEUI_OK;  // a 0.1 mod's event: hotkeys alone
+  }
+  try {
+    grace::spaces::EventKind kind = grace::spaces::EventKind::none;
+    std::uint64_t reply = 0;
+    std::uint64_t length = 0;
+    const grace::spaces::Status polled =
+        spaces::registry().poll(consumer, out.frame, out.frame_capacity, kind, reply, length);
+    out.kind = static_cast<std::uint32_t>(kind);
+    out.reply = reply;
+    out.frame_length = length;
+    return polled == grace::spaces::Status::full ? GRACEUI_FULL : GRACEUI_OK;
+  } catch (...) {
+    fault("poll");
+    return GRACEUI_FAULT;
+  }
+}
+
+namespace {
+
+GraceUiStatus status_of(grace::spaces::Status status) noexcept {
+  switch (status) {
+    case grace::spaces::Status::ok: return GRACEUI_OK;
+    case grace::spaces::Status::duplicate: return GRACEUI_DUPLICATE_ID;
+    case grace::spaces::Status::full: return GRACEUI_FULL;
+    case grace::spaces::Status::refused: break;
+  }
+  return GRACEUI_REFUSED;
+}
+
+}  // namespace
+
+GraceUiStatus register_pages(GraceUiConsumer consumer, std::uint32_t views, std::uint32_t version,
+                             std::string_view pages, std::string_view settings, std::string_view increment) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  const std::uint32_t owner = admitted(consumer, status);
+  if (owner == 0) {
+    return status;
+  }
+  if (session::notice_only()) {
+    return GRACEUI_INACTIVE;  // no server beside an anti-cheat (D81), and no menu
+  }
+  try {
+    char mod_id[GRACEUI_ID_MAX + 1];
+    id_of(owner, mod_id);
+    grace::spaces::Registration registration;
+    registration.views = views;
+    registration.version = std::to_string(GRACEUI_VERSION_MAJOR(version)) + "." +
+                           std::to_string(GRACEUI_VERSION_MINOR(version)) + "." +
+                           std::to_string(GRACEUI_VERSION_PATCH(version));
+    registration.increment = std::string(increment);
+    registration.pages = pages;
+    registration.settings = settings;
+    std::string why;
+    const grace::spaces::Status added = spaces::registry().add(consumer, mod_id, registration, why);
+    if (added != grace::spaces::Status::ok) {
+      log_line("%s's register_pages refused: %s", mod_id, why.c_str());
+      return status_of(added);
+    }
+    if (session::consumers().owner_of(consumer) != owner) {
+      spaces::registry().remove_owner(consumer);  // the mod disconnected meanwhile, on another thread
+      return GRACEUI_NOT_CONNECTED;
+    }
+    log_line("%s registered its space (%s%s)", mod_id, (views & GRACEUI_VIEW_GAME) != 0 ? "the game's menu" : "",
+             (views & GRACEUI_VIEW_BROWSER) != 0 ? ((views & GRACEUI_VIEW_GAME) != 0 ? " and the browser" : "the browser")
+                                                 : "");
+    hooks::wake();  // GraceUI's own thread starts the browser view's server, if it is wanted now
+    return GRACEUI_OK;
+  } catch (...) {
+    fault("register_pages");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus publish(GraceUiConsumer consumer, std::string_view frame) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  if (admitted(consumer, status) == 0) {
+    return status;
+  }
+  try {
+    std::string why;
+    const grace::spaces::Status published = spaces::registry().publish(consumer, frame, why);
+    if (published != grace::spaces::Status::ok) {
+      refused("publish", "a frame that is not a state or rows of the mod's own space, of a topic it declares");
+    }
+    return status_of(published);
+  } catch (...) {
+    fault("publish");
+    return GRACEUI_FAULT;
+  }
+}
+
+GraceUiStatus answer(GraceUiConsumer consumer, std::uint64_t reply, std::string_view frame) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  if (admitted(consumer, status) == 0) {
+    return status;
+  }
+  try {
+    std::string why;
+    const grace::spaces::Status answered = spaces::registry().answer(consumer, reply, frame, why);
+    if (answered != grace::spaces::Status::ok) {
+      refused("answer", "not a result frame, or a reply that waits for no answer");
+    }
+    return status_of(answered);
+  } catch (...) {
+    fault("answer");
+    return GRACEUI_FAULT;
+  }
 }
 
 void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept {
@@ -491,6 +603,7 @@ void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept {
     input::close_holder(grace::input::Closed::released, holder.generation);
   }
   session::registry().retire_owner(consumer);
+  spaces::registry().remove_owner(consumer);  // its space leaves the browser view, its commands' replies dropped
   input::hotkeys().remove_owner(static_cast<std::uint16_t>(owner));
   apply_world(session::world().remove(consumer));
 }
