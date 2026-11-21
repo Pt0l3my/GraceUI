@@ -1873,6 +1873,12 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             const std::vector<protocol::RowAction>& row_actions =
                 block.row_actions ? *block.row_actions : std::vector<protocol::RowAction>{};
             const Json& rows = (*table)["rows"];
+            bool takes_key = false;  // a row secret's line only when a row takes one (D200)
+            for (const Json& line : rows) {
+              if (block.row_secret && line.is_object() && cell_words(line, block.row_secret->column) != "none") {
+                takes_key = true;
+              }
+            }
             if (rows.empty()) {
               c.line(x0 + card_pad, y, content_w - 2 * card_pad, Colour::rule);
               c.text(none, TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
@@ -1971,7 +1977,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 y += std::round(line_height(TypeRole::ui_sm, s));
               }
             }
-            if (!secret_label.empty()) {  // a row secret is set in the browser view until GraceUI's own field (§5.6)
+            if (!secret_label.empty() && takes_key) {  // set in the browser view until GraceUI's own field (§5.6)
               c.text(secret_label + ": set in the browser view.", TypeRole::ui_sm, x0 + card_pad, y + std::round(8 * s),
                      content_w - 2 * card_pad, Colour::ink_faint);
               y += std::round(line_height(TypeRole::ui_sm, s) + 12 * s);

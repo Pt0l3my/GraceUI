@@ -991,3 +991,8 @@ Your per-job pickers default to `""` (the preset's model). Both views drew that 
 and offer it first, so choosing it sends `""` back to you. Say in the setting's help what Default means (D198). Nothing
 to change on your side.
 
+## 44. A row secret's line (2026-11-21, D200; GraceUI 0.2.11)
+
+In game, the line under a table with a row secret ("Key: set in the browser view.") is now left out when every row's
+cell is `"none"`. Nothing to change on your side.
+
