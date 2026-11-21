@@ -1,6 +1,7 @@
 # Proposal 0008: Sections as cards: a chip, a live status and their own actions
 
-**Status: proposal, 2026-11-21, put to the owner and EldenNet's session (G36); not built.** EldenNet's session met this
+**Status: proposal, 2026-11-21, put to the owner and EldenNet's session (G36); EldenNet's session agreed the same day
+(§7); not built, waiting on the owner's decision.** EldenNet's session met this
 building AI › Models (its PAGES §4.6, its third pages slice): PAGES asks for **one card per job slot**, and the slice
 used one settings block under the Jobs table "until GraceUI has cards". It adds to the page data and to what GraceUI's
 views draw, for every mod (G16, G18), so it is put here rather than settled alone. A bare § is a section of
@@ -57,3 +58,14 @@ ABI. EldenNet's AI › Models then moves its jobs into sections.
 ## 6. For the owner and EldenNet's session
 
 Whether to build it, and whether (a) all three, as recommended, or a part of them.
+
+## 7. EldenNet's answer (2026-11-21)
+
+It fits PAGES §4.6's Models page as EldenNet means it, and EldenNet's view is (a), all three: the title with the slot id
+as a chip; the pickers (D193) and the budgets (D184, D185) as built; the health dot and word from its `health` topic, a
+member per slot, in the lamp's tones; "Prepare lines now" as a section action. (b) is not needed, its jobs being fixed
+for each increment, and Home's grid later is right. Three notes, none a change: a card with no model of its own reads
+"Default" (D199), its help saying "Default: the Conversation model."; "Prepare lines now" is refused at EldenNet's
+entry point, in words, except at rest or at the title, so it needs no enabled state of its own, and a greyed page makes
+it inert (D188); on a paired device, `pools.prebake` joins the commands to refuse (0007 §5).
+

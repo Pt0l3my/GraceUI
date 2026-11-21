@@ -786,3 +786,6 @@ change of the ABI.
 
 **Follows from.** EldenNet's request of 2026-11-21 (its third pages slice); D173, D183, D184, D185, D188, D193; G16, G18.
 
+*Later (2026-11-21):* EldenNet's session answered that the proposal fits its PAGES §4.6 as written and that its view is
+(a), all three (proposal 0008 §7).
+
