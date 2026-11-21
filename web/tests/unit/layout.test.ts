@@ -57,3 +57,14 @@ test("a page of a later increment is absent, as grace-view's set_increment leave
   assert.equal(withinIncrement(own, "0.6").pages.length, own.pages.length);
   assert.equal(withinIncrement(own, "").pages.length, own.pages.length, "an increment that does not parse hides nothing");
 });
+
+test("a category with no page is not on the rail, at any increment, as in game (D191)", () => {
+  const own = builtinSpaces()[0]!.pages;
+  const empty = { ...own, categories: [...own.categories, { id: "later", name: "Later", pages: [] }] };
+  for (const increment of ["0.2", "0.6", ""]) {
+    const shown = withinIncrement(empty, increment);
+    assert.ok(shown.categories.every((c) => c.pages.length > 0), `no empty category at "${increment}"`);
+    assert.ok(!shown.categories.some((c) => c.id === "later"));
+  }
+  assert.equal(withinIncrement(own, "0.6"), own, "data with nothing to drop is passed as it is");
+});

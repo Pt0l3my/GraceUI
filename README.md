@@ -28,7 +28,7 @@ start now closes the browser view for the session, and a destructive action alwa
 a mod's key-value lists, check lists, stat tiles and sentences in game, from what the mod publishes, and fills
 GraceUI's own About and Browser view pages. **GraceUI 0.2.7** adds what proposal 0006 settled for mods' pages: one
 topic feeding several blocks, a block's own words when it is empty, log tails newest first, pages a mod greys with its
-reason, and a shortcut row's control in game. Hotkeys and the log
+reason, and a shortcut row's control in game; its browser view's rail and tables now match the game's (D191). Hotkeys and the log
 are declared for the increments that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the

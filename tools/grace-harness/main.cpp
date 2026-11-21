@@ -5472,6 +5472,134 @@ void run_anti_cheat_later(const std::wstring& dll, bool recheck) {
   frames(game, 2);
 }
 
+// ---- A space's pages in game, for a look review (not a check of the full run): GRACE_SPACE_DIR names a folder holding
+// pages.json, settings.json and topics.json (a space as grace-dev takes it, with invented fixtures), GRACE_SHOTS the
+// folder the frames go to. A mod registers the space for the game's view, answers each watch with its topic's fixture
+// (a state topic's body; streams are the browser's in game, D184) and its settings with values.json's values if the
+// folder has one, opens the menu on it and saves a frame of every page and tab, by Page Down and E, at 1920 by 1080 and
+// the default Menu size. GRACE_SPACE_INCREMENT names the increment it registers (0.2 without it). Run by name only.
+
+std::string env_text(const char* name) {
+  char value[1024];
+  const DWORD length = GetEnvironmentVariableA(name, value, sizeof value);
+  return length == 0 || length >= sizeof value ? std::string() : std::string(value, length);
+}
+
+void run_page_shots(const std::wstring& dll) {
+  using grace::protocol::Json;
+  const std::string dir = env_text("GRACE_SPACE_DIR");
+  const auto text_of = [&](const char* name) {
+    const std::string path = dir + "\\" + name;
+    const std::vector<unsigned char> bytes = read_file(std::wstring(path.begin(), path.end()));
+    return std::string(bytes.begin(), bytes.end());
+  };
+  const std::string pages_text = text_of("pages.json");
+  const std::string settings_text = text_of("settings.json");
+  const Json pages = Json::parse(pages_text, nullptr, false);
+  const Json topics = Json::parse(text_of("topics.json"), nullptr, false);
+  // values.json, if any: the settings' values the mod publishes (a secret's as its status, "set" or ""); else defaults.
+  const std::string values_text = text_of("values.json");
+  const Json values = values_text.empty() ? Json::object() : Json::parse(values_text, nullptr, false);
+  if (dir.empty() || pages.is_discarded() || !pages.is_object() || settings_text.empty() || !topics.is_object()) {
+    fatal("page-shots: GRACE_SPACE_DIR does not name a space's folder");
+  }
+  const std::string id = pages.value("space", std::string());
+  const std::string name = pages.value("name", std::string("A space"));
+  std::string increment = env_text("GRACE_SPACE_INCREMENT");
+  if (increment.empty()) {
+    increment = "0.2";
+  }
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+  const Connected mod = connect(table, request_for(id.c_str(), GRACEUI_VERSION_PACK(0, 2, 0), name.c_str(), "notices"));
+  GraceUiSpaceDesc desc = game_space(pages_text, settings_text);
+  desc.increment = increment.data();
+  desc.increment_length = increment.size();
+  const GraceUiStatus registered = table->register_pages(mod.answer.consumer, &desc);
+  frames(game, 5);
+  // The pointer out of the way, at the window's corner.
+  RECT client{};
+  GetClientRect(window, &client);
+  POINT corner{client.right - 2, client.bottom - 2};
+  ClientToScreen(window, &corner);
+  SetCursorPos(corner.x, corner.y);
+  std::uint64_t rev = 1;
+  const auto serve_mod = [&] {
+    for (int i = 0; i < 64; ++i) {
+      const SpaceEvent event = poll_space(table, mod.answer.consumer, 65536);
+      if (event.status != GRACEUI_OK || event.kind == GRACEUI_EVENT_NONE) {
+        return;
+      }
+      if (event.kind != GRACEUI_EVENT_WATCHED) {
+        continue;
+      }
+      const Json sub = Json::parse(event.frame, nullptr, false);
+      const std::string topic = sub.is_object() ? sub.value("topic", std::string()) : std::string();
+      Json body;
+      if (topic == "settings") {
+        body = Json{{"values", values.is_object() ? values : Json::object()}};
+      } else if (topics.contains(topic) && topics[topic].is_object()) {
+        body = topics[topic];
+      } else {
+        continue;
+      }
+      const std::string frame =
+          Json{{"v", 1}, {"t", "state"}, {"space", id}, {"topic", topic}, {"rev", ++rev}, {"body", body}}.dump();
+      table->publish(mod.answer.consumer, frame.data(), frame.size());
+    }
+  };
+  const auto settle = [&] {
+    for (int i = 0; i < 12; ++i) {
+      serve_mod();
+      game.frame(kInputColour, PresentWith::present);
+      Sleep(25);
+    }
+    frames(game, 3);
+  };
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  std::vector<std::string> seen;
+  std::string shots;
+  for (int step = 0; step < 32; ++step) {
+    settle();
+    menu = grace.menu();
+    const std::string page = menu.page;
+    if (page.empty() || std::find(seen.begin(), seen.end(), page) != seen.end() || page.rfind("graceui.", 0) == 0) {
+      break;
+    }
+    seen.push_back(page);
+    std::size_t tabs = 0;
+    for (const Json& p : pages["pages"]) {
+      if (p.value("id", std::string()) == page && p.contains("tabs") && p["tabs"].is_array()) {
+        tabs = p["tabs"].size();
+      }
+    }
+    for (std::size_t t = 0; t < std::max<std::size_t>(tabs, 1); ++t) {
+      if (t > 0) {
+        press(window, 'E', 0x12);
+        settle();
+      }
+      const std::string file = page + (tabs > 1 ? "-tab" + std::to_string(t + 1) : std::string()) + ".bmp";
+      save_shot(game.frame_and_read(kInputColour, PresentWith::present), file.c_str());
+      shots += (shots.empty() ? "" : ", ") + file;
+    }
+    press(window, VK_NEXT, 0x51);
+    frames(game, 3);
+  }
+  check(registered == GRACEUI_OK && !seen.empty() && menu.off == 0, "page shots",
+        "space %s registered %s at increment %s; frames: %s", id.c_str(), status_name(registered), increment.c_str(),
+        shots.empty() ? "NONE" : shots.c_str());
+  press(window, VK_F5, kScanF5);
+  frames(game, 2);
+}
+
 // ---- The menu's mouse (§5.5): a press focuses and acts on what it is on, a held button's moves set a slider, the rail
 // takes a click; at 1920 by 1080, where the client area and the back buffer are the same size.
 
@@ -6400,6 +6528,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"pages") {
     std::printf("-- scenario: a mod's space across the ABI and the browser view's server (D169)\n");
     run_pages(dll);
+  } else if (scenario == L"page-shots") {
+    std::printf("-- scenario: a space's pages in game, for a look review (GRACE_SPACE_DIR, GRACE_SHOTS)\n");
+    run_page_shots(dll);
   } else if (scenario == L"anti-cheat-flag") {
     std::printf("-- scenario: a provider's anti-cheat flag closes the browser view for the session (§7.2 item 1)\n");
     run_anti_cheat_later(dll, false);
