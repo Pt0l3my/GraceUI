@@ -16,7 +16,8 @@
       {"value": "rapeseed", "label": "Rapeseed oil"},
       {"value": "olive", "label": "Olive oil"},
       {"value": "tallow", "label": "Tallow"}
-    ]
+    ],
+    "stock": {"word": "Low", "tone": "ember"}
   },
   "lantern.status": {
     "tiles": [

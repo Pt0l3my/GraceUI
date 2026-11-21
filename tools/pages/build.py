@@ -216,6 +216,23 @@ def lint(space_pages, description, fixtures, known_spaces):
         unique("tab", [t["id"] for t in p.get("tabs", [])], where)
         unique("section", [s["id"] for s in sections], where)
         unique("action", [a["id"] for a in p.get("actions", [])], where)
+        for section in sections:  # a section's chip, live status and own actions (D202)
+            swhere = f"{where}, section {section['id']}"
+            if "chip" in section and not 1 <= len(section["chip"]) <= 24:
+                failures.append(f"{swhere}: its chip is 1 to 24 characters")
+            status = section.get("status")
+            if status is not None:
+                topic = status.get("topic")
+                if (topic not in topics or topics[topic]["shape"] != "state" or topic in ("settings", SPACE_STATE)):
+                    failures.append(f"{swhere}: its status names a state topic of the space's own")
+                if "field" in status and not FIELD_NAME.match(status["field"]):
+                    failures.append(f"{swhere}: its status field is a name (a-z, 0-9, _; 1 to 32)")
+            unique("section action", [a["id"] for a in section.get("actions", [])], swhere)
+            for action in section.get("actions", []):
+                if action["command"] not in commands or not action["label"]:
+                    failures.append(f"{swhere}: action {action['id']} has a label and sends a command of the space")
+                if action["tone"] == "destructive" and not action.get("confirm"):
+                    failures.append(f"{swhere}: destructive action {action['id']} has no confirmation")
         for action in p.get("actions", []):
             if action["command"] not in commands:
                 failures.append(f"{where}: action {action['id']} sends {action['command']}, not a command of the space")

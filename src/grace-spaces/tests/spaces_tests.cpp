@@ -626,3 +626,41 @@ TEST_CASE("a row secret's command reaches its space; its result comes back with 
   REQUIRE(kept);
   CHECK((*kept)["body"]["trimmed"] == 1);
 }
+
+TEST_CASE("a section's own actions and status are checked at registration; a destructive one needs its confirm (D202)") {
+  const Json demo = Json::parse(demo_pages());
+  const std::string settings = demo_settings();
+  const auto keepers = [](Json& pages) -> Json& {
+    for (Json& page : pages["pages"]) {
+      if (page["id"] == "demo.keepers") {
+        return page["sections"];
+      }
+    }
+    FAIL("no demo.keepers");
+    return pages;
+  };
+  const auto refused = [&](const Json& pages, const std::string& words) {
+    spaces::Registry registry;
+    std::string why;
+    CHECK(registry.add(kMod, "demo", demo_registration(pages.dump(), settings), why) == Status::refused);
+    CHECK_MESSAGE(why.find(words) != std::string::npos, why);
+  };
+  Json pages = demo;
+  keepers(pages)[0]["actions"][0].erase("confirm");
+  refused(pages, "a destructive section action without its confirm text");
+  pages = demo;
+  keepers(pages)[2]["actions"][0]["command"] = "oil.steal";
+  refused(pages, "a command the space does not declare");
+  pages = demo;
+  keepers(pages)[2]["status"]["topic"] = "lantern.log";
+  refused(pages, "status names no state topic of the space's own");
+  // From the menu, a destructive section action is held to its confirmation as the server holds a view's.
+  spaces::Registry registry;
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(demo_pages(), settings, spaces::kViewGame), why) == Status::ok);
+  std::uint64_t ticket = 0;
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 1, "keepers.dismiss_all", Json::object()}, ticket));
+  const auto results = registry.take_game_results();
+  REQUIRE(results.size() == 1);
+  CHECK(results[0].result.error == protocol::ErrorCode::confirm_required);
+}

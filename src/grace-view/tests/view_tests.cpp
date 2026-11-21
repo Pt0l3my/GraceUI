@@ -895,7 +895,7 @@ TEST_CASE("a table's row actions: a focus stop each, a destructive one sent afte
   CHECK(std::find(topics.begin(), topics.end(), "lantern.oils") != topics.end());  // the picker's choices (D193)
   view.set_topic("lantern.keepers", kKeepers);
   for (int i = 0; i < 12 && view.focused() != "row:lantern.keepers/k1/dismiss"; ++i) {
-    press(view, Key::up);
+    press(view, Key::down);  // from the roster's own action, at the page's top (D202)
   }
   CHECK(view.focused() == "row:lantern.keepers/k1/dismiss");
   CHECK(press(view, Key::activate).kind == Action::Kind::none);  // it asks first (§7.3, D173)
@@ -1006,4 +1006,35 @@ TEST_CASE("a row secret's line in game only when a row takes a key (D200)") {
   DisplayList some;
   view.layout(Viewport{}, test::fonts(), some);
   CHECK(some.dump().find("Ward word: set in the browser view.") != std::string::npos);
+}
+
+TEST_CASE("a section's chip, live status and own actions: drawn in its head, a destructive one after its second press (D202)") {
+  PageView view = loaded("demo", "demo.keepers");
+  const auto topics = view.component_topics();
+  CHECK(std::find(topics.begin(), topics.end(), "lantern.oils") != topics.end());
+  DisplayList before;
+  view.layout(Viewport{}, test::fonts(), before);
+  CHECK(before.dump().find("\"store\"") != std::string::npos);  // the chip
+  CHECK(before.dump().find("\"Low\"") == std::string::npos);    // no status before its topic speaks (invariant 2)
+  view.set_topic("lantern.oils", Json::parse(R"({"choices": [], "stock": {"word": "Low", "tone": "ember"}})"));
+  DisplayList after;
+  view.layout(Viewport{}, test::fonts(), after);
+  CHECK(after.dump().find("\"Low\"") != std::string::npos);
+  CHECK(after.dump().find("circle  ember") != std::string::npos);
+  for (int i = 0; i < 12 && view.focused() != "section-action:roster/dismiss_all"; ++i) {
+    press(view, Key::up);
+  }
+  REQUIRE(view.focused() == "section-action:roster/dismiss_all");
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // it asks first
+  const Action sent = press(view, Key::activate);
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.name == "keepers.dismiss_all");
+  CHECK(sent.command.args == Json::object({{"confirm", true}}));
+  for (int i = 0; i < 20 && view.focused() != "section-action:oil/order"; ++i) {
+    press(view, Key::down);
+  }
+  REQUIRE(view.focused() == "section-action:oil/order");
+  const Action order = press(view, Key::activate);  // not destructive: at once
+  CHECK(order.command.name == "oil.order");
+  CHECK(order.command.args == Json::object());
 }

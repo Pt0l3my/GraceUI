@@ -191,6 +191,35 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       }
     }
     for (const protocol::PageSection* section : sections) {
+      // A section's own actions and status (D202), held as header actions and components are.
+      std::vector<std::string> action_ids;
+      for (const protocol::PageAction& action : section->actions.value_or(std::vector<protocol::PageAction>{})) {
+        if (action.label.empty() || !declared(action.command) ||
+            std::find(action_ids.begin(), action_ids.end(), action.id) != action_ids.end()) {
+          why = page.id + ": section " + section->id + "'s action " + action.id +
+                " has no label, a command the space does not declare, or a twin";
+          return false;
+        }
+        if (action.tone == protocol::ActionTone::destructive && (!action.confirm || action.confirm->empty())) {
+          why = page.id + ": a destructive section action without its confirm text";
+          return false;
+        }
+        action_ids.push_back(action.id);
+      }
+      if (section->chip && section->chip->empty()) {
+        why = page.id + ": section " + section->id + "'s chip is empty";
+        return false;
+      }
+      if (section->status) {
+        const std::string& topic = section->status->topic;
+        const auto found = std::find_if(pages.topics.begin(), pages.topics.end(),
+                                        [&](const protocol::TopicInfo& t) { return t.id == topic; });
+        if (found == pages.topics.end() || found->shape != protocol::TopicShape::state || topic == "settings" ||
+            topic == "space.state") {
+          why = page.id + ": section " + section->id + "'s status names no state topic of the space's own";
+          return false;
+        }
+      }
       for (const protocol::PageBlock& block : section->blocks) {
         if (!block_ok(page, block)) {
           return false;
@@ -587,6 +616,55 @@ std::vector<protocol::Choice> PageView::live_choices(const protocol::Setting& s,
   return out;
 }
 
+Action PageView::section_action(const Focus& f) {
+  const auto& list = sections();
+  if (f.index >= list.size() || !list[f.index].actions || f.sub >= list[f.index].actions->size() ||
+      !greyed_words(current().id).empty()) {
+    return {};  // a greyed page's section actions are inert, as its header's (D188)
+  }
+  const protocol::PageAction& a = (*list[f.index].actions)[f.sub];
+  const std::string asking = "section:" + f.id;
+  if ((a.confirm || a.tone == protocol::ActionTone::destructive) && confirming_ != asking) {
+    confirming_ = asking;  // its second press, as a header action's (§7.3, D173, D202)
+    return {};
+  }
+  confirming_.clear();
+  refusals_.erase(f.id);
+  Action action;
+  action.kind = Action::Kind::command;
+  action.command.space = pages_.space;
+  action.command.name = a.command;
+  action.command.args = a.tone == protocol::ActionTone::destructive ? Json::object({{"confirm", true}}) : Json::object();
+  return action;
+}
+
+std::pair<std::string, std::string> PageView::section_status(const protocol::PageSection& section) const {
+  if (!section.status) {
+    return {};
+  }
+  const auto found = topics_.find(section.status->topic);
+  if (found == topics_.end() || !found->second.is_object()) {
+    return {};  // nothing published: nothing drawn (invariant 2)
+  }
+  const Json* body = &found->second;
+  if (section.status->field) {
+    const auto member = body->find(*section.status->field);
+    if (member == body->end() || !member->is_object()) {
+      return {};
+    }
+    body = &*member;
+  }
+  std::string word = cell_words(*body, "word");
+  std::string tone = cell_words(*body, "tone");
+  if (word.empty() || word.size() > 64) {
+    return {};
+  }
+  if (tone != "moss" && tone != "ember" && tone != "glint" && tone != "rot") {
+    tone = "glint";  // as the lamp's
+  }
+  return {word, tone};
+}
+
 std::string PageView::cell_base(const protocol::PageBlock& block) {
   const std::string field = prop_text(block, "field");
   return *block.topic + (field.empty() ? std::string() : "#" + field);
@@ -622,6 +700,11 @@ std::vector<std::string> PageView::component_topics() const {
     add(section.blocks);
     if (section.advanced) {
       add(*section.advanced);
+    }
+  }
+  for (const protocol::PageSection& section : sections()) {  // a section's live status (D202)
+    if (section.status && std::find(out.begin(), out.end(), section.status->topic) == out.end()) {
+      out.push_back(section.status->topic);
     }
   }
   // A picker's choices (D193), for every setting the page shows, homed here or a shortcut.
@@ -755,6 +838,9 @@ void PageView::rebuild() {
   for (std::size_t i = 0; i < list.size(); ++i) {
     const protocol::PageSection& section = list[i];
     focus_.push_back({FocusKind::section, section.id, i});
+    for (std::size_t a = 0; section.actions && a < section.actions->size(); ++a) {  // its own actions (D202)
+      focus_.push_back({FocusKind::section_action, section.id + "/" + (*section.actions)[a].id, i, nullptr, a});
+    }
     if (collapsed_.count(page.id + "/" + section.id) != 0) {
       continue;
     }
@@ -854,7 +940,7 @@ std::string PageView::name_of(Scope scope, std::size_t index) const {
     return "";
   }
   static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
-                                          "cell", "row"};
+                                          "cell", "row", "section-action"};
   const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -1090,7 +1176,8 @@ Action PageView::pointer(const Pointer& in) {
   }
   const Focus& clicked = focus_[target.index];
   if (!confirming_.empty() && !(clicked.kind == FocusKind::action && clicked.id == confirming_) &&
-      !(clicked.kind == FocusKind::row_action && "row:" + clicked.id == confirming_)) {
+      !(clicked.kind == FocusKind::row_action && "row:" + clicked.id == confirming_) &&
+      !(clicked.kind == FocusKind::section_action && "section:" + clicked.id == confirming_)) {
     confirming_.clear();  // a click elsewhere lets a destructive action's confirmation go, as any other key does
   }
   scope_ = Scope::page;
@@ -1146,7 +1233,8 @@ void PageView::refused(std::string_view key, std::string_view reason) {
   refusals_[std::string(key)] = std::string(reason);
   for (std::size_t i = 0; i < focus_.size(); ++i) {
     if ((focus_[i].kind == FocusKind::setting || focus_[i].kind == FocusKind::cell ||
-         focus_[i].kind == FocusKind::row_action) && focus_[i].id == key) {
+         focus_[i].kind == FocusKind::row_action || focus_[i].kind == FocusKind::section_action) &&
+        focus_[i].id == key) {
       scope_ = Scope::page;
       page_focus_ = i;
     }
@@ -1406,6 +1494,8 @@ Action PageView::input(const Input& in) {
       switch (f.kind) {
         case FocusKind::row_action:
           return row_action(f);
+        case FocusKind::section_action:
+          return section_action(f);
         case FocusKind::action: {
           const protocol::PageAction& a = (*current().actions)[f.index];
           if (!greyed_words(current().id).empty()) {
@@ -1699,16 +1789,71 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const std::size_t card_at = out.items.size();  // the card's ground goes under its rows, inserted below
       y += std::round(16 * s);
       const bool collapsed = collapsed_.count(page.id + "/" + section.id) != 0;
-      c.text(section.title, TypeRole::eyebrow, x0 + card_pad, y, content_w - 2 * card_pad - std::round(20 * s),
-             Colour::gold);
-      c.text(collapsed ? "+" : "-", TypeRole::ui_sm, x0 + content_w - card_pad - std::round(10 * s), y,
-             std::round(12 * s), Colour::ink_faint);
-      hit(Rect{x0 + card_pad, y, content_w - 2 * card_pad, line_height(TypeRole::eyebrow, s)}, Scope::page,
-          focus_index(FocusKind::section, section.id));
-      if (page_focus(FocusKind::section, section.id)) {
-        c.focused(Rect{x0 + card_pad, y, content_w - 2 * card_pad, line_height(TypeRole::eyebrow, s)});
+      // Its head: the title and its chip at the left; its own actions, its live status and the collapse mark at the
+      // right (D202).
+      const std::size_t own_actions = section.actions ? section.actions->size() : 0;
+      const float eyebrow_h = line_height(TypeRole::eyebrow, s);
+      const float head_h = own_actions > 0 ? std::max(eyebrow_h, std::round(30 * s)) : eyebrow_h;
+      const float title_y = y + std::round((head_h - eyebrow_h) / 2);
+      const float small_y = y + std::round((head_h - line_height(TypeRole::ui_sm, s)) / 2);
+      const float title_w = c.text(section.title, TypeRole::eyebrow, x0 + card_pad, title_y,
+                                   content_w - 2 * card_pad - std::round(20 * s), Colour::gold);
+      if (section.chip) {
+        c.text(*section.chip, TypeRole::ui_sm, x0 + card_pad + title_w + std::round(12 * s), small_y,
+               content_w / 3, Colour::ink_faint);
       }
-      y += std::round(line_height(TypeRole::eyebrow, s) + 4 * s);
+      // A head with buttons centres its words on them, and rings its title alone; any other is drawn as before.
+      c.text(collapsed ? "+" : "-", TypeRole::ui_sm, x0 + content_w - card_pad - std::round(10 * s),
+             own_actions > 0 ? small_y : y, std::round(12 * s), Colour::ink_faint);
+      hit(Rect{x0 + card_pad, y, content_w - 2 * card_pad, head_h}, Scope::page, focus_index(FocusKind::section, section.id));
+      if (page_focus(FocusKind::section, section.id)) {
+        c.focused(own_actions > 0 ? Rect{x0 + card_pad, title_y, title_w + std::round(8 * s), eyebrow_h}
+                                  : Rect{x0 + card_pad, y, content_w - 2 * card_pad, eyebrow_h});
+      }
+      float right = x0 + content_w - card_pad - std::round(28 * s);
+      if (const auto [word, tone] = section_status(section); !word.empty()) {
+        const float ww = c.width(word, TypeRole::ui_sm);
+        c.text(word, TypeRole::ui_sm, right - ww, small_y, ww + 1, Colour::ink_body);
+        const float dot = std::round(8 * s);
+        const Colour ink = tone == "moss" ? Colour::moss : tone == "ember" ? Colour::ember : tone == "rot" ? Colour::rot
+                                                                                                            : Colour::glint;
+        c.circle(Rect{right - ww - std::round(8 * s) - dot, y + std::round((head_h - dot) / 2), dot, dot}, ink);
+        right -= ww + dot + std::round(28 * s);
+      }
+      std::string said;
+      for (std::size_t a = own_actions; a-- > 0;) {
+        const protocol::PageAction& act = (*section.actions)[a];
+        const std::string id = section.id + "/" + act.id;
+        const bool asking = confirming_ == "section:" + id;
+        const std::string words = asking ? "Press again to confirm" : act.label;
+        const float w = c.width(words, TypeRole::ui_sm) + std::round(24 * s);
+        const Rect button{right - w, y + std::round((head_h - 28 * s) / 2), w, std::round(28 * s)};
+        const float rr = std::round(tokens::radius::control * s);
+        Colour ink = Colour::ink_hi;
+        if (act.tone == protocol::ActionTone::primary) {
+          c.fill(button, Colour::gold, rr);
+          ink = Colour::on_gold;
+        } else if (act.tone == protocol::ActionTone::destructive) {
+          c.fill(button, Colour::rot_fill, rr);
+        } else {
+          c.stroke(button, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), rr);
+        }
+        c.text(words, TypeRole::ui_sm, button.x + std::round(12 * s),
+               button.y + std::round((button.h - line_height(TypeRole::ui_sm, s)) / 2), w, ink);
+        hit(button, Scope::page, focus_index(FocusKind::section_action, id));
+        if (page_focus(FocusKind::section_action, id)) {
+          c.focused(button);
+        }
+        if (const auto refusal = refusals_.find(id); refusal != refusals_.end()) {
+          said = refusal->second;
+        }
+        right = button.x - std::round(12 * s);
+      }
+      y += std::round(head_h + 4 * s);
+      if (!said.empty()) {  // the space's reason, under the head (§5.7)
+        c.text(said, TypeRole::ui_sm, x0 + card_pad, y, content_w - 2 * card_pad, Colour::rot);
+        y += std::round(line_height(TypeRole::ui_sm, s));
+      }
       if (section.description) {
         c.text(*section.description, TypeRole::ui_sm, x0 + card_pad, y, content_w - 2 * card_pad, Colour::ink_mute);
         y += std::round(line_height(TypeRole::ui_sm, s));
@@ -2279,6 +2424,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         }
       } else if (f.kind == FocusKind::cell) {
         hints = "Enter  Toggle    Esc  Back";  // a table's switch, as a setting's but with no default to reset to
+      } else if (f.kind == FocusKind::section_action) {
+        hints = confirming_ == "section:" + f.id ? "Enter  Confirm    Esc  Back" : "Enter  Press    Esc  Back";
       } else if (f.kind == FocusKind::row_action) {
         hints = confirming_ == "row:" + f.id ? "Enter  Confirm    Esc  Back" : "Enter  Press    Esc  Back";
       } else {

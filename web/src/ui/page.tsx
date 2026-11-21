@@ -3,10 +3,11 @@
 // Related), the header actions (a destructive one behind its confirmation), the tabs, the section cards with their
 // Advanced disclosures, the blocks (settings rows, shortcut rows, components) and the Related card. Everything drawn is
 // in the page's description (invariant 12); nothing absent is hinted at (invariant 2).
-import { useState } from "preact/hooks";
+import { useContext, useState } from "preact/hooks";
 import type { Json, Page, PageAction, PageBlock, PageSection } from "../protocol.ts";
 import { pageById, parseLink, sectionsOf } from "../model/layout.ts";
 import { refusalWords } from "../model/session.ts";
+import type { TopicData } from "../model/session.ts";
 import { GreyedContext, useSession } from "./context.ts";
 import { ComponentBlock, useTopic } from "./components.tsx";
 import { Arrow, Chevron, Cross, HelpMark, Lozenge, Warning } from "./icons.tsx";
@@ -68,7 +69,38 @@ function Blocks({ space, blocks }: { space: string; blocks: PageBlock[] }) {
   );
 }
 
+// A section's live status (D202): {word, tone} from its topic's body or a member of it; null while unpublished.
+function sectionStatus(data: TopicData | undefined, field: string | undefined): { word: string; tone: string } | null {
+  if (data?.kind !== "state") {
+    return null;
+  }
+  const raw: Json | undefined = field !== undefined ? data.body[field] : data.body;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return null;
+  }
+  const word = typeof raw.word === "string" && raw.word !== "" && raw.word.length <= 64 ? raw.word : null;
+  if (word === null) {
+    return null;
+  }
+  const tone = typeof raw.tone === "string" && ["moss", "ember", "glint", "rot"].includes(raw.tone) ? raw.tone : "glint";
+  return { word, tone };
+}
+
 function SectionCard({ space, page, section }: { space: string; page: Page; section: PageSection }) {
+  const session = useSession();
+  const greyed = useContext(GreyedContext);
+  const inert = greyed.words(greyed.page) !== null;
+  const [asking, setAsking] = useState<PageAction | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const status = sectionStatus(useTopic(space, section.status?.topic), section.status?.field);
+  const actions = section.actions ?? [];
+  const act = async (action: PageAction) => {
+    setRefusal(null);
+    const answer = await session.action(space, action);  // a destructive one carries its confirmation (D173)
+    if (!answer.ok) {
+      setRefusal(refusalWords(answer));
+    }
+  };
   const collapsed = isCollapsed(space, page.id, section);
   const headId = domId("sect-head", space, page.id, section.id);
   const bodyId = domId("sect", space, page.id, section.id);
@@ -78,13 +110,40 @@ function SectionCard({ space, page, section }: { space: string; page: Page; sect
   const hasAdvanced = (section.advanced ?? []).length > 0;
   return (
     <section class="card" data-section={section.id} aria-labelledby={headId}>
-      <h2 class="card__head">
-        <button type="button" id={headId} class="card__toggle" aria-expanded={!collapsed}
-                aria-controls={collapsed ? undefined : bodyId} onClick={() => toggleSection(space, page.id, section)}>
-          <span class="eyebrow">{section.title}</span>
-          <Chevron open={!collapsed} />
-        </button>
-      </h2>
+      <div class="card__headrow">
+        <h2 class="card__head">
+          <button type="button" id={headId} class="card__toggle" aria-expanded={!collapsed}
+                  aria-controls={collapsed ? undefined : bodyId} onClick={() => toggleSection(space, page.id, section)}>
+            <span class="card__name">
+              <span class="eyebrow">{section.title}</span>
+              {section.chip !== undefined && <span class="card__chip">{section.chip}</span>}
+            </span>
+            <Chevron open={!collapsed} />
+          </button>
+        </h2>
+        {(actions.length > 0 || status !== null) && (
+          <div class="card__extras">
+            {actions.map((action) => (
+              <button type="button" key={action.id} data-section-action={action.id}
+                      class={`button button--small button--${action.tone === "destructive" ? "danger" : action.tone}`}
+                      aria-disabled={inert || undefined}
+                      onClick={() => (inert ? undefined
+                        : action.confirm !== undefined || action.tone === "destructive"
+                          ? setAsking(action) : void act(action))}>
+                {action.label}
+              </button>
+            ))}
+            {status !== null && (
+              <span class="card__status" role="status">
+                <span class={`lamp__dot lamp__dot--${status.tone}`} aria-hidden="true" />
+                <span>{status.word}</span>
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+      {refusal !== null && <p class="row__refusal" role="alert"><Warning /> {refusal}</p>}
+      <ConfirmDialog space={space} action={asking} onClose={() => setAsking(null)} onConfirm={(a) => void act(a)} />
       {section.description !== undefined && <p class="card__desc">{section.description}</p>}
       {!collapsed && (
         <div class="card__body" id={bodyId}>

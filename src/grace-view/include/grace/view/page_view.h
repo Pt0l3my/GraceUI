@@ -167,7 +167,8 @@ class PageView {
   std::string availability_badge(const protocol::Setting& setting) const;
 
  private:
-  enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related, cell, row_action };
+  enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related, cell, row_action,
+                                        section_action };
   struct Focus {
     FocusKind kind;
     std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
@@ -209,6 +210,9 @@ class PageView {
   static std::string row_action_id(const protocol::PageBlock& block, const protocol::Json& row, std::size_t r,
                                    const protocol::RowAction& action);
   Action row_action(const Focus& f);
+  Action section_action(const Focus& f);
+  // A section's live status (D202): its word and tone (moss, ember, glint or rot), or both empty while unpublished.
+  std::pair<std::string, std::string> section_status(const protocol::PageSection& section) const;
   // A text setting's choices from its topic (D193): each {value, label} it publishes, at most 256; `published` once
   // the topic has a state.
   std::vector<protocol::Choice> live_choices(const protocol::Setting& s, bool& published) const;

@@ -795,7 +795,7 @@ change of the ABI.
 (a), all three (proposal 0008 §7).
 
 **Decision (2026-11-21).** (a) All three, as recommended: a section's chip, its live status and its own actions. To be
-built in GraceUI 0.2.12 (protocol 1.3). Home's grid of cards stays for a later proposal.
+built in GraceUI 0.2.12 (protocol 1.3); built as D202. Home's grid of cards stays for a later proposal.
 
 **Owner's words.** "both approved" (of G36 and the look review of the in-game menu, 2026-11-21).
 

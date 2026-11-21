@@ -801,6 +801,45 @@ ul, ol {
   margin: 0;
 }
 
+/* A section's head: its title and chip, then its own actions and live status (D202). */
+.card__headrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.card__headrow .card__head {
+  flex: 1;
+  min-width: 0;
+}
+
+.card__name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-12);
+}
+
+.card__chip {
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+  color: var(--ink-faint);
+}
+
+.card__extras {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+  color: var(--ink-body);
+}
+
 .card__toggle {
   display: flex;
   align-items: center;
