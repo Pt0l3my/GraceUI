@@ -1012,3 +1012,9 @@ Page data that uses them should say `"minor": 3`. The browser draws the actions 
 game they sit in the head, the actions as focus stops after the section's head. When pairing comes, `pools.prebake`
 joins the commands to refuse from a paired device (proposal 0008 §7).
 
+## 46. The browser view paces its subs (2026-11-21, D203; GraceUI 0.2.13)
+
+The web shell now sends subs, unsubs and commands through one queue at 16 a second (the server still allows 20 and
+drops the rest), so AI › Models' 14 topics arrive in about a second after connecting and none is lost. No change of
+the protocol or the ABI, nothing to change on your side; your preview's own browser may keep its 16 a second.
+
