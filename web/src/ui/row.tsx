@@ -328,15 +328,17 @@ function PickerControl({ s, space, shown, labelId, helpId, disabled }: ControlPr
     }
   }
   const value = typeof shown === "string" ? shown : "";
+  // A default that is none of the choices (an empty one: the space's own, D199) is offered first, as "Default".
+  const ownDefault = s.default === "";
   if (choices.length === 0) {
     return (
       <span class="picker picker--empty">
-        {value !== "" && <span class="picker__value">{value}</span>}
+        {(value !== "" || ownDefault) && <span class="picker__value">{value !== "" ? value : "Default"}</span>}
         <span class="picker__none">Nothing to choose from yet</span>
       </span>
     );
   }
-  const listed = choices.some((c) => c.value === value);
+  const listed = (ownDefault && value === "") || choices.some((c) => c.value === value);
   return (
     <select class="field picker" value={value} aria-labelledby={labelId} aria-describedby={helpId} disabled={disabled}
             data-control=""
@@ -346,6 +348,7 @@ function PickerControl({ s, space, shown, labelId, helpId, disabled }: ControlPr
                 session.set(space, s.key, next);
               }
             }}>
+      {ownDefault && <option value="">Default</option>}
       {!listed && value !== "" && <option value={value}>{value}</option>}
       {choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
     </select>

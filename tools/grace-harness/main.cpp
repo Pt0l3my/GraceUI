@@ -5477,7 +5477,11 @@ void run_anti_cheat_later(const std::wstring& dll, bool recheck) {
 // folder the frames go to. A mod registers the space for the game's view, answers each watch with its topic's fixture
 // (a state topic's body; streams are the browser's in game, D184) and its settings with values.json's values if the
 // folder has one, opens the menu on it and saves a frame of every page and tab, by Page Down and E, at 1920 by 1080 and
-// the default Menu size. GRACE_SPACE_INCREMENT names the increment it registers (0.2 without it). Run by name only.
+// the default Menu size. GRACE_SPACE_INCREMENT names the increment it registers (0.2 without it). GRACE_SHOTS_OWN=1
+// walks on into GraceUI's own pages; GRACE_SHOTS_ONLY names the one page to save; GRACE_SHOTS_POINTER ("x,y", client
+// pixels) leaves the pointer there instead of at the corner; GRACE_SHOTS_THEME (clear) starts GraceUI with that theme, as
+// a kept setting (D179), and removes the file after; GRACE_SHOTS_END=1 saves each page's end too, focus moved down to
+// it. Run by name only.
 
 std::string env_text(const char* name) {
   char value[1024];
@@ -5509,6 +5513,22 @@ void run_page_shots(const std::wstring& dll) {
   if (increment.empty()) {
     increment = "0.2";
   }
+  const std::string theme = env_text("GRACE_SHOTS_THEME");
+  const std::wstring kept_file = settings_file_of(dll);
+  if (!theme.empty()) {
+    const std::wstring folder = kept_file.substr(0, kept_file.find_last_of(L"\\/"));
+    CreateDirectoryW(folder.c_str(), nullptr);
+    const std::string text = Json{{"graceui_settings", 1}, {"values", {{"ui.menu.theme", theme}}}}.dump();
+    const HANDLE file = CreateFileW(kept_file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
+                                    nullptr);
+    DWORD written = 0;
+    if (file == INVALID_HANDLE_VALUE ||
+        !WriteFile(file, text.data(), static_cast<DWORD>(text.size()), &written, nullptr)) {
+      fatal("page-shots: the theme could not be kept for GraceUI to read");
+    }
+    CloseHandle(file);
+    g_keep_settings = true;
+  }
   Game game(false, 1920, 1080);
   const HWND window = game.window();
   cursor_into(window);
@@ -5524,12 +5544,19 @@ void run_page_shots(const std::wstring& dll) {
   desc.increment_length = increment.size();
   const GraceUiStatus registered = table->register_pages(mod.answer.consumer, &desc);
   frames(game, 5);
-  // The pointer out of the way, at the window's corner.
+  // The pointer out of the way, at the window's corner, or where GRACE_SHOTS_POINTER puts it.
   RECT client{};
   GetClientRect(window, &client);
   POINT corner{client.right - 2, client.bottom - 2};
+  if (const std::string at = env_text("GRACE_SHOTS_POINTER"); !at.empty()) {
+    corner.x = std::atoi(at.c_str());
+    corner.y = at.find(',') != std::string::npos ? std::atoi(at.c_str() + at.find(',') + 1) : corner.y;
+  }
   ClientToScreen(window, &corner);
   SetCursorPos(corner.x, corner.y);
+  const bool own_too = env_text("GRACE_SHOTS_OWN") == "1";
+  const std::string only = env_text("GRACE_SHOTS_ONLY");
+  const Json own_pages = Json::parse(grace::pages::builtin_spaces()[0].pages, nullptr, false);
   std::uint64_t rev = 1;
   const auto serve_mod = [&] {
     for (int i = 0; i < 64; ++i) {
@@ -5567,18 +5594,34 @@ void run_page_shots(const std::wstring& dll) {
   GraceUiTestMenu menu = menu_after(game, grace, 0);
   std::vector<std::string> seen;
   std::string shots;
-  for (int step = 0; step < 32; ++step) {
+  for (int step = 0; step < 64; ++step) {
     settle();
     menu = grace.menu();
     const std::string page = menu.page;
-    if (page.empty() || std::find(seen.begin(), seen.end(), page) != seen.end() || page.rfind("graceui.", 0) == 0) {
-      break;
+    if (page.empty() || std::find(seen.begin(), seen.end(), page) != seen.end() ||
+        (!own_too && page.rfind("graceui.", 0) == 0)) {
+      if (!own_too || page.rfind("graceui.", 0) == 0 || page.empty()) {
+        break;
+      }
+      // The mod's pages are done: GraceUI's own, by the rail's foot link (Esc to the rail, down to its end, Enter).
+      press(window, VK_ESCAPE, kScanEscape);
+      for (int i = 0; i < 40; ++i) {
+        press(window, VK_DOWN, 0x50);
+      }
+      press(window, VK_RETURN, 0x1C);
+      settle();
+      continue;
     }
     seen.push_back(page);
     std::size_t tabs = 0;
-    for (const Json& p : pages["pages"]) {
-      if (p.value("id", std::string()) == page && p.contains("tabs") && p["tabs"].is_array()) {
-        tabs = p["tabs"].size();
+    for (const Json* data : {&pages, &own_pages}) {
+      if (!data->is_object() || !data->contains("pages")) {
+        continue;
+      }
+      for (const Json& p : (*data)["pages"]) {
+        if (p.value("id", std::string()) == page && p.contains("tabs") && p["tabs"].is_array()) {
+          tabs = p["tabs"].size();
+        }
       }
     }
     for (std::size_t t = 0; t < std::max<std::size_t>(tabs, 1); ++t) {
@@ -5586,9 +5629,21 @@ void run_page_shots(const std::wstring& dll) {
         press(window, 'E', 0x12);
         settle();
       }
+      if (!only.empty() && page != only) {
+        continue;
+      }
       const std::string file = page + (tabs > 1 ? "-tab" + std::to_string(t + 1) : std::string()) + ".bmp";
       save_shot(game.frame_and_read(kInputColour, PresentWith::present), file.c_str());
       shots += (shots.empty() ? "" : ", ") + file;
+      if (env_text("GRACE_SHOTS_END") == "1") {
+        for (int i = 0; i < 40; ++i) {
+          press(window, VK_DOWN, 0x50);
+        }
+        settle();
+        const std::string end = file.substr(0, file.size() - 4) + "-end.bmp";
+        save_shot(game.frame_and_read(kInputColour, PresentWith::present), end.c_str());
+        shots += ", " + end;
+      }
     }
     press(window, VK_NEXT, 0x51);
     frames(game, 3);
@@ -5598,6 +5653,9 @@ void run_page_shots(const std::wstring& dll) {
         shots.empty() ? "NONE" : shots.c_str());
   press(window, VK_F5, kScanF5);
   frames(game, 2);
+  if (!theme.empty()) {
+    DeleteFileW(kept_file.c_str());  // the next scenario starts from GraceUI's defaults again
+  }
 }
 
 // ---- The menu's mouse (§5.5): a press focuses and acts on what it is on, a held button's moves set a slider, the rail

@@ -968,3 +968,42 @@ TEST_CASE("the lozenge follows the space's changed keys once it says them; an em
   view.set_changed({"lantern.oil_kind"});
   CHECK(lozenges() == base + 1);
 }
+
+TEST_CASE("a picker whose default is empty offers it first, as Default (D199)") {
+  PageView view;
+  std::string why;
+  const auto& demo = test::space("demo");
+  Json pages = Json::parse(demo.pages);
+  Json settings = Json::parse(demo.settings);
+  for (Json& s : settings["settings"]) {
+    if (s["key"] == "lantern.oil_kind") {
+      s["default"] = "";
+    }
+  }
+  REQUIRE(view.load(test::decoded<grace::protocol::SpacePages>(pages.dump()),
+                    test::decoded<grace::protocol::SettingsDescription>(settings.dump()), why));
+  REQUIRE(view.open("demo.keepers"));
+  for (int i = 0; i < 12 && view.focused() != "setting:lantern.oil_kind"; ++i) {
+    press(view, Key::down);
+  }
+  view.set_topic("lantern.oils", kOils);
+  CHECK(view.format("lantern.oil_kind", Json("")) == "Default");
+  Action next = press(view, Key::right);  // from Default to the first choice
+  CHECK(next.command.args["value"] == "rapeseed");
+  view.set_values(Json::object({{"lantern.oil_kind", "rapeseed"}}));
+  CHECK(press(view, Key::left).command.args["value"] == "");  // and back to the space's default
+}
+
+TEST_CASE("a row secret's line in game only when a row takes a key (D200)") {
+  PageView view = loaded("demo", "demo.keepers");
+  view.set_topic("lantern.keepers", Json::parse(R"({"columns": [{"id": "name", "label": "Keeper"},
+    {"id": "ward", "label": "Ward word"}], "rows": [{"id": "k3", "name": "Ada Marsh", "ward": "none"}]})"));
+  DisplayList none;
+  view.layout(Viewport{}, test::fonts(), none);
+  CHECK(none.dump().find("Ward word: Not needed") != std::string::npos);
+  CHECK(none.dump().find("set in the browser view") == std::string::npos);
+  view.set_topic("lantern.keepers", kKeepers);
+  DisplayList some;
+  view.layout(Viewport{}, test::fonts(), some);
+  CHECK(some.dump().find("Ward word: set in the browser view.") != std::string::npos);
+}

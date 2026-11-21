@@ -917,6 +917,9 @@ std::string PageView::format(std::string_view key, const Json& v) const {
     case SettingType::secret:
       return v.is_string() && !v.get_ref<const std::string&>().empty() ? "Set" : "Missing";  // §4.2.4's words
     case SettingType::text:
+      if (s->choices_from && v.is_string() && v.get_ref<const std::string&>().empty() && s->default_ == Json("")) {
+        return "Default";  // a picker whose default is none of its choices: the space's own default (D199)
+      }
       if (s->choices_from && v.is_string()) {
         bool published = false;
         for (const protocol::Choice& c : live_choices(*s, published)) {
@@ -991,9 +994,12 @@ Action PageView::change(const Setting& s, int direction, bool shift) {
     case SettingType::text:
       if (s.choices_from) {
         bool published = false;
-        const std::vector<protocol::Choice> choices = live_choices(s, published);
+        std::vector<protocol::Choice> choices = live_choices(s, published);
         if (choices.empty()) {
           return {};  // nothing to choose from yet (D193)
+        }
+        if (s.default_ == Json("")) {
+          choices.insert(choices.begin(), protocol::Choice{"", "Default"});  // back to the space's default (D199)
         }
         const std::size_t n = choices.size();
         std::size_t next = direction > 0 ? 0 : n - 1;  // from a value not in the list: the first, or the last
@@ -1867,6 +1873,12 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             const std::vector<protocol::RowAction>& row_actions =
                 block.row_actions ? *block.row_actions : std::vector<protocol::RowAction>{};
             const Json& rows = (*table)["rows"];
+            bool takes_key = false;  // a row secret's line only when a row takes one (D200)
+            for (const Json& line : rows) {
+              if (block.row_secret && line.is_object() && cell_words(line, block.row_secret->column) != "none") {
+                takes_key = true;
+              }
+            }
             if (rows.empty()) {
               c.line(x0 + card_pad, y, content_w - 2 * card_pad, Colour::rule);
               c.text(none, TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
@@ -1965,7 +1977,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 y += std::round(line_height(TypeRole::ui_sm, s));
               }
             }
-            if (!secret_label.empty()) {  // a row secret is set in the browser view until GraceUI's own field (§5.6)
+            if (!secret_label.empty() && takes_key) {  // set in the browser view until GraceUI's own field (§5.6)
               c.text(secret_label + ": set in the browser view.", TypeRole::ui_sm, x0 + card_pad, y + std::round(8 * s),
                      content_w - 2 * card_pad, Colour::ink_faint);
               y += std::round(line_height(TypeRole::ui_sm, s) + 12 * s);
