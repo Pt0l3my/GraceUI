@@ -312,8 +312,8 @@ help.steps = ["Read the roster: each keeper's post, and whether their ward word 
 [[page.sections]]
 id = "roster"
 title = "Roster"
-actions = [{ id = "dismiss_all", label = "Dismiss all", command = "keepers.dismiss_all", tone = "destructive", confirm = "Every keeper leaves the roster, with their ward words." }]
 blocks = [{ kind = "component", component = "table", topic = "lantern.keepers", props = { empty = "No keeper yet: hire one below." }, row_actions = [{ id = "dismiss", label = "Dismiss", command = "keepers.dismiss", key = "id", tone = "destructive", confirm = "The keeper leaves the roster, with their ward word." }], row_secret = { column = "ward", command = "keepers.ward", key = "id" } }]
+actions = [{ id = "dismiss_all", label = "Dismiss all", command = "keepers.dismiss_all", tone = "destructive", confirm = "Every keeper leaves the roster, with their ward words." }]
 
 [[page.sections]]
 id = "hire"
@@ -323,7 +323,7 @@ blocks = [{ kind = "form", command = "keepers.hire", fields = [{ id = "name", la
 [[page.sections]]
 id = "oil"
 title = "Oil"
+blocks = [{ kind = "settings", keys = ["lantern.oil_kind"] }]
 chip = "store"
 status = { topic = "lantern.oils", field = "stock" }
 actions = [{ id = "order", label = "Order oil", command = "oil.order", tone = "secondary" }]
-blocks = [{ kind = "settings", keys = ["lantern.oil_kind"] }]

@@ -277,15 +277,6 @@
         {
           "id": "roster",
           "title": "Roster",
-          "actions": [
-            {
-              "id": "dismiss_all",
-              "label": "Dismiss all",
-              "command": "keepers.dismiss_all",
-              "tone": "destructive",
-              "confirm": "Every keeper leaves the roster, with their ward words."
-            }
-          ],
           "blocks": [
             {
               "kind": "component",
@@ -309,6 +300,15 @@
                 "command": "keepers.ward",
                 "key": "id"
               }
+            }
+          ],
+          "actions": [
+            {
+              "id": "dismiss_all",
+              "label": "Dismiss all",
+              "command": "keepers.dismiss_all",
+              "tone": "destructive",
+              "confirm": "Every keeper leaves the roster, with their ward words."
             }
           ]
         },
@@ -338,6 +338,14 @@
         {
           "id": "oil",
           "title": "Oil",
+          "blocks": [
+            {
+              "kind": "settings",
+              "keys": [
+                "lantern.oil_kind"
+              ]
+            }
+          ],
           "chip": "store",
           "status": {
             "topic": "lantern.oils",
@@ -349,14 +357,6 @@
               "label": "Order oil",
               "command": "oil.order",
               "tone": "secondary"
-            }
-          ],
-          "blocks": [
-            {
-              "kind": "settings",
-              "keys": [
-                "lantern.oil_kind"
-              ]
             }
           ]
         }
