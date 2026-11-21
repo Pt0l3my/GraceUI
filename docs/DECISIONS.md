@@ -765,3 +765,27 @@ round confirms or changes; chords stand aside whenever input would be refused; t
 second round needs it, after EldenNet's R1, unless there is room before.
 
 **Owner's words.** "I am fine with everything you and grace done so far, so that's approved." (relayed by EldenNet's session, 2026-11-21).
+
+## G36
+
+**Sections as cards: a chip, a live status and their own actions** · *Open since 2026-11-21*
+
+**Question.** EldenNet's AI › Models wants one card per job slot (its PAGES §4.6): a title with the slot id as a chip, a
+health dot and word, its pickers and budgets, and on Prepared lines a button of its own. Sections are already drawn
+as cards; [proposal 0008](proposals/0008-section-cards.md) adds to a section (1) a static chip, (2) a live status from a
+state topic (`{word, tone}`, tones as the lamp's), drawn in its head, nothing while unpublished, and (3) one or two
+actions of its own, checked as header actions are. Alternatives: (b) a cards component built at run time from a
+topic, whose settings would need keys made at run time against one home per setting; (c) nothing, keeping EldenNet's
+settings block under the Jobs table.
+
+**Recommendation.** (a) All three. Home's grid of cards (its Customise drawer) is left to a later proposal.
+
+**What each answer changes.** Proposal 0008 §5: three optional fields on a section (protocol 1.3), the lint and
+registration checks, the server's destructive commands, both views' section head, the demo space and goldens. No
+change of the ABI.
+
+**Follows from.** EldenNet's request of 2026-11-21 (its third pages slice); D173, D183, D184, D185, D188, D193; G16, G18.
+
+*Later (2026-11-21):* EldenNet's session answered that the proposal fits its PAGES §4.6 as written and that its view is
+(a), all three (proposal 0008 §7).
+
