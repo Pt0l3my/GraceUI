@@ -389,6 +389,15 @@ bool take_from_spaces(State& m) {
       space.values = body["values"];
       space.view.set_values(space.values);
     }
+    if (body.is_object() && body.contains("changed") && body["changed"].is_array()) {
+      std::vector<std::string> keys;  // the rows the space says are changed (D198)
+      for (const grace::protocol::Json& key : body["changed"]) {
+        if (key.is_string()) {
+          keys.push_back(key.get<std::string>());
+        }
+      }
+      space.view.set_changed(keys);
+    }
     if (body.is_object() && body.contains("inherited") && body["inherited"].is_array()) {
       std::vector<grace::protocol::InheritedValue> inherited;
       for (const grace::protocol::Json& item : body["inherited"]) {

@@ -276,6 +276,12 @@ bool PageView::load(const protocol::SpacePages& pages, const protocol::SettingsD
   return true;
 }
 
+void PageView::set_changed(const std::vector<std::string>& keys) {
+  changed_.clear();
+  changed_.insert(keys.begin(), keys.end());
+  changed_known_ = true;
+}
+
 void PageView::set_inherited(const std::vector<protocol::InheritedValue>& inherited) {
   inherited_.clear();
   for (const protocol::InheritedValue& one : inherited) {
@@ -509,6 +515,12 @@ PageView::Drawn PageView::drawn(const protocol::PageBlock& block) const {
 std::string PageView::empty_words(const protocol::PageBlock& block, bool published) const {
   const std::string own = prop_text(block, "empty");
   return published && !own.empty() ? own : std::string("Nothing to show yet.");  // the space's words once it spoke (D186)
+}
+
+// A row secret's status in words (D194, D197): set, refused (the key was sent but the provider refused it), none (none
+// is needed), or else missing.
+static const char* secret_status_words(const std::string& status) {
+  return status == "set" ? "Set" : status == "refused" ? "Refused" : status == "none" ? "Not needed" : "Missing";
 }
 
 std::string PageView::row_action_id(const protocol::PageBlock& block, const Json& row, std::size_t r,
@@ -1880,7 +1892,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               for (std::size_t k = 1; k < text_columns.size(); ++k) {
                 std::string words = cell_words(line, text_columns[k]);
                 if (block.row_secret && text_columns[k] == block.row_secret->column) {
-                  words = (secret_label.empty() ? "" : secret_label + ": ") + (words == "set" ? "Set" : "Missing");
+                  words = (secret_label.empty() ? "" : secret_label + ": ") + secret_status_words(words);
                 }
                 if (!words.empty()) {
                   rest += (rest.empty() ? "" : "  ·  ") + words;
@@ -1992,7 +2004,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             std::size_t segment_count = 0;
             const Json& v = value(key);
             const float label_y = y + std::round((row_h - line_height(TypeRole::ui, s)) / 2);
-            if (!shortcut && v != st.default_) {  // changed from its default: the lozenge
+            const bool changed = changed_known_ ? changed_.count(key) != 0 : v != st.default_;  // D198
+            if (!shortcut && changed) {  // changed from its default: the lozenge
               c.diamond(Rect{row.x - std::round(14 * s), label_y + std::round(7 * s), std::round(8 * s),
                              std::round(8 * s)},
                         Colour::gold_deep);
@@ -2013,7 +2026,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             }
             float line_y = y + row_h - std::round(8 * s);
             if (focused_row) {  // the help line opens on focus, and ends with the default (§4.7)
-              const std::string help = st.help + " Default: " + format(key, st.default_) + ".";
+              // Its default, unless it formats to nothing: then the space's help says it, if it must (D198).
+              const std::string fallback = format(key, st.default_);
+              const std::string help = fallback.empty() ? st.help : st.help + " Default: " + fallback + ".";
               c.text(help, TypeRole::ui_sm, row.x, line_y, row.w, Colour::ink_mute);
               line_y += line_height(TypeRole::ui_sm, s);
             }

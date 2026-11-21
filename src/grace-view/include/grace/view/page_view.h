@@ -94,6 +94,9 @@ class PageView {
   bool load(const protocol::SpacePages& pages, const protocol::SettingsDescription& settings, std::string& why);
   // The settings topic's values (an object of key to value); a key not in it shows its default.
   void set_values(const protocol::Json& values);
+  // The keys the space says are changed from their defaults (the settings body's `changed`, D198): the lozenge follows
+  // them. Until a space has said, a row is changed when its value differs from its default.
+  void set_changed(const std::vector<std::string>& keys);
   // What each inherit tri-state on inherit resolves to (the settings body's `inherited`, D163), shown faint beside it.
   void set_inherited(const std::vector<protocol::InheritedValue>& inherited);
   // The increment the space runs ("0.2", as its registration names it): a page of a later increment is absent, from the
@@ -233,6 +236,8 @@ class PageView {
   std::map<std::string, std::size_t, std::less<>> by_key_;
   protocol::Json values_ = protocol::Json::object();
   std::map<std::string, std::string, std::less<>> refusals_;
+  std::set<std::string, std::less<>> changed_;  // the space's own changed keys (D198)
+  bool changed_known_ = false;
   std::map<std::string, protocol::InheritedValue, std::less<>> inherited_;
   std::map<std::string, protocol::Json, std::less<>> topics_;  // components' topic bodies (D181)
   std::map<std::string, std::string, std::less<>> greyed_;    // space.state's greyed pages and their words (D188)

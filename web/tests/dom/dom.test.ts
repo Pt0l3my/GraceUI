@@ -374,6 +374,8 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       const cells = page.locator(".table__secret");
       assert.match((await cells.nth(0).textContent()) ?? "", /Set/);
       assert.match((await cells.nth(1).textContent()) ?? "", /Missing/);
+      assert.match((await cells.nth(2).textContent()) ?? "", /Not needed/);  // a row that needs none (D197)
+      assert.equal(await cells.nth(2).locator("input").count(), 0);
       const field = cells.nth(1).locator("input");
       await field.fill("an-invented-word");
       await field.press("Enter");

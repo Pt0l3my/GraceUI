@@ -375,6 +375,12 @@ function Control(props: ControlProps) {
   return <TextControl {...props} />;
 }
 
+/** The help line ending with the default, unless the default formats to nothing (D198): then the space's help says it. */
+function helpWithDefault(s: Setting): string {
+  const fallback = formatValue(s, s.default);
+  return fallback === "" ? s.help : `${s.help} Default: ${fallback}.`;
+}
+
 /** One row, homed here (a setting) or elsewhere (a shortcut, which opens its home with the row focused). */
 export function SettingRow({ space, settingKey, shortcut }: { space: string; settingKey: string; shortcut: boolean }) {
   const session = useSession();
@@ -422,7 +428,7 @@ export function SettingRow({ space, settingKey, shortcut }: { space: string; set
               </button>
             )}
           </div>
-          <p id={helpId} class="row__help">{s.help} Default: {formatValue(s, s.default)}.</p>
+          <p id={helpId} class="row__help">{helpWithDefault(s)}</p>
           {refusal && (
             <p class="row__refusal" role="alert"><Warning /> {refusal}</p>
           )}
@@ -433,7 +439,9 @@ export function SettingRow({ space, settingKey, shortcut }: { space: string; set
       </div>
     );
   }
-  const changed = !sameJson(shown, s.default);
+  // The space's own changed keys once its settings body has said them (D198), else a value off its default.
+  const said = session.space(space)?.settings.value?.changed;
+  const changed = Array.isArray(said) ? said.includes(s.key) : !sameJson(shown, s.default);
   const later = s.availability === "later";
   const disabled = s.locked || later || greyed;
   const badge = availabilityBadge(s.availability, (key) => session.shown(space, key),
@@ -477,7 +485,7 @@ export function SettingRow({ space, settingKey, shortcut }: { space: string; set
           {badge && <span class="badge badge--availability">{badge}</span>}
           {effect && <span class="row__effect">{effect}</span>}
         </div>
-        <p id={helpId} class="row__help">{s.help} Default: {formatValue(s, s.default)}.</p>
+        <p id={helpId} class="row__help">{helpWithDefault(s)}</p>
         {edit && (
           <p class="row__pending" role="status"><span class="dots" aria-hidden="true">···</span> Saving…</p>
         )}

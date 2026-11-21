@@ -130,8 +130,9 @@ function named(value: Json | undefined): value is string | number {
   return typeof value === "string" || typeof value === "number";
 }
 
-// A row secret's cell (D194): its status as the space published it ("set", or empty), a field typed into and sent once,
-// then cleared at once; never bound to state, kept or shown again (invariant 5).
+// A row secret's cell (D194, D197): its status as the space published it ("set", "refused", "none" for a row that needs
+// none, or empty), a field typed into and sent once, then cleared at once; never bound to state, kept or shown again
+// (invariant 5).
 function SecretCell({ space, secret, row, status, label, inert, onRefusal }: {
   space: string; secret: RowSecret; row: JsonObject; status: string | null; label: string; inert: boolean;
   onRefusal: (words: string | null) => void;
@@ -158,12 +159,18 @@ function SecretCell({ space, secret, row, status, label, inert, onRefusal }: {
       onRefusal(refusalWords(answer));
     }
   };
+  if (status === "none") {
+    return <span class="secret"><span class="badge">Not needed</span></span>;  // no key for this row (D197)
+  }
+  const refused = status === "refused";  // sent, and refused by whom it was for (D197)
   return (
     <span class="secret">
-      <span class={set ? "badge badge--set" : "badge"}>{set ? "Set" : "Missing"}</span>
+      <span class={set ? "badge badge--set" : refused ? "badge badge--refused" : "badge"}>
+        {set ? "Set" : refused ? "Refused" : "Missing"}
+      </span>
       <input ref={field} type="text" class="field field--secret field--small" autocomplete="off" spellcheck={false}
              autocapitalize="off" aria-label={label} disabled={inert} data-control=""
-             placeholder={set ? "Type a new one to replace it" : "Type it here"}
+             placeholder={set || refused ? "Type a new one to replace it" : "Type it here"}
              onKeyDown={(e) => {
                if (e.key === "Enter") {
                  e.preventDefault();

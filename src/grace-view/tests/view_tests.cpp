@@ -880,7 +880,9 @@ namespace {
 
 const Json kKeepers = Json::parse(R"({"columns": [{"id": "name", "label": "Keeper"}, {"id": "post", "label": "Post"},
   {"id": "ward", "label": "Ward word"}], "rows": [{"id": "k1", "name": "Orla Venn", "post": "North light", "ward": "set"},
-  {"id": "k2", "name": "Tamsin Reed", "post": "Harbour wall", "ward": ""}]})");
+  {"id": "k2", "name": "Tamsin Reed", "post": "Harbour wall", "ward": ""},
+  {"id": "k3", "name": "Ada Marsh", "post": "Store room", "ward": "refused"},
+  {"id": "k4", "name": "Bran Teel", "post": "Lamp loft", "ward": "none"}]})");
 const Json kOils = Json::parse(R"({"choices": [{"value": "rapeseed", "label": "Rapeseed oil"},
   {"value": "olive", "label": "Olive oil"}, {"value": "tallow", "label": "Tallow"}]})");
 
@@ -917,6 +919,8 @@ TEST_CASE("a table's row actions: a focus stop each, a destructive one sent afte
   // A row secret's status in words, set in the browser view (D194); a form's fields likewise (D195).
   CHECK(refused.dump().find("Ward word: Set") != std::string::npos);
   CHECK(refused.dump().find("Ward word: Missing") != std::string::npos);
+  CHECK(refused.dump().find("Ward word: Refused") != std::string::npos);  // D197
+  CHECK(refused.dump().find("Ward word: Not needed") != std::string::npos);
   CHECK(refused.dump().find("Ward word: set in the browser view.") != std::string::npos);
   CHECK(refused.dump().find("Filled in the browser view: Name, Post.") != std::string::npos);
 }
@@ -942,4 +946,25 @@ TEST_CASE("a picker: its choices from a topic, ← and → through them, its val
   CHECK(press(view, Key::left).command.args["value"] == "tallow");  // round from the first
   view.set_topic("lantern.oils", Json::parse(R"({"choices": [{"value": "olive", "label": "Olive oil"}]})"));
   CHECK(view.format("lantern.oil_kind", Json("tallow")) == "tallow");  // not in the list: still shown as it is
+}
+
+TEST_CASE("the lozenge follows the space's changed keys once it says them; an empty default is not printed (D198)") {
+  PageView view = loaded("demo", "demo.keepers");
+  const auto lozenges = [&]() {  // the page's own rule draws one; a changed row one more
+    DisplayList list;
+    view.layout(Viewport{}, test::fonts(), list);
+    const std::string dump = list.dump();
+    std::size_t n = 0;
+    for (std::size_t at = dump.find("diamond gold.deep"); at != std::string::npos; at = dump.find("diamond gold.deep", at + 1)) {
+      ++n;
+    }
+    return n;
+  };
+  const std::size_t base = lozenges();
+  view.set_values(Json::object({{"lantern.oil_kind", "olive"}}));
+  CHECK(lozenges() == base + 1);  // a value off its default: changed, until the space says
+  view.set_changed({});
+  CHECK(lozenges() == base);      // the space says it is not
+  view.set_changed({"lantern.oil_kind"});
+  CHECK(lozenges() == base + 1);
 }

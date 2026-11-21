@@ -30,7 +30,8 @@ GraceUI's own About and Browser view pages. **GraceUI 0.2.7** adds what proposal
 topic feeding several blocks, a block's own words when it is empty, log tails newest first, pages a mod greys with its
 reason, and a shortcut row's control in game; its browser view's rail and tables now match the game's (D191).
 **GraceUI 0.2.8** adds what proposal 0007 settled (protocol 1.2): a button on each row of a table, a picker whose
-choices a mod publishes, a key field on each row, and small forms. Hotkeys and the log are declared for the increments
+choices a mod publishes, a key field on each row, and small forms. **GraceUI 0.2.9** lets a row's key read "Refused"
+or "Not needed", and takes a row's changed mark from the mod. Hotkeys and the log are declared for the increments
 that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the

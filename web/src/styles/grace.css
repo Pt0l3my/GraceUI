@@ -139,6 +139,10 @@ ul, ol {
   color: var(--moss);
 }
 
+.badge--refused {
+  color: var(--rot);
+}
+
 .link {
   color: var(--gold-hi);
   text-decoration: underline;
