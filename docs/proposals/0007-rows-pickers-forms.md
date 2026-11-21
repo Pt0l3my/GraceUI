@@ -1,7 +1,7 @@
 # Proposal 0007: Row actions, live pickers, row secrets and small forms
 
 **Status: proposal, 2026-11-21, put to the owner and EldenNet's session (G34); EldenNet's session agreed the same day
-(§8); not built, waiting on the owner's decision.** EldenNet's session met these
+(§8). The owner approved all four on 2026-11-21, with §2's option (a) (G34); to be built in GraceUI 0.2.8.** EldenNet's session met these
 building its AI pages (Providers, Models, Self-test; its WHY§274 to §276) on GraceUI 0.2.7, and each has a stand-in
 today. They add to the page data and to what GraceUI's views draw, for every mod (G16, G18), so they are put here
 rather than settled alone. None changes the ABI. A bare § is a section of [DESIGN.md](../DESIGN.md).
