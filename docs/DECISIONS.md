@@ -676,3 +676,31 @@ joins in 0.2 rather than 0.6 (D173 amended).
 
 **Owner's words.** "go ahead with G32, per-mod switch".
 
+## G33
+
+**Five additions for mods' pages** · *Open since 2026-11-20*
+
+**Question.** EldenNet's session, building its first pages, asked for six things; D184 built the first (a mod's
+key-value lists, check lists, stat tiles and sentences drawn in game). The other five change the page data's format or
+add a framework feature every mod may use, and are put together in [proposal 0006](proposals/0006-page-data-additions.md):
+(1) `props.field`, one topic feeding several blocks; (2) `props.empty`, a block's own empty-state words, shown only
+once its topic has published an empty body; (3) `props.newest_first` on a log tail; (4) a greyed state a space sets,
+with options (a) a framework topic `space.state` that greys every page of the space with its reason, (b) the same per
+page, (c) nothing; (5) a shortcut row's control in game, as the browser draws it.
+
+**Recommendation.** All five, and (4) (a). None blocks EldenNet; its order of need is the order above.
+
+**What each answer changes.** See proposal 0006 §6: 1 to 3 the component props in `protocol.toml`, the page lint and
+both views; 4 a framework topic name and both views' grey; 5 grace-view alone. No change of the ABI.
+
+**Follows from.** EldenNet's request of 2026-11-20 (its WHY§266 to §270); D166, D181, D184; G16, G18.
+
+*Later (2026-11-20):* EldenNet's session answered that 1, 2, 3 and 5 fit its PAGES as written, and that (4) must be
+per page from the start (its PAGES §4.4 greys some pages at L1 and others at the title screen, keeping the rest
+usable). The recommendation for (4) is now (b), a map from page id to its words, with (a) as a shorthand beside it
+(proposal 0006 §4, §8); EldenNet's session recommends the proposal with that change.
+
+**Decision (2026-11-20).** All five, as recommended, with (4) as revised: a framework topic `space.state` mapping each
+greyed page to its words, and a whole-space shorthand beside it. Built as D185 to D189 in GraceUI 0.2.7.
+
+**Owner's words.** "Agreed to proposal 0006".

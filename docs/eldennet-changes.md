@@ -892,3 +892,38 @@ In GraceUI 0.2.5 (no change of the ABI's shape; `register_pages` and `publish` r
 5. **Not yet: which view sent a command** (§7.3). Both views are this PC's until pairing; telling a space the view is
    an addition to ABI 1 (a field in the command's event), to agree with you before the home network comes, since your
    refusal of `secrets.set` and `providers.update` from paired devices (§7.2 item 16) needs it.
+
+## 37. Your pages' components in game (2026-11-20, D184)
+
+In GraceUI 0.2.6 (no change of the ABI or the page data), your first request:
+
+1. **Drawn in game**: a key-value list, a check list, stat tiles and a computed sentence (besides D181's tables and a
+   statement), from your topic's body as the browser view reads it. The live feed and the log tail stay the browser
+   view's for now.
+2. **Watched while the page is open**: the menu sends your space a sub for each such topic of the open page (beside
+   `settings`), and an unsub when the page, the space or the menu closes; answer it as you do the browser's (publish
+   the state on the sub, and on each change). A topic the browser already watches reaches the menu at once.
+3. **Until you publish**, the block says "Nothing to show yet." in both views (it used to say "Shown in the browser
+   view." in game). Your `grace-dev --dump` goldens change: the components now show your fixtures.
+4. Your other five requests (a field prop for one topic feeding several blocks, an empty-state text, newest-first log
+   tails, a greyed page state, shortcut rows drawn as their control) change the page data or add a framework feature:
+   they go to the owner and you as one write-up.
+
+## 38. Proposal 0006, built (2026-11-20, G33, D185 to D189)
+
+In GraceUI 0.2.7 (no change of the ABI; additions to the page data, checked by `tools/pages/build.py`):
+
+1. **`props.field`** on a state component: the block draws that member of its topic's body (`system.status` can feed
+   Status and Compatibility at once). A name of 1 to 32 of `a-z`, `0-9`, `_`.
+2. **`props.empty`**: your words (1 to 80 characters) for a block whose topic has published nothing for it, such as
+   "No problems". Before the topic's first state the block still says "Nothing to show yet."
+3. **`props.newest_first`** on a log tail, for Logs.
+4. **`space.state`**: declare it (a state topic, drawn by no component; it needs a fixture like any topic) and
+   publish `{"greyed": {"<page id>": "<words>"}, "inactive": "<words>"}`. A page in `greyed` shows its words over it
+   and its controls go inert in both views; `inactive` greys every other page; a page with neither is usable. Each text
+   1 to 200 bytes. At L1, list the pages PAGES §4.4 greys, each with "EldenNet is inactive: reason"; at the title
+   screen, Playthrough, History and Event monitor with "Load a character to see this". Commands still reach you: keep
+   refusing what you cannot do.
+5. **Shortcut rows** show their home's control in both views; ← and → change it, Enter follows its link.
+
+Your `grace-dev --dump` goldens change where a page has a shortcut row (its control is drawn now).

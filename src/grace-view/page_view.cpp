@@ -3,6 +3,7 @@
 #include "grace/view/page_view.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 
@@ -316,11 +317,38 @@ std::string cell_words(const Json& row, const std::string& column) {
 }  // namespace
 
 void PageView::set_topic(std::string_view topic, const Json& body) {
+  if (topic == "space.state") {
+    // The space's greyed pages (D188): a page named in `greyed` with its words, every other page with `inactive`'s if
+    // it has some; each text as the space wrote it, at most 200 bytes.
+    greyed_.clear();
+    inactive_.clear();
+    const auto words = [](const Json& value) {
+      return value.is_string() && !value.get_ref<const std::string&>().empty() &&
+                     value.get_ref<const std::string&>().size() <= 200
+                 ? value.get<std::string>()
+                 : std::string();
+    };
+    if (body.is_object() && body.contains("greyed") && body["greyed"].is_object()) {
+      for (const auto& [page, text] : body["greyed"].items()) {
+        if (const std::string w = words(text); !w.empty()) {
+          greyed_[page] = w;
+        }
+      }
+    }
+    if (body.is_object() && body.contains("inactive")) {
+      inactive_ = words(body["inactive"]);
+    }
+    if (!confirming_.empty() && !greyed_words(current().id).empty()) {
+      confirming_.clear();  // a destructive action asking for its second press goes inert with its page
+    }
+    return;
+  }
   const std::string was = focused();
   topics_[std::string(topic)] = body;
-  const std::string prefix = std::string(topic) + "/";
-  for (auto at = refusals_.lower_bound(prefix); at != refusals_.end() && at->first.rfind(prefix, 0) == 0;) {
-    at = refusals_.erase(at);  // a new body answers what was refused of its rows
+  for (const std::string& prefix : std::array<std::string, 2>{std::string(topic) + "/", std::string(topic) + "#"}) {
+    for (auto at = refusals_.lower_bound(prefix); at != refusals_.end() && at->first.rfind(prefix, 0) == 0;) {
+      at = refusals_.erase(at);  // a new body answers what was refused of its rows
+    }
   }
   rebuild();
   if (was.rfind("cell:", 0) == 0) {  // the same row, wherever it now is
@@ -332,27 +360,129 @@ void PageView::set_topic(std::string_view topic, const Json& body) {
   }
 }
 
+bool PageView::drawn_in_game(protocol::Component component) {
+  switch (component) {
+    case protocol::Component::table:
+    case protocol::Component::key_value_list:
+    case protocol::Component::check_list:
+    case protocol::Component::stat_tiles:
+    case protocol::Component::computed_sentence:
+      return true;
+    default:
+      return false;  // the streams (a live feed, a log tail) and anything newer: the browser view's for now
+  }
+}
+
+namespace {
+
+// A string prop of a block, or empty.
+std::string prop_text(const protocol::PageBlock& block, const char* name) {
+  if (!block.props || !block.props->is_object()) {
+    return {};
+  }
+  const auto found = block.props->find(name);
+  return found != block.props->end() && found->is_string() ? found->get<std::string>() : std::string();
+}
+
+}  // namespace
+
+PageView::Drawn PageView::drawn(const protocol::PageBlock& block) const {
+  Drawn out;
+  if (!block.topic) {
+    return out;
+  }
+  const auto found = topics_.find(*block.topic);
+  if (found == topics_.end() || !found->second.is_object()) {
+    return out;
+  }
+  out.published = true;
+  const std::string field = prop_text(block, "field");
+  if (field.empty()) {
+    out.body = &found->second;
+  } else if (const auto member = found->second.find(field); member != found->second.end() && member->is_object()) {
+    out.body = &*member;  // one topic feeding several blocks (D185)
+  }
+  return out;
+}
+
+std::string PageView::empty_words(const protocol::PageBlock& block, bool published) const {
+  const std::string own = prop_text(block, "empty");
+  return published && !own.empty() ? own : std::string("Nothing to show yet.");  // the space's words once it spoke (D186)
+}
+
+std::string PageView::cell_base(const protocol::PageBlock& block) {
+  const std::string field = prop_text(block, "field");
+  return *block.topic + (field.empty() ? std::string() : "#" + field);
+}
+
+std::string PageView::greyed_words(std::string_view page_id) const {
+  if (const auto found = greyed_.find(page_id); found != greyed_.end()) {
+    return found->second;
+  }
+  return inactive_;
+}
+
+bool PageView::greyed(const protocol::Setting& setting) const {
+  return !greyed_words(current().id).empty() || !greyed_words(setting.home).empty();
+}
+
+std::vector<std::string> PageView::component_topics() const {
+  std::vector<std::string> out;
+  for (const protocol::TopicInfo& topic : pages_.topics) {
+    if (topic.id == "space.state" && topic.shape == protocol::TopicShape::state) {
+      out.push_back(topic.id);  // its greyed pages (D188), watched with every page
+    }
+  }
+  const auto add = [&](const std::vector<protocol::PageBlock>& blocks) {
+    for (const protocol::PageBlock& block : blocks) {
+      if (block.kind == protocol::BlockKind::component && block.topic && block.component && drawn_in_game(*block.component) &&
+          std::find(out.begin(), out.end(), *block.topic) == out.end()) {
+        out.push_back(*block.topic);
+      }
+    }
+  };
+  for (const protocol::PageSection& section : sections()) {
+    add(section.blocks);
+    if (section.advanced) {
+      add(*section.advanced);
+    }
+  }
+  return out;
+}
+
 const Json* PageView::table_of(const protocol::PageBlock& block) const {
   if (block.kind != protocol::BlockKind::component || block.component != protocol::Component::table || !block.topic) {
     return nullptr;
   }
-  const auto found = topics_.find(*block.topic);
-  if (found == topics_.end() || !found->second.is_object()) {
-    return nullptr;
-  }
-  const Json& body = found->second;
-  return body.contains("columns") && body["columns"].is_array() && body.contains("rows") && body["rows"].is_array()
-             ? &body
+  const Json* body = drawn(block).body;
+  return body != nullptr && body->contains("columns") && (*body)["columns"].is_array() && body->contains("rows") &&
+                 (*body)["rows"].is_array()
+             ? body
              : nullptr;
 }
 
 Action PageView::toggle_cell(const Focus& f) const {
-  const std::size_t slash = f.id.find('/');
-  const auto found = topics_.find(std::string_view(f.id).substr(0, slash));
-  if (found == topics_.end()) {
+  if (!greyed_words(current().id).empty()) {
+    return {};  // a greyed page's controls are inert (D188)
+  }
+  const std::string_view base = std::string_view(f.id).substr(0, f.id.find('/'));
+  const std::size_t hash = base.find('#');
+  const auto found = topics_.find(base.substr(0, hash));
+  if (found == topics_.end() || !found->second.is_object()) {
     return {};
   }
-  const Json& body = found->second;
+  const Json* table = &found->second;
+  if (hash != std::string_view::npos) {
+    const auto member = table->find(std::string(base.substr(hash + 1)));
+    if (member == table->end() || !member->is_object()) {
+      return {};
+    }
+    table = &*member;  // a table fed by its topic's field (D185)
+  }
+  const Json& body = *table;
+  if (!body.contains("columns") || !body["columns"].is_array() || !body.contains("rows") || !body["rows"].is_array()) {
+    return {};
+  }
   for (const Json& column : body["columns"]) {
     const Json* sw = switch_of(column);
     if (sw == nullptr || !column.contains("id") || !column["id"].is_string() || f.index >= body["rows"].size()) {
@@ -446,7 +576,7 @@ void PageView::rebuild() {
             for (std::size_t r = 0; r < (*table)["rows"].size(); ++r) {
               const Json& row = (*table)["rows"][r];
               const std::string id = row.is_object() ? cell_words(row, key) : std::string();
-              focus_.push_back({FocusKind::cell, *block.topic + "/" + (id.empty() ? std::to_string(r) : id), r});
+              focus_.push_back({FocusKind::cell, cell_base(block) + "/" + (id.empty() ? std::to_string(r) : id), r});
             }
             break;  // one switch column a table
           }
@@ -594,8 +724,8 @@ std::string PageView::format(std::string_view key, const Json& v) const {
 }
 
 Action PageView::set(const Setting& s, Json v) {
-  if (s.locked) {
-    return {};
+  if (s.locked || greyed(s)) {
+    return {};  // locked, or on a page its space has greyed (D188)
   }
   values_[s.key] = v;
   refusals_.erase(s.key);
@@ -737,8 +867,12 @@ Action PageView::pointer(const Pointer& in) {
   const Rect& c = target.control;
   const bool on_control = c.w > 0 && in.x >= c.x && in.x < c.right() && in.y >= c.y && in.y < c.bottom();
   switch (f.kind) {
-    case FocusKind::setting: {
+    case FocusKind::setting:
+    case FocusKind::shortcut: {
       const Setting& st = settings_[f.index];
+      if (f.kind == FocusKind::shortcut && !on_control) {
+        return input(Input{Key::activate, false});  // the row's link to its home (D189)
+      }
       if (!on_control || st.locked || st.availability == "later") {
         return {};  // focus only
       }
@@ -986,6 +1120,8 @@ Action PageView::input(const Input& in) {
   }
   const Focus f = focus_[page_focus_];
   const Setting* s = f.kind == FocusKind::setting ? &settings_[f.index] : nullptr;
+  // A shortcut row's control changes as its home's does (D189); Enter follows its link.
+  const Setting* changeable = f.kind == FocusKind::setting || f.kind == FocusKind::shortcut ? &settings_[f.index] : nullptr;
   switch (in.key) {
     case Key::up:
     case Key::previous:
@@ -1001,9 +1137,9 @@ Action PageView::input(const Input& in) {
       return {};
     case Key::left:
     case Key::right:
-      if (s != nullptr && s->type != SettingType::key_name && s->type != SettingType::text &&
-          s->type != SettingType::secret) {
-        return change(*s, in.key == Key::right ? 1 : -1, in.shift);
+      if (changeable != nullptr && changeable->type != SettingType::key_name && changeable->type != SettingType::text &&
+          changeable->type != SettingType::secret) {
+        return change(*changeable, in.key == Key::right ? 1 : -1, in.shift);
       }
       if (f.kind == FocusKind::cell) {
         refusals_.erase(f.id);  // a new try: the last refusal's line goes
@@ -1019,7 +1155,7 @@ Action PageView::input(const Input& in) {
       rail_focus_ = rail_index_of_page();
       return {};
     case Key::reset:
-      if (s != nullptr && !s->locked) {
+      if (s != nullptr && !s->locked && !greyed(*s)) {
         values_[s->key] = s->default_;
         refusals_.erase(s->key);
         Action action;
@@ -1034,6 +1170,9 @@ Action PageView::input(const Input& in) {
       switch (f.kind) {
         case FocusKind::action: {
           const protocol::PageAction& a = (*current().actions)[f.index];
+          if (!greyed_words(current().id).empty()) {
+            return {};  // a greyed page's actions are inert (D188)
+          }
           if ((a.confirm || a.tone == protocol::ActionTone::destructive) && confirming_ != a.id) {
             confirming_ = a.id;  // the button asks for its second press; a destructive one always (§7.3, D173)
             return {};
@@ -1282,6 +1421,15 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     c.line(x0, y, content_w, Colour::rule_strong);
     c.diamond(Rect{x0, y - std::round(4 * s), std::round(9 * s), std::round(9 * s)}, Colour::gold_deep);
     y += std::round(20 * s);
+    // A page its space has greyed (D188): the space's words over it, its controls inert and faint.
+    if (const std::string words = greyed_words(page.id); !words.empty()) {
+      const Rect band{x0, y, content_w, std::round(44 * s)};
+      c.fill(band, Colour::ground_3, std::round(tokens::radius::control * s));
+      c.fill(Rect{band.x, band.y, std::round(3 * s), band.h}, Colour::ember);
+      c.text(words, TypeRole::ui, band.x + std::round(16 * s), band.y + std::round((band.h - line_height(TypeRole::ui, s)) / 2),
+             band.w - std::round(32 * s), Colour::ink_hi);
+      y += band.h + std::round(16 * s);
+    }
     // Tabs.
     if (page.tabs && !page.tabs->empty()) {
       float tx = x0;
@@ -1331,11 +1479,126 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const auto draw_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
         for (const protocol::PageBlock& block : blocks) {
           if (block.kind == protocol::BlockKind::component) {
+            const float inner_x = x0 + card_pad;
+            const float inner_w = content_w - 2 * card_pad;
+            const auto one_line = [&](const std::string& words, Colour ink) {
+              c.text(words, TypeRole::ui_sm, inner_x, y + std::round(12 * s), inner_w, ink);
+              y += row_h;
+            };
+            if (block.component == protocol::Component::statement) {
+              // A statement: its own words, from the page data (§2.5).
+              const Json* props = block.props ? &*block.props : nullptr;
+              if (props != nullptr && props->is_object() && props->contains("text") && (*props)["text"].is_string()) {
+                c.text((*props)["text"].get<std::string>(), TypeRole::ui, inner_x, y + std::round(10 * s), inner_w,
+                       Colour::ink_body);
+                y += row_h;
+              }
+              continue;
+            }
+            if (!block.component || !drawn_in_game(*block.component)) {
+              one_line("Shown in the browser view.", Colour::ink_mute);
+              continue;
+            }
+            const Drawn shown = drawn(block);
+            const Json* body = shown.body;
+            const std::string none = empty_words(block, shown.published);  // D186
+            if (block.component != protocol::Component::table) {
+              // A component of a state topic (D184): what its topic's body holds, as the browser view draws it, or
+              // the empty state while it holds nothing (invariant 2).
+              const auto objects = [&](const char* field) {
+                std::vector<const Json*> out;
+                if (body != nullptr && body->contains(field) && (*body)[field].is_array()) {
+                  for (const Json& item : (*body)[field]) {
+                    if (item.is_object()) {
+                      out.push_back(&item);
+                    }
+                  }
+                }
+                return out;
+              };
+              const auto words = [](const Json& item, const char* field) { return cell_words(item, field); };
+              if (block.component == protocol::Component::computed_sentence) {
+                const std::string sentence = body != nullptr ? cell_words(*body, "sentence") : std::string();
+                one_line(sentence.empty() ? none : sentence,
+                         sentence.empty() ? Colour::ink_mute : Colour::ink_body);
+                continue;
+              }
+              if (block.component == protocol::Component::stat_tiles) {
+                std::vector<const Json*> tiles;
+                for (const Json* t : objects("tiles")) {
+                  if (!words(*t, "label").empty() && !words(*t, "value").empty()) {
+                    tiles.push_back(t);
+                  }
+                }
+                if (tiles.empty()) {
+                  one_line(none, Colour::ink_mute);
+                  continue;
+                }
+                const float gap = std::round(12 * s);
+                const float tile_w = std::floor((inner_w - gap * static_cast<float>(tiles.size() - 1)) /
+                                                static_cast<float>(tiles.size()));
+                const float tile_h = std::round(84 * s);
+                for (std::size_t i = 0; i < tiles.size(); ++i) {
+                  const Rect tile{inner_x + (tile_w + gap) * static_cast<float>(i), y + std::round(6 * s), tile_w,
+                                  tile_h - std::round(12 * s)};
+                  c.fill(tile, Colour::ground_3, std::round(tokens::radius::control * s));
+                  const float pad = std::round(12 * s);
+                  c.text(words(*tiles[i], "label"), TypeRole::ui_sm, tile.x + pad, tile.y + std::round(8 * s),
+                         tile.w - 2 * pad, Colour::ink_mute);
+                  std::string value = words(*tiles[i], "value");
+                  if (const std::string unit = words(*tiles[i], "unit"); !unit.empty()) {
+                    value += " " + unit;
+                  }
+                  c.text(value, TypeRole::display_md, tile.x + pad,
+                         tile.y + std::round(8 * s) + line_height(TypeRole::ui_sm, s), tile.w - 2 * pad, Colour::ink_hi);
+                }
+                y += tile_h;
+                continue;
+              }
+              const bool checks = block.component == protocol::Component::check_list;
+              std::vector<const Json*> rows;
+              for (const Json* item : objects(checks ? "checks" : "items")) {
+                if (!words(*item, "label").empty() && (checks || !words(*item, "value").empty())) {
+                  rows.push_back(item);
+                }
+              }
+              if (rows.empty()) {
+                one_line(none, Colour::ink_mute);
+                continue;
+              }
+              for (const Json* item : rows) {
+                c.line(inner_x, y, inner_w, Colour::rule);
+                const float text_y = y + std::round((row_h - line_height(TypeRole::ui, s)) / 2);
+                const float small_y = y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2);
+                if (checks) {
+                  // A check: its state in words and its colour, its label, and its detail after them.
+                  const std::string state = words(*item, "state");
+                  const char* word = state == "pass" ? "Passed" : state == "warn" ? "Warning" : state == "fail" ? "Failed"
+                                                                                                                 : "Waiting";
+                  const Colour ink = state == "pass" ? Colour::moss : state == "warn" ? Colour::ember
+                                     : state == "fail" ? Colour::rot : Colour::ink_faint;
+                  const float word_w = std::round(110 * s);
+                  c.text(word, TypeRole::ui_sm, inner_x, small_y, word_w - std::round(8 * s), ink);
+                  const float label_w = c.text(words(*item, "label"), TypeRole::ui, inner_x + word_w, text_y,
+                                               inner_w - word_w, Colour::ink_body);
+                  if (const std::string detail = words(*item, "detail"); !detail.empty()) {
+                    const float dx = inner_x + word_w + label_w + std::round(16 * s);
+                    c.text(detail, TypeRole::ui_sm, dx, small_y, std::max(0.0f, inner_x + inner_w - dx), Colour::ink_mute);
+                  }
+                } else {
+                  // A key and its value: the label at the left, the value after the first third.
+                  c.text(words(*item, "label"), TypeRole::ui, inner_x, text_y, inner_w / 3 - std::round(12 * s),
+                         Colour::ink_hi);
+                  c.text(words(*item, "value"), TypeRole::ui_sm, inner_x + inner_w / 3, small_y, inner_w * 2 / 3,
+                         Colour::ink_body);
+                }
+                y += row_h;
+              }
+              continue;
+            }
             const Json* table = table_of(block);
             if (table == nullptr) {
-              c.text("Shown in the browser view.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
-                     content_w - 2 * card_pad, Colour::ink_mute);
-              y += row_h;
+              one_line(none, Colour::ink_mute);
               continue;
             }
             // A table in game (D181): a row a row, its first column's words, the others' after them, and a switch
@@ -1357,7 +1620,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             const Json& rows = (*table)["rows"];
             if (rows.empty()) {
               c.line(x0 + card_pad, y, content_w - 2 * card_pad, Colour::rule);
-              c.text("Nothing here yet.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
+              c.text(none, TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
                      content_w - 2 * card_pad, Colour::ink_mute);
               y += row_h;
               continue;
@@ -1368,7 +1631,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 continue;
               }
               const std::string row_key = sw != nullptr ? cell_words(line, (*sw)["key"].get<std::string>()) : std::string();
-              const std::string cell_id = *block.topic + "/" + (row_key.empty() ? std::to_string(r) : row_key);
+              const std::string cell_id = cell_base(block) + "/" + (row_key.empty() ? std::to_string(r) : row_key);
               const auto refusal = sw != nullptr ? refusals_.find(cell_id) : refusals_.end();
               const Rect row{x0 + card_pad, y, content_w - 2 * card_pad, row_h};
               if (sw != nullptr && hovered(row)) {
@@ -1434,7 +1697,19 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               c.fill(row, Colour::tint_hover);
             }
             c.line(row.x, row.y, row.w, Colour::rule);
-            const std::uint8_t alpha = st.locked ? 128 : 255;
+            const std::uint8_t alpha = st.locked || greyed(st) ? 128 : 255;  // locked, or greyed by its space (D188)
+            // A shortcut row: its home's control, and its link before it (D189).
+            std::string link;
+            float link_w = 0;
+            if (shortcut) {
+              link = "Lives in ";
+              for (const protocol::Page& p : pages_.pages) {
+                if (p.id == st.home) {
+                  link += p.name;
+                }
+              }
+              link_w = c.width(link, TypeRole::ui_sm);
+            }
             Rect track_rect{};
             std::size_t segment_count = 0;
             const Json& v = value(key);
@@ -1445,7 +1720,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                         Colour::gold_deep);
             }
             const float label_w = c.text(st.label, TypeRole::ui, row.x, label_y,
-                                         row.w - control_w - std::round(24 * s), Colour::ink_hi, alpha);
+                                         row.w - control_w - std::round(24 * s) - (shortcut ? link_w + std::round(24 * s) : 0),
+                                         Colour::ink_hi, alpha);
             const auto inherited = inherited_.find(key);
             if (st.type == SettingType::tri_state && v == "inherit" && inherited != inherited_.end()) {
               // What the chain resolves to, faint, with its source (D163).
@@ -1472,17 +1748,10 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             const float edge = std::round(tokens::kGrace.size.edge_width * s);
             Rect control = col;
             if (shortcut) {
-              std::string link = "Lives in ";
-              for (const protocol::Page& p : pages_.pages) {
-                if (p.id == st.home) {
-                  link += p.name;
-                }
-              }
-              const float w = c.width(link, TypeRole::ui_sm);
-              c.text(link, TypeRole::ui_sm, col.right() - w, y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2),
-                     w + 1, Colour::gold);
-              control = Rect{col.right() - w, y + std::round(12 * s), w, row_h - std::round(24 * s)};
-            } else if (st.availability == "later") {
+              c.text(link, TypeRole::ui_sm, col.x - std::round(24 * s) - link_w,
+                     y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2), link_w + 1, Colour::gold);
+            }
+            if (st.availability == "later") {
               const char* badge = "Later version";
               const float w = c.width(badge, TypeRole::ui_sm);
               c.text(badge, TypeRole::ui_sm, col.right() - w, y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2),
@@ -1658,9 +1927,19 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     c.clip = 0;
     c.line(page_x, H - footer_h, page_w, Colour::rule);
     std::string hints = "Esc  Back";
-    if (scope_ == Scope::page && !focus_.empty()) {
+    if (scope_ == Scope::page && !focus_.empty() && !greyed_words(page.id).empty() &&
+        focus_[page_focus_].kind != FocusKind::shortcut && focus_[page_focus_].kind != FocusKind::related &&
+        focus_[page_focus_].kind != FocusKind::tab && focus_[page_focus_].kind != FocusKind::section) {
+      hints = "Not available now    Esc  Back";  // a greyed page's controls (D188)
+    } else if (scope_ == Scope::page && !focus_.empty()) {
       const Focus& f = focus_[page_focus_];
-      if (f.kind == FocusKind::setting) {
+      if (f.kind == FocusKind::shortcut) {
+        // Its home's control, and its link (D189).
+        const Setting& st = settings_[f.index];
+        const bool changes = !st.locked && st.availability != "later" && st.type != SettingType::key_name &&
+                             st.type != SettingType::text && st.type != SettingType::secret;
+        hints = changes ? "← →  Change    Enter  Go to its page    Esc  Back" : "Enter  Go to its page    Esc  Back";
+      } else if (f.kind == FocusKind::setting) {
         const Setting& st = settings_[f.index];
         hints = numeric(st.type) ? "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back"
                 : st.type == SettingType::bool_ ? "Enter  Toggle    R  Reset    Esc  Back"

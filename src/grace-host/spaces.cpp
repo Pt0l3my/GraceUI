@@ -239,9 +239,43 @@ std::map<std::string, std::string, std::less<>>& test_topics() {
 }
 #endif
 
+// About and the Browser view's status (D184): what GraceUI is, and where and whether the browser view is served.
+protocol::Json item(const char* label, std::string value) { return {{"label", label}, {"value", std::move(value)}}; }
+
+protocol::Json about_body() {
+  return {{"items",
+           {item("Version", "GraceUI " + version_text()),
+            item("Interface", "ABI 1." + std::to_string(GRACEUI_ABI1_MINOR) + ", protocol " +
+                                  std::string(protocol::kProtocolVersion)),
+            item("Licence", "MIT"), item("Built on", "Dear ImGui and MinHook in game; Preact in the browser"),
+            item("Type", "Cinzel, EB Garamond, Noto Sans and Noto Sans Mono, under the SIL Open Font Licence")}}};
+}
+
+protocol::Json dashboard_body(const grace::spaces::OwnSpace& own) {
+  const protocol::Json& enabled = own.store().held("dashboard.enabled");
+  std::string address;
+  if (g_running.load(std::memory_order_acquire)) {
+    address = "http://127.0.0.1:" + std::to_string(g_port.load(std::memory_order_relaxed)) + "/";
+  } else if (session::notice_only() || g_closed.load(std::memory_order_acquire)) {
+    address = "Closed for this session: an anti-cheat was found";
+  } else if (!enabled.is_boolean() || !enabled.get<bool>()) {
+    address = "Off: the browser view is switched off";
+  } else if (g_start_failed.load(std::memory_order_relaxed)) {
+    address = "Not served: it could not start (the log says why)";
+  } else {
+    address = "Not served: no mod's pages ask for the browser view";
+  }
+  const std::size_t open = g_server != nullptr && g_running.load(std::memory_order_acquire) ? g_server->stats().websockets : 0;
+  return {{"items",
+           {item("Address", std::move(address)), item("Browsers connected", std::to_string(open)),
+            item("Other devices", "Off: a later version pairs them")}}};
+}
+
 void refresh_topics(grace::spaces::OwnSpace& own) {
   for (const auto& [topic, body] : {std::pair<const char*, protocol::Json>{"graceui.mods", mods_body()},
-                                    std::pair<const char*, protocol::Json>{"graceui.notices", notices_body()}}) {
+                                    std::pair<const char*, protocol::Json>{"graceui.notices", notices_body()},
+                                    std::pair<const char*, protocol::Json>{"graceui.about", about_body()},
+                                    std::pair<const char*, protocol::Json>{"graceui.dashboard", dashboard_body(own)}}) {
     const protocol::Json* now = own.state_of(topic);
     if (now == nullptr || *now != body) {
 #if defined(GRACEUI_TEST_EXPORTS)

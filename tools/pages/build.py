@@ -23,7 +23,9 @@ are checked against the protocol's schema as grace-protocol's decoders check the
      form (live, later, inert, check:<id>, version:<x.y>, requires:<key>); a later setting locked; a tri-state's
      default on, off or its third value (auto, or inherit, D163).
   6. Components: a component's topic declared by the space and of the shape it draws (a feed or a log tail a stream,
-     every other a state topic); a block's fields those of its kind.
+     every other a state topic); a block's fields those of its kind; its props (D185 to D187): `field` a name on a
+     state component, `empty` 1 to 80 characters on a component with a topic, `newest_first` a boolean on a log tail.
+     The framework topic `space.state` (D188), if declared, a state topic that no component draws.
   7. Actions: each command one the space declares; a destructive action has a confirmation.
   8. Fixtures, where fixtures/<id>/topics.json exists: every declared topic but `settings` has one, a state topic's an
      object and a stream topic's a list of rows with rising sequence numbers.
@@ -46,6 +48,8 @@ FIXTURES = ROOT / "fixtures"
 BUILTIN = ROOT / "src" / "grace-pages" / "builtin.cpp"
 
 STREAM_COMPONENTS = {"live_feed", "log_tail"}
+FIELD_NAME = re.compile(r"^[a-z0-9_]{1,32}$")
+SPACE_STATE = "space.state"  # the framework topic a space's greyed pages come on (D188)
 NO_TOPIC_COMPONENTS = {"statement", "filter_bar", "segmented_switch", "action_button"}
 NUMERIC = {"integer", "number", "duration_s"}
 TRI_THIRDS = ("auto", "inherit")
@@ -171,6 +175,8 @@ def lint(space_pages, description, fixtures, known_spaces):
     for t in space_pages["topics"]:
         if (t["shape"] == "stream") != ("ring" in t):
             failures.append(f"{space}: topic {t['id']}: a stream names its ring, a state does not")
+        if t["id"] == SPACE_STATE and t["shape"] != "state":
+            failures.append(f"{space}: topic {SPACE_STATE} is a state topic (D188)")
 
     # 2. The rail.
     placed = {}
@@ -244,6 +250,19 @@ def lint(space_pages, description, fixtures, known_spaces):
                         failures.append(f"{bwhere}: {component}'s topic {topic} is not one the space declares")
                     elif (topics[topic]["shape"] == "stream") != (component in STREAM_COMPONENTS):
                         failures.append(f"{bwhere}: {component} cannot draw {topics[topic]['shape']} topic {topic}")
+                    elif topic == SPACE_STATE:
+                        failures.append(f"{bwhere}: {SPACE_STATE} is the framework's topic, drawn by no component")
+                    props = block.get("props") or {}
+                    if "field" in props and (component in STREAM_COMPONENTS or topic is None or
+                                             not isinstance(props["field"], str) or
+                                             not FIELD_NAME.match(props["field"])):
+                        failures.append(f"{bwhere}: props.field is a name (a-z, 0-9, _; 1 to 32) on a state component")
+                    if "empty" in props and (topic is None or not isinstance(props["empty"], str) or
+                                             not 1 <= len(props["empty"]) <= 80):
+                        failures.append(f"{bwhere}: props.empty is 1 to 80 characters on a component with a topic")
+                    if "newest_first" in props and (component != "log_tail" or
+                                                    not isinstance(props["newest_first"], bool)):
+                        failures.append(f"{bwhere}: props.newest_first is a boolean on a log tail")
     for key, s in settings.items():
         lint_setting(space, s, failures)
         if s["home"] not in pages:

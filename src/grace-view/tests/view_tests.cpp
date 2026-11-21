@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -546,10 +547,10 @@ TEST_CASE("a table in game (D181): its rows, a switch a row by its key, turned t
                                             {"uses", "Pages, notices"}, {"notices", "Shown"}},
                                            {{"id", "quiet-camp"}, {"mod", "Quiet Camp"}, {"version", "2.1.0"},
                                             {"uses", "Notices"}, {"notices", "Quiet"}}})}};
-  // Without its body the table is the browser's, and no row takes focus.
+  // Without its body the table holds nothing yet (invariant 2), and no row takes focus.
   DisplayList before;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), before);
-  CHECK(before.dump().find("Shown in the browser view.") != std::string::npos);
+  CHECK(before.dump().find("Nothing to show yet.") != std::string::npos);
   CHECK(view.focused().rfind("cell:", 0) != 0);
 
   view.set_topic("graceui.mods", mods);
@@ -588,7 +589,7 @@ TEST_CASE("a table in game (D181): its rows, a switch a row by its key, turned t
   view.set_topic("graceui.notices", Json{{"columns", Json::array()}, {"rows", Json::array()}});
   DisplayList empty;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), empty);
-  CHECK(empty.dump().find("Nothing here yet.") != std::string::npos);
+  CHECK(empty.dump().find("Nothing to show yet.") != std::string::npos);
   // A refused switch: the space's reason under its row, focus on it; a new body of the table takes the line away.
   view.refused("graceui.mods/quiet-camp", "That mod is not connected now.");
   CHECK(view.focused() == "cell:graceui.mods/quiet-camp");
@@ -732,4 +733,139 @@ TEST_CASE("a destructive action asks for its second press even without its confi
   const Action a = press(view, Key::activate);
   REQUIRE(a.kind == Action::Kind::command);
   CHECK(a.command.args == Json::object({{"confirm", true}}));
+}
+
+TEST_CASE("a space's state components in game (D184): a key-value list, a check list, tiles and a sentence") {
+  PageView about = loaded("graceui", "graceui.about");
+  CHECK(about.component_topics() == std::vector<std::string>{"graceui.about"});
+  DisplayList list;
+  about.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("Nothing to show yet.") != std::string::npos);  // nothing published yet (invariant 2)
+  about.set_topic("graceui.about", Json{{"items", Json::array({{{"label", "Version"}, {"value", "GraceUI 9.9.9"}},
+                                                               {{"label", "Licence"}, {"value", "MIT"}},
+                                                               {{"label", "No value"}}})}});
+  about.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  std::string dump = list.dump();
+  CHECK(dump.find("\"Version\"") != std::string::npos);
+  CHECK(dump.find("\"GraceUI 9.9.9\"") != std::string::npos);
+  CHECK(dump.find("\"No value\"") == std::string::npos);  // an item without its value is left out, as the browser does
+  CHECK(dump.find("Nothing to show yet.") == std::string::npos);
+
+  PageView compatibility = loaded("graceui", "graceui.compatibility");
+  compatibility.set_topic("graceui.compatibility",
+                          Json{{"checks", Json::array({{{"state", "pass"}, {"label", "One copy"}},
+                                                       {{"state", "fail"}, {"label", "Old mod"}, {"detail", "Built for ABI 2."}},
+                                                       {{"state", "odd"}, {"label", "Unknown"}}})}});
+  compatibility.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  dump = list.dump();
+  CHECK(dump.find("moss") != std::string::npos);
+  CHECK(dump.find("\"Passed\"") != std::string::npos);
+  CHECK(dump.find("\"Failed\"") != std::string::npos);
+  CHECK(dump.find("\"Built for ABI 2.\"") != std::string::npos);
+  CHECK(dump.find("\"Waiting\"") != std::string::npos);  // a state it does not know reads as waiting, as the browser's
+
+  // The demo's overview: tiles and a sentence from one topic; its streams' page shows them in the browser alone.
+  PageView overview = loaded("demo", "demo.overview");
+  CHECK(overview.component_topics() == std::vector<std::string>{"lantern.status"});
+  overview.set_topic("lantern.status",
+                     Json{{"tiles", Json::array({{{"label", "Oil"}, {"value", 62}, {"unit", "%"}}})},
+                          {"sentence", "The lantern burns steady."}});
+  overview.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  dump = list.dump();
+  CHECK(dump.find("\"62 %\"") != std::string::npos);
+  CHECK(dump.find("\"The lantern burns steady.\"") != std::string::npos);
+  PageView log = loaded("demo", "demo.log");
+  CHECK(log.component_topics().empty());  // a live feed and a log tail: streams, the browser's for now
+  log.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("Shown in the browser view.") != std::string::npos);
+}
+
+namespace {
+
+// The demo space's page data, changed by `edit`, loaded and open on `page`.
+PageView demo_edited(const std::function<void(Json&)>& edit, std::string_view page) {
+  const auto& s = test::space("demo");
+  Json pages = Json::parse(s.pages);
+  edit(pages);
+  PageView view;
+  std::string why;
+  REQUIRE(view.load(test::decoded<grace::protocol::SpacePages>(pages.dump()),
+                    test::decoded<grace::protocol::SettingsDescription>(s.settings), why));
+  REQUIRE(view.open(page));
+  return view;
+}
+
+Json& overview_blocks(Json& pages) { return pages["pages"][0]["sections"][0]["blocks"]; }
+
+}  // namespace
+
+TEST_CASE("props.field and props.empty (D185, D186): a topic's member, and the space's words once it has spoken") {
+  PageView view = demo_edited(
+      [](Json& pages) { overview_blocks(pages)[0]["props"] = Json{{"field", "now"}, {"empty", "All quiet."}}; },
+      "demo.overview");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("Nothing to show yet.") != std::string::npos);  // nothing published: never "All quiet."
+  CHECK(list.dump().find("All quiet.") == std::string::npos);
+  view.set_topic("lantern.status", Json{{"now", {{"tiles", Json::array({{{"label", "Oil"}, {"value", "40%"}}})}}},
+                                        {"sentence", "Low on oil."}});
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("\"40%\"") != std::string::npos);         // the tiles from the member
+  CHECK(list.dump().find("\"Low on oil.\"") != std::string::npos);  // the sentence block, with no field, the whole body
+  view.set_topic("lantern.status", Json{{"now", {{"tiles", Json::array()}}}});
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("\"All quiet.\"") != std::string::npos);
+}
+
+TEST_CASE("space.state greys pages (D188): their words, inert controls; a page not named stays usable") {
+  const auto with_state = [](Json& pages) {
+    pages["topics"].push_back(Json{{"id", "space.state"}, {"shape", "state"}});
+  };
+  PageView view = demo_edited(with_state, "demo.behaviour");
+  CHECK(view.component_topics() == std::vector<std::string>{"space.state"});
+  view.set_topic("space.state", Json{{"greyed", {{"demo.behaviour", "Load a lantern to see this."}}}});
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("\"Load a lantern to see this.\"") != std::string::npos);
+  CHECK(view.focused() == "setting:lantern.enabled");
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // inert
+  CHECK(press(view, Key::right).kind == Action::Kind::none);
+  CHECK(press(view, Key::reset).kind == Action::Kind::none);
+  // The overview is not named: usable, but its shortcut to Behaviour's setting is inert, its home being greyed.
+  view.open("demo.overview");
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("Load a lantern") == std::string::npos);
+  // The whole space, every page not named, with the shorthand; and lifted again.
+  view.set_topic("space.state", Json{{"inactive", "The lantern is out."}});
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("\"The lantern is out.\"") != std::string::npos);
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // the overview's Trim action, inert
+  view.set_topic("space.state", Json::object());
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("The lantern is out.") == std::string::npos);
+}
+
+TEST_CASE("a shortcut row's control in game (D189): ← → change its home's setting, Enter follows its link") {
+  PageView view = loaded("demo", "demo.overview");
+  for (int i = 0; i < 6 && view.focused() != "shortcut:lantern.brightness"; ++i) {
+    press(view, Key::down);
+  }
+  REQUIRE(view.focused() == "shortcut:lantern.brightness");
+  const Action a = press(view, Key::right);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.args["key"] == "lantern.brightness");
+  CHECK(a.command.args["value"].get<double>() == doctest::Approx(0.85));
+  press(view, Key::activate);
+  CHECK(view.page() == "demo.behaviour");
+  CHECK(view.focused() == "setting:lantern.brightness");
+  // Greyed at its home: the shortcut changes nothing, and its link still goes there.
+  PageView greyed = demo_edited(
+      [](Json& pages) { pages["topics"].push_back(Json{{"id", "space.state"}, {"shape", "state"}}); }, "demo.overview");
+  greyed.set_topic("space.state", Json{{"greyed", {{"demo.behaviour", "Not now."}}}});
+  for (int i = 0; i < 6 && greyed.focused() != "shortcut:lantern.brightness"; ++i) {
+    press(greyed, Key::down);
+  }
+  CHECK(press(greyed, Key::right).kind == Action::Kind::none);
+  press(greyed, Key::activate);
+  CHECK(greyed.page() == "demo.behaviour");
 }

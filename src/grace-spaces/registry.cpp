@@ -310,11 +310,14 @@ Status Registry::publish(std::uint64_t owner, std::string_view frame, std::strin
       }
     }
     port = space->port;
-    if (shape == protocol::TopicShape::state && space->game_watched.count(*topic) != 0) {
+    // The newest state of every topic a view watches, the menu's copy: kept while the browser alone watches it too,
+    // so that the menu, watching it later, has it at once (the mod publishes only on a change, D184).
+    if (shape == protocol::TopicShape::state &&
+        (space->game_watched.count(*topic) != 0 || space->browser_watched.count(*topic) != 0)) {
       const auto& state = std::get<protocol::State>(message);
       Space* writable = find(owner);
-      writable->game_states[*topic] = {state.rev, state.body};  // the menu's copy, the newest
-      for_game = true;
+      writable->game_states[*topic] = {state.rev, state.body};
+      for_game = space->game_watched.count(*topic) != 0;
     }
   }
   if (for_game) {
@@ -365,6 +368,7 @@ Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity,
         if (space->game_watched.count(event.topic) != 0) {
           continue;  // the menu still watches it
         }
+        space->game_states.erase(event.topic);  // watched by no view: the mod stops building it
         message = protocol::Unsub{space->id, 0, event.topic};
         space->held_kind = EventKind::unwatched;
         break;
@@ -543,8 +547,8 @@ void Registry::game_watch(std::string_view space_id, std::string_view topic, boo
       protocol::encode_text(protocol::Message(protocol::Sub{space->id, 0, name, std::nullopt}), frame);
       space->internal.push_back(Space::Internal{EventKind::watched, std::move(frame), 0});
     } else if (!on && space->game_watched.erase(name) != 0) {
-      space->game_states.erase(name);
       if (!browser) {
+        space->game_states.erase(name);
         std::string frame;
         protocol::encode_text(protocol::Message(protocol::Unsub{space->id, 0, name}), frame);
         space->internal.push_back(Space::Internal{EventKind::unwatched, std::move(frame), 0});

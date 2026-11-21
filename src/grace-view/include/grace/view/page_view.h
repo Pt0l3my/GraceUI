@@ -128,6 +128,9 @@ class PageView {
   // (the column's command, with the row's key and "on"). Any other component, or a table without its body, is shown in
   // the browser view. Focus stays on the row it was on.
   void set_topic(std::string_view topic, const protocol::Json& body);
+  // The state topics of the open page's components that the view draws in game (a table, a key-value list, a check
+  // list, stat tiles, a computed sentence; D184): what the host watches while the page is open.
+  std::vector<std::string> component_topics() const;
   // Focus on the rail, as a link from another space's rail leaves it: on the switcher, or on the open page's entry, as
   // opening a category leaves it (D171).
   void focus_rail(bool switcher);
@@ -185,6 +188,20 @@ class PageView {
   Action open_index(std::size_t index, Scope scope);
   // A table component's body, if the view has its topic's and it has columns and rows; and its switch column, if any.
   const protocol::Json* table_of(const protocol::PageBlock& block) const;
+  static bool drawn_in_game(protocol::Component component);
+  // A component's body (D185: its topic's body, or the member props.field names), and whether its topic has
+  // published anything yet (D186: the block's own empty words only then).
+  struct Drawn {
+    const protocol::Json* body = nullptr;
+    bool published = false;
+  };
+  Drawn drawn(const protocol::PageBlock& block) const;
+  std::string empty_words(const protocol::PageBlock& block, bool published) const;
+  // A table's cells' ids: its topic, and its field after '#' (D185).
+  static std::string cell_base(const protocol::PageBlock& block);
+  // A page greyed by its space (D188): the space's words for it, or empty if it is usable.
+  std::string greyed_words(std::string_view page_id) const;
+  bool greyed(const protocol::Setting& setting) const;
   Action toggle_cell(const Focus& focus) const;
   // Where the pointer acts (§5.5): each focusable element as the last layout drew it, the page's within its clip.
   struct Hit {
@@ -208,6 +225,8 @@ class PageView {
   std::map<std::string, std::string, std::less<>> refusals_;
   std::map<std::string, protocol::InheritedValue, std::less<>> inherited_;
   std::map<std::string, protocol::Json, std::less<>> topics_;  // components' topic bodies (D181)
+  std::map<std::string, std::string, std::less<>> greyed_;    // space.state's greyed pages and their words (D188)
+  std::string inactive_;                                        // space.state's words for every page not named
   std::set<std::string, std::less<>> collapsed_;
   std::set<std::string, std::less<>> advanced_open_;
   std::size_t page_ = 0;

@@ -688,6 +688,19 @@ ul, ol {
   color: var(--ink-mute);
 }
 
+.page__greyed {
+  margin-top: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border-left: 3px solid var(--ember);
+  border-radius: var(--radius-control);
+  background: var(--ground-3);
+  color: var(--ink-hi);
+}
+
+.row--shortcut .lives-in {
+  margin-left: var(--space-12);
+}
+
 .page__notice, .row__refusal, .table__notice {
   display: flex;
   align-items: center;

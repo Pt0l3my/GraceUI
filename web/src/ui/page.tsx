@@ -5,11 +5,11 @@
 // in the page's description (invariant 12); nothing absent is hinted at (invariant 2).
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import type { Page, PageAction, PageBlock, PageSection } from "../protocol.ts";
+import type { Json, Page, PageAction, PageBlock, PageSection } from "../protocol.ts";
 import { pageById, parseLink, sectionsOf } from "../model/layout.ts";
 import { refusalWords } from "../model/session.ts";
-import { useSession } from "./context.ts";
-import { ComponentBlock } from "./components.tsx";
+import { GreyedContext, useSession } from "./context.ts";
+import { ComponentBlock, useTopic } from "./components.tsx";
 import { Arrow, Chevron, Cross, HelpMark, Lozenge, Warning } from "./icons.tsx";
 import { focusHeading } from "./navigate.ts";
 import { SettingRow } from "./row.tsx";
@@ -44,6 +44,28 @@ export function Modal({ open, onClose, labelledBy, size, children }: {
       {open && children}
     </dialog>
   );
+}
+
+// The framework topic a space's greyed pages come on (D188): {"greyed": {page: words}, "inactive": words}.
+const SPACE_STATE = "space.state";
+
+function wordsOf(value: Json | undefined): string | null {
+  return typeof value === "string" && value.length > 0 && value.length <= 200 ? value : null;
+}
+
+/** A page's words if its space has greyed it, else null: named in `greyed`, or every page with `inactive`. */
+export function greyedWords(body: { [key: string]: Json } | undefined, page: string): string | null {
+  if (body === undefined) {
+    return null;
+  }
+  const greyed = body.greyed;
+  if (typeof greyed === "object" && greyed !== null && !Array.isArray(greyed)) {
+    const own = wordsOf(greyed[page]);
+    if (own !== null) {
+      return own;
+    }
+  }
+  return wordsOf(body.inactive);
 }
 
 function TagMark({ tag }: { tag: Page["tag"] }) {
@@ -228,9 +250,15 @@ export function PageView() {
   const route = session.route.value;
   const pages = route ? session.space(route.space)?.pages.value : undefined;
   const page = route && pages ? pageById(pages, route.page) : undefined;
+  // The space's greyed pages (D188), watched with every page of a space that declares space.state.
+  const declaresState = (pages?.topics ?? []).some((t) => t.id === SPACE_STATE && t.shape === "state");
+  const stateData = useTopic(route?.space ?? "", route && declaresState ? SPACE_STATE : undefined);
   if (!route || !page) {
     return null;
   }
+  const stateBody = stateData?.kind === "state" ? stateData.body : undefined;
+  const greyed = { page: page.id, words: (id: string) => greyedWords(stateBody, id) };
+  const pageWords = greyed.words(page.id);
   const space = route.space;
   const sections = sectionsOf(page, route.tab);
   const tabs = page.tabs ?? [];
@@ -245,7 +273,9 @@ export function PageView() {
     }
   };
   return (
-    <main class="page" id="page" data-page={page.id} data-space={space} aria-labelledby="page-title">
+    <GreyedContext.Provider value={greyed}>
+    <main class={pageWords !== null ? "page page--greyed" : "page"} id="page" data-page={page.id} data-space={space}
+          aria-labelledby="page-title">
       <header class="page__head">
         <div class="page__line">
           <h1 id="page-title" class="page__title" tabIndex={-1}>{page.name}</h1>
@@ -259,8 +289,10 @@ export function PageView() {
               {(page.actions ?? []).map((action) => (
                 <button type="button" key={action.id} data-action={action.id}
                         class={`button button--${action.tone === "destructive" ? "danger" : action.tone}`}
-                        onClick={() => (action.confirm !== undefined || action.tone === "destructive"
-                          ? setConfirming(action) : void run(action, false))}>
+                        aria-disabled={pageWords !== null || undefined}
+                        onClick={() => (pageWords !== null ? undefined
+                          : action.confirm !== undefined || action.tone === "destructive"
+                            ? setConfirming(action) : void run(action, false))}>
                   {action.label}
                 </button>
               ))}
@@ -269,6 +301,7 @@ export function PageView() {
         </div>
         <p class="page__desc">{page.description}</p>
         <div class="lozenge-rule" aria-hidden="true"><Lozenge /></div>
+        {pageWords !== null && <p class="page__greyed" role="status" data-greyed="">{pageWords}</p>}
         {notice && notice.page === page.id && (
           <p class="page__notice" role="alert"><Warning /> {notice.text}</p>
         )}
@@ -303,5 +336,6 @@ export function PageView() {
       <ConfirmDialog space={space} action={confirming} onClose={() => setConfirming(null)}
                      onConfirm={(action) => void run(action, true)} />
     </main>
+    </GreyedContext.Provider>
   );
 }

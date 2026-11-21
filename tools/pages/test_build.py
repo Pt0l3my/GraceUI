@@ -132,6 +132,26 @@ class Seeded(unittest.TestCase):
         page(sp, "demo.festival")["sections"][0]["blocks"][0]["topic"] = "lantern.status"
         self.expect("statement takes no topic", sp, desc, fx)
 
+    def test_component_props(self):
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["sections"][0]["blocks"][0]["props"] = {"field": "Tiles!"}
+        self.expect("props.field is a name", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.log")["sections"][0]["blocks"][0]["props"] = {"field": "lines"}
+        self.expect("props.field is a name (a-z, 0-9, _; 1 to 32) on a state component", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["sections"][0]["blocks"][0]["props"] = {"empty": "E" * 81}
+        self.expect("props.empty is 1 to 80 characters", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["sections"][0]["blocks"][0]["props"] = {"newest_first": True}
+        self.expect("props.newest_first is a boolean on a log tail", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["sections"][0]["blocks"][0]["props"] = {"field": "now", "empty": "All quiet."}
+        self.assertEqual([f for f in failures(sp, desc, fx) if "props." in f], [])
+        sp, desc, fx = demo()
+        sp["topics"].append({"id": "space.state", "shape": "stream", "ring": 10})
+        self.expect("topic space.state is a state topic", sp, desc, fx)
+
     def test_actions(self):
         sp, desc, fx = demo()
         page(sp, "demo.overview")["actions"][0]["command"] = "lantern.polish"

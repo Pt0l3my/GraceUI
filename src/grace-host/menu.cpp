@@ -108,6 +108,8 @@ struct SpaceView {
   std::uint64_t settings_rev = 0;                 // its settings topic's, as the menu last took it
   grace::protocol::Json values = grace::protocol::Json::object();  // its values, as its settings state last gave them
   bool watching = false;                          // the menu watches its settings topic (while it is open on it)
+  // Its open page's component topics the menu draws (D184), watched while the page is open, and their last rev.
+  std::map<std::string, std::uint64_t, std::less<>> topics;
 };
 
 // GraceUI's thread's: the spaces' page views, GraceUI's settings and what was laid out last.
@@ -134,6 +136,7 @@ struct State {
   std::string focused;
 #if defined(GRACEUI_TEST_EXPORTS)
   std::vector<std::pair<std::string, grace::view::PageView::Bounds>> bounds;  // the last layout's, under the same lock
+  std::string shown;  // the last layout's words, one text after another, under the same lock
 #endif
 };
 constinit State* g_state = nullptr;
@@ -234,6 +237,36 @@ void update_rails(State& m) {
   own_view(m).view.set_rail(std::move(own_context));
 }
 
+// The open page's component topics (D184): watched while the page is open and the menu watches its space, one watch a
+// topic, given up when the page or the space changes or the menu closes. True if any watch changed.
+bool watch_topics(State& m) {
+  SpaceView& space = *m.spaces[m.active];
+  if (space.own) {
+    return false;
+  }
+  std::vector<std::string> wanted;
+  if (space.watching) {
+    wanted = space.view.component_topics();
+  }
+  bool changed = false;
+  for (auto it = space.topics.begin(); it != space.topics.end();) {
+    if (std::find(wanted.begin(), wanted.end(), it->first) == wanted.end()) {
+      spaces::registry().game_watch(space.id, it->first, false);
+      it = space.topics.erase(it);
+      changed = true;
+    } else {
+      ++it;
+    }
+  }
+  for (const std::string& topic : wanted) {
+    if (space.topics.emplace(topic, 0).second) {
+      spaces::registry().game_watch(space.id, topic, true);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 void watch(State& m, bool on) {
   SpaceView& space = *m.spaces[m.active];
   if (space.own || space.watching == on) {
@@ -244,6 +277,7 @@ void watch(State& m, bool on) {
   if (on) {
     space.settings_rev = 0;  // the newest state again, whatever came before
   }
+  watch_topics(m);  // its open page's components with it
 }
 
 // The spaces that asked for the game's view, as the registry has them now: a new one gets a page view, open on its
@@ -367,6 +401,13 @@ bool take_from_spaces(State& m) {
       space.view.set_inherited(inherited);
     }
     changed = true;
+  }
+  for (auto& [topic, seen] : space.topics) {  // its open page's components (D184)
+    if (!space.own && spaces::registry().game_state(space.id, topic, seen, body, rev)) {
+      seen = rev;
+      space.view.set_topic(topic, body);
+      changed = true;
+    }
   }
   for (const auto& result : spaces::registry().take_game_results()) {
     const auto it = m.commands.find(result.ticket);
@@ -551,12 +592,14 @@ void publish(State& m) {
   g_scale.store(scale, std::memory_order_relaxed);
 #if defined(GRACEUI_TEST_EXPORTS)
   std::vector<std::pair<std::string, grace::view::PageView::Bounds>> bounds = active_view(m).all_bounds();
+  std::string shown = m.list.text;
 #endif
   g_view_lock.lock();
   m.page.assign(active_view(m).page());
   m.focused = active_view(m).focused();
 #if defined(GRACEUI_TEST_EXPORTS)
   m.bounds.swap(bounds);
+  m.shown.swap(shown);
 #endif
   g_view_lock.unlock();
 }
@@ -631,6 +674,10 @@ void serve_menu() {
   MenuPointer pointer;
   for (int i = 0; i < 64 && g_pointer.pop(pointer); ++i) {
     take_pointer(m, pointer, dirty);
+  }
+  if (watch_topics(m)) {  // the page or the space changed: what its components need (D184)
+    take_from_spaces(m);
+    dirty = true;
   }
   const std::uint32_t width = g_width.load(std::memory_order_relaxed);
   const std::uint32_t height = g_height.load(std::memory_order_relaxed);
@@ -855,6 +902,16 @@ void test_view(TestView& out) noexcept {
     std::snprintf(out.focused, sizeof out.focused, "%s", g_state->focused.c_str());
   }
   g_view_lock.unlock();
+}
+
+bool test_shows(const char* text) noexcept {
+  if (text == nullptr || *text == '\0') {
+    return false;
+  }
+  g_view_lock.lock();
+  const bool found = g_state != nullptr && g_state->shown.find(text) != std::string::npos;
+  g_view_lock.unlock();
+  return found;
 }
 
 bool test_bounds(const char* name, float (&out)[8]) noexcept {

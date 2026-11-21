@@ -344,6 +344,63 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("proposal 0006 in the browser: a block's field and empty words, a newest-first log tail, a greyed page, a " +
+       "shortcut's control (D185 to D189)", async () => {
+    // The demo space with the five: its overview's tiles from a member, its sentence's own empty words; its log tail
+    // newest first; a space.state greying Behaviour.
+    const demo = space("demo");
+    const pages = JSON.parse(JSON.stringify(demo.pages)) as typeof demo.pages;
+    const overview = pages.pages.find((p) => p.id === "demo.overview");
+    const blocks = overview?.sections?.[0]?.blocks ?? [];
+    blocks[0] = { ...blocks[0], kind: "component", props: { field: "now" } } as (typeof blocks)[number];
+    blocks[1] = { ...blocks[1], kind: "component", props: { empty: "All quiet by the lantern." } } as (typeof blocks)[number];
+    const log = pages.pages.find((p) => p.id === "demo.log");
+    const journal = log?.sections?.[1]?.blocks?.[0];
+    if (journal) {
+      journal.props = { newest_first: true };
+    }
+    pages.topics.push({ id: "space.state", shape: "state" });
+    const status = (demo.topics ?? {})["lantern.status"] as { tiles: unknown; sentence?: string };
+    const data = {
+      ...demo,
+      pages,
+      topics: {
+        ...demo.topics,
+        "lantern.status": { now: { tiles: status.tiles } },
+        "space.state": { greyed: { "demo.behaviour": "Light the lantern first." } },
+      },
+    };
+    const { page, close } = await fresh([space("graceui"), data]);
+    try {
+      await openFromRail(page, "lanterns", "demo.overview");
+      await page.locator(".tile").first().waitFor();
+      assert.ok((await page.locator(".tile").count()) >= 1);  // the tiles from the member `now`
+      assert.match((await page.locator(".empty__line").first().textContent()) ?? "", /All quiet by the lantern\./);
+      // The shortcut: its home's control and its link; Behaviour being greyed, the control is inert.
+      const shortcut = page.locator("[data-row='shortcut:lantern.brightness']");
+      assert.equal(await shortcut.locator("[role=slider]").count(), 1);
+      assert.equal(await shortcut.locator("[role=slider]").getAttribute("aria-disabled"), "true");
+      assert.equal(await shortcut.locator(".lives-in").count(), 1);
+      await openFromRail(page, "lanterns", "demo.behaviour");
+      assert.match((await page.locator("[data-greyed]").textContent()) ?? "", /Light the lantern first\./);
+      assert.equal(await page.locator("[data-row='setting:lantern.enabled'] [role=switch]").getAttribute("aria-disabled"),
+                   "true");
+      const sent = host.received.filter((f) => f.t === "cmd").length;
+      await page.locator("[data-row='setting:lantern.enabled'] [role=switch]").click({ force: true });
+      await page.waitForTimeout(150);
+      assert.equal(host.received.filter((f) => f.t === "cmd").length, sent);  // nothing sent from a greyed page
+      // The journal, a log tail, newest first.
+      const rows = (demo.topics ?? {})["lantern.journal"] as { line: string }[];
+      await openFromRail(page, "records", "demo.log");
+      await page.locator("[data-section='journal'] .card__toggle").click();
+      await page.locator("[data-section='journal'] .feed__line").first().waitFor();
+      assert.equal(await page.locator("[data-section='journal'] .feed__line").first().textContent(),
+                   rows[rows.length - 1]?.line);
+    } finally {
+      await close();
+    }
+  });
+
   test("a secret's value never reaches the DOM or storage; the row shows only Set", async () => {
     const { page, close } = await fresh();
     const secret = "Zq7-wick-tallow-99";

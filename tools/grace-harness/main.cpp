@@ -760,6 +760,7 @@ struct GraceUi {
   decltype(&GraceUI_Test_GetTopic) get_topic = nullptr;
   decltype(&GraceUI_Test_GetMenuBounds) get_menu_bounds = nullptr;
   decltype(&GraceUI_Test_SetAntiCheatRecheck) set_anti_cheat_recheck = nullptr;
+  decltype(&GraceUI_Test_MenuShows) menu_shows = nullptr;
   decltype(&GraceUI_Test_GetServer) get_server = nullptr;
 
   bool load(const std::wstring& path) {
@@ -808,9 +809,11 @@ struct GraceUi {
     get_topic = function_of<decltype(get_topic)>(module, "GraceUI_Test_GetTopic");
     get_menu_bounds = function_of<decltype(get_menu_bounds)>(module, "GraceUI_Test_GetMenuBounds");
     set_anti_cheat_recheck = function_of<decltype(set_anti_cheat_recheck)>(module, "GraceUI_Test_SetAntiCheatRecheck");
+    menu_shows = function_of<decltype(menu_shows)>(module, "GraceUI_Test_MenuShows");
     get_server = function_of<decltype(get_server)>(module, "GraceUI_Test_GetServer");
     return get_server != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
-           get_menu_bounds != nullptr && set_anti_cheat_recheck != nullptr && panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
+           get_menu_bounds != nullptr && set_anti_cheat_recheck != nullptr && menu_shows != nullptr &&
+           panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
            request_input != nullptr && release_input != nullptr && set_world != nullptr && set_caret != nullptr &&
@@ -4510,6 +4513,24 @@ void run_menu_space(const std::wstring& dll) {
         "menu space: opens on the mod's", "F5: page %s, focus %s; the mod polled %s; its settings state %s",
         menu.page, menu.focused, watched.kind == GRACEUI_EVENT_WATCHED ? watched.frame.c_str() : "NO SUB",
         status_name(published));
+
+  // 2b. The page's components (D184): the menu watches their topic while the page is open; the mod's state is drawn.
+  const SpaceEvent status_watch = wait_kind(game, table, demo.answer.consumer, GRACEUI_EVENT_WATCHED);
+  const bool empty_before = grace.menu_shows("Nothing to show yet.") != 0;
+  const std::string status_frame =
+      R"({"v":1,"t":"state","space":"demo","topic":"lantern.status","rev":1,"body":{"tiles":[{"label":"Flame","value":"Low"}],"sentence":"The lantern gutters in the wind."}})";
+  const GraceUiStatus status_published = table->publish(demo.answer.consumer, status_frame.data(), status_frame.size());
+  bool drawn = false;
+  for (int i = 0; i < 100 && !drawn; ++i) {
+    menu = menu_after(game, grace, menu.lists);
+    drawn = grace.menu_shows("The lantern gutters in the wind.") != 0 && grace.menu_shows("Low") != 0;
+  }
+  check(status_watch.kind == GRACEUI_EVENT_WATCHED && status_watch.frame.find("\"lantern.status\"") != std::string::npos &&
+            empty_before && status_published == GRACEUI_OK && drawn,
+        "menu space: its components", "the mod polled %s; before its state the page said it had nothing %s; its state "
+        "%s, drawn in game %s",
+        status_watch.kind == GRACEUI_EVENT_WATCHED ? status_watch.frame.c_str() : "NO SUB", empty_before ? "yes" : "NO",
+        status_name(status_published), drawn ? "yes" : "NO");
 
   // 3. Page Down to Behaviour, ↓ to Brightness, →: the mod's command, from the value its state gave (0.5, not the
   // default 0.8), reaches it as a view's does; the mod refuses it in words, which show under the row.

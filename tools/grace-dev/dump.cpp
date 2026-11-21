@@ -43,6 +43,13 @@ bool dump_page(const SpaceData& space, const DumpRequest& request, DumpResult& o
     store.set("ui.menu.theme", protocol::Json(request.clear ? "clear" : "grace"));
   }
   view.set_values(store.values());
+  // The components drawn in game (D181, D184) show their topics' fixtures, as the menu shows what a space publishes.
+  for (const std::string& topic : view.component_topics()) {
+    const auto found = space.fixtures.find(topic);
+    if (found != space.fixtures.end() && found->is_object()) {
+      view.set_topic(topic, *found);
+    }
+  }
   const float scale = request.height / 1080.0f * static_cast<float>(request.ui_scale);  // §3.13, as D167 draws
   const view::Fonts fonts = view::test::fonts();
   view::DisplayList list;

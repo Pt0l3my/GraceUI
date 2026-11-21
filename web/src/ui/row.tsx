@@ -5,12 +5,12 @@
 // shows it as pending ("Saving…") until the space answers; a refusal puts its reason under the row and focus back on its
 // control (§5.7). A secret is write-only: its field is never bound to state and is cleared as soon as it is sent, and
 // the row shows only Set or Not set (§7.4, invariant 5).
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Json, Setting } from "../protocol.ts";
 import { decimalsOf, formatValue, isNumeric, nextValue, roundHalfAway, sameJson, triLabels, triValues } from "../model/format.ts";
 import { BROWSER_KEYS, LEAVES_CAPTURE, keyName } from "../model/keys.ts";
 import { pageById, parseLink } from "../model/layout.ts";
-import { useSession } from "./context.ts";
+import { GreyedContext, useSession } from "./context.ts";
 import { Lozenge, ResetMark, Warning } from "./icons.tsx";
 import { revealSetting } from "./navigate.ts";
 import { domId, found } from "./view-state.ts";
@@ -335,6 +335,7 @@ function Control(props: ControlProps) {
 /** One row, homed here (a setting) or elsewhere (a shortcut, which opens its home with the row focused). */
 export function SettingRow({ space, settingKey, shortcut }: { space: string; settingKey: string; shortcut: boolean }) {
   const session = useSession();
+  const greyedPage = useContext(GreyedContext);
   const row = useRef<HTMLDivElement>(null);
   const s = session.setting(space, settingKey);
   const request = session.focusRequest.value;
@@ -356,33 +357,42 @@ export function SettingRow({ space, settingKey, shortcut }: { space: string; set
   const helpId = domId("help", space, settingKey);
   const pages = session.space(space)?.pages.value;
   const rowKind = shortcut ? "shortcut" : "setting";
+  // A page its space has greyed, or the setting's home greyed (D188): its control is inert.
+  const greyed = greyedPage.words(greyedPage.page) !== null || greyedPage.words(s.home) !== null;
   if (shortcut) {
     const home = pages ? pageById(pages, s.home) : undefined;
     if (pages && !home) {
       return null;  // a shortcut to a page of a later increment (D173), as grace-view leaves it out
     }
+    // Its home's control and its link (§4.7, D189), as grace-view draws it.
+    const inert = s.locked || s.availability === "later" || greyed;
     return (
-      <div ref={row} class="row row--shortcut" data-row={`${rowKind}:${settingKey}`} data-space={space}>
+      <div ref={row} class={inert ? "row row--shortcut row--locked" : "row row--shortcut"}
+           data-row={`${rowKind}:${settingKey}`} data-space={space}>
         <div class="row__text">
           <div class="row__line">
             <span id={labelId} class="row__label">{s.label}</span>
-            <span class="row__value">{formatValue(s, shown)}</span>
+            {home && (
+              <button type="button" class="lives-in" aria-describedby={labelId}
+                      onClick={() => revealSetting(session, space, settingKey)}>
+                Lives in {home.name}
+              </button>
+            )}
           </div>
+          <p id={helpId} class="row__help">{s.help} Default: {formatValue(s, s.default)}.</p>
+          {refusal && (
+            <p class="row__refusal" role="alert"><Warning /> {refusal}</p>
+          )}
         </div>
         <div class="row__control">
-          {home && (
-            <button type="button" class="lives-in" aria-describedby={labelId}
-                    onClick={() => revealSetting(session, space, settingKey)}>
-              Lives in {home.name}
-            </button>
-          )}
+          <Control s={s} space={space} shown={shown} labelId={labelId} helpId={helpId} disabled={inert} />
         </div>
       </div>
     );
   }
   const changed = !sameJson(shown, s.default);
   const later = s.availability === "later";
-  const disabled = s.locked || later;
+  const disabled = s.locked || later || greyed;
   const badge = availabilityBadge(s.availability, (key) => session.shown(space, key),
                                   (key) => session.setting(space, key)?.label);
   const inherited = s.type === "tri_state" && shown === "inherit"
