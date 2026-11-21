@@ -724,3 +724,6 @@ views, fixtures and goldens; for (3) the server's and registry's handling of a v
 settings description and the store's check. No change of the ABI.
 
 **Follows from.** EldenNet's request of 2026-11-21 (its WHY§274 to §276); D173, D181, D183, D185 to D189; G16, G18.
+
+*Later (2026-11-21):* EldenNet's session answered that the proposal fits its AI pages as written, with (2) (a), and
+that marking (1), (3) and (4)'s commands as candidates for the sensitive list is right (proposal 0007 §8).
