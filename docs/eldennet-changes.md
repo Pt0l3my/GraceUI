@@ -927,3 +927,12 @@ In GraceUI 0.2.7 (no change of the ABI; additions to the page data, checked by `
 5. **Shortcut rows** show their home's control in both views; ← and → change it, Enter follows its link.
 
 Your `grace-dev --dump` goldens change where a page has a shortcut row (its control is drawn now).
+
+## 39. §6.6's commands as you built them (2026-11-21, D190; proposal 0007)
+
+1. **Recorded**: EldenNet sets and clears keys with `settings.set` and `settings.reset` on its secret settings, and adds
+   and removes providers with `providers.add` and `providers.remove`; it uses no `secrets.set`, `secrets.clear` or
+   `providers.update`. DESIGN §6.6 keeps its rows with a dated note (D190). When pairing comes, these are the commands
+   to refuse from a paired device.
+2. **Your AI pages' four requests** (a row action, a picker from a topic, a secret a row, a small form) are proposal
+   0007 (G34), for the owner and you.

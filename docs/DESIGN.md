@@ -1404,7 +1404,11 @@ pushes, and EldenNet's rates are unchanged. A hidden Home card subscribes to not
 | `workshop.*` | various | Only with `debug.panel` and the session's confirmation |
 
 Each space marks its sensitive commands, which GraceUI refuses from a paired device (D81); EldenNet marks
-`providers.update`, `secrets.set` and `secrets.clear` (G9).
+`providers.update`, `secrets.set` and `secrets.clear` (G9). (Amended by D190, 2026-11-21: EldenNet's commands are its
+PAGES' since G20, and as built it sets and clears its keys with `settings.set` and `settings.reset` on its secret
+settings and adds and removes providers with its own `providers.add` and `providers.remove`; it uses no
+`secrets.set`, `secrets.clear` or `providers.update`. Its sensitive commands, once pairing comes, are those four on
+its keys and providers. The rows above are kept as the design had them.)
 
 ### 6.7 Errors
 
@@ -1838,7 +1842,8 @@ widened GraceUI's scope, and its consequences were put as G15–G20 with proposa
 decided on 2026-11-16, as recommended; G30 put on 2026-11-16 with the re-base on C++ and decided the same day, as
 recommended, after an independent review (SRV), the day the owner also made G15's overlay Dear ImGui with MinHook (its
 later change). G31 and G32 were put on 2026-11-20 at the look review of the in-game menu and decided the same day, as
-recommended; G33 was put the same day with proposal 0006 and decided the same day, as recommended.**
+recommended; G33 was put the same day with proposal 0006 and decided the same day, as recommended; G34 was put on
+2026-11-21 with proposal 0007, and is Open.**
 Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record: the question as it was put, the
 options, the recommendation as written, what was decided, the owner's words and what each amends. This section is its
 index; each G-number the documents cite is a row here and an entry there. G11 and G12 were not questions of §12: they
@@ -1883,6 +1888,7 @@ in the entry with its date, and a later decision amends an earlier one by a note
 | [G30](DECISIONS.md#g30) | What is the loopback server built on, in C++? | (a) our own small server, on the narrow subset §7.2 and §6.8 allow, built to the independent review's plan (SRV §5) and fuzzed in CI (§7.6) | Decided 2026-11-16, as recommended |
 | [G31](DECISIONS.md#g31) | What pointer does the menu draw in game? | (a) our own pointer in the Grace look, still: a notched arrowhead with rounded corners, a gold edge on a dark fill (D178) | Decided 2026-11-20, as recommended |
 | [G32](DECISIONS.md#g32) | May the player quiet a mod's notices? | Recommended: (a) a switch per mod on the Mods page, GraceUI's own notices always shown | Decided 2026-11-20: (a), as recommended; built as D181 |
+| [G34](DECISIONS.md#g34) | Row actions, live pickers, row secrets and small forms (proposal 0007)? | Recommended: all four, a picker's choices from a topic with the space checking membership | Open since 2026-11-21 |
 | [G33](DECISIONS.md#g33) | Which of five additions for mods' pages to build (proposal 0006)? | Recommended: all five, a space's greyed state as a framework topic mapping each greyed page to its words (EldenNet's answer) | Decided 2026-11-20: all five, as recommended; built as D185 to D189 |
 
 ---
@@ -2097,6 +2103,7 @@ the entries above by dated notes; and D154, the harness's frame-cost checks unde
 | D187 | A log tail newest first | G33 (3). `props.newest_first` (a boolean) on a log tail lists its rows newest first in the browser view, as a live feed does; the streams stay the browser's in game (D184). The page lint allows it on a log tail alone | A second component | EldenNet's Logs page | G33; proposal 0006 §3 |
 | D188 | A space's greyed pages | G33 (4), as revised by EldenNet's answer. A space may declare the framework topic `space.state` (a state topic no component draws; the lint checks both) and publish `{"greyed": {"<page id>": "<words>"}, "inactive": "<words>"}`: a page named in `greyed` is greyed with its own words, every other page with `inactive`'s if there are some, and a page with neither is usable; each text 1 to 200 bytes, as the space wrote it. In both views a greyed page shows its words in a band under its header (`ground.3`, an `ember` edge, `ink.hi`), and its controls are inert and faint as a locked setting's: settings, resets, header actions and table switches send nothing, and a shortcut to a setting whose home is greyed is inert too; navigation, help, tabs, sections, Related links and a shortcut's link still work. The key hints say "Not available now". The topic is watched with every page of the space while it is shown (the menu's component topics, D184; the browser's page). The space's own answer stays the rule: commands still go to it, and it refuses what it cannot do (invariant 3) | A whole-space grey alone (EldenNet keeps some pages usable when inactive, and greys others only at the title screen); a per-page flag in the page data (static, where the state is not) | EldenNet's PAGES §4.4 at L1 and at the title screen | G33; proposal 0006 §4, §8; D184 |
 | D189 | A shortcut row's control in game | G33 (5), §4.7. A shortcut row draws its home's control and its "Lives in …" link in both views (before, the browser drew the value as text, and the game the link alone): ← and → change the value as on its home's row, the mouse acts on the control as there (D182), Enter and a click elsewhere on the row follow the link to the setting on its home page; a switch turns with ← and → only. A change goes to the space through its one entry point, as from the home | The link alone in game (the player could change it on its home page) | §4.7's row, the same in both views | G33; proposal 0006 §5; D167, D173, D182 |
+| D190 | §6.6's EldenNet rows, as EldenNet built them | EldenNet's session's note of 2026-11-21, after its AI pages: EldenNet sets and clears its keys through `settings.set` and `settings.reset` on its secret settings (what GraceUI's views send, invariant 5 holding as for any secret setting) and adds and removes providers with its own `providers.add` and `providers.remove`; it does not use `secrets.set`, `secrets.clear` or `providers.update`. §6.6 keeps its rows with a dated note, since EldenNet's commands are its PAGES' (G20); the sensitive marks for pairing (D183's open item) are to name `settings.set` and `settings.reset` on its secret settings, `providers.add` and `providers.remove` | Dropping §6.6's rows (the table is the design's record of the protocol's commands as first planned) | One record of what EldenNet sends, for the pairing work | §6.6; D183; G9, G20 |
 
 ---
 
