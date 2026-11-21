@@ -704,3 +704,23 @@ usable). The recommendation for (4) is now (b), a map from page id to its words,
 greyed page to its words, and a whole-space shorthand beside it. Built as D185 to D189 in GraceUI 0.2.7.
 
 **Owner's words.** "Agreed to proposal 0006".
+
+## G34
+
+**Row actions, live pickers, row secrets and small forms** · *Open since 2026-11-21*
+
+**Question.** EldenNet's session, building its AI pages on GraceUI 0.2.7, asked for four additions, put together in
+[proposal 0007](proposals/0007-rows-pickers-forms.md): (1) an action on each row of a table (a Remove a provider,
+destructive ones with their confirm text and second press); (2) a picker whose choices come from a topic at run time,
+with options (a) `choices_from` on a string setting, the space checking membership, (b) a free text field with
+suggestions, (c) presets only; (3) a secret for each row (a key for each provider the player adds), held to invariant
+5 as a secret setting is; (4) a small form (a name and a base URL) whose fields go to the space's command.
+
+**Recommendation.** All four, and (2) (a). None blocks EldenNet; each has a stand-in today. Telling a space which view
+sent a command, so that keys, Add and Remove are refused from a paired device, stays with pairing (D183's open item).
+
+**What each answer changes.** Proposal 0007 §6: the page data's types, the page lint and registration checks, both
+views, fixtures and goldens; for (3) the server's and registry's handling of a value they never log; for (2) the
+settings description and the store's check. No change of the ABI.
+
+**Follows from.** EldenNet's request of 2026-11-21 (its WHY§274 to §276); D173, D181, D183, D185 to D189; G16, G18.

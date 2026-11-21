@@ -79,7 +79,7 @@ see the dashboard.
 | `docs/DESIGN.md` | The design |
 | `docs/research/` | The studies behind it, in our own words |
 | `docs/eldennet-changes.md` | What EldenNet's design needs to change for GraceUI |
-| `docs/proposals/` | Proposals put to the owner: the framework (0001), the map (0002), a holder's events (0003), the display (0004), pad chords (0005) and additions for mods' pages (0006) |
+| `docs/proposals/` | Proposals put to the owner: the framework (0001), the map (0002), a holder's events (0003), the display (0004), pad chords (0005), additions for mods' pages (0006) and row actions, live pickers, row secrets and forms (0007) |
 | `src/grace-protocol` | The bridge protocol's types (C++; they and the web app's TypeScript types are generated from one schema) |
 | `src/grace-input` | The input holder's rules: capture, masking, the player's exit and characters made whole, without Win32 |
 | `src/grace-view` | The menu's structure, focus and input rules, without a renderer |
