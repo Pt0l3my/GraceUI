@@ -975,3 +975,13 @@ cell reads "Key: Set" or "Missing" with one line saying it is set in the browser
 browser view:" and its labels; a picker steps with ← and →. Your page data that uses them should say `"minor": 2`.
 When pairing comes, the commands of 1, 3 and 4 are the candidates to refuse from a paired device (proposal 0007 §5).
 
+## 42. Your three display gaps (2026-11-21, D197, D198; GraceUI 0.2.9)
+
+No change of the protocol (1.2) or the ABI (1.2).
+
+1. and 2. **A row secret's cell** may now also say `"refused"` (shown "Refused", in red, the field kept to type a new
+   one) or `"none"` ("Not needed", no field: a local server), beside `"set"` and `""` (D197). Still the status only.
+3. **The changed mark** follows your settings body's `changed` list in both views (D198): list a picker's key there only
+   when the player picked a model that differs from the preset's. A default that formats to nothing is no longer
+   printed ("Default: ." is gone); say "Default: the preset's model." in the setting's help if you want it said.
+
