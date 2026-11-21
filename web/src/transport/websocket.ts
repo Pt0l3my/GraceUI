@@ -3,7 +3,7 @@
 // the page's own origin: a ticket by a same-origin POST that carries the session cookie (the page never sees or stores
 // the cookie), then one socket to the same host, whose first frame is hello with the ticket. Every frame is one JSON
 // object of the kinds protocol.ts defines; anything else is dropped. Liveness by ping every 15 s, two missed pongs
-// closing the socket; at most 20 commands a second and 16 KiB a frame from the page.
+// closing the socket; at most 16 frames a second (the server's 20, less a margin) and 16 KiB a frame from the page.
 import type {
   ByeReason, Cmd, ErrorCode, FrameFromPage, Hello, Json, JsonObject, Rows, State, Sub, Unsub, Welcome,
 } from "../protocol.ts";
@@ -62,6 +62,9 @@ function byteLength(text: string): number {
   return text.length * 3 <= LIMITS.frameToPage ? text.length : new TextEncoder().encode(text).length;
 }
 
+// What a page sends a second: the server's limit less a margin, since frames sent a second apart may arrive closer.
+const PACE = LIMITS.commandsPerSecond - 4;
+
 export class WebSocketTransport implements Transport {
   private readonly options: WebSocketOptions;
   private events: TransportEvents | null = null;
@@ -73,7 +76,7 @@ export class WebSocketTransport implements Transport {
   private readonly subs = new Set<number>();
   private readonly pending = new Map<number, { resolve: (answer: Answer) => void; timer: ReturnType<typeof setTimeout> }>();
   private readonly sentAt: number[] = [];
-  private readonly queue: string[] = [];
+  private readonly queue: { text: string; sub?: number }[] = [];
   private queueTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private welcomeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -299,15 +302,19 @@ export class WebSocketTransport implements Transport {
     this.resolveConnect = null;
   }
 
+  // Every frame sent counts against the rate a connection may send (§6.8), hello and pongs included.
   private sendNow(text: string): void {
     if (this.socket && this.socket.readyState === OPEN) {
+      this.sentAt.push(Date.now());
       this.socket.send(text);
     }
   }
 
-  // Commands keep to the rate a connection may send (§6.8): past it they wait their turn, in order.
-  private sendCommand(text: string): void {
-    this.queue.push(text);
+  // Subs, unsubs and commands keep to that rate, with a margin for the network's unevenness (D203): past it they wait
+  // their turn, in order, so that a page opening many topics at once loses none (the server drops what is over the
+  // rate unread). Hello and pongs go at once.
+  private sendPaced(text: string, sub?: number): void {
+    this.queue.push(sub !== undefined ? { text, sub } : { text });
     this.drain();
   }
 
@@ -316,11 +323,10 @@ export class WebSocketTransport implements Transport {
     while (this.sentAt.length > 0 && now - (this.sentAt[0] ?? 0) >= 1000) {
       this.sentAt.shift();
     }
-    while (this.queue.length > 0 && this.sentAt.length < LIMITS.commandsPerSecond) {
-      const text = this.queue.shift();
-      if (text !== undefined) {
-        this.sentAt.push(now);
-        this.sendNow(text);
+    while (this.queue.length > 0 && this.sentAt.length < PACE) {
+      const next = this.queue.shift();
+      if (next !== undefined) {
+        this.sendNow(next.text);
       }
     }
     if (this.queue.length > 0 && this.queueTimer === null) {
@@ -349,7 +355,7 @@ export class WebSocketTransport implements Transport {
     const text = this.frame(sub);
     if (text !== null) {
       this.subs.add(id);
-      this.sendNow(text);
+      this.sendPaced(text, id);
     }
     return id;
   }
@@ -358,10 +364,15 @@ export class WebSocketTransport implements Transport {
     if (!this.subs.delete(id)) {
       return;
     }
+    const waiting = this.queue.findIndex((q) => q.sub === id);
+    if (waiting >= 0) {
+      this.queue.splice(waiting, 1);  // never sent: nothing to take back, and nothing spent
+      return;
+    }
     const unsub: Unsub = { v: PROTOCOL.major, t: "unsub", space, id, topic };
     const text = this.frame(unsub);
     if (text !== null) {
-      this.sendNow(text);
+      this.sendPaced(text);
     }
   }
 
@@ -382,7 +393,7 @@ export class WebSocketTransport implements Transport {
         }
       }, this.options.answerTimeout ?? 15000);
       this.pending.set(id, { resolve, timer });
-      this.sendCommand(text);
+      this.sendPaced(text);
     });
   }
 
