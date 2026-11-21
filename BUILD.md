@@ -309,6 +309,12 @@ after one, is needed. Six scenarios make no window ("copies", "found-by-scan", "
 line among the harness's own; it is harmless. Each process ends with a "-- N passed, M failed" line, the main process's
 counting each other process as one check.
 
+One more scenario is run by name only, never in the full run: "page-shots" (D191) registers a mod's space from a folder
+named by `GRACE_SPACE_DIR` (its `pages.json`, `settings.json` and `topics.json` as grace-dev takes them, and a
+`values.json` of its settings' values if wanted), opens the menu on it and, with `GRACE_SHOTS` set, saves a frame of each
+of its pages and tabs; `GRACE_SPACE_INCREMENT` names the increment it registers (0.2 without it). It is for look reviews
+of a mod's pages in game, with invented fixtures only.
+
 The game reads its keyboard and mouse through DirectInput and its pads through XInput, as the game does (EldenNet ER02
 §7.2). The input checks inject keys and mouse input with `SendInput`, which Wine hands to DirectInput through its
 low-level hook and to the window as messages, and post or send the window messages the others need. Two quirks of Wine

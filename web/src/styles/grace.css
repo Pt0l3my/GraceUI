@@ -484,6 +484,7 @@ ul, ol {
   font-size: var(--type-ui-sm-size);
   line-height: var(--type-ui-sm-line);
   color: var(--ink-body);
+  white-space: nowrap;  /* a long theme name stays on one line (D191) */
   transition: color var(--dur-state), background-color var(--dur-state);
 }
 
@@ -1395,6 +1396,11 @@ ul, ol {
   color: var(--ink-body);
 }
 
+/* A gap between columns, none before the first (D191). */
+.table th + th, .table td + td {
+  padding-left: var(--space-16);
+}
+
 .table .table__switch {
   width: 1%;
   white-space: nowrap;
@@ -1406,6 +1412,10 @@ ul, ol {
 
 .table .num {
   text-align: right;
+}
+
+/* The numbers in the number face; the column's head stays an eyebrow, as the others (D191). */
+.table td.num {
   font-family: var(--stack-mono);
   font-size: var(--type-num-size);
   line-height: var(--type-num-line);
