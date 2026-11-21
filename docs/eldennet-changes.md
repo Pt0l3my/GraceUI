@@ -996,3 +996,19 @@ to change on your side.
 In game, the line under a table with a row secret ("Key: set in the browser view.") is now left out when every row's
 cell is `"none"`. Nothing to change on your side.
 
+## 45. Sections as cards (2026-11-21, G36, D202; GraceUI 0.2.12, protocol 1.3)
+
+ABI 1.2, unchanged. For AI › Models' per-job cards, a section in your page data may now carry, all optional:
+
+- `"chip": "dialogue"`: 1 to 24 characters after the title, faint.
+- `"status": {"topic": "health", "field": "dialogue"}`: a state topic you declare (not `settings` or `space.state`),
+  its body or the member `field` names holding `{"word": "Ready", "tone": "moss"}` (moss, ember, glint or rot; any
+  other tone is drawn glint). Nothing is drawn until you publish it.
+- `"actions": [{"id": "prebake", "label": "Prepare lines now", "command": "pools.prebake", "tone": "secondary"}]`: 1 or
+  2, a header action's shape and rules (a declared command; a destructive one with `confirm` words, sent with
+  `"confirm": true`). Refuse it in words at your entry point when it cannot run now, as you planned.
+
+Page data that uses them should say `"minor": 3`. The browser draws the actions and the status at the head's right; in
+game they sit in the head, the actions as focus stops after the section's head. When pairing comes, `pools.prebake`
+joins the commands to refuse from a paired device (proposal 0008 §7).
+
