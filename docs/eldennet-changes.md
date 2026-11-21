@@ -936,3 +936,15 @@ Your `grace-dev --dump` goldens change where a page has a shortcut row (its cont
    to refuse from a paired device.
 2. **Your AI pages' four requests** (a row action, a picker from a topic, a secret a row, a small form) are proposal
    0007 (G34), for the owner and you.
+
+## 40. Proposals 0005 and 0007 approved (2026-11-21, G34, G35)
+
+1. **G34 (proposal 0007)**, all four, with the picker's choices supplied by you through `choices_from` and checked at
+   your one entry point. GraceUI builds them as 0.2.8 and tells you its version and ABI (unchanged, 1.2, as the
+   proposal expects); until then your stand-ins stay. Then: a Remove on each provider row (`providers.remove` with
+   `{id}` and `"confirm": true`), a model picker per job from a state topic you publish, a key field on each provider
+   row (status only in the cell, the value never echoed), and the add-your-own form (`providers.add` with `{name,
+   base_url}`).
+2. **G35 (proposal 0005)**, as proposed: GraceUI resolves your chord, D-pad Up then View, at ABI 1.3 behind
+   `has_cap("pad-chords")`. It is built for S4's second round, after your R1; until then `register_hotkey` answers
+   `not_yet` for a chord, as today.

@@ -707,7 +707,7 @@ greyed page to its words, and a whole-space shorthand beside it. Built as D185 t
 
 ## G34
 
-**Row actions, live pickers, row secrets and small forms** · *Open since 2026-11-21*
+**Row actions, live pickers, row secrets and small forms** · *Decided 2026-11-21*
 
 **Question.** EldenNet's session, building its AI pages on GraceUI 0.2.7, asked for four additions, put together in
 [proposal 0007](proposals/0007-rows-pickers-forms.md): (1) an action on each row of a table (a Remove a provider,
@@ -727,3 +727,40 @@ settings description and the store's check. No change of the ABI.
 
 *Later (2026-11-21):* EldenNet's session answered that the proposal fits its AI pages as written, with (2) (a), and
 that marking (1), (3) and (4)'s commands as candidates for the sensitive list is right (proposal 0007 §8).
+
+**Decision (2026-11-21).** All four, as recommended, with (2) (a): `choices_from` on a string setting, its choices
+supplied by the mod, which checks the value at its own entry point. The owner decided after a picture explainer of the
+decisions waiting (the AI pages as built, and the four parts as mock-ups), and passed the answer through EldenNet's
+session, which recorded its side as its O95. To be built in GraceUI 0.2.8.
+
+**Owner's words.** "I am fine with everything you and grace done so far, so that's approved." (relayed by EldenNet's session, 2026-11-21); and to GraceUI's
+session, of the explainer: "That looks fine."
+
+## G35
+
+**Pad chords for hotkeys** · *Put 2026-11-20 with proposal 0005; decided 2026-11-21*
+
+**Question.** EldenNet's chat box opens on a pad by a chord (its NPC §5.6, O11), which only GraceUI may resolve (it alone
+hooks XInput, invariant 16). [Proposal 0005](proposals/0005-pad-chords.md) says what a chord is (an anchor pressed
+first, then a key: EldenNet's D-pad Up, then View; the key held back only when pressed 150 ms or more after the anchor,
+the chord complete at 0.4 s, a broken chord replaying the key as one tap; figures EST, for S4 to confirm), when chords
+stand aside, and how a mod asks for one (ABI 1.3, `pad_chord` as the key's bit in the low 16 bits and the anchor's in
+the high 16, `has_cap("pad-chords")`). It asked (1) whether chords stand aside whenever a request for input would be
+answered `not_now`; (2) the encoding; (3) EldenNet's session, whether §2 matches its NPC §5.6. The proposal was put on
+2026-11-20 and not entered here as a question then; it is entered now, with its answer.
+
+**Recommendation.** (1) Stand aside; (2) the anchor in the high half, the key in the low; build it for S4's second round.
+
+**What it changes.** `grace-input`'s pad ledger, `register_hotkey`'s `pad_chord`, ABI 1.3 (an addition), the harness and
+unit tests (proposal 0005 §5). Nothing in ABI 1.2's layout.
+
+**Follows from.** EldenNet's NPC §5.6 and O11; D33, D77, D155, D176; invariants 8, 16 and 17.
+
+*Later (2026-11-20):* EldenNet's session agreed with §2 as written, with one hotkey event enough, and with standing
+aside (proposal 0005 §7).
+
+**Decision (2026-11-21).** As proposed: D-pad Up held first, then View; 150 ms and 0.4 s as the estimates S4's second
+round confirms or changes; chords stand aside whenever input would be refused; the encoding as in §4. Built when S4's
+second round needs it, after EldenNet's R1, unless there is room before.
+
+**Owner's words.** "I am fine with everything you and grace done so far, so that's approved." (relayed by EldenNet's session, 2026-11-21).

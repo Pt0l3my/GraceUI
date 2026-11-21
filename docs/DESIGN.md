@@ -1843,7 +1843,8 @@ decided on 2026-11-16, as recommended; G30 put on 2026-11-16 with the re-base on
 recommended, after an independent review (SRV), the day the owner also made G15's overlay Dear ImGui with MinHook (its
 later change). G31 and G32 were put on 2026-11-20 at the look review of the in-game menu and decided the same day, as
 recommended; G33 was put the same day with proposal 0006 and decided the same day, as recommended; G34 was put on
-2026-11-21 with proposal 0007, and is Open.**
+2026-11-21 with proposal 0007 and decided the same day, as recommended; G35, proposal 0005 (put on 2026-11-20 and
+entered here with its answer), was decided on 2026-11-21, as proposed.**
 Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record: the question as it was put, the
 options, the recommendation as written, what was decided, the owner's words and what each amends. This section is its
 index; each G-number the documents cite is a row here and an entry there. G11 and G12 were not questions of §12: they
@@ -1888,7 +1889,8 @@ in the entry with its date, and a later decision amends an earlier one by a note
 | [G30](DECISIONS.md#g30) | What is the loopback server built on, in C++? | (a) our own small server, on the narrow subset §7.2 and §6.8 allow, built to the independent review's plan (SRV §5) and fuzzed in CI (§7.6) | Decided 2026-11-16, as recommended |
 | [G31](DECISIONS.md#g31) | What pointer does the menu draw in game? | (a) our own pointer in the Grace look, still: a notched arrowhead with rounded corners, a gold edge on a dark fill (D178) | Decided 2026-11-20, as recommended |
 | [G32](DECISIONS.md#g32) | May the player quiet a mod's notices? | Recommended: (a) a switch per mod on the Mods page, GraceUI's own notices always shown | Decided 2026-11-20: (a), as recommended; built as D181 |
-| [G34](DECISIONS.md#g34) | Row actions, live pickers, row secrets and small forms (proposal 0007)? | Recommended: all four, a picker's choices from a topic with the space checking membership | Open since 2026-11-21 |
+| [G34](DECISIONS.md#g34) | Row actions, live pickers, row secrets and small forms (proposal 0007)? | Recommended: all four, a picker's choices from a topic with the space checking membership | Decided 2026-11-21: all four, as recommended; to be built in 0.2.8 |
+| [G35](DECISIONS.md#g35) | Pad chords for hotkeys (proposal 0005)? | As proposed: an anchor then a key (EldenNet's D-pad Up, then View), 150 ms and 0.4 s EST, standing aside when input would be refused, ABI 1.3 | Decided 2026-11-21, as proposed; built for S4's second round |
 | [G33](DECISIONS.md#g33) | Which of five additions for mods' pages to build (proposal 0006)? | Recommended: all five, a space's greyed state as a framework topic mapping each greyed page to its words (EldenNet's answer) | Decided 2026-11-20: all five, as recommended; built as D185 to D189 |
 
 ---
