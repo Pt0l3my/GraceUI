@@ -917,6 +917,9 @@ std::string PageView::format(std::string_view key, const Json& v) const {
     case SettingType::secret:
       return v.is_string() && !v.get_ref<const std::string&>().empty() ? "Set" : "Missing";  // §4.2.4's words
     case SettingType::text:
+      if (s->choices_from && v.is_string() && v.get_ref<const std::string&>().empty() && s->default_ == Json("")) {
+        return "Default";  // a picker whose default is none of its choices: the space's own default (D199)
+      }
       if (s->choices_from && v.is_string()) {
         bool published = false;
         for (const protocol::Choice& c : live_choices(*s, published)) {
@@ -991,9 +994,12 @@ Action PageView::change(const Setting& s, int direction, bool shift) {
     case SettingType::text:
       if (s.choices_from) {
         bool published = false;
-        const std::vector<protocol::Choice> choices = live_choices(s, published);
+        std::vector<protocol::Choice> choices = live_choices(s, published);
         if (choices.empty()) {
           return {};  // nothing to choose from yet (D193)
+        }
+        if (s.default_ == Json("")) {
+          choices.insert(choices.begin(), protocol::Choice{"", "Default"});  // back to the space's default (D199)
         }
         const std::size_t n = choices.size();
         std::size_t next = direction > 0 ? 0 : n - 1;  // from a value not in the list: the first, or the last

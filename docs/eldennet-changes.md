@@ -985,3 +985,9 @@ No change of the protocol (1.2) or the ABI (1.2).
    when the player picked a model that differs from the preset's. A default that formats to nothing is no longer
    printed ("Default: ." is gone); say "Default: the preset's model." in the setting's help if you want it said.
 
+## 43. A picker's empty default (2026-11-21, D199; GraceUI 0.2.10)
+
+Your per-job pickers default to `""` (the preset's model). Both views drew that blank; they now show it as "Default"
+and offer it first, so choosing it sends `""` back to you. Say in the setting's help what Default means (D198). Nothing
+to change on your side.
+

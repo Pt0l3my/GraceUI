@@ -968,3 +968,28 @@ TEST_CASE("the lozenge follows the space's changed keys once it says them; an em
   view.set_changed({"lantern.oil_kind"});
   CHECK(lozenges() == base + 1);
 }
+
+TEST_CASE("a picker whose default is empty offers it first, as Default (D199)") {
+  PageView view;
+  std::string why;
+  const auto& demo = test::space("demo");
+  Json pages = Json::parse(demo.pages);
+  Json settings = Json::parse(demo.settings);
+  for (Json& s : settings["settings"]) {
+    if (s["key"] == "lantern.oil_kind") {
+      s["default"] = "";
+    }
+  }
+  REQUIRE(view.load(test::decoded<grace::protocol::SpacePages>(pages.dump()),
+                    test::decoded<grace::protocol::SettingsDescription>(settings.dump()), why));
+  REQUIRE(view.open("demo.keepers"));
+  for (int i = 0; i < 12 && view.focused() != "setting:lantern.oil_kind"; ++i) {
+    press(view, Key::down);
+  }
+  view.set_topic("lantern.oils", kOils);
+  CHECK(view.format("lantern.oil_kind", Json("")) == "Default");
+  Action next = press(view, Key::right);  // from Default to the first choice
+  CHECK(next.command.args["value"] == "rapeseed");
+  view.set_values(Json::object({{"lantern.oil_kind", "rapeseed"}}));
+  CHECK(press(view, Key::left).command.args["value"] == "");  // and back to the space's default
+}
