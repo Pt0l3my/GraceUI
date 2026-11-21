@@ -36,9 +36,12 @@ struct SpaceDescription {
   protocol::SpaceInfo info;
   std::vector<protocol::TopicInfo> topics;
   std::vector<std::string> commands;
-  // The commands a destructive action of its pages sends: the server refuses one whose args lack `"confirm": true`
-  // with confirm_required, and the space never sees it (§7.3, D173).
+  // The commands a destructive action of its pages sends, in a page's head or on a table's rows (D192): the server
+  // refuses one whose args lack `"confirm": true` with confirm_required, and the space never sees it (§7.3, D173).
   std::vector<std::string> destructive;
+  // The commands a table's row secret sends (D194): their value is never logged or echoed, and the server drops any
+  // body from their result, so that only ok or a refusal's words come back (invariant 5).
+  std::vector<std::string> secret;
   // The space's page data (space_pages), which the framework's own topic "pages" carries to a view that subscribes to
   // it: the server answers that sub itself, from this, and the space never sees it (D166, D169). Null: no such topic.
   protocol::Json pages;
@@ -59,6 +62,7 @@ bool confirmed(const SpaceDescription& description, std::string_view command, co
 struct CommandRef {
   std::uint64_t connection = 0;
   std::uint32_t id = 0;
+  bool secret = false;  // a row secret's command (D194): its result goes back without a body
 };
 
 struct SpaceEvent {

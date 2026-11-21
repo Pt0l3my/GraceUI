@@ -122,6 +122,103 @@ struct Cursor {
   }
 };
 
+// The parts protocol 1.2 adds (G34, D192 to D195), checked at registration as the page lint checks them: a table's row
+// actions and row secret, a form block, a text setting's choices from a topic.
+bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::Setting>& settings, std::string& why) {
+  const auto declared = [&](const std::string& command) {
+    return std::find(pages.commands.begin(), pages.commands.end(), command) != pages.commands.end();
+  };
+  const auto block_ok = [&](const protocol::Page& page, const protocol::PageBlock& block) {
+    const std::string where = page.id + ": ";
+    const bool table = block.kind == protocol::BlockKind::component && block.component == protocol::Component::table;
+    if ((block.row_actions || block.row_secret) && !table) {
+      why = where + "row actions and a row secret go on a table";
+      return false;
+    }
+    std::vector<std::string> ids;
+    for (const protocol::RowAction& action : block.row_actions.value_or(std::vector<protocol::RowAction>{})) {
+      if (action.label.empty() || !declared(action.command) ||
+          std::find(ids.begin(), ids.end(), action.id) != ids.end()) {
+        why = where + "row action " + action.id + " has no label, a command the space does not declare, or a twin";
+        return false;
+      }
+      if (action.tone == protocol::ActionTone::destructive && (!action.confirm || action.confirm->empty())) {
+        why = where + "a destructive row action without its confirm text";  // §7.3, D173, D192
+        return false;
+      }
+      ids.push_back(action.id);
+    }
+    if (block.row_secret && !declared(block.row_secret->command)) {
+      why = where + "a row secret's command is not one the space declares";
+      return false;
+    }
+    const bool form = block.kind == protocol::BlockKind::form;
+    if (form != (block.command.has_value() || block.fields.has_value() || block.submit.has_value())) {
+      why = where + "a form block, and only a form block, has a command, fields and a submit label";
+      return false;
+    }
+    if (form) {
+      const std::vector<protocol::FormField>& fields = block.fields.value_or(std::vector<protocol::FormField>{});
+      if (!block.command || !declared(*block.command) || fields.empty() || !block.submit || block.submit->empty() ||
+          block.keys || block.component || block.topic) {
+        why = where + "a form block has a declared command, one to four fields and a submit label, and nothing else";
+        return false;
+      }
+      std::vector<std::string> names;
+      for (const protocol::FormField& field : fields) {
+        if (field.label.empty() || field.max_ < 1 || field.max_ > 200 ||
+            std::find(names.begin(), names.end(), field.id) != names.end()) {
+          why = where + "form field " + field.id + " has no label, a twin, or a max outside 1 to 200";
+          return false;
+        }
+        names.push_back(field.id);
+      }
+    }
+    return true;
+  };
+  for (const protocol::Page& page : pages.pages) {
+    std::vector<const protocol::PageSection*> sections;
+    if (page.sections) {
+      for (const protocol::PageSection& section : *page.sections) {
+        sections.push_back(&section);
+      }
+    }
+    if (page.tabs) {
+      for (const protocol::PageTab& tab : *page.tabs) {
+        for (const protocol::PageSection& section : tab.sections) {
+          sections.push_back(&section);
+        }
+      }
+    }
+    for (const protocol::PageSection* section : sections) {
+      for (const protocol::PageBlock& block : section->blocks) {
+        if (!block_ok(page, block)) {
+          return false;
+        }
+      }
+      for (const protocol::PageBlock& block : section->advanced.value_or(std::vector<protocol::PageBlock>{})) {
+        if (!block_ok(page, block)) {
+          return false;
+        }
+      }
+    }
+  }
+  for (const protocol::Setting& setting : settings) {
+    if (!setting.choices_from) {
+      continue;
+    }
+    const std::string& topic = *setting.choices_from;
+    const auto found = std::find_if(pages.topics.begin(), pages.topics.end(),
+                                    [&](const protocol::TopicInfo& t) { return t.id == topic; });
+    if (setting.type != protocol::SettingType::text || setting.choices || found == pages.topics.end() ||
+        found->shape != protocol::TopicShape::state || topic == "settings" || topic == "space.state") {
+      why = setting.key + ": choices_from is on a text setting, naming a state topic of the space's own (D193)";
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 // ---- Loading and focus.
@@ -168,12 +265,21 @@ bool PageView::load(const protocol::SpacePages& pages, const protocol::SettingsD
       }
     }
   }
+  if (!check_parts(pages_, settings_, why)) {
+    return false;
+  }
   page_ = 0;
   tab_ = 0;
   scope_ = Scope::page;
   rebuild();
   focus_first_control();
   return true;
+}
+
+void PageView::set_changed(const std::vector<std::string>& keys) {
+  changed_.clear();
+  changed_.insert(keys.begin(), keys.end());
+  changed_known_ = true;
 }
 
 void PageView::set_inherited(const std::vector<protocol::InheritedValue>& inherited) {
@@ -351,10 +457,11 @@ void PageView::set_topic(std::string_view topic, const Json& body) {
     }
   }
   rebuild();
-  if (was.rfind("cell:", 0) == 0) {  // the same row, wherever it now is
+  if (scope_ == Scope::page) {  // the same element, wherever it now is, as rows come and go (D181, D192)
     for (std::size_t i = 0; i < focus_.size(); ++i) {
-      if (focus_[i].kind == FocusKind::cell && "cell:" + focus_[i].id == was) {
+      if (name_of(Scope::page, i) == was) {
         page_focus_ = i;
+        break;
       }
     }
   }
@@ -410,6 +517,76 @@ std::string PageView::empty_words(const protocol::PageBlock& block, bool publish
   return published && !own.empty() ? own : std::string("Nothing to show yet.");  // the space's words once it spoke (D186)
 }
 
+// A row secret's status in words (D194, D197): set, refused (the key was sent but the provider refused it), none (none
+// is needed), or else missing.
+static const char* secret_status_words(const std::string& status) {
+  return status == "set" ? "Set" : status == "refused" ? "Refused" : status == "none" ? "Not needed" : "Missing";
+}
+
+std::string PageView::row_action_id(const protocol::PageBlock& block, const Json& row, std::size_t r,
+                                    const protocol::RowAction& action) {
+  const std::string key = row.is_object() ? cell_words(row, action.key) : std::string();
+  return cell_base(block) + "/" + (key.empty() ? std::to_string(r) : key) + "/" + action.id;
+}
+
+Action PageView::row_action(const Focus& f) {
+  if (f.block == nullptr || !f.block->row_actions || f.sub >= f.block->row_actions->size() ||
+      !greyed_words(current().id).empty()) {
+    return {};  // a greyed page's row actions are inert, as its header's (D188)
+  }
+  const protocol::RowAction& a = (*f.block->row_actions)[f.sub];
+  const Json* table = table_of(*f.block);
+  if (table == nullptr || f.index >= (*table)["rows"].size()) {
+    return {};
+  }
+  const Json& row = (*table)["rows"][f.index];
+  const std::string asking = "row:" + f.id;
+  if ((a.confirm || a.tone == protocol::ActionTone::destructive) && confirming_ != asking) {
+    confirming_ = asking;  // its second press, as a header action's (§7.3, D173, D192)
+    return {};
+  }
+  confirming_.clear();
+  refusals_.erase(f.id);
+  Action action;
+  action.kind = Action::Kind::command;
+  action.command.space = pages_.space;
+  action.command.name = a.command;
+  action.command.args = Json::object({{a.key, row.is_object() && row.contains(a.key) ? row[a.key] : Json()}});
+  if (a.tone == protocol::ActionTone::destructive) {
+    action.command.args["confirm"] = true;
+  }
+  return action;
+}
+
+std::vector<protocol::Choice> PageView::live_choices(const protocol::Setting& s, bool& published) const {
+  std::vector<protocol::Choice> out;
+  published = false;
+  if (!s.choices_from) {
+    return out;
+  }
+  const auto found = topics_.find(*s.choices_from);
+  if (found == topics_.end() || !found->second.is_object()) {
+    return out;
+  }
+  published = true;
+  const Json& body = found->second;
+  if (!body.contains("choices") || !body["choices"].is_array()) {
+    return out;
+  }
+  for (const Json& choice : body["choices"]) {
+    const std::string value = choice.is_object() ? cell_words(choice, "value") : std::string();
+    if (value.empty() || value.size() > 200) {
+      continue;  // a value the store would refuse (D193)
+    }
+    const std::string label = cell_words(choice, "label");
+    out.push_back(protocol::Choice{value, label.empty() ? value : label});
+    if (out.size() >= 256) {
+      break;
+    }
+  }
+  return out;
+}
+
 std::string PageView::cell_base(const protocol::PageBlock& block) {
   const std::string field = prop_text(block, "field");
   return *block.topic + (field.empty() ? std::string() : "#" + field);
@@ -445,6 +622,24 @@ std::vector<std::string> PageView::component_topics() const {
     add(section.blocks);
     if (section.advanced) {
       add(*section.advanced);
+    }
+  }
+  // A picker's choices (D193), for every setting the page shows, homed here or a shortcut.
+  const auto pickers = [&](const std::vector<protocol::PageBlock>& blocks) {
+    for (const protocol::PageBlock& block : blocks) {
+      for (const std::string& key : block.keys.value_or(std::vector<std::string>{})) {
+        const auto at = by_key_.find(key);
+        if (at != by_key_.end() && settings_[at->second].choices_from &&
+            std::find(out.begin(), out.end(), *settings_[at->second].choices_from) == out.end()) {
+          out.push_back(*settings_[at->second].choices_from);
+        }
+      }
+    }
+  };
+  for (const protocol::PageSection& section : sections()) {
+    pickers(section.blocks);
+    if (section.advanced) {
+      pickers(*section.advanced);
     }
   }
   return out;
@@ -566,19 +761,24 @@ void PageView::rebuild() {
     const auto add_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
       for (const protocol::PageBlock& block : blocks) {
         if (const Json* table = table_of(block); table != nullptr) {
-          // A table with a switch column: each row's switch takes focus, by the row's key (D181).
+          // A table's rows: each row's switch, if it has a switch column (D181), then its row actions (D192), each a
+          // focus stop of its own, by the row's key.
+          const Json* sw = nullptr;
           for (const Json& column : (*table)["columns"]) {
-            const Json* sw = switch_of(column);
-            if (sw == nullptr) {
-              continue;
+            if ((sw = switch_of(column)) != nullptr) {
+              break;  // one switch column a table
             }
-            const std::string key = (*sw)["key"].get<std::string>();
-            for (std::size_t r = 0; r < (*table)["rows"].size(); ++r) {
-              const Json& row = (*table)["rows"][r];
-              const std::string id = row.is_object() ? cell_words(row, key) : std::string();
+          }
+          const std::size_t actions = block.row_actions ? block.row_actions->size() : 0;
+          for (std::size_t r = 0; r < (*table)["rows"].size(); ++r) {
+            const Json& row = (*table)["rows"][r];
+            if (sw != nullptr) {
+              const std::string id = row.is_object() ? cell_words(row, (*sw)["key"].get<std::string>()) : std::string();
               focus_.push_back({FocusKind::cell, cell_base(block) + "/" + (id.empty() ? std::to_string(r) : id), r});
             }
-            break;  // one switch column a table
+            for (std::size_t a = 0; a < actions; ++a) {
+              focus_.push_back({FocusKind::row_action, row_action_id(block, row, r, (*block.row_actions)[a]), r, &block, a});
+            }
           }
           continue;
         }
@@ -654,7 +854,7 @@ std::string PageView::name_of(Scope scope, std::size_t index) const {
     return "";
   }
   static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
-                                          "cell"};
+                                          "cell", "row"};
   const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -716,8 +916,17 @@ std::string PageView::format(std::string_view key, const Json& v) const {
       return "";
     case SettingType::secret:
       return v.is_string() && !v.get_ref<const std::string&>().empty() ? "Set" : "Missing";  // §4.2.4's words
-    case SettingType::key_name:
     case SettingType::text:
+      if (s->choices_from && v.is_string()) {
+        bool published = false;
+        for (const protocol::Choice& c : live_choices(*s, published)) {
+          if (c.value == v.get_ref<const std::string&>()) {
+            return c.label;
+          }
+        }
+      }
+      return v.is_string() ? v.get<std::string>() : "";  // a value not in the list is still shown (D193)
+    case SettingType::key_name:
       return v.is_string() ? v.get<std::string>() : "";
   }
   return "";
@@ -779,8 +988,24 @@ Action PageView::change(const Setting& s, int direction, bool shift) {
       }
       return set(s, Json(tri_value(s, (at + (direction > 0 ? 1 : 2)) % 3)));
     }
-    case SettingType::key_name:
     case SettingType::text:
+      if (s.choices_from) {
+        bool published = false;
+        const std::vector<protocol::Choice> choices = live_choices(s, published);
+        if (choices.empty()) {
+          return {};  // nothing to choose from yet (D193)
+        }
+        const std::size_t n = choices.size();
+        std::size_t next = direction > 0 ? 0 : n - 1;  // from a value not in the list: the first, or the last
+        for (std::size_t i = 0; i < n; ++i) {
+          if (v.is_string() && choices[i].value == v.get_ref<const std::string&>()) {
+            next = (i + (direction > 0 ? 1 : n - 1)) % n;
+          }
+        }
+        return set(s, Json(choices[next].value));
+      }
+      return {};
+    case SettingType::key_name:
     case SettingType::secret:
       return {};  // GraceUI's own text field and key capture come with the in-game menu (v0.6, D57); the browser edits them
   }
@@ -857,8 +1082,9 @@ Action PageView::pointer(const Pointer& in) {
   if (target.index >= focus_.size()) {
     return {};
   }
-  if (!confirming_.empty() && (focus_[target.index].kind != FocusKind::action ||
-                               focus_[target.index].id != confirming_)) {
+  const Focus& clicked = focus_[target.index];
+  if (!confirming_.empty() && !(clicked.kind == FocusKind::action && clicked.id == confirming_) &&
+      !(clicked.kind == FocusKind::row_action && "row:" + clicked.id == confirming_)) {
     confirming_.clear();  // a click elsewhere lets a destructive action's confirmation go, as any other key does
   }
   scope_ = Scope::page;
@@ -894,6 +1120,9 @@ Action PageView::pointer(const Pointer& in) {
         const auto& choices = st.choices.value_or(std::vector<protocol::Choice>{});
         return at < choices.size() ? set(st, Json(choices[at].value)) : Action{};
       }
+      if (st.type == SettingType::text && st.choices_from) {
+        return change(st, 1, false);  // a picker: the next choice (D193)
+      }
       return {};  // a key, a text, a secret: edited in the browser view until GraceUI's own field
     }
     case FocusKind::cell:
@@ -910,7 +1139,8 @@ Action PageView::pointer(const Pointer& in) {
 void PageView::refused(std::string_view key, std::string_view reason) {
   refusals_[std::string(key)] = std::string(reason);
   for (std::size_t i = 0; i < focus_.size(); ++i) {
-    if ((focus_[i].kind == FocusKind::setting || focus_[i].kind == FocusKind::cell) && focus_[i].id == key) {
+    if ((focus_[i].kind == FocusKind::setting || focus_[i].kind == FocusKind::cell ||
+         focus_[i].kind == FocusKind::row_action) && focus_[i].id == key) {
       scope_ = Scope::page;
       page_focus_ = i;
     }
@@ -1137,8 +1367,8 @@ Action PageView::input(const Input& in) {
       return {};
     case Key::left:
     case Key::right:
-      if (changeable != nullptr && changeable->type != SettingType::key_name && changeable->type != SettingType::text &&
-          changeable->type != SettingType::secret) {
+      if (changeable != nullptr && changeable->type != SettingType::key_name &&
+          (changeable->type != SettingType::text || changeable->choices_from) && changeable->type != SettingType::secret) {
         return change(*changeable, in.key == Key::right ? 1 : -1, in.shift);
       }
       if (f.kind == FocusKind::cell) {
@@ -1168,6 +1398,8 @@ Action PageView::input(const Input& in) {
       return {};
     case Key::activate:
       switch (f.kind) {
+        case FocusKind::row_action:
+          return row_action(f);
         case FocusKind::action: {
           const protocol::PageAction& a = (*current().actions)[f.index];
           if (!greyed_words(current().id).empty()) {
@@ -1478,6 +1710,17 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       y += std::round(8 * s);
       const auto draw_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
         for (const protocol::PageBlock& block : blocks) {
+          if (block.kind == protocol::BlockKind::form) {
+            // A form (D195): its fields are filled in the browser view until GraceUI has a text field of its own (§5.6).
+            std::string labels;
+            for (const protocol::FormField& field : block.fields.value_or(std::vector<protocol::FormField>{})) {
+              labels += (labels.empty() ? "" : ", ") + field.label;
+            }
+            c.text("Filled in the browser view: " + labels + ".", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
+                   content_w - 2 * card_pad, Colour::ink_mute);
+            y += row_h;
+            continue;
+          }
           if (block.kind == protocol::BlockKind::component) {
             const float inner_x = x0 + card_pad;
             const float inner_w = content_w - 2 * card_pad;
@@ -1605,6 +1848,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             // column's switch at the right, as a setting's.
             std::vector<std::string> text_columns;
             std::string switch_column;
+            std::string secret_label;  // a row secret's column (D194): its status in words, edited in the browser
             const Json* sw = nullptr;
             for (const Json& column : (*table)["columns"]) {
               if (!column.is_object() || !column.contains("id") || !column["id"].is_string()) {
@@ -1615,8 +1859,13 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 switch_column = column["id"].get<std::string>();
               } else {
                 text_columns.push_back(column["id"].get<std::string>());
+                if (block.row_secret && column["id"] == block.row_secret->column) {
+                  secret_label = cell_words(column, "label");
+                }
               }
             }
+            const std::vector<protocol::RowAction>& row_actions =
+                block.row_actions ? *block.row_actions : std::vector<protocol::RowAction>{};
             const Json& rows = (*table)["rows"];
             if (rows.empty()) {
               c.line(x0 + card_pad, y, content_w - 2 * card_pad, Colour::rule);
@@ -1641,20 +1890,55 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               const std::string label = text_columns.empty() ? std::string() : cell_words(line, text_columns[0]);
               std::string rest;
               for (std::size_t k = 1; k < text_columns.size(); ++k) {
-                const std::string words = cell_words(line, text_columns[k]);
+                std::string words = cell_words(line, text_columns[k]);
+                if (block.row_secret && text_columns[k] == block.row_secret->column) {
+                  words = (secret_label.empty() ? "" : secret_label + ": ") + secret_status_words(words);
+                }
                 if (!words.empty()) {
                   rest += (rest.empty() ? "" : "  ·  ") + words;
                 }
               }
               const float label_y = y + std::round((row_h - line_height(TypeRole::ui, s)) / 2);
               c.text(label, TypeRole::ui, row.x, label_y, row.w / 3 - std::round(12 * s), Colour::ink_hi);
-              const float rest_w = (sw != nullptr ? row.w - control_w : row.w) - row.w / 3 - std::round(12 * s);
+              // Its row actions (D192), right-aligned, the last at the row's end; a switch, if any, before them.
+              float right = row.right();
+              std::string row_refusal_id;
+              for (std::size_t a = row_actions.size(); a-- > 0;) {
+                const protocol::RowAction& act = row_actions[a];
+                const std::string id = row_action_id(block, line, r, act);
+                const bool asking = confirming_ == "row:" + id;
+                const std::string words = asking ? "Press again to confirm" : act.label;
+                const float w = c.width(words, TypeRole::ui_sm) + std::round(24 * s);
+                const Rect button{right - w, y + std::round((row_h - 28 * s) / 2), w, std::round(28 * s)};
+                const float rr = std::round(tokens::radius::control * s);
+                Colour ink = Colour::ink_hi;
+                if (act.tone == protocol::ActionTone::primary) {
+                  c.fill(button, Colour::gold, rr);
+                  ink = Colour::on_gold;
+                } else if (act.tone == protocol::ActionTone::destructive) {
+                  c.fill(button, Colour::rot_fill, rr);
+                } else {
+                  c.stroke(button, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), rr);
+                }
+                c.text(words, TypeRole::ui_sm, button.x + std::round(12 * s),
+                       button.y + std::round((button.h - line_height(TypeRole::ui_sm, s)) / 2), w, ink);
+                hit(button, Scope::page, focus_index(FocusKind::row_action, id));
+                if (page_focus(FocusKind::row_action, id)) {
+                  c.focused(button);
+                }
+                if (refusals_.count(id) != 0) {
+                  row_refusal_id = id;
+                }
+                right = button.x - std::round(12 * s);
+              }
+              const float actions_w = row.right() - right;
+              const float rest_w = (sw != nullptr ? row.w - control_w : row.w) - actions_w - row.w / 3 - std::round(12 * s);
               c.text(rest, TypeRole::ui_sm, row.x + row.w / 3,
                      y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2), rest_w, Colour::ink_mute);
               if (sw != nullptr) {
                 const std::string words = cell_words(line, switch_column);
                 const bool on = words == (*sw)["on"].get<std::string>();
-                const Rect control{row.right() - std::round(40 * s), y + std::round((row_h - 22 * s) / 2),
+                const Rect control{right - std::round(40 * s), y + std::round((row_h - 22 * s) / 2),
                                    std::round(40 * s), std::round(22 * s)};
                 const float word_w = c.width(words, TypeRole::ui_sm);
                 c.text(words, TypeRole::ui_sm, control.x - std::round(12 * s) - word_w,
@@ -1675,10 +1959,16 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 }
               }
               y += row_h;
-              if (refusal != refusals_.end()) {  // the space's reason, under its row (§5.7)
-                c.text(refusal->second, TypeRole::ui_sm, row.x, y - std::round(8 * s), row.w, Colour::rot);
+              const auto said = refusal != refusals_.end() ? refusal : refusals_.find(row_refusal_id);
+              if (said != refusals_.end()) {  // the space's reason, under its row (§5.7)
+                c.text(said->second, TypeRole::ui_sm, row.x, y - std::round(8 * s), row.w, Colour::rot);
                 y += std::round(line_height(TypeRole::ui_sm, s));
               }
+            }
+            if (!secret_label.empty()) {  // a row secret is set in the browser view until GraceUI's own field (§5.6)
+              c.text(secret_label + ": set in the browser view.", TypeRole::ui_sm, x0 + card_pad, y + std::round(8 * s),
+                     content_w - 2 * card_pad, Colour::ink_faint);
+              y += std::round(line_height(TypeRole::ui_sm, s) + 12 * s);
             }
             continue;
           }
@@ -1714,7 +2004,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             std::size_t segment_count = 0;
             const Json& v = value(key);
             const float label_y = y + std::round((row_h - line_height(TypeRole::ui, s)) / 2);
-            if (!shortcut && v != st.default_) {  // changed from its default: the lozenge
+            const bool changed = changed_known_ ? changed_.count(key) != 0 : v != st.default_;  // D198
+            if (!shortcut && changed) {  // changed from its default: the lozenge
               c.diamond(Rect{row.x - std::round(14 * s), label_y + std::round(7 * s), std::round(8 * s),
                              std::round(8 * s)},
                         Colour::gold_deep);
@@ -1735,7 +2026,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             }
             float line_y = y + row_h - std::round(8 * s);
             if (focused_row) {  // the help line opens on focus, and ends with the default (§4.7)
-              const std::string help = st.help + " Default: " + format(key, st.default_) + ".";
+              // Its default, unless it formats to nothing: then the space's help says it, if it must (D198).
+              const std::string fallback = format(key, st.default_);
+              const std::string help = fallback.empty() ? st.help : st.help + " Default: " + fallback + ".";
               c.text(help, TypeRole::ui_sm, row.x, line_y, row.w, Colour::ink_mute);
               line_y += line_height(TypeRole::ui_sm, s);
             }
@@ -1815,6 +2108,28 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 c.text(segments[i].first, TypeRole::ui_sm, seg.x + std::round((seg.w - lw) / 2),
                        seg.y + std::round((seg.h - line_height(TypeRole::ui_sm, s)) / 2), seg.w - std::round(8 * s),
                        segments[i].second ? Colour::gold_hi : Colour::ink_mute, alpha);
+              }
+            } else if (st.type == SettingType::text && st.choices_from) {
+              // A picker (D193): the chosen value's label in a field, ← and → at its ends while there are choices.
+              bool published = false;
+              const bool any = !live_choices(st, published).empty();
+              control = Rect{col.x, y + std::round((row_h - 28 * s) / 2), control_w, std::round(28 * s)};
+              c.fill(control, Colour::ground_well, r, alpha);
+              c.stroke(control, Colour::edge, edge, r, alpha);
+              const std::string shown = format(key, v);
+              const float pad = std::round(10 * s);
+              const float arrow_w = c.width("→", TypeRole::ui_sm);
+              c.text(shown, TypeRole::ui_sm, control.x + pad + (any ? arrow_w + pad : 0),
+                     control.y + std::round((control.h - line_height(TypeRole::ui_sm, s)) / 2),
+                     control.w - 2 * pad - (any ? 2 * (arrow_w + pad) : 0), Colour::ink_body, alpha);
+              if (any) {
+                const float ay = control.y + std::round((control.h - line_height(TypeRole::ui_sm, s)) / 2);
+                c.text("←", TypeRole::ui_sm, control.x + pad, ay, arrow_w + 1, Colour::ink_mute, alpha);
+                c.text("→", TypeRole::ui_sm, control.right() - pad - arrow_w, ay, arrow_w + 1, Colour::ink_mute, alpha);
+              } else {
+                const char* none = "Nothing to choose from yet";
+                c.text(none, TypeRole::ui_sm, row.x + label_w + std::round(12 * s), label_y + std::round(2 * s),
+                       row.w - control_w - label_w - std::round(48 * s), Colour::ink_faint);
               }
             } else {  // a key, a text, a secret: shown in a field; edited in the browser until GraceUI's own field
               const std::string shown = format(key, v);
@@ -1937,13 +2252,14 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         // Its home's control, and its link (D189).
         const Setting& st = settings_[f.index];
         const bool changes = !st.locked && st.availability != "later" && st.type != SettingType::key_name &&
-                             st.type != SettingType::text && st.type != SettingType::secret;
+                             (st.type != SettingType::text || st.choices_from) && st.type != SettingType::secret;
         hints = changes ? "← →  Change    Enter  Go to its page    Esc  Back" : "Enter  Go to its page    Esc  Back";
       } else if (f.kind == FocusKind::setting) {
         const Setting& st = settings_[f.index];
         hints = numeric(st.type) ? "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back"
                 : st.type == SettingType::bool_ ? "Enter  Toggle    R  Reset    Esc  Back"
-                : (st.type == SettingType::choice || st.type == SettingType::tri_state)
+                : (st.type == SettingType::choice || st.type == SettingType::tri_state ||
+                   (st.type == SettingType::text && st.choices_from))
                     ? "← →  Choose    R  Reset    Esc  Back"
                     : "Edited in the browser view    Esc  Back";
         if (st.locked) {
@@ -1951,6 +2267,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         }
       } else if (f.kind == FocusKind::cell) {
         hints = "Enter  Toggle    Esc  Back";  // a table's switch, as a setting's but with no default to reset to
+      } else if (f.kind == FocusKind::row_action) {
+        hints = confirming_ == "row:" + f.id ? "Enter  Confirm    Esc  Back" : "Enter  Press    Esc  Back";
       } else {
         hints = "Enter  Open    Esc  Back";
       }

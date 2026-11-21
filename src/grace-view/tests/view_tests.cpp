@@ -2,6 +2,7 @@
 // search, and the layout's structure dumps against golden files (§9.3); and two goldens the web view's tests read, every
 // page's rows in their focus order and every setting's formats and commands (D166). Set GRACE_UPDATE_GOLDEN=1 to write
 // them anew.
+#include <algorithm>
 #include <doctest/doctest.h>
 
 #include <cstdlib>
@@ -134,9 +135,12 @@ TEST_CASE("a locked setting does not change; a refusal returns focus with its re
 TEST_CASE("Page Up and Page Down cross categories in rail order") {
   PageView view = loaded("demo", "demo.behaviour");
   Action a = press(view, Key::next_page);
+  CHECK(a.page == "demo.keepers");
+  a = press(view, Key::next_page);
   CHECK(a.page == "demo.log");
   a = press(view, Key::previous_page);
-  CHECK(a.page == "demo.behaviour");
+  CHECK(a.page == "demo.keepers");
+  press(view, Key::previous_page);
   press(view, Key::previous_page);
   CHECK(view.page() == "demo.overview");
   CHECK(press(view, Key::previous_page).kind == Action::Kind::none);
@@ -868,4 +872,99 @@ TEST_CASE("a shortcut row's control in game (D189): ← → change its home's se
   CHECK(press(greyed, Key::right).kind == Action::Kind::none);
   press(greyed, Key::activate);
   CHECK(greyed.page() == "demo.behaviour");
+}
+
+// ---- G34 (D192 to D195): a table's row actions and row secret, a form, a picker whose choices come from a topic.
+
+namespace {
+
+const Json kKeepers = Json::parse(R"({"columns": [{"id": "name", "label": "Keeper"}, {"id": "post", "label": "Post"},
+  {"id": "ward", "label": "Ward word"}], "rows": [{"id": "k1", "name": "Orla Venn", "post": "North light", "ward": "set"},
+  {"id": "k2", "name": "Tamsin Reed", "post": "Harbour wall", "ward": ""},
+  {"id": "k3", "name": "Ada Marsh", "post": "Store room", "ward": "refused"},
+  {"id": "k4", "name": "Bran Teel", "post": "Lamp loft", "ward": "none"}]})");
+const Json kOils = Json::parse(R"({"choices": [{"value": "rapeseed", "label": "Rapeseed oil"},
+  {"value": "olive", "label": "Olive oil"}, {"value": "tallow", "label": "Tallow"}]})");
+
+}  // namespace
+
+TEST_CASE("a table's row actions: a focus stop each, a destructive one sent after its second press (D192)") {
+  PageView view = loaded("demo", "demo.keepers");
+  const auto topics = view.component_topics();
+  CHECK(std::find(topics.begin(), topics.end(), "lantern.keepers") != topics.end());
+  CHECK(std::find(topics.begin(), topics.end(), "lantern.oils") != topics.end());  // the picker's choices (D193)
+  view.set_topic("lantern.keepers", kKeepers);
+  for (int i = 0; i < 12 && view.focused() != "row:lantern.keepers/k1/dismiss"; ++i) {
+    press(view, Key::up);
+  }
+  CHECK(view.focused() == "row:lantern.keepers/k1/dismiss");
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // it asks first (§7.3, D173)
+  DisplayList asking;
+  view.layout(Viewport{}, test::fonts(), asking);
+  CHECK(asking.dump().find("Press again to confirm") != std::string::npos);
+  Action sent = press(view, Key::activate);
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.name == "keepers.dismiss");
+  CHECK(sent.command.args == Json::object({{"id", "k1"}, {"confirm", true}}));
+  // Another key lets the confirmation go; the next row's action is the next focus stop.
+  press(view, Key::activate);
+  press(view, Key::down);
+  CHECK(view.focused() == "row:lantern.keepers/k2/dismiss");
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);
+  // The space's refusal shows under its row.
+  view.refused("lantern.keepers/k2/dismiss", "Tamsin is on watch.");
+  DisplayList refused;
+  view.layout(Viewport{}, test::fonts(), refused);
+  CHECK(refused.dump().find("rot          ") != std::string::npos);
+  // A row secret's status in words, set in the browser view (D194); a form's fields likewise (D195).
+  CHECK(refused.dump().find("Ward word: Set") != std::string::npos);
+  CHECK(refused.dump().find("Ward word: Missing") != std::string::npos);
+  CHECK(refused.dump().find("Ward word: Refused") != std::string::npos);  // D197
+  CHECK(refused.dump().find("Ward word: Not needed") != std::string::npos);
+  CHECK(refused.dump().find("Ward word: set in the browser view.") != std::string::npos);
+  CHECK(refused.dump().find("Filled in the browser view: Name, Post.") != std::string::npos);
+}
+
+TEST_CASE("a picker: its choices from a topic, ← and → through them, its value kept when the list lacks it (D193)") {
+  PageView view = loaded("demo", "demo.keepers");
+  for (int i = 0; i < 12 && view.focused() != "setting:lantern.oil_kind"; ++i) {
+    press(view, Key::down);
+  }
+  CHECK(view.focused() == "setting:lantern.oil_kind");
+  CHECK(press(view, Key::right).kind == Action::Kind::none);  // nothing to choose from yet
+  DisplayList empty;
+  view.layout(Viewport{}, test::fonts(), empty);
+  CHECK(empty.dump().find("Nothing to choose from yet") != std::string::npos);
+  CHECK(view.format("lantern.oil_kind", Json("rapeseed")) == "rapeseed");
+  view.set_topic("lantern.oils", kOils);
+  CHECK(view.format("lantern.oil_kind", Json("rapeseed")) == "Rapeseed oil");
+  Action next = press(view, Key::right);
+  REQUIRE(next.kind == Action::Kind::command);
+  CHECK(next.command.args == Json::object({{"key", "lantern.oil_kind"}, {"value", "olive"}}));
+  Action back = press(view, Key::left);
+  CHECK(back.command.args["value"] == "rapeseed");
+  CHECK(press(view, Key::left).command.args["value"] == "tallow");  // round from the first
+  view.set_topic("lantern.oils", Json::parse(R"({"choices": [{"value": "olive", "label": "Olive oil"}]})"));
+  CHECK(view.format("lantern.oil_kind", Json("tallow")) == "tallow");  // not in the list: still shown as it is
+}
+
+TEST_CASE("the lozenge follows the space's changed keys once it says them; an empty default is not printed (D198)") {
+  PageView view = loaded("demo", "demo.keepers");
+  const auto lozenges = [&]() {  // the page's own rule draws one; a changed row one more
+    DisplayList list;
+    view.layout(Viewport{}, test::fonts(), list);
+    const std::string dump = list.dump();
+    std::size_t n = 0;
+    for (std::size_t at = dump.find("diamond gold.deep"); at != std::string::npos; at = dump.find("diamond gold.deep", at + 1)) {
+      ++n;
+    }
+    return n;
+  };
+  const std::size_t base = lozenges();
+  view.set_values(Json::object({{"lantern.oil_kind", "olive"}}));
+  CHECK(lozenges() == base + 1);  // a value off its default: changed, until the space says
+  view.set_changed({});
+  CHECK(lozenges() == base);      // the space says it is not
+  view.set_changed({"lantern.oil_kind"});
+  CHECK(lozenges() == base + 1);
 }

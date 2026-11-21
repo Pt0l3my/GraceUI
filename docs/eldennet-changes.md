@@ -948,3 +948,40 @@ Your `grace-dev --dump` goldens change where a page has a shortcut row (its cont
 2. **G35 (proposal 0005)**, as proposed: GraceUI resolves your chord, D-pad Up then View, at ABI 1.3 behind
    `has_cap("pad-chords")`. It is built for S4's second round, after your R1; until then `register_hotkey` answers
    `not_yet` for a chord, as today.
+
+## 41. G34 built: GraceUI 0.2.8, protocol 1.2 (2026-11-21, D192 to D196)
+
+ABI 1.2, unchanged. What your AI pages can now use, all optional, each checked at registration (a refusal names it):
+
+1. **A button on each row** (D192): on the table's component block in your page data, not in the topic's body as
+   proposal 0007 sketched (so that registration and the server know them): `"row_actions": [{"id": "remove", "label":
+   "Remove", "command": "providers.remove", "key": "id", "tone": "destructive", "confirm": "<the words its
+   confirmation shows>"}]`, 1 to 3 of them. A press sends `{"id": <the row's id>}`, with `"confirm": true` for a
+   destructive one; the server refuses a destructive row command without it. The command must be in your `commands`.
+2. **A picker** (D193): on a `text` setting, `"choices_from": "<a state topic you declare>"`, whose body is
+   `{"choices": [{"value": "...", "label": "..."}]}` (values 1 to 200 bytes). Both views watch it while the page shows
+   the setting; check at your entry point that a value is one of your choices. No `choices` beside it.
+3. **A key on each row** (D194): on the table's block, `"row_secret": {"column": "key", "command": "providers.key",
+   "key": "id"}`. The column's cells are its status, `"set"` or `""`, never the value. Saving sends `{"id": ...,
+   "value": "..."}` (empty clears it). The server drops any body from that command's result: answer ok, or refuse with
+   words that do not echo the value.
+4. **A small form** (D195): a block `{"kind": "form", "command": "providers.add", "fields": [{"id": "name", "label":
+   "Name", "max": 32}, {"id": "base_url", "label": "Base URL", "max": 200}], "submit": "Add"}`, 1 to 4 fields. It
+   sends every field as text; the browser clears them when you answer ok and keeps them under your words when you
+   refuse.
+
+In game: row buttons are focus stops after a row's switch (a destructive one asks for a second press); a row key's
+cell reads "Key: Set" or "Missing" with one line saying it is set in the browser view; a form reads "Filled in the
+browser view:" and its labels; a picker steps with ← and →. Your page data that uses them should say `"minor": 2`.
+When pairing comes, the commands of 1, 3 and 4 are the candidates to refuse from a paired device (proposal 0007 §5).
+
+## 42. Your three display gaps (2026-11-21, D197, D198; GraceUI 0.2.9)
+
+No change of the protocol (1.2) or the ABI (1.2).
+
+1. and 2. **A row secret's cell** may now also say `"refused"` (shown "Refused", in red, the field kept to type a new
+   one) or `"none"` ("Not needed", no field: a local server), beside `"set"` and `""` (D197). Still the status only.
+3. **The changed mark** follows your settings body's `changed` list in both views (D198): list a picker's key there only
+   when the player picked a model that differs from the preset's. A default that formats to nothing is no longer
+   printed ("Default: ." is gone); say "Default: the preset's model." in the setting's help if you want it said.
+

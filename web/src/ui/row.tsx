@@ -11,6 +11,7 @@ import { decimalsOf, formatValue, isNumeric, nextValue, roundHalfAway, sameJson,
 import { BROWSER_KEYS, LEAVES_CAPTURE, keyName } from "../model/keys.ts";
 import { pageById, parseLink } from "../model/layout.ts";
 import { GreyedContext, useSession } from "./context.ts";
+import { useTopic } from "./components.tsx";
 import { Lozenge, ResetMark, Warning } from "./icons.tsx";
 import { revealSetting } from "./navigate.ts";
 import { domId, found } from "./view-state.ts";
@@ -312,8 +313,50 @@ function KeyControl({ s, space, shown, labelId, helpId, disabled }: ControlProps
   );
 }
 
+// A picker (D193): a text setting whose choices the space publishes on a topic. The value stays shown even when the list
+// no longer has it; an empty list says so. The space checks that a value is one of its choices (invariant 3).
+function PickerControl({ s, space, shown, labelId, helpId, disabled }: ControlProps) {
+  const session = useSession();
+  const data = useTopic(space, s.choices_from);
+  const body = data?.kind === "state" ? data.body : undefined;
+  const raw = body !== undefined && Array.isArray(body.choices) ? body.choices : [];
+  const choices: { value: string; label: string }[] = [];
+  for (const c of raw) {
+    if (typeof c === "object" && c !== null && !Array.isArray(c) && typeof c.value === "string" && c.value !== "" &&
+        c.value.length <= 200 && choices.length < 256) {
+      choices.push({ value: c.value, label: typeof c.label === "string" && c.label !== "" ? c.label : c.value });
+    }
+  }
+  const value = typeof shown === "string" ? shown : "";
+  if (choices.length === 0) {
+    return (
+      <span class="picker picker--empty">
+        {value !== "" && <span class="picker__value">{value}</span>}
+        <span class="picker__none">Nothing to choose from yet</span>
+      </span>
+    );
+  }
+  const listed = choices.some((c) => c.value === value);
+  return (
+    <select class="field picker" value={value} aria-labelledby={labelId} aria-describedby={helpId} disabled={disabled}
+            data-control=""
+            onChange={(e) => {
+              const next = (e.currentTarget as HTMLSelectElement).value;
+              if (next !== value) {
+                session.set(space, s.key, next);
+              }
+            }}>
+      {!listed && value !== "" && <option value={value}>{value}</option>}
+      {choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+    </select>
+  );
+}
+
 function Control(props: ControlProps) {
   const { s } = props;
+  if (s.type === "text" && s.choices_from !== undefined) {
+    return <PickerControl {...props} />;
+  }
   if (s.type === "bool") {
     return <SwitchControl {...props} />;
   }
@@ -330,6 +373,12 @@ function Control(props: ControlProps) {
     return <KeyControl {...props} />;
   }
   return <TextControl {...props} />;
+}
+
+/** The help line ending with the default, unless the default formats to nothing (D198): then the space's help says it. */
+function helpWithDefault(s: Setting): string {
+  const fallback = formatValue(s, s.default);
+  return fallback === "" ? s.help : `${s.help} Default: ${fallback}.`;
 }
 
 /** One row, homed here (a setting) or elsewhere (a shortcut, which opens its home with the row focused). */
@@ -379,7 +428,7 @@ export function SettingRow({ space, settingKey, shortcut }: { space: string; set
               </button>
             )}
           </div>
-          <p id={helpId} class="row__help">{s.help} Default: {formatValue(s, s.default)}.</p>
+          <p id={helpId} class="row__help">{helpWithDefault(s)}</p>
           {refusal && (
             <p class="row__refusal" role="alert"><Warning /> {refusal}</p>
           )}
@@ -390,7 +439,9 @@ export function SettingRow({ space, settingKey, shortcut }: { space: string; set
       </div>
     );
   }
-  const changed = !sameJson(shown, s.default);
+  // The space's own changed keys once its settings body has said them (D198), else a value off its default.
+  const said = session.space(space)?.settings.value?.changed;
+  const changed = Array.isArray(said) ? said.includes(s.key) : !sameJson(shown, s.default);
   const later = s.availability === "later";
   const disabled = s.locked || later || greyed;
   const badge = availabilityBadge(s.availability, (key) => session.shown(space, key),
@@ -434,7 +485,7 @@ export function SettingRow({ space, settingKey, shortcut }: { space: string; set
           {badge && <span class="badge badge--availability">{badge}</span>}
           {effect && <span class="row__effect">{effect}</span>}
         </div>
-        <p id={helpId} class="row__help">{s.help} Default: {formatValue(s, s.default)}.</p>
+        <p id={helpId} class="row__help">{helpWithDefault(s)}</p>
         {edit && (
           <p class="row__pending" role="status"><span class="dots" aria-hidden="true">···</span> Saving…</p>
         )}

@@ -234,7 +234,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       await page.keyboard.press("q");
       assert.equal((await page.locator("[role=tab][aria-selected=true]").textContent())?.trim(), "Light");
       await page.keyboard.press("PageDown");
-      await page.locator("main[data-page='demo.log']").waitFor();
+      await page.locator("main[data-page='demo.keepers']").waitFor();
       await page.keyboard.press("PageUp");
       await page.locator("main[data-page='demo.behaviour']").waitFor();
       // The help dialog: opened from its mark, closed by Esc, focus back on the mark.
@@ -340,6 +340,77 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.deepEqual(sent()[1]?.args, { id: "quiet-camp", on: true });
     } finally {
       host.refuse.delete("mods.notices");
+      await close();
+    }
+  });
+
+  test("proposal 0007 in the browser: a row's action asks first, a row's secret is sent once and kept nowhere, a " +
+       "form sends its fields, a picker offers the space's choices (D192 to D195)", async () => {
+    const { page, close } = await fresh();
+    const named = (name: string) => () => host.received.filter((f) => f.t === "cmd" && f.name === name);
+    const settle = async (got: () => unknown[], n: number) => {
+      for (let i = 0; i < 40 && got().length < n; ++i) {
+        await page.waitForTimeout(50);
+      }
+    };
+    try {
+      await openFromRail(page, "demo", "demo.keepers");
+      // A row action: a destructive one opens the confirmation; Cancel sends nothing; its button sends the row's key.
+      const dismiss = named("keepers.dismiss");
+      const first = page.locator("[data-row-action='dismiss']").first();
+      assert.equal(await first.getAttribute("aria-label"), "Dismiss: Orla Venn");
+      await first.click();
+      await page.locator("dialog[open]").waitFor();
+      assert.match((await page.locator("dialog[open] .prose").textContent()) ?? "", /leaves the roster/);
+      await page.locator("dialog[open] .button--secondary").click();
+      await page.waitForTimeout(100);
+      assert.equal(dismiss().length, 0);
+      await first.click();
+      await page.locator("dialog[open] [data-confirm='dismiss']").click();
+      await settle(dismiss, 1);
+      assert.deepEqual(dismiss()[0]?.args, { id: "k1", confirm: true });
+      // A row secret: its status in words, the value sent once, the field cleared, nothing kept (invariant 5).
+      const ward = named("keepers.ward");
+      const cells = page.locator(".table__secret");
+      assert.match((await cells.nth(0).textContent()) ?? "", /Set/);
+      assert.match((await cells.nth(1).textContent()) ?? "", /Missing/);
+      assert.match((await cells.nth(2).textContent()) ?? "", /Not needed/);  // a row that needs none (D197)
+      assert.equal(await cells.nth(2).locator("input").count(), 0);
+      const field = cells.nth(1).locator("input");
+      await field.fill("an-invented-word");
+      await field.press("Enter");
+      await settle(ward, 1);
+      assert.deepEqual(ward()[0]?.args, { id: "k2", value: "an-invented-word" });
+      assert.equal(await field.inputValue(), "");
+      assert.equal((await page.content()).includes("an-invented-word"), false);
+      const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
+      assert.equal(stored.includes("an-invented-word"), false);
+      // A form: its fields sent together, cleared once accepted; a refusal's words under it, the fields kept.
+      const hire = named("keepers.hire");
+      const inputs = page.locator(".form input");
+      await inputs.nth(0).fill("Wren Halloway");
+      await inputs.nth(1).fill("South jetty");
+      await page.locator("[data-form='keepers.hire']").click();
+      await settle(hire, 1);
+      assert.deepEqual(hire()[0]?.args, { name: "Wren Halloway", post: "South jetty" });
+      await page.waitForFunction(() => (document.querySelector<HTMLInputElement>(".form input")?.value ?? "x") === "");
+      host.refuse.set("keepers.hire", "invalid_value");
+      await inputs.nth(0).fill("Wren Halloway");
+      await page.locator("[data-form='keepers.hire']").click();
+      await page.locator(".form .row__refusal[role=alert]").waitFor();
+      assert.equal(await inputs.nth(0).inputValue(), "Wren Halloway");
+      // A picker: the space's choices, its value one of them; a choice sends settings.set.
+      const picker = page.locator("select.picker");
+      assert.deepEqual(await picker.locator("option").allTextContents(), ["Rapeseed oil", "Olive oil", "Tallow"]);
+      assert.equal(await picker.inputValue(), "rapeseed");
+      await picker.selectOption("olive");
+      const set = () => host.received.filter((f) => f.t === "cmd" && f.name === "settings.set" &&
+                                                (f.args as { key?: string } | undefined)?.key === "lantern.oil_kind");
+      await settle(set, 1);
+      assert.deepEqual(set()[0]?.args, { key: "lantern.oil_kind", value: "olive" });
+      assert.deepEqual(await violations(page), []);
+    } finally {
+      host.refuse.delete("keepers.hire");
       await close();
     }
   });

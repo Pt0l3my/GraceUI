@@ -731,7 +731,8 @@ that marking (1), (3) and (4)'s commands as candidates for the sensitive list is
 **Decision (2026-11-21).** All four, as recommended, with (2) (a): `choices_from` on a string setting, its choices
 supplied by the mod, which checks the value at its own entry point. The owner decided after a picture explainer of the
 decisions waiting (the AI pages as built, and the four parts as mock-ups), and passed the answer through EldenNet's
-session, which recorded its side as its O95. To be built in GraceUI 0.2.8.
+session, which recorded its side as its O95. Built as D192 to D196 in GraceUI 0.2.8 (protocol 1.2), the row action and
+the row secret declared in the page data rather than in the topic's body (D192).
 
 **Owner's words.** "I am fine with everything you and grace done so far, so that's approved." (relayed by EldenNet's session, 2026-11-21); and to GraceUI's
 session, of the explainer: "That looks fine."

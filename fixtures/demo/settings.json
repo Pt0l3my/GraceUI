@@ -1,7 +1,7 @@
 {
   "schema": {
     "number": 1,
-    "hash": "823a58aeb0307df3"
+    "hash": "2ebf66894211f51d"
   },
   "settings": [
     {
@@ -213,6 +213,22 @@
       "effect": "now",
       "availability": "later",
       "locked": true
+    },
+    {
+      "key": "lantern.oil_kind",
+      "type": "text",
+      "default": "rapeseed",
+      "choices_from": "lantern.oils",
+      "label": "Oil",
+      "help": "What the lantern burns, from the oils in the store.",
+      "synonyms": [
+        "fuel",
+        "oil"
+      ],
+      "home": "demo.keepers",
+      "effect": "next_moment",
+      "availability": "live",
+      "locked": false
     }
   ]
 }

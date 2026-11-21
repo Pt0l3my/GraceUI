@@ -160,6 +160,43 @@ class Seeded(unittest.TestCase):
         del page(sp, "demo.log")["actions"][0]["confirm"]
         self.expect("destructive action clear has no confirmation", sp, desc, fx)
 
+    def test_rows_forms_and_choices(self):  # G34, D192 to D195
+        def keepers(sp):
+            return page(sp, "demo.keepers")["sections"]
+        sp, desc, fx = demo()
+        self.assertEqual(failures(sp, desc, fx), [])
+        sp, desc, fx = demo()
+        del keepers(sp)[0]["blocks"][0]["row_actions"][0]["confirm"]
+        self.expect("destructive row action dismiss has no confirmation", sp, desc, fx)
+        sp, desc, fx = demo()
+        keepers(sp)[0]["blocks"][0]["row_actions"][0]["command"] = "keepers.sack"
+        self.expect("row action dismiss has a label and sends a command of the space", sp, desc, fx)
+        sp, desc, fx = demo()
+        keepers(sp)[0]["blocks"][0]["row_secret"]["command"] = "keepers.whisper"
+        self.expect("the row secret sends keepers.whisper", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["sections"][0]["blocks"][0]["row_actions"] = \
+            keepers(sp)[0]["blocks"][0]["row_actions"]
+        self.expect("row actions and a row secret go on a table", sp, desc, fx)
+        sp, desc, fx = demo()
+        keepers(sp)[1]["blocks"][0]["fields"] = []
+        self.expect("a form block has a declared command, one to four fields", sp, desc, fx)
+        sp, desc, fx = demo()
+        keepers(sp)[1]["blocks"][0]["fields"][1]["max"] = 201
+        self.expect("form field post has a label and a max of 1 to 200", sp, desc, fx)
+        sp, desc, fx = demo()
+        keepers(sp)[2]["blocks"][0]["submit"] = "Go"
+        self.expect("command, fields and submit belong to a form block", sp, desc, fx)
+        sp, desc, fx = demo()
+        setting(desc, "lantern.oil_kind")["choices_from"] = "lantern.log"
+        self.expect("choices_from is on a text setting, naming a state topic", sp, desc, fx)
+        sp, desc, fx = demo()
+        setting(desc, "lantern.keeper")["choices_from"] = "lantern.oils"
+        self.assertEqual([f for f in failures(sp, desc, fx) if "choices_from" in f], [])
+        sp, desc, fx = demo()
+        setting(desc, "lantern.wicks")["choices_from"] = "lantern.oils"
+        self.expect("choices_from is on a text setting", sp, desc, fx)
+
     def test_setting_descriptions(self):
         cases = [
             ("lantern.oil_token", "default", "hunter2", "a secret's default is empty"),

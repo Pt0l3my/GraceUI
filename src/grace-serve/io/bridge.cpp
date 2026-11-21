@@ -595,7 +595,9 @@ void Engine::command(Connection& c, protocol::Cmd& cmd) {
       event.kind = SpaceEvent::Kind::command;
       event.command = cmd.name;
       event.args = std::move(cmd.args);
-      event.reply = CommandRef{c.serial, cmd.id};
+      event.reply = CommandRef{c.serial, cmd.id,
+                               std::find(port->description.secret.begin(), port->description.secret.end(), cmd.name) !=
+                                   port->description.secret.end()};
       port->commands.push_back(std::move(event));
     }
   }

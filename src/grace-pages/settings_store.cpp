@@ -65,6 +65,7 @@ bool key_name(std::string_view text) {
 }
 
 constexpr std::size_t kTextMax = 1024;  // settings.set's value, as the protocol bounds it
+constexpr std::size_t kChoiceMax = 200;  // a value picked from a topic's choices (D193)
 
 }  // namespace
 
@@ -131,6 +132,10 @@ bool valid_value(const protocol::Setting& s, const Json& v, std::string& why) {
     case SettingType::secret:
       if (!v.is_string() || v.get_ref<const std::string&>().size() > kTextMax) {
         why = "not a text of at most 1024 bytes";
+        return false;
+      }
+      if (s.choices_from && v.get_ref<const std::string&>().size() > kChoiceMax) {
+        why = "not a choice's value of at most 200 bytes";  // the space checks it is one of its choices (D193)
         return false;
       }
       return true;

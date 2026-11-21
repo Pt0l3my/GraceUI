@@ -11,3 +11,4 @@ demo demo.behaviour#timing: setting:lantern.gap_s setting:lantern.wicks setting:
 demo demo.behaviour#keeper: setting:lantern.keeper setting:lantern.trim_key setting:lantern.oil_token
 demo demo.log:
 demo demo.festival: setting:lantern.festival
+demo demo.keepers: setting:lantern.oil_kind

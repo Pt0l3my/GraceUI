@@ -94,6 +94,9 @@ class PageView {
   bool load(const protocol::SpacePages& pages, const protocol::SettingsDescription& settings, std::string& why);
   // The settings topic's values (an object of key to value); a key not in it shows its default.
   void set_values(const protocol::Json& values);
+  // The keys the space says are changed from their defaults (the settings body's `changed`, D198): the lozenge follows
+  // them. Until a space has said, a row is changed when its value differs from its default.
+  void set_changed(const std::vector<std::string>& keys);
   // What each inherit tri-state on inherit resolves to (the settings body's `inherited`, D163), shown faint beside it.
   void set_inherited(const std::vector<protocol::InheritedValue>& inherited);
   // The increment the space runs ("0.2", as its registration names it): a page of a later increment is absent, from the
@@ -164,11 +167,14 @@ class PageView {
   std::string availability_badge(const protocol::Setting& setting) const;
 
  private:
-  enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related, cell };
+  enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related, cell, row_action };
   struct Focus {
     FocusKind kind;
-    std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key
-    std::size_t index;  // into page().actions, tabs, sections; a setting's index; a cell's row
+    std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
+                        // row action's topic/key/action
+    std::size_t index;  // into page().actions, tabs, sections; a setting's index; a cell's or a row action's row
+    const protocol::PageBlock* block = nullptr;  // a row action's table (D192)
+    std::size_t sub = 0;                         // a row action's index in its table's row_actions
   };
   struct RailEntry {
     enum class Kind : std::uint8_t { category, page, head, foot, switcher };
@@ -199,6 +205,13 @@ class PageView {
   std::string empty_words(const protocol::PageBlock& block, bool published) const;
   // A table's cells' ids: its topic, and its field after '#' (D185).
   static std::string cell_base(const protocol::PageBlock& block);
+  // A row action's focus id: its table's cell base, the row's key (or its index) and the action's id (D192).
+  static std::string row_action_id(const protocol::PageBlock& block, const protocol::Json& row, std::size_t r,
+                                   const protocol::RowAction& action);
+  Action row_action(const Focus& f);
+  // A text setting's choices from its topic (D193): each {value, label} it publishes, at most 256; `published` once
+  // the topic has a state.
+  std::vector<protocol::Choice> live_choices(const protocol::Setting& s, bool& published) const;
   // A page greyed by its space (D188): the space's words for it, or empty if it is usable.
   std::string greyed_words(std::string_view page_id) const;
   bool greyed(const protocol::Setting& setting) const;
@@ -223,6 +236,8 @@ class PageView {
   std::map<std::string, std::size_t, std::less<>> by_key_;
   protocol::Json values_ = protocol::Json::object();
   std::map<std::string, std::string, std::less<>> refusals_;
+  std::set<std::string, std::less<>> changed_;  // the space's own changed keys (D198)
+  bool changed_known_ = false;
   std::map<std::string, protocol::InheritedValue, std::less<>> inherited_;
   std::map<std::string, protocol::Json, std::less<>> topics_;  // components' topic bodies (D181)
   std::map<std::string, std::string, std::less<>> greyed_;    // space.state's greyed pages and their words (D188)
