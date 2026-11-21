@@ -1410,6 +1410,58 @@ ul, ol {
   margin: var(--space-8) 0 0;
 }
 
+/* A table's row actions (D192), at the row's end, and a row secret's cell (D194). */
+.table .table__actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.table__actions .button + .button {
+  margin-left: var(--space-8);
+}
+
+.table .table__secret {
+  min-width: 18rem;
+}
+
+.field--small {
+  max-width: 14rem;
+}
+
+/* A small form (D195): its fields as rows, its button under them. */
+.form {
+  display: grid;
+  gap: 0;
+}
+
+.form__actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--space-12);
+}
+
+/* A picker (D193): a list of the space's choices; while it has none, the value and a faint line. */
+.picker {
+  cursor: pointer;
+}
+
+.picker--empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.picker__value {
+  color: var(--ink-body);
+}
+
+.picker__none {
+  color: var(--ink-mute);
+  font-size: var(--type-ui-sm-size);
+}
+
 .table .num {
   text-align: right;
 }

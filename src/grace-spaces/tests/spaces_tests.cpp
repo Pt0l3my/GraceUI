@@ -386,8 +386,8 @@ TEST_CASE("the menu's side, with no server: the space listed, a watch, its state
   REQUIRE(listed.size() == 1);
   CHECK(listed[0].id == "demo");
   CHECK(listed[0].name == "Demo space");
-  CHECK(listed[0].pages->pages.size() == 4);
-  CHECK(listed[0].settings->settings.size() == 12);
+  CHECK(listed[0].pages->pages.size() == 5);
+  CHECK(listed[0].settings->settings.size() == 13);
 
   registry.game_watch("demo", "settings", true);
   registry.game_watch("demo", "settings", true);  // twice: still one watch, one event
@@ -519,4 +519,110 @@ TEST_CASE("the menu's command is held to the server's rules: declared, and a des
   CHECK(results[0].result.error == protocol::ErrorCode::unknown_command);
   CHECK(results[1].ticket == unconfirmed);
   CHECK(results[1].result.error == protocol::ErrorCode::confirm_required);
+}
+
+TEST_CASE("G34's parts are checked at registration: row actions, a row secret, a form, choices from a topic") {
+  const Json demo = Json::parse(demo_pages());
+  const Json described = Json::parse(demo_settings());
+  // The demo space's Keepers page uses all four: its first section's table, its second's form.
+  const auto keepers = [](Json& pages) -> Json& {
+    for (Json& page : pages["pages"]) {
+      if (page["id"] == "demo.keepers") {
+        return page["sections"];
+      }
+    }
+    FAIL("no demo.keepers");
+    return pages;
+  };
+  const auto refused = [&](Json pages, Json settings, const std::string& words) {
+    spaces::Registry registry;
+    std::string why;
+    CHECK(registry.add(kMod, "demo", demo_registration(pages.dump(), settings.dump()), why) == Status::refused);
+    CHECK_MESSAGE(why.find(words) != std::string::npos, why);
+  };
+  {
+    spaces::Registry registry;
+    std::string why;
+    CHECK(registry.add(kMod, "demo", demo_registration(demo.dump(), described.dump()), why) == Status::ok);
+  }
+  Json pages = demo;
+  keepers(pages)[0]["blocks"][0]["row_actions"][0].erase("confirm");
+  refused(pages, described, "a destructive row action without its confirm text");
+  pages = demo;
+  keepers(pages)[0]["blocks"][0]["row_actions"][0]["command"] = "keepers.sack";
+  refused(pages, described, "a command the space does not declare");
+  pages = demo;
+  keepers(pages)[0]["blocks"][0]["row_secret"]["command"] = "keepers.whisper";
+  refused(pages, described, "a row secret's command is not one the space declares");
+  pages = demo;
+  keepers(pages)[0]["blocks"][0]["component"] = "stat_tiles";
+  refused(pages, described, "row actions and a row secret go on a table");
+  pages = demo;
+  keepers(pages)[1]["blocks"][0]["fields"][0]["max"] = 201;
+  refused(pages, described, "a max outside 1 to 200");
+  pages = demo;
+  keepers(pages)[1]["blocks"][0].erase("submit");
+  refused(pages, described, "a form block has a declared command, one to four fields and a submit label");
+  pages = demo;
+  keepers(pages)[2]["blocks"][0]["command"] = "keepers.hire";
+  refused(pages, described, "a form block, and only a form block");
+  Json settings = described;
+  for (Json& s : settings["settings"]) {
+    if (s["key"] == "lantern.oil_kind") {
+      s["choices_from"] = "lantern.log";  // a stream
+    }
+  }
+  refused(demo, settings, "choices_from is on a text setting, naming a state topic");
+}
+
+TEST_CASE("a destructive row action is held to its confirmation from the menu too (D192)") {
+  spaces::Registry registry;
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(demo_pages(), demo_settings(), spaces::kViewGame), why) ==
+          Status::ok);
+  std::uint64_t unconfirmed = 0;
+  std::uint64_t confirmed = 0;
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 1, "keepers.dismiss", Json::object({{"id", "k1"}})},
+                                unconfirmed));
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 2, "keepers.dismiss",
+                                                      Json::object({{"id", "k1"}, {"confirm", true}})}, confirmed));
+  const Polled command = poll(registry);
+  REQUIRE(command.kind == EventKind::command);
+  CHECK(command.reply == confirmed);
+  const auto results = registry.take_game_results();
+  REQUIRE(results.size() == 1);
+  CHECK(results[0].result.error == protocol::ErrorCode::confirm_required);
+}
+
+TEST_CASE("a row secret's command reaches its space; its result comes back with no body (D194, invariant 5)") {
+  Fixture fixture(no_spaces());
+  REQUIRE(fixture.started == serve::StartResult::ok);
+  spaces::Registry registry;
+  registry.attach(fixture.server);
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(demo_pages(), demo_settings()), why) == Status::ok);
+  REQUIRE(fixture.wait_files());
+  auto view = fixture.join(nullptr);
+  REQUIRE(view != nullptr);
+  REQUIRE(view->send_json(frame("cmd", {{"space", "demo"}, {"id", 5}, {"name", "keepers.ward"},
+                                        {"args", {{"id", "k2"}, {"value", "invented-word"}}}})));
+  const Polled command = wait_event(registry);
+  REQUIRE(command.kind == EventKind::command);
+  CHECK(Json::parse(command.frame)["args"]["value"] == "invented-word");  // the space alone sees it
+  CHECK(registry.answer(kMod, command.reply,
+                        R"({"v":1,"t":"result","space":"demo","id":5,"ok":true,"body":{"echo":"invented-word"}})",
+                        why) == Status::ok);
+  const auto result = view->next_of("result");
+  REQUIRE(result);
+  CHECK((*result)["ok"] == true);
+  CHECK_FALSE(result->contains("body"));
+  // Another command's body is passed as before.
+  REQUIRE(view->send_json(frame("cmd", {{"space", "demo"}, {"id", 6}, {"name", "lantern.trim"}, {"args", Json::object()}})));
+  const Polled trim = wait_event(registry);
+  REQUIRE(trim.kind == EventKind::command);
+  CHECK(registry.answer(kMod, trim.reply, R"({"v":1,"t":"result","space":"demo","id":6,"ok":true,"body":{"trimmed":1}})",
+                        why) == Status::ok);
+  const auto kept = view->next_of("result");
+  REQUIRE(kept);
+  CHECK((*kept)["body"]["trimmed"] == 1);
 }

@@ -56,7 +56,7 @@ TRI_THIRDS = ("auto", "inherit")
 AVAILABILITY = re.compile(r"live|later|inert|check:[a-z0-9._-]{1,48}|version:\d+\.\d+|requires:[a-z0-9._/-]{1,64}")
 PAGE_FIELDS = ("id", "category", "name", "description", "help", "related", "increment", "tag", "actions", "tabs",
                "sections")
-SETTING_FIELDS = ("key", "type", "default", "min", "max", "step", "unit", "choices", "third", "label", "help", "synonyms",
+SETTING_FIELDS = ("key", "type", "default", "min", "max", "step", "unit", "choices", "choices_from", "third", "label", "help", "synonyms",
                   "home", "effect", "availability", "locked")
 
 
@@ -225,6 +225,22 @@ def lint(space_pages, description, fixtures, known_spaces):
             for block in section["blocks"] + section.get("advanced", []):
                 kind = block["kind"]
                 bwhere = f"{where}, section {section['id']}"
+                if kind != "form" and any(k in block for k in ("command", "fields", "submit")):
+                    failures.append(f"{bwhere}: command, fields and submit belong to a form block (D195)")
+                if (("row_actions" in block or "row_secret" in block) and
+                        (kind != "component" or block.get("component") != "table")):
+                    failures.append(f"{bwhere}: row actions and a row secret go on a table (D192, D194)")
+                if kind == "form":
+                    fields = block.get("fields") or []
+                    if (block.get("command") not in commands or not 1 <= len(fields) <= 4 or
+                            not block.get("submit") or any(k in block for k in ("keys", "component", "topic"))):
+                        failures.append(f"{bwhere}: a form block has a declared command, one to four fields and a "
+                                        "submit label, and nothing else (D195)")
+                    unique("form field", [f["id"] for f in fields], bwhere)
+                    for f in fields:
+                        if not f.get("label") or not 1 <= f.get("max", 0) <= 200:
+                            failures.append(f"{bwhere}: form field {f['id']} has a label and a max of 1 to 200")
+                    continue
                 if kind in ("settings", "shortcuts"):
                     if not block.get("keys") or "component" in block or "topic" in block:
                         failures.append(f"{bwhere}: a {kind} block has keys alone")
@@ -263,8 +279,25 @@ def lint(space_pages, description, fixtures, known_spaces):
                     if "newest_first" in props and (component != "log_tail" or
                                                     not isinstance(props["newest_first"], bool)):
                         failures.append(f"{bwhere}: props.newest_first is a boolean on a log tail")
+                    unique("row action", [a["id"] for a in block.get("row_actions", [])], bwhere)
+                    for action in block.get("row_actions", []):
+                        if action["command"] not in commands or not action["label"]:
+                            failures.append(f"{bwhere}: row action {action['id']} has a label and sends a command "
+                                            "of the space")
+                        if action["tone"] == "destructive" and not action.get("confirm"):
+                            failures.append(f"{bwhere}: destructive row action {action['id']} has no confirmation")
+                    if "row_secret" in block and block["row_secret"]["command"] not in commands:
+                        failures.append(f"{bwhere}: the row secret sends {block['row_secret']['command']}, "
+                                        "not a command of the space")
     for key, s in settings.items():
         lint_setting(space, s, failures)
+        source = s.get("choices_from")
+        if source is not None and (s["type"] != "text" or "choices" in s or source not in topics or
+                                   topics[source]["shape"] != "state" or source in ("settings", SPACE_STATE)):
+            failures.append(f"{space}: setting {key}: choices_from is on a text setting, naming a state topic of "
+                            "the space's own (D193)")
+        if source is not None and len(str(s["default"]).encode("utf-8")) > 200:
+            failures.append(f"{space}: setting {key}: a picked choice is at most 200 bytes")
         if s["home"] not in pages:
             failures.append(f"{space}: setting {key} is homed on {s['home']}, which is not a page")
         found = homed.get(key, [])

@@ -1,4 +1,22 @@
 {
+  "lantern.keepers": {
+    "columns": [
+      {"id": "name", "label": "Keeper"},
+      {"id": "post", "label": "Post"},
+      {"id": "ward", "label": "Ward word"}
+    ],
+    "rows": [
+      {"id": "k1", "name": "Orla Venn", "post": "North light", "ward": "set"},
+      {"id": "k2", "name": "Tamsin Reed", "post": "Harbour wall", "ward": ""}
+    ]
+  },
+  "lantern.oils": {
+    "choices": [
+      {"value": "rapeseed", "label": "Rapeseed oil"},
+      {"value": "olive", "label": "Olive oil"},
+      {"value": "tallow", "label": "Tallow"}
+    ]
+  },
   "lantern.status": {
     "tiles": [
       {"label": "Flame", "value": "Steady"},

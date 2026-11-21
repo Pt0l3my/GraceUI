@@ -60,13 +60,39 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
   description.info.settings_schema = settings.schema;
   description.topics = pages.topics;
   description.commands = pages.commands;
+  const auto add = [](std::vector<std::string>& list, const std::string& command) {
+    if (std::find(list.begin(), list.end(), command) == list.end()) {
+      list.push_back(command);
+    }
+  };
+  const auto blocks_of = [&](const std::vector<protocol::PageSection>& sections) {
+    for (const protocol::PageSection& section : sections) {
+      for (const auto* blocks : {&section.blocks, section.advanced ? &*section.advanced : nullptr}) {
+        if (blocks == nullptr) {
+          continue;
+        }
+        for (const protocol::PageBlock& block : *blocks) {
+          for (const protocol::RowAction& action : block.row_actions.value_or(std::vector<protocol::RowAction>{})) {
+            if (action.tone == protocol::ActionTone::destructive) {
+              add(description.destructive, action.command);
+            }
+          }
+          if (block.row_secret) {
+            add(description.secret, block.row_secret->command);
+          }
+        }
+      }
+    }
+  };
   for (const protocol::Page& page : pages.pages) {
     for (const protocol::PageAction& action : page.actions.value_or(std::vector<protocol::PageAction>{})) {
-      if (action.tone == protocol::ActionTone::destructive &&
-          std::find(description.destructive.begin(), description.destructive.end(), action.command) ==
-              description.destructive.end()) {
-        description.destructive.push_back(action.command);
+      if (action.tone == protocol::ActionTone::destructive) {
+        add(description.destructive, action.command);
       }
+    }
+    blocks_of(page.sections.value_or(std::vector<protocol::PageSection>{}));
+    for (const protocol::PageTab& tab : page.tabs.value_or(std::vector<protocol::PageTab>{})) {
+      blocks_of(tab.sections);
     }
   }
   description.pages = protocol::encode(pages);
@@ -189,6 +215,9 @@ bool SpacePort::answer(const CommandRef& reply, protocol::Result result) noexcep
     }
     result.space = state_->description.info.id;
     result.id = reply.id;
+    if (reply.secret) {
+      result.body.reset();  // a row secret's result is ok or a refusal's words, never a body (D194, invariant 5)
+    }
     detail::Outgoing out;
     out.kind = detail::Outgoing::Kind::result;
     out.port = state_;

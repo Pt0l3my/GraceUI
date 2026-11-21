@@ -3,8 +3,7 @@
 // Related), the header actions (a destructive one behind its confirmation), the tabs, the section cards with their
 // Advanced disclosures, the blocks (settings rows, shortcut rows, components) and the Related card. Everything drawn is
 // in the page's description (invariant 12); nothing absent is hinted at (invariant 2).
-import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { ComponentChildren } from "preact";
+import { useState } from "preact/hooks";
 import type { Json, Page, PageAction, PageBlock, PageSection } from "../protocol.ts";
 import { pageById, parseLink, sectionsOf } from "../model/layout.ts";
 import { refusalWords } from "../model/session.ts";
@@ -14,37 +13,8 @@ import { Arrow, Chevron, Cross, HelpMark, Lozenge, Warning } from "./icons.tsx";
 import { focusHeading } from "./navigate.ts";
 import { SettingRow } from "./row.tsx";
 import { advancedOpen, domId, isCollapsed, sectionId, toggleAdvanced, toggleSection } from "./view-state.ts";
-
-/** A modal of the native kind: focus held inside, Escape closes it, focus back where it was (§3.8, §5.9). */
-export function Modal({ open, onClose, labelledBy, size, children }: {
-  open: boolean; onClose: () => void; labelledBy: string; size: "small" | "medium"; children: ComponentChildren;
-}) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const opener = useRef<Element | null>(null);
-  useLayoutEffect(() => {
-    const d = dialog.current;
-    if (!d) {
-      return;
-    }
-    if (open && !d.open) {
-      opener.current = document.activeElement;
-      d.showModal();
-    } else if (!open && d.open) {
-      d.close();
-    }
-  }, [open]);
-  return (
-    <dialog ref={dialog} class={`modal modal--${size}`} aria-labelledby={labelledBy}
-            onClose={() => {
-              onClose();
-              const back = opener.current as HTMLElement | null;
-              opener.current = null;
-              back?.focus?.();
-            }}>
-      {open && children}
-    </dialog>
-  );
-}
+import { ConfirmDialog, Modal } from "./modal.tsx";
+import { FormBlock } from "./form.tsx";
 
 // The framework topic a space's greyed pages come on (D188): {"greyed": {page: words}, "inactive": words}.
 const SPACE_STATE = "space.state";
@@ -85,6 +55,8 @@ function Blocks({ space, blocks }: { space: string; blocks: PageBlock[] }) {
     <>
       {blocks.map((block, i) => block.kind === "component"
         ? <div class="block block--component" key={`c${i}`}><ComponentBlock space={space} block={block} /></div>
+        : block.kind === "form"
+        ? <div class="block block--form" key={`f${i}`}><FormBlock space={space} block={block} /></div>
         : (
           <div class="block block--rows" key={`r${i}`}>
             {(block.keys ?? []).map((key) => (
@@ -209,33 +181,6 @@ function HelpDialog({ space, page, open, onClose }: { space: string; page: Page;
               </li>
             ))}
           </ul>
-        </>
-      )}
-    </Modal>
-  );
-}
-
-function ConfirmDialog({ space, action, onClose, onConfirm }: {
-  space: string; action: PageAction | null; onClose: () => void; onConfirm: (action: PageAction) => void;
-}) {
-  const titleId = domId("confirm-title", space, action?.id ?? "none");
-  return (
-    <Modal open={action !== null} onClose={onClose} labelledBy={titleId} size="small">
-      {action && (
-        <>
-          <h2 id={titleId} class="modal__title">{action.label}</h2>
-          <p class="prose">{action.confirm ?? "This cannot be undone."}</p>
-          <div class="modal__actions">
-            <button type="button" class="button button--secondary" autofocus onClick={onClose}>Cancel</button>
-            <button type="button" class={`button button--${action.tone === "destructive" ? "danger" : action.tone}`}
-                    data-confirm={action.id}
-                    onClick={() => {
-                      onClose();
-                      onConfirm(action);
-                    }}>
-              {action.label}
-            </button>
-          </div>
         </>
       )}
     </Modal>

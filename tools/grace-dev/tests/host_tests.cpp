@@ -191,7 +191,7 @@ TEST_CASE("the settings topic comes from the space's settings store; settings.se
   CHECK(body.values["lantern.brightness"] == 0.8);
   CHECK(body.values["lantern.oil_token"] == "");
   CHECK(body.changed.empty());
-  CHECK(body.description.size() == 12);
+  CHECK(body.description.size() == 13);
   // The demo's scenario says what Wind shield, on inherit, resolves to (D163).
   REQUIRE(body.inherited.has_value());
   REQUIRE(body.inherited->size() == 1);

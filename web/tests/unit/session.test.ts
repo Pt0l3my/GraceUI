@@ -135,6 +135,8 @@ test("a setting's home: its tab opened and focus asked for its row; Page Up and 
   assert.deepEqual(session.route.value, { space: "demo", page: "demo.behaviour", tab: 1 });
   assert.equal(session.focusRequest.value?.key, "lantern.night_only");
   assert.equal(session.step(1), true);
+  assert.equal(session.route.value?.page, "demo.keepers");
+  assert.equal(session.step(1), true);
   assert.equal(session.route.value?.page, "demo.log");
   session.open("demo", "demo.festival");
   assert.equal(session.step(1), false);

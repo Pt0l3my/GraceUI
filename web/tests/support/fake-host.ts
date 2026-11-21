@@ -226,7 +226,7 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
           }
           clearTimeout(helloTimer);
           welcomed = true;
-          send({ v: 1, t: "welcome", protocol: "1.1", caps: [], graceui: "0.2.0",
+          send({ v: 1, t: "welcome", protocol: "1.2", caps: [], graceui: "0.2.0",
                  spaces: [...spaces.values()].map((s) => s.info()), session: "fake-host" });
           continue;
         }

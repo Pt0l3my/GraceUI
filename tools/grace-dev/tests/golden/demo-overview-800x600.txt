@@ -8,8 +8,9 @@ fill    tint.select     0,  76  167x22
 fill    gold            0,  76    1x22  
 text    gold.hi        28,  80   38x14   glyphs 8 "Overview"
 text    ink.mute       28, 102   42x14   glyphs 9 "Behaviour"
-line    rule           17, 120  133x1   
-text    ink.mute       17, 126   41x17   glyphs 7 "Records"
+text    ink.mute       28, 124   33x14   glyphs 7 "Keepers"
+line    rule           17, 142  133x1   
+text    ink.mute       17, 148   41x17   glyphs 7 "Records"
 fill    ground.well   189,   6  194x20   r1
 text    ink.faint     196,   9   28x14   glyphs 6 "Search"
 text    ink.faint     736,   9   42x14   glyphs 7 "F5  Close"
@@ -55,4 +56,4 @@ text    gold          753, 349    5x15   clip1 glyphs 1 "→"
 line    rule          167, 575  633x1   
 text    ink.faint     189, 581  112x14   glyphs 16 "Enter  Open    Esc  Back"
 stroke  gold.hi       687,  49   92x24   r3 w1 clip1
-# 56 items, 2024 vertices, 4176 indices, 4 commands; check_draw_list: passes
+# 57 items, 2052 vertices, 4218 indices, 4 commands; check_draw_list: passes

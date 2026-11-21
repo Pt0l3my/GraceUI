@@ -11,7 +11,8 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 1 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap
+protocol = { major = 1, minor = 2 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+                                     # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -55,7 +56,7 @@ values = ["stat_tiles", "filter_bar", "table", "master_detail", "card_grid", "se
           "action_button", "wizard_steps", "key_value_list"]
 
 [enums.block_kind]
-values = ["settings", "shortcuts", "component"]
+values = ["settings", "shortcuts", "component", "form"]
 
 [enums.action_tone]
 values = ["primary", "secondary", "destructive"]
@@ -100,6 +101,7 @@ fields = [
   { name = "step", type = "f64", optional = true },
   { name = "unit", type = "string", max = 16, optional = true },
   { name = "choices", type = "list.type.choice", max = 64, optional = true },
+  { name = "choices_from", type = "id", optional = true },
   { name = "third", type = "enum.tri_third", optional = true },
   { name = "label", type = "string", max = 128 },
   { name = "help", type = "string", max = 1024 },
@@ -157,14 +159,46 @@ fields = [
   { name = "confirm", type = "string", max = 256, optional = true },
 ]
 
+[types.row_action]
+doc = "A button on each row of a table (D192): its command gets the row's key, a destructive one only after its confirmation"
+fields = [
+  { name = "id", type = "id" },
+  { name = "label", type = "string", max = 64 },
+  { name = "command", type = "id" },
+  { name = "key", type = "id" },
+  { name = "tone", type = "enum.action_tone" },
+  { name = "confirm", type = "string", max = 256, optional = true },
+]
+
+[types.row_secret]
+doc = "A secret on each row of a table (D194): the column whose cells hold its status (set, or empty) and the command that sets it, write-only (invariant 5)"
+fields = [
+  { name = "column", type = "id" },
+  { name = "command", type = "id" },
+  { name = "key", type = "id" },
+]
+
+[types.form_field]
+doc = "A text field of a form block (D195): its id in the command's args, its label, its most bytes"
+fields = [
+  { name = "id", type = "id" },
+  { name = "label", type = "string", max = 64 },
+  { name = "max", type = "u32" },
+]
+
 [types.page_block]
-doc = "A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, or a component bound to a topic"
+doc = "A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, a component bound to a topic (a table with its row actions and row secret), or a small form"
 fields = [
   { name = "kind", type = "enum.block_kind" },
   { name = "keys", type = "list.id", max = 64, optional = true },
   { name = "component", type = "enum.component", optional = true },
   { name = "topic", type = "id", optional = true },
   { name = "props", type = "object", max = 4096, optional = true },
+  { name = "row_actions", type = "list.type.row_action", max = 3, optional = true },
+  { name = "row_secret", type = "type.row_secret", optional = true },
+  { name = "command", type = "id", optional = true },
+  { name = "fields", type = "list.type.form_field", max = 4, optional = true },
+  { name = "submit", type = "string", max = 32, optional = true },
 ]
 
 [types.page_section]

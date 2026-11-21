@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: MIT
 # The demo space (D82, D160): GraceUI's own test space, a lantern keeper's pages with invented names and our own words.
 # It uses every setting type, tabs, an Advanced disclosure, state and stream topics, a locked setting, a setting waiting
-# on a check, a later-version page and a destructive action, so the views, the page lint and the fake host are tested
-# against it. Its fixtures are fixtures/demo/topics.json. tools/pages/build.py compiles it into grace-pages.
+# on a check, a later-version page and a destructive action, a table with row actions and a row secret, a form and a
+# setting whose choices come from a topic (G34), so the views, the page lint and the fake host are tested against it. Its fixtures are fixtures/demo/topics.json. tools/pages/build.py compiles it into grace-pages.
 
 [space]
 id = "demo"
 name = "Demo space"
 settings_schema = 1
-commands = ["settings.set", "settings.reset", "lantern.trim", "lantern.clear_log"]
+commands = ["settings.set", "settings.reset", "lantern.trim", "lantern.clear_log", "keepers.dismiss", "keepers.ward",
+            "keepers.hire"]
 
 [[topic]]
 id = "settings"
@@ -16,6 +17,14 @@ shape = "state"
 
 [[topic]]
 id = "lantern.status"
+shape = "state"
+
+[[topic]]
+id = "lantern.keepers"
+shape = "state"
+
+[[topic]]
+id = "lantern.oils"
 shape = "state"
 
 [[topic]]
@@ -31,7 +40,7 @@ ring = 500
 [[category]]
 id = "lanterns"
 name = "Lanterns"
-pages = ["demo.overview", "demo.behaviour"]
+pages = ["demo.overview", "demo.behaviour", "demo.keepers"]
 
 [[category]]
 id = "records"
@@ -185,6 +194,18 @@ effect = "now"
 availability = "later"
 locked = true
 
+[[setting]]
+key = "lantern.oil_kind"
+type = "text"
+choices_from = "lantern.oils"
+default = "rapeseed"
+label = "Oil"
+help = "What the lantern burns, from the oils in the store."
+synonyms = ["fuel", "oil"]
+home = "demo.keepers"
+effect = "next_moment"
+availability = "live"
+
 # ---- Pages.
 
 [[page]]
@@ -275,3 +296,28 @@ help.steps = ["Read what the later version adds.", "Until then, the lantern burn
 id = "festival"
 title = "Festival"
 blocks = [{ kind = "component", component = "statement", props = { text = "A later version strings small lights about the lantern for the festival. This version keeps the lantern alone." } }, { kind = "settings", keys = ["lantern.festival"] }]
+
+[[page]]
+id = "demo.keepers"
+category = "lanterns"
+name = "Keepers"
+description = "Who keeps the lantern, their ward words, and the oil they burn."
+increment = "0.2"
+related = ["demo.behaviour", "demo.overview"]
+help.purpose = "Look after the lantern's keepers and choose its oil."
+help.steps = ["Read the roster: each keeper's post, and whether their ward word is set.", "Set a keeper's ward word on their row, or dismiss them; dismissing asks first.", "Hire a keeper with the form, and choose the oil from what the store holds."]
+
+[[page.sections]]
+id = "roster"
+title = "Roster"
+blocks = [{ kind = "component", component = "table", topic = "lantern.keepers", props = { empty = "No keeper yet: hire one below." }, row_actions = [{ id = "dismiss", label = "Dismiss", command = "keepers.dismiss", key = "id", tone = "destructive", confirm = "The keeper leaves the roster, with their ward word." }], row_secret = { column = "ward", command = "keepers.ward", key = "id" } }]
+
+[[page.sections]]
+id = "hire"
+title = "Hire a keeper"
+blocks = [{ kind = "form", command = "keepers.hire", fields = [{ id = "name", label = "Name", max = 32 }, { id = "post", label = "Post", max = 64 }], submit = "Hire" }]
+
+[[page.sections]]
+id = "oil"
+title = "Oil"
+blocks = [{ kind = "settings", keys = ["lantern.oil_kind"] }]

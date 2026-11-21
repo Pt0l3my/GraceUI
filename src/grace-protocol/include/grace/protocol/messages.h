@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 1;
-inline constexpr std::string_view kProtocolVersion = "1.1";
+inline constexpr std::uint32_t kProtocolMinor = 2;
+inline constexpr std::string_view kProtocolVersion = "1.2";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -128,6 +128,7 @@ enum class BlockKind : std::uint8_t {
   settings,
   shortcuts,
   component,
+  form,
 };
 std::string_view to_string(BlockKind value) noexcept;
 bool from_string(std::string_view text, BlockKind& out) noexcept;
@@ -196,6 +197,7 @@ struct Setting {
   std::optional<double> step{};
   std::optional<std::string> unit{};
   std::optional<std::vector<Choice>> choices{};
+  std::optional<std::string> choices_from{};
   std::optional<TriThird> third{};
   std::string label{};
   std::string help{};
@@ -263,13 +265,51 @@ struct PageAction {
 bool decode(const Json& in, PageAction& out, const std::string& path, DecodeError& e);
 Json encode(const PageAction& in);
 
-// A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, or a component bound to a topic.
+// A button on each row of a table (D192): its command gets the row's key, a destructive one only after its confirmation.
+struct RowAction {
+  std::string id{};
+  std::string label{};
+  std::string command{};
+  std::string key{};
+  ActionTone tone{};
+  std::optional<std::string> confirm{};
+  bool operator==(const RowAction&) const = default;
+};
+bool decode(const Json& in, RowAction& out, const std::string& path, DecodeError& e);
+Json encode(const RowAction& in);
+
+// A secret on each row of a table (D194): the column whose cells hold its status (set, or empty) and the command that sets it, write-only (invariant 5).
+struct RowSecret {
+  std::string column{};
+  std::string command{};
+  std::string key{};
+  bool operator==(const RowSecret&) const = default;
+};
+bool decode(const Json& in, RowSecret& out, const std::string& path, DecodeError& e);
+Json encode(const RowSecret& in);
+
+// A text field of a form block (D195): its id in the command's args, its label, its most bytes.
+struct FormField {
+  std::string id{};
+  std::string label{};
+  std::uint32_t max_{};
+  bool operator==(const FormField&) const = default;
+};
+bool decode(const Json& in, FormField& out, const std::string& path, DecodeError& e);
+Json encode(const FormField& in);
+
+// A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, a component bound to a topic (a table with its row actions and row secret), or a small form.
 struct PageBlock {
   BlockKind kind{};
   std::optional<std::vector<std::string>> keys{};
   std::optional<Component> component{};
   std::optional<std::string> topic{};
   std::optional<Json> props{};
+  std::optional<std::vector<RowAction>> row_actions{};
+  std::optional<RowSecret> row_secret{};
+  std::optional<std::string> command{};
+  std::optional<std::vector<FormField>> fields{};
+  std::optional<std::string> submit{};
   bool operator==(const PageBlock&) const = default;
 };
 bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError& e);

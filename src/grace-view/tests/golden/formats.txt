@@ -19,3 +19,4 @@ demo	lantern.keeper	default=The north keeper	right=none	left=none	shift_right=no
 demo	lantern.trim_key	default=F9	right=none	left=none	shift_right=none	shift_left=none
 demo	lantern.oil_token	default=Missing	right=none	left=none	shift_right=none	shift_left=none	set=Set	unset=Missing
 demo	lantern.festival	default=Off	right=none	left=none	shift_right=none	shift_left=none
+demo	lantern.oil_kind	default=rapeseed	right=none	left=none	shift_right=none	shift_left=none

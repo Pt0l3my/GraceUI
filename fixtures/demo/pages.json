@@ -1,14 +1,15 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 1,
+  "minor": 2,
   "categories": [
     {
       "id": "lanterns",
       "name": "Lanterns",
       "pages": [
         "demo.overview",
-        "demo.behaviour"
+        "demo.behaviour",
+        "demo.keepers"
       ]
     },
     {
@@ -253,6 +254,91 @@
           ]
         }
       ]
+    },
+    {
+      "id": "demo.keepers",
+      "category": "lanterns",
+      "name": "Keepers",
+      "description": "Who keeps the lantern, their ward words, and the oil they burn.",
+      "help": {
+        "purpose": "Look after the lantern's keepers and choose its oil.",
+        "steps": [
+          "Read the roster: each keeper's post, and whether their ward word is set.",
+          "Set a keeper's ward word on their row, or dismiss them; dismissing asks first.",
+          "Hire a keeper with the form, and choose the oil from what the store holds."
+        ]
+      },
+      "related": [
+        "demo.behaviour",
+        "demo.overview"
+      ],
+      "increment": "0.2",
+      "sections": [
+        {
+          "id": "roster",
+          "title": "Roster",
+          "blocks": [
+            {
+              "kind": "component",
+              "component": "table",
+              "topic": "lantern.keepers",
+              "props": {
+                "empty": "No keeper yet: hire one below."
+              },
+              "row_actions": [
+                {
+                  "id": "dismiss",
+                  "label": "Dismiss",
+                  "command": "keepers.dismiss",
+                  "key": "id",
+                  "tone": "destructive",
+                  "confirm": "The keeper leaves the roster, with their ward word."
+                }
+              ],
+              "row_secret": {
+                "column": "ward",
+                "command": "keepers.ward",
+                "key": "id"
+              }
+            }
+          ]
+        },
+        {
+          "id": "hire",
+          "title": "Hire a keeper",
+          "blocks": [
+            {
+              "kind": "form",
+              "command": "keepers.hire",
+              "fields": [
+                {
+                  "id": "name",
+                  "label": "Name",
+                  "max": 32
+                },
+                {
+                  "id": "post",
+                  "label": "Post",
+                  "max": 64
+                }
+              ],
+              "submit": "Hire"
+            }
+          ]
+        },
+        {
+          "id": "oil",
+          "title": "Oil",
+          "blocks": [
+            {
+              "kind": "settings",
+              "keys": [
+                "lantern.oil_kind"
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "topics": [
@@ -262,6 +348,14 @@
     },
     {
       "id": "lantern.status",
+      "shape": "state"
+    },
+    {
+      "id": "lantern.keepers",
+      "shape": "state"
+    },
+    {
+      "id": "lantern.oils",
       "shape": "state"
     },
     {
@@ -279,6 +373,9 @@
     "settings.set",
     "settings.reset",
     "lantern.trim",
-    "lantern.clear_log"
+    "lantern.clear_log",
+    "keepers.dismiss",
+    "keepers.ward",
+    "keepers.hire"
   ]
 }

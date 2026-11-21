@@ -486,12 +486,18 @@ void run(State& m, const grace::protocol::Cmd& command) {
     grace::protocol::Cmd sent = command;
     sent.space = space.id;
     sent.id = m.next_command++;
+    // Where its answer's words go: the row of a table's switch or row action that sent it (D181, D192), else the
+    // setting it names.
+    const std::string focused = space.view.focused();
+    const std::string where = focused.rfind("cell:", 0) == 0  ? focused.substr(5)
+                              : focused.rfind("row:", 0) == 0 ? focused.substr(4)
+                                                              : key_of(command);
     std::uint64_t ticket = 0;
     if (spaces::registry().game_command(space.id, std::move(sent), ticket)) {
-      m.commands[ticket] = {space.id, key_of(command)};
+      m.commands[ticket] = {space.id, where};
     } else {
       g_refusals.fetch_add(1, std::memory_order_relaxed);
-      space.view.refused(key_of(command), "Not now: the space has too many commands waiting.");
+      space.view.refused(where, "Not now: the space has too many commands waiting.");
     }
     return;
   }
