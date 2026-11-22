@@ -442,7 +442,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       const where = await page.evaluate(() => location.href + " " + document.title);
       assert.equal(where.includes("fish-steps"), false);
       // The Notes tab draws the same member's sentence.
-      await page.locator("[role=tab]", { hasText: "Notes" }).click();
+      await page.getByRole("tab", { name: "Notes", exact: true }).click();
       await page.locator(".sentence", { hasText: "trimmed short on purpose" }).waitFor();
     } finally {
       await close();
