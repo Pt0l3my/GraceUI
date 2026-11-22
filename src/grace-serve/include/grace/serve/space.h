@@ -42,6 +42,8 @@ struct SpaceDescription {
   // The commands a table's row secret sends (D194): their value is never logged or echoed, and the server drops any
   // body from their result, so that only ok or a refusal's words come back (invariant 5).
   std::vector<std::string> secret;
+  // The commands the space names slow (D216): their answer may take up to kSlowAnswerDeadline, not kAnswerDeadline.
+  std::vector<std::string> slow;
   // The space's page data (space_pages), which the framework's own topic "pages" carries to a view that subscribes to
   // it: the server answers that sub itself, from this, and the space never sees it (D166, D169). Null: no such topic.
   protocol::Json pages;

@@ -143,6 +143,13 @@ test("a setting's home: its tab opened and focus asked for its row; Page Up and 
   assert.equal(session.open("demo", "demo.nowhere"), false);
 });
 
+test("a space's slow commands are known, so that their answer is waited for longer (D216)", async () => {
+  const { session } = await started();
+  assert.equal(session.slow("demo", "oil.order"), true);
+  assert.equal(session.slow("demo", "lantern.trim"), false);
+  assert.equal(session.slow("graceui", "oil.order"), false);
+});
+
 test("a header action sends its command as grace-view's: a destructive one with its confirmation", async () => {
   const { session, transport } = await started();
   const answer = await session.action("graceui", { id: "disconnect", label: "Disconnect every browser",

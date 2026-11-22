@@ -30,6 +30,7 @@ inline constexpr std::uint32_t kViewGame = 1;     // GRACEUI_VIEW_GAME
 inline constexpr std::uint32_t kViewBrowser = 2;  // GRACEUI_VIEW_BROWSER
 inline constexpr std::size_t kMaxSpaces = 16;     // mods' spaces in a session (EST)
 inline constexpr std::chrono::milliseconds kAnswerDeadline{10000};  // a command unanswered past this: internal (EST)
+inline constexpr std::chrono::milliseconds kSlowAnswerDeadline{90000};  // a slow command's (D216): a model's draft (EST)
 inline constexpr std::size_t kMaxPending = 256;  // commands polled and not yet answered, across every space (EST)
 
 enum class Status : std::uint8_t {

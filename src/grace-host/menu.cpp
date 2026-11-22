@@ -146,6 +146,7 @@ struct State {
   bool ever_opened = false;
   std::uint32_t next_command = 1;
   std::map<std::uint64_t, std::pair<std::string, std::string>> commands;  // a ticket: its space and its key
+  std::map<std::uint64_t, std::string> command_names;  // a ticket: its command's name, for a slow one's sender (D216)
   std::set<std::uint64_t> captures;  // the tickets the capture's modal sent: their answers go back to it (D209)
   std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
   std::uint64_t states = 0;    // its other topics', as the menu last took them (D181)
@@ -441,6 +442,14 @@ bool take_from_spaces(State& m) {
     if (it == m.commands.end()) {
       continue;
     }
+    if (const auto named = m.command_names.find(result.ticket); named != m.command_names.end()) {
+      for (auto& view : m.spaces) {
+        if (view->id == it->second.first) {
+          view->view.finished(named->second);  // a slow command's control takes presses again (D216)
+        }
+      }
+      m.command_names.erase(named);
+    }
     if (m.captures.erase(result.ticket) != 0) {
       for (auto& view : m.spaces) {
         if (view->id == it->second.first) {
@@ -548,13 +557,16 @@ void run(State& m, const grace::protocol::Cmd& command) {
                                                                          : key_of(command);
     std::uint64_t ticket = 0;
     const bool capture = space.view.capture_open();
+    const std::string name = sent.name;
     if (spaces::registry().game_command(space.id, std::move(sent), ticket)) {
       m.commands[ticket] = {space.id, where};
+      m.command_names[ticket] = name;
       if (capture) {
         m.captures.insert(ticket);
       }
     } else {
       g_refusals.fetch_add(1, std::memory_order_relaxed);
+      space.view.finished(name);  // never sent: nothing to wait for
       if (capture) {
         space.view.capture_answered(false, false, "Not now: the space has too many commands waiting.");
       } else {

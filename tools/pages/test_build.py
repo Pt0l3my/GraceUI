@@ -249,6 +249,17 @@ class Seeded(unittest.TestCase):
         fx["lantern.lamp/a/b"] = {}
         self.expect("is not an object for one member of lantern.lamp", sp, desc, fx)
 
+    def test_slow_commands(self):  # D216
+        sp, desc, fx = demo()
+        sp["slow_commands"] = ["oil.steal"]
+        self.expect("slow command oil.steal is a command of the space's own", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["slow_commands"] = ["settings.set"]
+        self.expect("slow command settings.set is a command of the space's own, not a settings command", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["slow_commands"] = ["oil.order", "oil.order"]
+        self.expect("slow command oil.order twice", sp, desc, fx)
+
     def test_setting_descriptions(self):
         cases = [
             ("lantern.oil_token", "default", "hunter2", "a secret's default is empty"),

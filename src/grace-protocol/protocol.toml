@@ -11,11 +11,12 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 5 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 6 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
                                      # 1.5 (G38): topic families, and a page's master list (D215)
+                                     # 1.6 (G38): slow commands, answered within 90 s (D216)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -291,6 +292,7 @@ fields = [
   { name = "pages", type = "list.type.page", max = 128 },
   { name = "topics", type = "list.type.topic_info", max = 64 },
   { name = "commands", type = "list.id", max = 64 },
+  { name = "slow_commands", type = "list.id", max = 8, optional = true },  # 1.6 (D216): answered within 90 s, not 10
 ]
 
 # ---- Message kinds (§6.3). `from` is who sends it: page (a view: the browser or the in-game view), grace (GraceUI),

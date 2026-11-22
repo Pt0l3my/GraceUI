@@ -90,6 +90,11 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
   description.info.settings_schema = settings.schema;
   description.topics = pages.topics;
   description.commands = pages.commands;
+  for (const std::string& name : pages.slow_commands.value_or(std::vector<std::string>{})) {
+    if (std::find(pages.commands.begin(), pages.commands.end(), name) != pages.commands.end()) {
+      description.slow.push_back(name);  // a declared command's alone (D216)
+    }
+  }
   const auto add = [](std::vector<std::string>& list, const std::string& command) {
     if (std::find(list.begin(), list.end(), command) == list.end()) {
       list.push_back(command);

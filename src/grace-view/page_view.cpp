@@ -1625,7 +1625,12 @@ void PageView::follow_master() {
 
 Action PageView::input(const Input& in) {
   master_focus_pending_ = false;  // a key moves focus on its own from now on
+  if (in.key == Key::activate && !editing() && !capture_open() && scope_ == Scope::page && running(focused())) {
+    return {};  // a control waiting for its slow command's answer takes no press (D216)
+  }
+  const std::string sender = focused();
   Action action = input_body(in);
+  note_running(action, sender);
   follow_master();
   return action;
 }
@@ -1633,12 +1638,48 @@ Action PageView::input(const Input& in) {
 Action PageView::pointer(const Pointer& in) {
   if (in.kind == Pointer::Kind::press) {
     master_focus_pending_ = false;
+    if (const Hit* hit = hit_at(in.x, in.y); hit != nullptr && !editing() && !capture_open() &&
+                                               running(name_of(hit->scope, hit->index))) {
+      return {};
+    }
   }
   Action action = pointer_body(in);
+  if (action.kind == Action::Kind::command) {
+    note_running(action, focused());  // a click focuses what it acts on
+  }
   if (in.kind == Pointer::Kind::press) {
     follow_master();
   }
   return action;
+}
+
+void PageView::note_running(const Action& action, const std::string& sender) {
+  if (action.kind != Action::Kind::command) {
+    return;
+  }
+  const auto& slow = pages_.slow_commands;
+  if (slow && std::find(slow->begin(), slow->end(), action.command.name) != slow->end()) {
+    running_[action.command.name].push_back(sender);
+  }
+}
+
+void PageView::finished(std::string_view command) {
+  const auto at = running_.find(command);
+  if (at != running_.end() && !at->second.empty()) {
+    at->second.erase(at->second.begin());
+    if (at->second.empty()) {
+      running_.erase(at);
+    }
+  }
+}
+
+bool PageView::running(std::string_view element) const {
+  for (const auto& [command, senders] : running_) {
+    if (std::find(senders.begin(), senders.end(), element) != senders.end()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void PageView::focus_master_on_open() {
@@ -2600,7 +2641,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     for (std::size_t a = page.actions ? page.actions->size() : 0; a-- > 0;) {
       const protocol::PageAction& act = (*page.actions)[a];
       const bool asking = confirming_ == act.id;
-      const std::string label = asking ? "Press again to confirm" : act.label;
+      const std::string label = running("action:" + act.id) ? "Working…" : asking ? "Press again to confirm" : act.label;
       const float w = c.width(label, TypeRole::ui) + std::round(32 * s);
       const Rect button{action_x - w, y + std::round(2 * s), w, std::round(32 * s)};
       const float r = std::round(tokens::radius::control * s);
@@ -2799,7 +2840,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         const protocol::PageAction& act = (*section.actions)[a];
         const std::string id = section.id + "/" + act.id;
         const bool asking = confirming_ == "section:" + id;
-        const std::string words = asking ? "Press again to confirm" : act.label;
+        const std::string words = running("section-action:" + id) ? "Working…"
+                                  : asking                        ? "Press again to confirm"
+                                                                  : act.label;
         const float w = c.width(words, TypeRole::ui_sm) + std::round(24 * s);
         const Rect button{right - w, y + std::round((head_h - 28 * s) / 2), w, std::round(28 * s)};
         const float rr = std::round(tokens::radius::control * s);
@@ -2860,7 +2903,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               }
               y += row_h;
             }
-            const std::string words = block.submit.value_or("Send");
+            const std::string words = running("submit:" + form) ? "Working…" : block.submit.value_or("Send");
             const float w = c.width(words, TypeRole::ui) + std::round(32 * s);
             const Rect button{x0 + content_w - card_pad - w, y + std::round(10 * s), w, std::round(32 * s)};
             c.fill(button, Colour::gold, std::round(tokens::radius::control * s), alpha);
@@ -3067,7 +3110,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 }
                 const std::string id = row_action_id(block, line, r, act);
                 const bool asking = confirming_ == "row:" + id;
-                const std::string words = asking ? "Press again to confirm" : act.label;
+                const std::string words = running("row:" + id) ? "Working…" : asking ? "Press again to confirm" : act.label;
                 const float w = c.width(words, TypeRole::ui_sm) + std::round(24 * s);
                 const Rect button{right - w, y + std::round((row_h - 28 * s) / 2), w, std::round(28 * s)};
                 const float rr = std::round(tokens::radius::control * s);

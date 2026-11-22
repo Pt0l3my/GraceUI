@@ -38,6 +38,8 @@ export interface WebSocketOptions {
   socket?: (url: string) => SocketLike;
   /** The answer a command waits for before the view gives up on it, in ms. */
   answerTimeout?: number;
+  /** A slow command's (D216): the space's 90 s and a margin. */
+  slowAnswerTimeout?: number;
   welcomeTimeout?: number;
 }
 
@@ -376,7 +378,7 @@ export class WebSocketTransport implements Transport {
     }
   }
 
-  command(space: string, name: string, args: JsonObject): Promise<Answer> {
+  command(space: string, name: string, args: JsonObject, slow = false): Promise<Answer> {
     if (this.ended || !this.welcomed) {
       return Promise.resolve({ ok: false, error: "not_now", local: "Not connected to the game." });
     }
@@ -391,7 +393,7 @@ export class WebSocketTransport implements Transport {
         if (this.pending.delete(id)) {
           resolve({ ok: false, error: "internal", local: "No answer came." });
         }
-      }, this.options.answerTimeout ?? 15000);
+      }, slow ? (this.options.slowAnswerTimeout ?? 95000) : (this.options.answerTimeout ?? 15000));
       this.pending.set(id, { resolve, timer });
       this.sendPaced(text);
     });

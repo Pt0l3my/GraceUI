@@ -197,6 +197,12 @@ class PageView {
   // chosen row for the session. Nothing of the row's key goes into a log or an address (§3.6 of proposal 0010).
   std::string chosen() const;  // the open page's chosen row's key, or empty
 
+  // ---- Slow commands (D216). A command the space names slow (a model's draft) may take up to 90 s: the control that
+  // sent it reads "Working…" and takes no press until the host says its answer came (finished(), with the command's
+  // name, whatever the answer was), the oldest of its name first.
+  void finished(std::string_view command);
+  bool running(std::string_view element) const;  // an element, named as focused() names it, waits for its answer
+
   std::string_view page() const noexcept;
   Scope scope() const noexcept { return scope_; }
   // The focused element, as "rail:<page or category>", "search", "action:<id>", "tab:<id>", "section:<id>",
@@ -330,6 +336,8 @@ class PageView {
   Action pointer_body(const Pointer& in);
   std::map<std::string, std::string, std::less<>> chosen_;  // a page's chosen row's key, by the page's id
   bool master_focus_pending_ = false;  // a master page opened before its list had rows: focus goes to the first one
+  std::map<std::string, std::vector<std::string>, std::less<>> running_;  // a slow command's senders, oldest first
+  void note_running(const Action& action, const std::string& sender);
   Rect caret_rect_{};
   Rect edit_box_{};                                         // the edited field, as the last layout drew it
   std::vector<std::pair<std::size_t, float>> edit_stops_;   // its drawn boundaries: a byte offset and its x

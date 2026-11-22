@@ -49,12 +49,17 @@ struct Registry::Pending {
   serve::CommandRef ref;
   std::chrono::steady_clock::time_point deadline;
   bool game = false;    // the menu's: its result waits in game_results_
+  bool slow = false;    // one the space names slow (D216): its deadline is kSlowAnswerDeadline
   std::uint32_t id = 0; // the command's id, as its view numbered it
 };
 
 namespace {
 
 bool view_flags(std::uint32_t views) noexcept { return views != 0 && (views & ~(kViewGame | kViewBrowser)) == 0; }
+
+bool slow_command(const serve::SpaceDescription& description, std::string_view name) {
+  return std::find(description.slow.begin(), description.slow.end(), name) != description.slow.end();
+}
 
 template <class T>
 bool decode_json(std::string_view text, T& out, std::string& why, const char* what) {
@@ -394,7 +399,8 @@ Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity,
         pending.reply = space->held_reply;
         pending.owner = owner;
         pending.ref = event.reply;
-        pending.deadline = std::chrono::steady_clock::now() + kAnswerDeadline;
+        pending.slow = slow_command(space->description, event.command);
+        pending.deadline = std::chrono::steady_clock::now() + (pending.slow ? kSlowAnswerDeadline : kAnswerDeadline);
         pending.id = event.reply.id;
         pending_.push_back(pending);
         break;
@@ -464,6 +470,7 @@ Status Registry::answer(std::uint64_t owner, std::uint64_t reply, std::string_vi
 std::size_t Registry::expire(std::chrono::steady_clock::time_point now) {
   std::vector<std::pair<std::shared_ptr<serve::SpacePort>, Pending>> late;
   std::vector<std::string> names;
+  // (A slow command's deadline is its own, set when it was polled or sent: kSlowAnswerDeadline, D216.)
   {
     std::lock_guard<std::mutex> lock(mutex_);
     for (auto it = pending_.begin(); it != pending_.end();) {
@@ -491,7 +498,8 @@ std::size_t Registry::expire(std::chrono::steady_clock::time_point now) {
       late[i].first->answer(late[i].second.ref, std::move(result));
     }
     if (log_) {
-      log_("space " + names[i] + " left a command unanswered for 10 s: answered internal");
+      log_("space " + names[i] + " left a command unanswered for " + (late[i].second.slow ? "90" : "10") +
+           " s: answered internal");
     }
   }
   if (game) {
@@ -611,7 +619,8 @@ bool Registry::game_command(std::string_view space_id, protocol::Cmd command, st
       Pending pending;
       pending.reply = next_reply_++;
       pending.owner = space->owner;
-      pending.deadline = std::chrono::steady_clock::now() + kAnswerDeadline;
+      pending.slow = slow_command(space->description, command.name);
+      pending.deadline = std::chrono::steady_clock::now() + (pending.slow ? kSlowAnswerDeadline : kAnswerDeadline);
       pending.game = true;
       pending.id = command.id;
       pending_.push_back(pending);

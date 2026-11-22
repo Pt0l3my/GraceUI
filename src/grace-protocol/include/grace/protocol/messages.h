@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 5;
-inline constexpr std::string_view kProtocolVersion = "1.5";
+inline constexpr std::uint32_t kProtocolMinor = 6;
+inline constexpr std::string_view kProtocolVersion = "1.6";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -419,6 +419,7 @@ struct SpacePages {
   std::vector<Page> pages{};
   std::vector<TopicInfo> topics{};
   std::vector<std::string> commands{};
+  std::optional<std::vector<std::string>> slow_commands{};
   bool operator==(const SpacePages&) const = default;
 };
 bool decode(const Json& in, SpacePages& out, const std::string& path, DecodeError& e);

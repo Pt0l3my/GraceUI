@@ -87,6 +87,8 @@ def documents(path, schema):
         "topics": source.get("topic", []),
         "commands": space.get("commands", []),
     }
+    if "slow_commands" in space:
+        space_pages["slow_commands"] = space["slow_commands"]  # D216
     settings = []
     for entry in source.get("setting", []):
         unknown = set(entry) - set(SETTING_FIELDS)
@@ -172,6 +174,11 @@ def lint(space_pages, description, fixtures, known_spaces):
     unique("category", [c["id"] for c in space_pages["categories"]], space)
     unique("topic", list(t["id"] for t in space_pages["topics"]), space)
     unique("setting", [s["key"] for s in description["settings"]], space)
+    for name in space_pages.get("slow_commands", []):
+        if name not in commands or name in ("settings.set", "settings.reset"):
+            failures.append(f"{space}: slow command {name} is a command of the space's own, not a settings command "
+                            "(D216)")
+    unique("slow command", space_pages.get("slow_commands", []), space)
     for t in space_pages["topics"]:
         if (t["shape"] == "stream") != ("ring" in t):
             failures.append(f"{space}: topic {t['id']}: a stream names its ring, a state does not")

@@ -1377,6 +1377,29 @@ TEST_CASE("master and detail in game: a click on a row chooses it (D215)") {
   CHECK(view.focused() == "item:lantern.lamps/fish-steps");
 }
 
+TEST_CASE("a slow command's control reads Working… and takes no press until its answer comes (D216)") {
+  PageView view = loaded("demo", "demo.keepers");
+  REQUIRE(move_to(view, "section-action:oil/order"));
+  const Action sent = press(view, Key::activate);
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.name == "oil.order");
+  CHECK(view.running("section-action:oil/order"));
+  DisplayList waiting;
+  view.layout(Viewport{}, test::fonts(), waiting);
+  CHECK(waiting.dump().find("\"Working…\"") != std::string::npos);
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // no second press while it waits
+  view.finished("oil.order");
+  CHECK_FALSE(view.running("section-action:oil/order"));
+  DisplayList done;
+  view.layout(Viewport{}, test::fonts(), done);
+  CHECK(done.dump().find("\"Order oil\"") != std::string::npos);
+  // A command the space does not name slow leaves nothing waiting.
+  PageView other = loaded("demo", "demo.keepers");
+  REQUIRE(move_to(other, "submit:hire/0"));
+  REQUIRE(press(other, Key::activate).kind == Action::Kind::command);
+  CHECK_FALSE(other.running("submit:hire/0"));
+}
+
 TEST_CASE("Ctrl+C and Ctrl+X put a field's selection aside for the clipboard; a paste is one paragraph (G38 (a))") {
   PageView view = loaded("demo", "demo.keepers");
   move_to(view, "field:hire/0/post");

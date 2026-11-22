@@ -474,6 +474,29 @@ TEST_CASE("a family's member through the registry: watched by the menu, publishe
   CHECK_FALSE(registry.game_state("demo", "lantern.lamp/fish-steps", 0, body, rev));
 }
 
+TEST_CASE("a slow command waits 90 s for its answer, any other 10 s (D216)") {
+  spaces::Registry registry;
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame), why) == Status::ok);
+  std::uint64_t slow = 0;
+  std::uint64_t quick = 0;
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 1, "oil.order", Json::object()}, slow));
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 2, "lantern.trim", Json::object()}, quick));
+  const auto now = std::chrono::steady_clock::now();
+  CHECK(registry.expire(now + std::chrono::seconds(11)) == 1);  // the trim alone
+  auto results = registry.take_game_results();
+  REQUIRE(results.size() == 1);
+  CHECK(results[0].ticket == quick);
+  CHECK(registry.expire(now + std::chrono::seconds(60)) == 0);
+  CHECK(registry.expire(now + std::chrono::seconds(91)) == 1);
+  results = registry.take_game_results();
+  REQUIRE(results.size() == 1);
+  CHECK(results[0].ticket == slow);
+  CHECK(results[0].result.error == protocol::ErrorCode::internal);
+}
+
 TEST_CASE("the menu's watch and the browser's merge: one WATCHED, one UNWATCHED, whichever comes first") {
   Fixture fixture(no_spaces());
   REQUIRE(fixture.started == serve::StartResult::ok);

@@ -13,6 +13,7 @@ name = "Demo space"
 settings_schema = 1
 commands = ["settings.set", "settings.reset", "lantern.trim", "lantern.clear_log", "keepers.dismiss", "keepers.ward",
             "keepers.hire", "keepers.dismiss_all", "oil.order"]
+slow_commands = ["oil.order"]  # the oil comes from the harbour store: answered within 90 s (D216)
 
 [[topic]]
 id = "settings"

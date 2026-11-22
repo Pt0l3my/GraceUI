@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 5,
+  "minor": 6,
   "categories": [
     {
       "id": "lanterns",
@@ -484,6 +484,9 @@
     "keepers.ward",
     "keepers.hire",
     "keepers.dismiss_all",
+    "oil.order"
+  ],
+  "slow_commands": [
     "oil.order"
   ]
 }

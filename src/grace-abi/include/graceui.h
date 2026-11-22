@@ -531,6 +531,8 @@ typedef struct GraceUiEvent {
 #define GRACEUI_FRAME_FROM_PAGE_MAX 16384u /* a frame from a view: a sub, an unsub or a cmd, at most this many bytes */
 #define GRACEUI_FRAME_TO_PAGE_MAX 262144u  /* a frame to a view: a state, rows or a result, at most this many bytes */
 #define GRACEUI_ANSWER_DEADLINE_MS 10000u  /* a command unanswered this long is answered internal by GraceUI */
+#define GRACEUI_SLOW_ANSWER_DEADLINE_MS 90000u  /* one the space's page data names in slow_commands (protocol 1.6,
+                                                   D216): a model's draft, answered within this */
 
 typedef struct GraceUiSpaceDesc {
   uint32_t size;      /* set by the caller to sizeof(GraceUiSpaceDesc) */

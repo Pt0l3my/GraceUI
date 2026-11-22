@@ -6121,6 +6121,57 @@ void run_master(const std::wstring& dll) {
   frames(game, 5);
 }
 
+// ---- A slow command in game (D216): the control reads Working… while it waits, and the mod's answer after 11 s,
+// past the ordinary 10 s, is still taken.
+void run_slow(const std::wstring& dll) {
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+  const Connected demo = connect(table, request_for("demo", GRACEUI_VERSION_PACK(0, 1, 0), "The demo space", "notices"));
+  const grace::pages::BuiltinSpace& space = grace::pages::builtin_spaces()[1];
+  const GraceUiSpaceDesc desc = game_space(space.pages, space.settings);
+  const GraceUiConsumer mod = demo.answer.consumer;
+  check(table->register_pages(mod, &desc) == GRACEUI_OK, "slow: register", "the demo space for the game's view");
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  press(window, VK_NEXT, 0x51);
+  menu = menu_after(game, grace, grace.menu().lists);
+  press(window, VK_NEXT, 0x51);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const bool on_order = down_to(game, grace, window, "section-action:oil/order", 30);
+  press(window, VK_RETURN, 0x1C);
+  const SpaceEvent command = wait_kind(game, table, mod, GRACEUI_EVENT_COMMAND);
+  const bool working = until_shows(game, grace, "Working…");
+  // 11 s pass, past the ordinary deadline; the menu still waits, and the mod's answer is taken.
+  const std::uint32_t refusals = grace.menu().refusals;
+  for (int i = 0; i < 550; ++i) {
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+  }
+  const bool still = grace.menu_shows("Working…") != 0;
+  const std::string ok = R"({"v":1,"t":"result","space":"demo","id":0,"ok":true})";
+  const GraceUiStatus answered = command.kind == GRACEUI_EVENT_COMMAND
+                                     ? table->answer(mod, command.reply, ok.data(), ok.size())
+                                     : GRACEUI_FAULT;
+  const bool done = until_shows(game, grace, "Order oil") && grace.menu_shows("Working…") == 0;
+  check(on_order && command.kind == GRACEUI_EVENT_COMMAND && command.frame.find("\"oil.order\"") != std::string::npos &&
+            working && still && answered == GRACEUI_OK && done && grace.menu().refusals == refusals,
+        "slow: answered after 11 s",
+        "on Order oil %s; the mod polled %s; Working… %s, still after 11 s %s; its answer then %s; the button back %s; "
+        "refusals %u",
+        on_order ? "yes" : "NO", command.kind == GRACEUI_EVENT_COMMAND ? command.frame.c_str() : "NOTHING",
+        working ? "shown" : "NOT SHOWN", still ? "yes" : "NO", status_name(answered), done ? "yes" : "NO",
+        grace.menu().refusals - refusals);
+  press(window, VK_F5, kScanF5);
+  frames(game, 5);
+}
+
 void run_menu_mouse(const std::wstring& dll) {
   Game game(false, 1920, 1080);
   const HWND window = game.window();
@@ -7712,6 +7763,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"master") {
     std::printf("-- scenario: master and detail in game (G38, D215)\n");
     run_master(dll);
+  } else if (scenario == L"slow") {
+    std::printf("-- scenario: a slow command in game (G38, D216)\n");
+    run_slow(dll);
   } else if (scenario == L"menu-space") {
     std::printf("-- scenario: the in-game menu on mods' spaces, with GraceUI's at the rail's foot (D171)\n");
     run_menu_space(dll);
@@ -7789,7 +7843,7 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"typing", L"master", L"spike", L"spike-after",
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"typing", L"master", L"slow", L"spike", L"spike-after",
             L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake"}) {
         run(child_scenario, dll, this_program());
       }
