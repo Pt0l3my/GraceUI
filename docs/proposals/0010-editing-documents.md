@@ -1,7 +1,8 @@
 # Proposal 0010: Editing a document (what the profile editor needs from GraceUI)
 
 **Status: proposal, 2026-11-22, put to the owner as G38, and to EldenNet's session for §6 (EldenNet's roadmap
-S7.2.a).** A bare § is a section of [DESIGN.md](../DESIGN.md); PAGES is EldenNet's `docs/design/pages.md`; NPC is
+S7.2.a). The owner approved all three items as recommended the same day, to be built now in 0.2.x (G38); where this
+text and the design differ once it is built, the design holds; §6 waits for EldenNet's session.** A bare § is a section of [DESIGN.md](../DESIGN.md); PAGES is EldenNet's `docs/design/pages.md`; NPC is
 EldenNet's `docs/design/npcs-and-dialogue.md`.
 
 ## 1. Why
