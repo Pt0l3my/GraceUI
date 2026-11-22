@@ -892,3 +892,14 @@ waits for EldenNet's session.
 
 **Owner's words.** The owner's choices in the question dialog, 2026-11-22: "All now, in 0.2.x (Recommended)", "Keep in
 memory (Recommended)", "One paragraph (Recommended)".
+
+*Later (2026-11-22):* EldenNet's session answered proposal 0010 §6, yes to all four. It asked for five additions to
+the editor block, recorded in the proposal's §7 and to be built with it:
+- an opaque `key` on a list item;
+- a `locked` list item, with its words;
+- dotted field ids;
+- `null` as "not set here";
+- a message with no field shown at the top of the block.
+
+It needs no cancel command for a draft: it cancels when the member is no longer watched. Its view on the three
+questions was the owner's answers.
