@@ -4,7 +4,7 @@
 # (cmake/mingw-w64.cmake), the harness run under Wine here. On Linux the pure modules and their unit tests build alone.
 # BUILD.md says how.
 cmake_minimum_required(VERSION 3.20)
-project(GraceUI VERSION 0.2.21 LANGUAGES C CXX)
+project(GraceUI VERSION 0.2.22 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

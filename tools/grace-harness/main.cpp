@@ -6314,6 +6314,32 @@ void run_editor(const std::wstring& dll) {
         on_notes ? "yes" : "NO", on_draft ? "yes" : "NO", asked.kind == GRACEUI_EVENT_COMMAND ? asked.frame.c_str() : "NOTHING",
         working ? "shown" : "NOT SHOWN", status_name(drafted), beside ? "yes" : "NO", on_use ? "yes" : "NO",
         used ? "yes" : "NO");
+
+  // 5. A save whose answer names another row (D218): the list chooses it, its note is watched, and Save keeps focus
+  // once that note is drawn.
+  for (int i = 0; i < 16 && std::strcmp(grace.menu().focused, "editor:your_notes/0/save") != 0; ++i) {
+    press(window, VK_UP, 0x48);
+    menu_after(game, grace, grace.menu().lists);
+  }
+  const bool on_save_again = std::strcmp(grace.menu().focused, "editor:your_notes/0/save") == 0;
+  press(window, VK_RETURN, 0x1C);
+  const SpaceEvent saved = wait_kind(game, table, mod, GRACEUI_EVENT_COMMAND);
+  const std::string chosen = R"({"v":1,"t":"result","space":"demo","id":0,"ok":true,"body":{"chosen":"fish-steps"}})";
+  const GraceUiStatus took = saved.kind == GRACEUI_EVENT_COMMAND
+                                 ? table->answer(mod, saved.reply, chosen.data(), chosen.size())
+                                 : GRACEUI_FAULT;
+  const bool next_note = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.note/fish-steps");
+  std::string fish = note;
+  fish.replace(fish.find("harbour-mouth"), std::strlen("harbour-mouth"), "fish-steps");
+  fish.replace(fish.find("Mouth lamp"), std::strlen("Mouth lamp"), "Steps lamp");
+  publish_state(table, mod, "lantern.note/fish-steps", 1, fish);
+  const bool drawn_next = until_shows(game, grace, "Steps lamp");
+  const bool focus_kept = until_focused(game, grace, "editor:your_notes/0/save");
+  check(on_save_again && took == GRACEUI_OK && next_note && drawn_next && focus_kept,
+        "editor: a save's answer chooses the next row",
+        "on Save %s; answered with fish-steps %s; its note watched %s, drawn %s; focus back on Save %s; focus %s",
+        on_save_again ? "yes" : "NO", status_name(took), next_note ? "yes" : "NO", drawn_next ? "yes" : "NO",
+        focus_kept ? "yes" : "NO", grace.menu().focused);
   press(window, VK_F5, kScanF5);
   frames(game, 5);
 }

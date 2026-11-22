@@ -30,6 +30,43 @@ export function choose(space: string, page: string, key: string): void {
   }
 }
 
+/** A row a save's answer named (D218), by "space/page": chosen once the page's list has it, unless the player chooses a
+ * row by hand first. */
+export const expected = signal<ReadonlyMap<string, string>>(new Map());
+
+export function expectChoice(space: string, page: string, key: string): void {
+  const next = new Map(expected.value);
+  next.set(`${space}/${page}`, key);
+  expected.value = next;
+}
+
+export function forgetExpected(space: string, page: string): void {
+  const id = `${space}/${page}`;
+  if (expected.value.has(id)) {
+    const next = new Map(expected.value);
+    next.delete(id);
+    expected.value = next;
+  }
+}
+
+/** The player's own choice of a row: a save's choice still waiting for its row goes (D218). */
+export function chooseByHand(space: string, page: string, key: string): void {
+  forgetExpected(space, page);
+  choose(space, page, key);
+}
+
+/** The row a master list shows chosen: a save's choice once listed, else the chosen row if still listed, else the
+ * first (D215, D218); null for an empty list. */
+export function rowToShow(keys: readonly string[], held: string | undefined, wanted: string | undefined): string | null {
+  if (wanted !== undefined && keys.includes(wanted)) {
+    return wanted;
+  }
+  if (held !== undefined && keys.includes(held)) {
+    return held;
+  }
+  return keys[0] ?? null;
+}
+
 export function sectionId(space: string, page: string, section: string): string {
   return `${space}/${page}/${section}`;
 }

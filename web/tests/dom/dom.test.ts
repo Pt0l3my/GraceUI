@@ -514,6 +514,17 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.equal(await editor.locator("[data-proposal=brief]").count(), 0);
       await editor.locator("[data-keep='public.summary']").click();
       assert.equal(await editor.locator(".editor__proposal").count(), 0);
+      // A save whose answer names another row (D218): the list chooses it, and Save keeps focus once its note comes.
+      host.bodies.set("note.save", { chosen: "old-crane" });
+      await editor.locator("[data-editor-part=save]").click();
+      await page.locator(".master__row[data-key='old-crane'][aria-selected=true]").waitFor();
+      await page.locator(".editor[data-editor='lantern.note/old-crane']").waitFor();
+      for (let i = 0; i < 20 && await page.evaluate(() => document.activeElement?.getAttribute("data-editor-part")) !== "save"; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.equal(await page.evaluate(() => document.activeElement?.closest(".editor")?.getAttribute("data-editor")),
+                   "lantern.note/old-crane");
+      host.bodies.delete("note.save");
     } finally {
       await close();
     }

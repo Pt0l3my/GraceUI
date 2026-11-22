@@ -44,6 +44,8 @@ export interface FakeHost {
   spaces: Map<string, FixtureSpace>;
   /** Makes the next answers to a command refused with a code (the tests' refusals). */
   refuse: Map<string, string>;
+  /** Fields added to an accepted command's answer body (a space's own answer, such as a save's chosen row, D218). */
+  bodies: Map<string, JsonObject>;
   close(): Promise<void>;
 }
 
@@ -118,6 +120,7 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
   const received: Frame[] = [];
   const spaces = new Map(data.map((d) => [d.pages.space, new FixtureSpace(d)]));
   const refuse = new Map<string, string>();
+  const bodies = new Map<string, JsonObject>();
   const sockets = new Set<Socket>();
   let origin = "";
   let host = "";
@@ -250,7 +253,9 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
             continue;
           }
           const outcome = space.handle(frame.name, (frame.args ?? {}) as JsonObject);
-          const body = outcome.answer.body !== undefined ? { body: outcome.answer.body } : {};  // D169: to the one view
+          const extra = outcome.answer.ok ? bodies.get(frame.name) : undefined;
+          const merged = extra !== undefined ? { ...(outcome.answer.body ?? {}), ...extra } : outcome.answer.body;
+          const body = merged !== undefined ? { body: merged } : {};  // D169: to the one view
           const result = outcome.answer.ok
             ? { v: 1, t: "result", space: space.id, id: frame.id, ok: true, ...body }
             : { v: 1, t: "result", space: space.id, id: frame.id, error: outcome.answer.error, ...body,
@@ -268,7 +273,7 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
   host = `127.0.0.1:${port}`;
   origin = `http://${host}`;
   return {
-    origin, requests, received, spaces, refuse,
+    origin, requests, received, spaces, refuse, bodies,
     close: () => new Promise<void>((resolve) => {
       for (const socket of sockets) {
         socket.destroy();

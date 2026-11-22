@@ -46,7 +46,8 @@ there now, with the clipboard and the IME, rather than in the browser view alone
 list and its detail, in both views, the detail drawing a topic for the chosen row alone (protocol 1.5). **GraceUI 0.2.20**
 lets a space name commands that may take up to 90 s, such as a model's draft (protocol 1.6). **GraceUI 0.2.21** adds an
 editor to both views: a document a space publishes, edited field by field, its unsaved edits kept for the session, then
-checked, saved, reset, restored or drafted by the space's own commands (protocol 1.7). Hotkeys and the log are declared for the increments
+checked, saved, reset, restored or drafted by the space's own commands (protocol 1.7). **GraceUI 0.2.22** lets a save
+choose the list's next row, as when a profile written for a character becomes the player's own. Hotkeys and the log are declared for the increments
 that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the

@@ -13,7 +13,10 @@ import { ComponentBlock, useTopic } from "./components.tsx";
 import { Arrow, Chevron, Cross, HelpMark, Lozenge, Warning } from "./icons.tsx";
 import { focusHeading } from "./navigate.ts";
 import { SettingRow } from "./row.tsx";
-import { advancedOpen, choose, chosen, domId, isCollapsed, sectionId, toggleAdvanced, toggleSection } from "./view-state.ts";
+import {
+  advancedOpen, choose, chooseByHand, chosen, domId, expected, forgetExpected, isCollapsed, rowToShow, sectionId,
+  toggleAdvanced, toggleSection,
+} from "./view-state.ts";
 import type { PageMaster } from "../protocol.ts";
 import { ConfirmDialog, Modal } from "./modal.tsx";
 import { FormBlock } from "./form.tsx";
@@ -293,7 +296,7 @@ function MasterList({ space, page, master, data, current }: { space: string; pag
   const move = (to: number) => {
     const target = rows[Math.max(0, Math.min(rows.length - 1, to))];
     if (target !== undefined) {
-      choose(space, page.id, target.key);
+      chooseByHand(space, page.id, target.key);
       document.getElementById(optionId(target.key))?.focus();
     }
   };
@@ -308,14 +311,14 @@ function MasterList({ space, page, master, data, current }: { space: string; pag
             {rows.map(({ key, row }, i) => (
               <li key={key} id={optionId(key)} role="option" class="master__row" aria-selected={key === current}
                   data-key={key} tabIndex={key === current || (at < 0 && i === 0) ? 0 : -1}
-                  onClick={() => choose(space, page.id, key)}
+                  onClick={() => chooseByHand(space, page.id, key)}
                   onKeyDown={(e) => {
                     if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
                       e.preventDefault();
                       move(e.key === "Home" ? 0 : e.key === "End" ? rows.length - 1 : i + (e.key === "ArrowDown" ? 1 : -1));
                     } else if (e.key === "ArrowRight" || e.key === "Enter") {
                       e.preventDefault();
-                      choose(space, page.id, key);
+                      chooseByHand(space, page.id, key);
                       const detail = document.getElementById(domId("detail", space, page.id));
                       detail?.querySelector<HTMLElement>("button, [href], input, select, [tabindex='0']")?.focus();
                     }
@@ -346,13 +349,19 @@ export function PageView() {
   const masterData = useTopic(route?.space ?? "", master?.topic);
   const masterKeys = master ? masterRows(master, masterData).map((r) => r.key) : [];
   const held = route && page ? chosen.value.get(`${route.space}/${page.id}`) : undefined;
-  const current = held !== undefined && masterKeys.includes(held) ? held : (masterKeys[0] ?? null);
+  const wanted = route && page ? expected.value.get(`${route.space}/${page.id}`) : undefined;
+  const current = master ? rowToShow(masterKeys, held, wanted) : null;
   useEffect(() => dropDrafts(), [route?.space, page?.id]);  // a draft lives while its page is open (D217)
   useEffect(() => {
-    if (route && page && master && current !== null && held !== current) {
-      choose(route.space, page.id, current);  // the first row, or the first since the chosen one went (D215)
+    if (route && page && master && current !== null) {
+      if (current === wanted) {
+        forgetExpected(route.space, page.id);  // a save's choice, its row listed now (D218)
+      }
+      if (held !== current) {
+        choose(route.space, page.id, current);  // or the first row, or the first since the chosen one went (D215)
+      }
     }
-  }, [route?.space, page?.id, current, held]);
+  }, [route?.space, page?.id, current, held, wanted]);
   if (!route || !page) {
     return null;
   }

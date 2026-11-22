@@ -114,3 +114,16 @@ test("the demo's note commands: check's messages, a stale save's conflict, a sav
   assert.equal(s.handle("note.save", { target: "../x", rev: 1, doc: sent }).answer.ok, false);
   assert.equal(s.handle("note.save", { target: "nowhere", rev: 1, doc: sent }).answer.ok, false);
 });
+
+test("a save's chosen row (D218): shown once listed, else the chosen row if listed, else the first; by hand forgets it", async () => {
+  const { rowToShow, expectChoice, expected, chooseByHand, chosen } = await import("../../src/ui/view-state.ts");
+  assert.equal(rowToShow(["a", "b"], "b", "c"), "b");  // not listed yet: the chosen row stays
+  assert.equal(rowToShow(["a", "b", "c"], "b", "c"), "c");
+  assert.equal(rowToShow(["a", "c"], "b", undefined), "a");  // the chosen row went: the first
+  assert.equal(rowToShow([], "b", "c"), null);
+  expectChoice("demo", "demo.lamps", "far-end");
+  assert.equal(expected.value.get("demo/demo.lamps"), "far-end");
+  chooseByHand("demo", "demo.lamps", "fish-steps");
+  assert.equal(expected.value.has("demo/demo.lamps"), false);
+  assert.equal(chosen.value.get("demo/demo.lamps"), "fish-steps");
+});

@@ -19,7 +19,7 @@ import { useTopic } from "./components.tsx";
 import { ConfirmDialog } from "./modal.tsx";
 import type { Confirmable } from "./modal.tsx";
 import { Warning } from "./icons.tsx";
-import { domId } from "./view-state.ts";
+import { domId, expectChoice } from "./view-state.ts";
 
 type Part = "save" | "check" | "reset" | "restore" | "draft";
 
@@ -308,6 +308,7 @@ export function EditorBlockView({ space, block }: { space: string; block: PageBl
   const data = useTopic(space, topic);
   const [running, setRunning] = useState<ReadonlySet<Part>>(new Set());
   const [confirming, setConfirming] = useState<Confirmable | null>(null);
+  const [refocus, setRefocus] = useState<string | null>(null);  // the topic whose document takes Save's focus back
   const ed = block.editor;
   const key = editorKey(space, topic ?? "");
   const st = stateOf(key);
@@ -325,6 +326,13 @@ export function EditorBlockView({ space, block }: { space: string; block: PageBl
     globalThis.addEventListener("beforeunload", ask);
     return () => globalThis.removeEventListener("beforeunload", ask);
   }, [unsaved]);
+  const ready = doc !== null;
+  useEffect(() => {
+    if (refocus !== null && refocus === topic && ready) {
+      setRefocus(null);
+      document.querySelector<HTMLElement>(`.editor[data-editor="${CSS.escape(topic ?? "")}"] [data-editor-part=save]`)?.focus();
+    }
+  }, [refocus, ready, topic]);
   if (!ed || topic === undefined) {
     return null;
   }
@@ -366,6 +374,13 @@ export function EditorBlockView({ space, block }: { space: string; block: PageBl
     }
     if (answer.ok) {
       update(key, cleared);  // the space publishes the document again, with its new revision
+      // The row its page's list should choose next (D218), once listed; Save keeps focus across the change.
+      const next = answer.body?.chosen;
+      if (master !== null && typeof next === "string" && /^[a-z0-9._-]+$/.test(next) &&
+          master.family.length + 1 + next.length <= 64 && next !== master.key) {
+        setRefocus(block.topic !== undefined && master.families.includes(block.topic) ? `${block.topic}/${next}` : null);
+        expectChoice(space, greyed.page, next);
+      }
     } else if (answer.error === "conflict") {
       update(key, (s) => ({ ...s, conflict: true, top: answer.detail || "Changed elsewhere since you opened it." }));
     } else {

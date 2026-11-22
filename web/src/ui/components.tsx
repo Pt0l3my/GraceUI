@@ -39,16 +39,17 @@ function Empty({ own }: { own?: string | null }) {
 
 export function useTopic(space: string, topic: string | undefined): TopicData | undefined {
   const session = useSession();
-  const [watched, setWatched] = useState<Signal<TopicData | undefined> | null>(null);
+  const [watched, setWatched] = useState<{ id: string; data: Signal<TopicData | undefined> } | null>(null);
   useEffect(() => {
     if (topic === undefined) {
       return undefined;
     }
     const handle = session.watch(space, topic);
-    setWatched(handle.data);
+    setWatched({ id: `${space}\u0000${topic}`, data: handle.data });
     return () => handle.release();
   }, [space, topic]);
-  return watched?.value;
+  // Only the topic asked for: never the last one's body for a render after it changes (a master's new row, D215).
+  return watched !== null && watched.id === `${space}\u0000${topic ?? ""}` ? watched.data.value : undefined;
 }
 
 function StatTiles({ body, empty }: { body: JsonObject; empty: JSX.Element }) {

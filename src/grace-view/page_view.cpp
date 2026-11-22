@@ -387,6 +387,7 @@ bool PageView::open(std::string_view page_id) {
       rebuild();
       focus_first_control();
       focus_master_on_open();
+      settle_expected();
       follow_master();  // a master list's first row, chosen once the list has one (D215)
       return true;
     }
@@ -489,9 +490,12 @@ void PageView::set_topic(std::string_view topic, const Json& body) {
   }
   rebuild();
   if (scope_ == Scope::page) {  // the same element, wherever it now is, as rows come and go (D181, D192)
+    // Or the one a new row's choice took focus from, once the new member draws it (D218).
+    const std::string want = refocus_name_.empty() ? was : refocus_name_;
     for (std::size_t i = 0; i < focus_.size(); ++i) {
-      if (name_of(Scope::page, i) == was) {
+      if (name_of(Scope::page, i) == want) {
         page_focus_ = i;
+        refocus_name_.clear();
         break;
       }
     }
@@ -515,6 +519,7 @@ void PageView::set_topic(std::string_view topic, const Json& body) {
         }
       }
     }
+    settle_expected();  // a save's choice, once the list has its row (D218)
     follow_master();
   }
 }
@@ -1689,11 +1694,16 @@ void PageView::choose(const std::string& key) {
   chosen_[current().id] = key;
   const std::string focused_name = focused();
   rebuild();  // the detail's tables have the new member's rows
+  bool found = false;
   for (std::size_t i = 0; scope_ == Scope::page && i < focus_.size(); ++i) {
     if (name_of(Scope::page, i) == focused_name) {
       page_focus_ = i;
+      found = true;
       break;
     }
+  }
+  if (!found && scope_ == Scope::page) {
+    refocus_name_ = focused_name;  // drawn again once the new member's state comes
   }
 }
 
@@ -1714,14 +1724,47 @@ void PageView::follow_master() {
   }
 }
 
+bool PageView::on_master_row() const {
+  return scope_ == Scope::page && page_focus_ < focus_.size() && focus_[page_focus_].kind == FocusKind::master_row;
+}
+
+void PageView::settle_expected() {
+  const protocol::PageMaster* m = master();
+  const auto wanted = expected_.find(current().id);
+  if (m == nullptr || wanted == expected_.end()) {
+    return;
+  }
+  const auto rows = master_rows();
+  if (std::none_of(rows.begin(), rows.end(), [&](const auto& row) { return row.first == wanted->second; })) {
+    return;  // not in the list yet: kept for its next state
+  }
+  const std::string key = wanted->second;
+  expected_.erase(wanted);
+  const bool on_row = on_master_row();
+  choose(key);
+  if (on_row) {
+    // Focus on the list goes with the choice, so that the row focused stays the row chosen.
+    const std::string name = "item:" + m->topic + "/" + key;
+    for (std::size_t i = 0; i < focus_.size(); ++i) {
+      if (name_of(Scope::page, i) == name) {
+        page_focus_ = i;
+      }
+    }
+  }
+}
+
 Action PageView::input(const Input& in) {
   master_focus_pending_ = false;  // a key moves focus on its own from now on
+  refocus_name_.clear();
   if (in.key == Key::activate && !editing() && !capture_open() && scope_ == Scope::page && running(focused())) {
     return {};  // a control waiting for its slow command's answer takes no press (D216)
   }
   const std::string sender = focused();
   Action action = input_body(in);
   note_running(action, sender);
+  if (on_master_row() && master() != nullptr) {
+    expected_.erase(current().id);  // the player chooses by hand: a save's choice waiting for its row goes (D218)
+  }
   follow_master();
   return action;
 }
@@ -1729,6 +1772,7 @@ Action PageView::input(const Input& in) {
 Action PageView::pointer(const Pointer& in) {
   if (in.kind == Pointer::Kind::press) {
     master_focus_pending_ = false;
+    refocus_name_.clear();
     if (const Hit* hit = hit_at(in.x, in.y); hit != nullptr && !editing() && !capture_open() &&
                                                running(name_of(hit->scope, hit->index))) {
       return {};
@@ -1739,6 +1783,9 @@ Action PageView::pointer(const Pointer& in) {
     note_running(action, focused());  // a click focuses what it acts on
   }
   if (in.kind == Pointer::Kind::press) {
+    if (on_master_row() && master() != nullptr) {
+      expected_.erase(current().id);  // as a key's (D218)
+    }
     follow_master();
   }
   return action;
@@ -1988,7 +2035,7 @@ Action PageView::editor_command(EditorAt& at, EditorPart part, const std::string
     default:
       return {};
   }
-  editor_sent_[sender] = at.topic;  // where its answer goes, whatever is open when it comes
+  editor_sent_[sender] = EditorSent{at.topic, current().id};  // where its answer goes, whatever is open when it comes
   return action;
 }
 
@@ -2214,7 +2261,8 @@ void PageView::editor_answer(std::string_view where, const protocol::Result& res
   if (sent == editor_sent_.end()) {
     return;
   }
-  const std::string topic = sent->second;
+  const std::string topic = sent->second.topic;
+  const std::string page = sent->second.page;
   editor_sent_.erase(sent);
   EditorState& st = editors_[topic];
   EditorDocument doc;
@@ -2227,6 +2275,18 @@ void PageView::editor_answer(std::string_view where, const protocol::Result& res
   if (part == "save") {
     if (ok) {
       st.clear();  // saved: the space publishes the document again, with its new revision
+      // The row to choose next (D218): a member's key of the page's master's, taken once the list has it.
+      const protocol::Page* on = nullptr;
+      for (const protocol::Page& p : pages_.pages) {
+        if (p.id == page) {
+          on = &p;
+        }
+      }
+      if (on != nullptr && on->master && answer.is_object() && answer.contains("chosen") && answer["chosen"].is_string() &&
+          member_key(on->master->detail, answer["chosen"].get_ref<const std::string&>())) {
+        expected_[page] = answer["chosen"].get<std::string>();
+        settle_expected();
+      }
     } else if (*result.error == protocol::ErrorCode::conflict) {
       st.conflict = true;
       st.top = words.empty() ? "Changed elsewhere since you opened it." : words;
@@ -2665,6 +2725,7 @@ Action PageView::open_index(std::size_t index, Scope scope) {
   rebuild();
   focus_first_control();
   focus_master_on_open();
+  settle_expected();  // a save's choice, if its row is listed now (D218)
   rail_focus_ = rail_index_of_page();
   scope_ = scope;
   Action action;

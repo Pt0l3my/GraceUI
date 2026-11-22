@@ -1916,3 +1916,43 @@ TEST_CASE("the editor in game: Reset all asks first, by key and by the pointer a
   CHECK(list.dump().find("\"Press again to confirm\"") != std::string::npos);
   CHECK(view.pointer(click).kind == Action::Kind::command);
 }
+
+TEST_CASE("a save's answer names the row to choose; taken once the list has it, unless chosen by hand first (D218)") {
+  PageView view = notes_view();
+  REQUIRE(move_to(view, "editor:your_notes/0/save"));
+  REQUIRE(press(view, Key::activate).kind == Action::Kind::command);
+  // The answer first, its row not listed yet: kept; then the list with it, chosen, and its member watched.
+  view.editor_answer("editor:your_notes/0/save", answer(R"({"chosen": "lower-steps"})"));
+  CHECK(view.chosen() == "harbour-mouth");
+  Json lamps = kLamps;
+  lamps["rows"].push_back(Json::parse(R"({"id": "lower-steps", "name": "Lower steps", "place": "By the water"})"));
+  view.set_topic("lantern.lamps", lamps);
+  CHECK(view.chosen() == "lower-steps");
+  CHECK(watches(view, "lantern.note/lower-steps"));
+  // Its document comes: focus is back where the player left it.
+  Json note = demo_topic("lantern.note/harbour-mouth");
+  note["target"] = "lower-steps";
+  view.set_topic("lantern.note/lower-steps", note);
+  CHECK(view.focused() == "editor:your_notes/0/save");
+  // A row already listed: chosen at once. A key that names no member, or a refused save: nothing.
+  REQUIRE(press(view, Key::activate).kind == Action::Kind::command);
+  view.editor_answer("editor:your_notes/0/save", answer(R"({"chosen": "fish-steps"})"));
+  CHECK(view.chosen() == "fish-steps");
+  view.set_topic("lantern.note/fish-steps", demo_topic("lantern.note/fish-steps"));
+  REQUIRE(view.focused() == "editor:your_notes/0/save");
+  REQUIRE(press(view, Key::activate).kind == Action::Kind::command);
+  view.editor_answer("editor:your_notes/0/save", answer(R"({"chosen": "Not/a key"})"));
+  CHECK(view.chosen() == "fish-steps");
+  // Chosen by hand before the row comes: the save's choice goes.
+  REQUIRE(press(view, Key::activate).kind == Action::Kind::command);
+  view.editor_answer("editor:your_notes/0/save", answer(R"({"chosen": "far-end"})"));
+  for (int i = 0; i < 16 && view.focused().rfind("item:", 0) != 0; ++i) {
+    press(view, Key::up);
+  }
+  REQUIRE(view.focused().rfind("item:", 0) == 0);
+  press(view, Key::down);
+  const std::string by_hand = view.chosen();
+  lamps["rows"].push_back(Json::parse(R"({"id": "far-end", "name": "Far end", "place": "Past the crane"})"));
+  view.set_topic("lantern.lamps", lamps);
+  CHECK(view.chosen() == by_hand);
+}

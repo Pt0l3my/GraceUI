@@ -213,7 +213,8 @@ class PageView {
   // wraps, ↑ ↓ moving by line), ← → change a choice, a pick, a number or a switch, and an item's choice; Shift+↑ ↓ move an
   // item; R undoes a field's edit, or leaves a field that may be unset to the space ("not set here"), or removes an item.
   // A command's answer comes back through editor_answer(), by the element that sent it: a check's messages, a save's
-  // (or its conflict), a draft's proposals.
+  // (or its conflict), a draft's proposals. A save's answer may name the row the page's master list should choose
+  // (`chosen`, D218), taken once the list has it.
   void editor_answer(std::string_view where, const protocol::Result& result);
   // An editor's state, by its document's topic (tests).
   const EditorState* editor_state(std::string_view topic) const;
@@ -357,6 +358,14 @@ class PageView {
   Action pointer_body(const Pointer& in);
   std::map<std::string, std::string, std::less<>> chosen_;  // a page's chosen row's key, by the page's id
   bool master_focus_pending_ = false;  // a master page opened before its list had rows: focus goes to the first one
+  // A row a save's answer named (D218), by the page's id: chosen once the page's list has it, unless the player chooses
+  // a row by hand first.
+  std::map<std::string, std::string, std::less<>> expected_;
+  // The element focus was on when a new row's choice took it away, until the new member's state draws it again (and no
+  // key or press has moved focus since): so that Save, say, keeps focus across a save's choice (D218).
+  std::string refocus_name_;
+  void settle_expected();
+  bool on_master_row() const;
   std::map<std::string, std::vector<std::string>, std::less<>> running_;  // a slow command's senders, oldest first
   void note_running(const Action& action, const std::string& sender);
 
@@ -364,7 +373,11 @@ class PageView {
   enum class EditorPart : std::uint8_t { save, check, reset, restore, reload, notes, draft, use_all, field, item, add,
                                          use, keep };
   std::map<std::string, EditorState, std::less<>> editors_;      // by the document's topic
-  std::map<std::string, std::string, std::less<>> editor_sent_;  // a command's sender: the document's topic it was for
+  struct EditorSent {
+    std::string topic;  // the document's
+    std::string page;   // the page its editor is on
+  };
+  std::map<std::string, EditorSent, std::less<>> editor_sent_;  // a command's sender: what it was for
   struct EditorAt {
     const protocol::PageBlock* block = nullptr;
     std::string topic;
