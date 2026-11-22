@@ -90,7 +90,7 @@ where it says so.
 - **Grace theme.** Ash-umber grounds, one gold light for "here, selected, focused, primary" and for the section labels
   a player scans for (D48), parchment ink at four levels with every readable text at 4.5:1 or better, OFL fonts from
   their publishers, flat and still (§3).
-- **Minimal and stable.** No game-data explorer, no content editors, no sound and no remote access in v1; the host API
+- **Minimal and stable.** No game-data explorer, no content editors (but the profile editor, D213), no sound and no remote access in v1; the host API
   for other mods is designed now and opens with GraceUI 1.1, after EldenNet v1.0 (G18 (a)). Each space's pages write
   settings only through that space
   (EldenNet's through EldenNet); GraceUI and EldenNet stay read-only towards the game.
@@ -133,6 +133,7 @@ where it says so.
 ### 1.3 Not in v1
 
 - A game-data explorer, content editors (personas, cards, knowledge, triggers, prompts), agents or a content hub (D2).
+  *(Amended 2026-11-22 by D213: the profile editor, the player's own text, is in v1 by EldenNet's O43.)*
 - Pages for SkyrimNet features EldenNet does not have: vision, songs, voice cloning and effects, translation,
   packages, the tool server, GPU rental (EldenNet's PAGES §4.11). Later EldenNet features (a director, acts,
   text-to-speech and
@@ -1852,7 +1853,8 @@ later change). G31 and G32 were put on 2026-11-20 at the look review of the in-g
 recommended; G33 was put the same day with proposal 0006 and decided the same day, as recommended; G34 was put on
 2026-11-21 with proposal 0007 and decided the same day, as recommended; G35, proposal 0005 (put on 2026-11-20 and
 entered here with its answer), was decided on 2026-11-21, as proposed; G36 was put on 2026-11-21 with proposal 0008 and
-decided the same day, as recommended.**
+decided the same day, as recommended; G37 was put on 2026-11-22 with proposal 0009 and decided the same day, as
+recommended; G38 was put on 2026-11-22 with proposal 0010 and is open.**
 Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record: the question as it was put, the
 options, the recommendation as written, what was decided, the owner's words and what each amends. This section is its
 index; each G-number the documents cite is a row here and an entry there. G11 and G12 were not questions of §12: they
@@ -1902,6 +1904,7 @@ in the entry with its date, and a later decision amends an earlier one by a note
 | [G35](DECISIONS.md#g35) | Pad chords for hotkeys (proposal 0005)? | As proposed: an anchor then a key (EldenNet's D-pad Up, then View), 150 ms and 0.4 s EST, standing aside when input would be refused, ABI 1.3 | Decided 2026-11-21, as proposed; built 2026-11-22 (D204, GraceUI 0.2.14) |
 | [G37](DECISIONS.md#g37) | Where and how a hotkey is rebound (proposal 0009)? | Recommended: on GraceUI's Hotkeys page for every mod, kept under the mod's and the action's ids; a taken key asked, then moved; chords from two pickers; a mod may read its current key (ABI 1.4) | Decided 2026-11-22, as recommended; built as D208 to D210 (GraceUI 0.2.16) |
 | [G33](DECISIONS.md#g33) | Which of five additions for mods' pages to build (proposal 0006)? | Recommended: all five, a space's greyed state as a framework topic mapping each greyed page to its words (EldenNet's answer) | Decided 2026-11-20: all five, as recommended; built as D185 to D189 |
+| [G38](DECISIONS.md#g38) | What the profile editor needs from GraceUI (proposal 0010)? | Recommended: topic families, master–detail in both views, an editor block, slow commands and the text field in game, all now in 0.2.x, text field first; unsaved edits kept in memory when the menu closes; prose as one paragraph | Open (put 2026-11-22) |
 
 ---
 
@@ -1927,7 +1930,7 @@ the entries above by dated notes; and D154, the harness's frame-cost checks unde
 | # | Decision | Choice | Alternatives | Why | Source |
 |---|---|---|---|---|---|
 | D1 | Repository | GraceUI is a separate repository; EldenNet depends on it, never the reverse | Inside EldenNet | The owner's choice; the UI has its own toolchain (TypeScript) and release rhythm | Owner, 2026-11-07 |
-| D2 | Layout | SkyrimNet's dashboard idea: a home with status and live activity, searchable settings, diagnostics, an event monitor. Not in v1: a game-data explorer, content editors, agents, a content hub. (Its "rail of sections" is superseded by D38) | Copying more of it | Ideas only (EldenNet's rules); an explorer and editors are spoiler surfaces with no v1 use | IA §1 |
+| D2 | Layout | SkyrimNet's dashboard idea: a home with status and live activity, searchable settings, diagnostics, an event monitor. Not in v1: a game-data explorer, content editors, agents, a content hub. (Its "rail of sections" is superseded by D38) (Amended 2026-11-22 by D213, under EldenNet's O43: the profile editor is the one content editor in v1) | Copying more of it | Ideas only (EldenNet's rules); an explorer and editors are spoiler surfaces with no v1 use | IA §1 |
 | D3 | Appearance | Our own Grace theme in the spirit of SeverActions' menu, with seven deliberate differences: contrast, bundled fonts, every control themed, a strong focus ring, full reduced motion, no blur or loops, larger type | Copying its look | It has no licence; its faint text fails contrast; its fonts are Windows system faces | LOOK §1.6, §3 |
 | D4 | Page names | *Superseded by D39.* Elden Ring flavour names with plain subtitles, both searchable, and a plain-names option | Plain only; flavour only | The owner asked for Elden Ring tabs; plain words keep them clear | IA §11 #1 |
 | D5 | Shape | One information architecture, page set, protocol and token source; two views (in game, browser); the same pages in both, Workshop browser-only | Different menus per view | The owner's request; drift is the main risk | IA §2 |
@@ -2138,6 +2141,7 @@ the entries above by dated notes; and D154, the harness's frame-cost checks unde
 | D210 | A mod reads its hotkey's binding (ABI 1.4) | `describe_hotkey(consumer, id, GraceUiHotkeyBinding*)`, appended to the table, fills which of its key and chord fire it now, the key as a virtual key with its modifiers, the chord as `GRACEUI_PAD_CHORD`, and both as the Hotkeys page writes them ("Ctrl+K", "D-pad Up, then View"); `_REFUSED` for an id not the mod's or a struct below 1.4's size; `has_cap("hotkey-bindings")`. `GRACEUI_EVENT_HOTKEY_CHANGED` (`hotkey_id`) tells a mod connected with ABI minor 4 or more that the player changed one, after its presses; an older mod is never sent the kind | Nothing, a mod wording its text without the key | EldenNet's call-out says "Press T to talk" with whatever key the player chose | G37 (4) (a); proposal 0009 §5 |
 | D211 | Hotkey bindings off game | In game only for now: a hotkey exists only as a mod's registration in game, with its name and defaults, and a host outside the game (EldenNet's launcher, G29) serves spaces through `grace-serve` but holds neither GraceUI's own space nor its hotkey table. The bindings are on EldenNet's O77 short list. A later proposal may show and change the kept bindings off game, if GraceUI's settings file keeps each hotkey's last registered name and defaults | The launcher's host serving GraceUI › Hotkeys from the settings file | No registration to name a binding off game, and nothing EldenNet needs there | EldenNet's question, 2026-11-22; proposal 0009 §9; G29 |
 | D212 | A wait handle for each mod's events (ABI 1.5) | D71's optional event handle, built for EldenNet's chat box (its opening within 50 ms, NPC §5.1): `wake_event(consumer, void** event)`, appended to the table, `has_cap("wake")`, gives the mod a Win32 handle of its own (SYNCHRONIZE access) to an auto-reset event, one per mod number, made at the first ask and never closed while GraceUI runs, so that a thread that read it can always set it; a mod's disconnect unsets it for the number's next mod. GraceUI sets it whenever something is kept for the mod's poll: a hotkey's press (the window procedure; a completed chord, in XInput's reads), a hotkey's change (GraceUI's thread), a holder's event (whichever thread keeps it), a view's watch, unwatch or command (the menu's, and the browser's on the server's I/O thread, through each space's wake), the display event (whichever thread changes it); and once when it is asked for. Setting it never waits and calls no mod code; the registry's and the holder mail's hooks are plain function pointers taking no lock. A mod waits on it, polls until `GRACEUI_EVENT_NONE`, then waits again; a wake with nothing to poll can happen. In the harness under Wine the waiting thread woke 1 to 5 ms after a hotkey's key was posted, under 1 ms after a holder's key, about 2.5 ms after a resize | A callback on GraceUI's thread; a handle the mod gives GraceUI, which it might close while GraceUI sets it | No mod code on GraceUI's threads (D71); an event GraceUI owns cannot be closed under it | D71; EldenNet's question, 2026-11-22 (its T6, NPC §5.1) |
+| D213 | The profile editor, the one content editor in v1 (EldenNet's S7.2.a) | EldenNet's O43 (the owner's, 2026-11-07) puts the profile editor in v1, at EldenNet v0.6, in both views: the player's own notes on a persona, a card or a shipped character, their own character profiles for people met, and the Tarnished's own bio (O46). D2's "no content editors in v1" stands for everything else (personas, cards, knowledge, triggers, prompts), and Content packs stays read-only (D46). Since G20 (a) the editor's pages, fields, checks, commands and draft helper are EldenNet's (its PAGES, NPC §4.7; S7.2.b), and so are the rules of the needs list that became EldenNet's (SP1's `subjects` and the player's own text, SP4's people met, PV4's draft text): GraceUI's part is the components, put to the owner as G38 with proposal 0010. The needs list of 2026-11-07 was brought up to date with O46 (the five-layer bio, the Tarnished's own) and O86 (no checks against fixture states) in proposal 0010 §2 | Keeping D2 whole, the editor waiting for Workshop's editors (Later) | O43 is the owner's; the editor is the player's own text, not shipped content | EldenNet's O43, O46, O86; G20 (a); G38; proposal 0010; profile-editor-needs.md |
 
 ---
 
