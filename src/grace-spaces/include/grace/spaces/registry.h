@@ -9,6 +9,8 @@
 // real server.
 #pragma once
 
+#include <atomic>
+
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -101,6 +103,11 @@ class Registry {
   // Called (outside the lock, from any thread) when something waits for the menu: a space came or went, a state it
   // watches was published, a result of its came back.
   void set_game_wake(std::function<void()> wake);
+  // Called with a space's owner (its consumer) whenever an event waits for its poll: a view's watch, unwatch or
+  // command, from the browser (on the server's I/O thread) or the menu. It takes no lock and must never wait: the host
+  // sets the mod's wait handle (D212). Set once, before any space is added.
+  using OwnerWake = void (*)(std::uint64_t owner) noexcept;
+  void set_owner_wake(OwnerWake wake) noexcept { owner_wake_.store(wake, std::memory_order_release); }
   // The spaces that asked for the game's view, in the order they registered.
   std::vector<GameSpace> game_spaces() const;
   std::uint64_t spaces_revision() const noexcept;
@@ -129,6 +136,15 @@ class Registry {
   std::vector<GameResult> game_results_;
   std::function<void()> game_wake_;
   void wake_game() const;
+  std::atomic<OwnerWake> owner_wake_{nullptr};
+  void wake_owner(std::uint64_t owner) const noexcept {
+    if (const OwnerWake wake = owner_wake_.load(std::memory_order_acquire); wake != nullptr) {
+      wake(owner);
+    }
+  }
+  serve::SpaceWake wake_of(std::uint64_t owner) const {
+    return [this, owner] { wake_owner(owner); };  // the registry lives as long as the process (it is never destroyed)
+  }
 };
 
 }  // namespace grace::spaces

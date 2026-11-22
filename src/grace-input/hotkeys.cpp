@@ -104,6 +104,7 @@ Added Hotkeys::add(std::uint16_t owner, std::string_view action, Key key, std::u
   }
   Slot& slot = slots_[free_index];
   slot.owner = owner;
+  slot.owner_now.store(owner, std::memory_order_release);
   slot.action_length = static_cast<std::uint8_t>(action.size());
   std::memcpy(slot.action, action.data(), action.size());
   slot.defaults = defaults;
@@ -139,6 +140,7 @@ void Hotkeys::remove_owner(std::uint16_t owner) noexcept {
     if (state_of(slot.word.load(std::memory_order_relaxed)) != free && slot.owner == owner) {
       slot.word.store(0, std::memory_order_release);
       slot.chord.store(0, std::memory_order_release);
+      slot.owner_now.store(0, std::memory_order_release);
       slot.owner = 0;
       slot.action_length = 0;
       slot.name_length = 0;
@@ -159,6 +161,7 @@ void Hotkeys::remove(std::uint32_t id) noexcept {
   if (state_of(word) != free && generation_of(word) == (id >> 8)) {
     slot.word.store(0, std::memory_order_release);
     slot.chord.store(0, std::memory_order_release);
+    slot.owner_now.store(0, std::memory_order_release);
     slot.owner = 0;
     slot.action_length = 0;
     slot.name_length = 0;
@@ -432,6 +435,30 @@ Listed Hotkeys::listed_of(const Slot& slot, std::uint32_t id) noexcept {
   listed.name_length = slot.name_length;
   std::memcpy(listed.name_bytes, slot.name, slot.name_length);
   return listed;
+}
+
+std::uint16_t Hotkeys::owner_of(std::uint32_t id) const noexcept {
+  const std::uint32_t index = (id & 0xFFu) - 1;
+  if ((id & 0xFFu) == 0 || index >= kMaxHotkeys) {
+    return 0;
+  }
+  const Slot& slot = slots_[index];
+  const std::uint16_t owner = slot.owner_now.load(std::memory_order_acquire);
+  const std::uint64_t word = slot.word.load(std::memory_order_acquire);
+  return state_of(word) != free && generation_of(word) == (id >> 8) ? owner : 0;
+}
+
+std::uint64_t Hotkeys::changed_owners() const noexcept {
+  std::uint64_t owners = 0;
+  lock();
+  for (const Slot& slot : slots_) {
+    if (state_of(slot.word.load(std::memory_order_relaxed)) != free && slot.changed.load(std::memory_order_acquire) &&
+        slot.owner > 0 && slot.owner < 64) {
+      owners |= std::uint64_t{1} << slot.owner;
+    }
+  }
+  unlock();
+  return owners;
 }
 
 std::size_t Hotkeys::list(Listed* out, std::size_t capacity) const noexcept {

@@ -162,7 +162,7 @@ Status Registry::add(std::uint64_t owner, std::string_view mod_id, const Registr
     return Status::full;
   }
   if (server_ != nullptr && (space->views & kViewBrowser) != 0) {
-    space->port = server_->add_space(space->description);
+    space->port = server_->add_space(space->description, wake_of(owner));
     if (space->port == nullptr) {
       why = "the browser view's server does not take it";
       return Status::refused;
@@ -215,7 +215,7 @@ void Registry::attach(serve::Server& server) {
   server_ = &server;
   for (const auto& space : spaces_) {
     if ((space->views & kViewBrowser) != 0 && space->port == nullptr) {
-      space->port = server.add_space(space->description);
+      space->port = server.add_space(space->description, wake_of(space->owner));
     }
   }
 }
@@ -546,12 +546,14 @@ void Registry::game_watch(std::string_view space_id, std::string_view topic, boo
       std::string frame;
       protocol::encode_text(protocol::Message(protocol::Sub{space->id, 0, name, std::nullopt}), frame);
       space->internal.push_back(Space::Internal{EventKind::watched, std::move(frame), 0});
+      wake_owner(space->owner);
     } else if (!on && space->game_watched.erase(name) != 0) {
       if (!browser) {
         space->game_states.erase(name);
         std::string frame;
         protocol::encode_text(protocol::Message(protocol::Unsub{space->id, 0, name}), frame);
         space->internal.push_back(Space::Internal{EventKind::unwatched, std::move(frame), 0});
+        wake_owner(space->owner);
       }
     }
     return;
@@ -610,6 +612,7 @@ bool Registry::game_command(std::string_view space_id, protocol::Cmd command, st
       std::string frame;
       protocol::encode_text(protocol::Message(std::move(command)), frame);
       space->internal.push_back(Space::Internal{EventKind::command, std::move(frame), pending.reply});
+      wake_owner(space->owner);
       ticket = pending.reply;
       return true;
     }

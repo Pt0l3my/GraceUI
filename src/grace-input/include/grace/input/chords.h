@@ -67,8 +67,9 @@ class PadChords {
 
   // One read of user `index`'s pad: `real` its buttons as XInput gave them. Rewrites `buttons` (what the pad ledger lets
   // the game see) and `packet` to what chords let it see, and counts a completed chord's press in `hotkeys`.
+  // With ChordStep::fired, `fired` (if given) names the hotkey whose press was counted (its mod's wait handle, D212).
   ChordStep filter(unsigned index, std::uint16_t real, std::uint16_t& buttons, std::uint32_t& packet, Aside aside,
-                   Hotkeys& hotkeys, std::int64_t now_ms) noexcept;
+                   Hotkeys& hotkeys, std::int64_t now_ms, std::uint32_t* fired = nullptr) noexcept;
 
   // XInputGetState answered that user `index` has no pad: whatever was resolving is forgotten, with no tap.
   void disconnected(unsigned index) noexcept;

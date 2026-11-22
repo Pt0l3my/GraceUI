@@ -85,8 +85,14 @@ TEST_CASE("a key 200 ms after the anchor is held back; at 0.4 s the hotkey fires
   CHECK(pads.read(kUp | kView, 400).buttons == kUp);
   CHECK(pads.read(kUp | kView, 599).buttons == kUp);
   CHECK(pads.presses() == 0);
-  const Read fired = pads.read(kUp | kView, 600);
-  CHECK(fired.step == ChordStep::fired);
+  std::uint32_t which = 0;
+  std::uint16_t seen = kUp | kView;
+  std::uint32_t packet = kPacket;
+  const ChordStep fired_step = pads.chords.filter(0, kUp | kView, seen, packet, Aside::none, pads.hotkeys,
+                                                  kStart + 600, &which);
+  CHECK(fired_step == ChordStep::fired);
+  CHECK(which == pads.id);  // the hotkey it fired, for its mod's wait handle (D212)
+  const Read fired{seen, packet, fired_step};
   CHECK(fired.buttons == 0);              // the anchor too, from now on
   CHECK(fired.packet == kPacket + 1);     // the change is read
   CHECK(pads.presses() == 1);

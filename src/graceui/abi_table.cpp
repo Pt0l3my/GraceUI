@@ -604,6 +604,23 @@ GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t hotkey_id,
   }
 }
 
+// ---- ABI 1.5's slot (D212).
+
+GraceUiStatus wake_event(GraceUiConsumer consumer, void** event) noexcept {
+  try {
+    if (event == nullptr) {
+      return refused_argument(consumer, "wake_event", "a null place for the handle");
+    }
+    void* handle = nullptr;
+    const GraceUiStatus status = grace::host::abi1::wake_event(consumer, handle);
+    *event = status == GRACEUI_OK ? handle : nullptr;
+    return status;
+  } catch (...) {
+    grace::host::abi1::fault("wake_event");
+    return GRACEUI_FAULT;
+  }
+}
+
 constinit const GraceUiApi1 kTable = {
     sizeof(GraceUiApi1),
     GRACEUI_ABI1_MINOR,
@@ -631,6 +648,7 @@ constinit const GraceUiApi1 kTable = {
     &log,
     &set_caret,
     &describe_hotkey,
+    &wake_event,
 };
 
 }  // namespace

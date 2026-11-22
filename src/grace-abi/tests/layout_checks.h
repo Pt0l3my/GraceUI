@@ -226,7 +226,7 @@ GU_AT(GraceUiWorldState, size, 0);
 GU_AT(GraceUiWorldState, flags, 4);
 
 /* The table: its four numbers, then D73's twenty slots in D73's order, 8 bytes each, then ABI 1.1's one (D176). */
-GU_SIZE(GraceUiApi1, 192); /* 184 in ABI 1.1 to 1.3; describe_hotkey appended in 1.4 (D210) */
+GU_SIZE(GraceUiApi1, 200); /* 184 in ABI 1.1 to 1.3; describe_hotkey in 1.4 (D210); wake_event in 1.5 (D212) */
 GU_AT(GraceUiApi1, size, 0);
 GU_AT(GraceUiApi1, abi_minor, 4);
 GU_AT(GraceUiApi1, graceui_version, 8);
@@ -253,9 +253,10 @@ GU_AT(GraceUiApi1, set_world_state, 160);
 GU_AT(GraceUiApi1, log, 168);
 GU_AT(GraceUiApi1, set_caret, 176);
 GU_AT(GraceUiApi1, describe_hotkey, 184);
+GU_AT(GraceUiApi1, wake_event, 192);
 
 /* The numbers a mod compiles in. */
-GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 4u, "ABI 1.4");
+GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 5u, "ABI 1.5");
 GU_SIZE(GraceUiHotkeyBinding, 104); /* ABI 1.4 (D210) */
 GU_AT(GraceUiHotkeyBinding, key_text, 24);
 GU_AT(GraceUiHotkeyBinding, chord_text, 56);

@@ -32,6 +32,7 @@
 #include "input.h"
 #include "log.h"
 #include "menu.h"
+#include "wake.h"
 
 namespace grace::host::hooks_input {
 namespace {
@@ -309,6 +310,9 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
                                          : 0;
       const Decision decision = rules.key(key, vk, down, system, repeat, now, modifiers);
       handled(decision);
+      if (decision.hotkey != 0) {
+        wake::signal(input::hotkeys().owner_of(decision.hotkey));  // its mod's poll has a press (D212)
+      }
       if (decision.to_holder) {
         push_key(key, vk, down, repeat);
       }
@@ -629,7 +633,11 @@ void filter_pad(DWORD user, XINPUT_STATE* state, DWORD result) noexcept {
         const std::uint16_t real = pad.buttons;
         input::pads().filter(user, packet, pad, input::capture(), now);
         // The mods' chords (D204): a chord's key held back while it resolves, its tap, both hidden after it fires.
-        input::chords().filter(user, real, pad.buttons, packet, input::chord_aside(), input::hotkeys(), now);
+        std::uint32_t fired = 0;
+        if (input::chords().filter(user, real, pad.buttons, packet, input::chord_aside(), input::hotkeys(), now,
+                                   &fired) == grace::input::ChordStep::fired) {
+          wake::signal(input::hotkeys().owner_of(fired));  // its mod's poll has a press (D212)
+        }
 #if defined(GRACEUI_TEST_EXPORTS)
         if (!(pad == before)) {
           counters::count_masked(counters::xinput, input::capture().holder().holds());

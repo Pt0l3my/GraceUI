@@ -134,6 +134,8 @@ class Hotkeys {
   // The first of `owner`'s hotkeys whose binding the player changed since its mod last asked, its mark cleared; false
   // if none (GRACEUI_EVENT_HOTKEY_CHANGED, D208).
   bool take_changed(std::uint16_t owner, std::uint32_t& id) noexcept;
+  // The owners with a change waiting, one bit each (bit `owner`, owners 1 to 63): their wait handles are set (D212).
+  std::uint64_t changed_owners() const noexcept;
 
   // ---- GraceUI's thread.
 
@@ -166,6 +168,8 @@ class Hotkeys {
 
   // The bound hotkey whose key and modifiers these are exactly, or 0.
   std::uint32_t match(Key key, std::uint8_t modifiers) const noexcept;
+  // The owner of hotkey `id`, or 0 if no hotkey has it now: read without the lock, to set its mod's wait handle (D212).
+  std::uint16_t owner_of(std::uint32_t id) const noexcept;
   // Counts a press of `id` (from its key or its chord); false if it was removed meanwhile.
   bool pressed(std::uint32_t id) noexcept;
 
@@ -228,6 +232,7 @@ class Hotkeys {
     std::uint8_t name_length = 0;       // under the lock
     char name[kHotkeyNameMax] = {};     // under the lock
     Chosen defaults{};                  // under the lock: its mod's, for a reset
+    std::atomic<std::uint16_t> owner_now{0};  // `owner`, readable without the lock (D212)
     std::atomic<bool> changed{false};   // the player changed it since its mod last asked
   };
 

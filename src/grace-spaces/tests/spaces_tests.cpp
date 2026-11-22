@@ -5,6 +5,8 @@
 // in-game menu through one store.
 #include <doctest/doctest.h>
 
+#include <atomic>
+
 #include <chrono>
 #include <string>
 #include <thread>
@@ -663,4 +665,35 @@ TEST_CASE("a section's own actions and status are checked at registration; a des
   const auto results = registry.take_game_results();
   REQUIRE(results.size() == 1);
   CHECK(results[0].result.error == protocol::ErrorCode::confirm_required);
+}
+
+namespace {
+std::atomic<int> g_owner_wakes{0};
+std::atomic<std::uint64_t> g_woken_owner{0};
+void owner_woken(std::uint64_t owner) noexcept {
+  g_owner_wakes.fetch_add(1);
+  g_woken_owner.store(owner);
+}
+}  // namespace
+
+TEST_CASE("the menu's watch, unwatch and command wake the space's owner, for its mod's wait handle (D212)") {
+  spaces::Registry registry;
+  registry.set_owner_wake(&owner_woken);
+  g_owner_wakes.store(0);
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame), why) == Status::ok);
+  registry.game_watch("demo", "settings", true);
+  CHECK(g_owner_wakes.load() == 1);
+  CHECK(g_woken_owner.load() == kMod);
+  registry.game_watch("demo", "settings", true);  // already watched: no event, no wake
+  CHECK(g_owner_wakes.load() == 1);
+  std::uint64_t ticket = 0;
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 3, "settings.set",
+                                                      Json::object({{"key", "lantern.enabled"}, {"value", false}})},
+                                ticket));
+  CHECK(g_owner_wakes.load() == 2);
+  registry.game_watch("demo", "settings", false);
+  CHECK(g_owner_wakes.load() == 3);
 }

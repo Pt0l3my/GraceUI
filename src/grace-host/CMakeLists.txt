@@ -19,7 +19,8 @@ add_library(grace_host STATIC
   menu.cpp
   session.cpp
   spaces.cpp
-  surfaces.cpp)
+  surfaces.cpp
+  wake.cpp)
 target_include_directories(grace_host
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

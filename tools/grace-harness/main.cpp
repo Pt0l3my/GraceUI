@@ -24,6 +24,7 @@
 #include <xinput.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <array>
 #include <atomic>
@@ -6142,7 +6143,7 @@ void run_bindings_write(const std::wstring& dll) {
   if (table == nullptr) {
     fatal("no table");
   }
-  const Connected tide = connect(table, request_for("tide-charts", GRACEUI_VERSION_PACK(0, 2, 16), "Tide Charts", "hotkeys hotkey-bindings"));
+  const Connected tide = connect(table, request_for("tide-charts", GRACEUI_VERSION_PACK(0, 2, 16), "Tide Charts", "hotkeys hotkey-bindings wake"));
   const Connected camp = connect(table, request_for("quiet-camp", GRACEUI_VERSION_PACK(0, 2, 16), "Quiet Camp", "hotkeys hotkey-bindings"));
   GraceUiConnectRequest older_request = request_for("older-mod", GRACEUI_VERSION_PACK(0, 2, 2), "Older mod", "hotkeys");
   older_request.abi_minor = 3;
@@ -6163,17 +6164,22 @@ void run_bindings_write(const std::wstring& dll) {
             tide_status == GRACEUI_OK && camp_status == GRACEUI_OK && older_status == GRACEUI_OK &&
             described_status == GRACEUI_OK && before.key == VK_F9 && std::string(before.key_text) == "F9" &&
             before.bound == GRACEUI_HOTKEY_KEY_BOUND && before.chord_text[0] == '\0' &&
-            foreign_status == GRACEUI_REFUSED && small_status == GRACEUI_REFUSED && table->abi_minor == 4u,
+            foreign_status == GRACEUI_REFUSED && small_status == GRACEUI_REFUSED && table->abi_minor >= 4u,
         "bindings: describe_hotkey",
         "has_cap(\"%s\") %s, minor %u; Tide Charts' F9: %s, key %u \"%s\", bound %u; another mod's id %s; a binding "
         "of 16 bytes %s",
         GRACEUI_CAP_HOTKEY_BINDINGS, cap ? "yes" : "NO", table->abi_minor, status_name(described_status), before.key,
         before.key_text, before.bound, status_name(foreign_status), status_name(small_status));
 
+  void* tide_wake = nullptr;  // its wait handle (D212): set by the change below
+  table->wake_event(tide.answer.consumer, &tide_wake);
   start_host(game, grace);
   until_atlas(game, grace);
   // 1. Change key on Tide Charts' row in the menu: Enter, then F8, taken whole.
   GraceUiTestMenu menu = to_hotkeys(game, grace, window, "row:graceui.hotkeys/tide-charts/tide-table/key");
+  poll_holder(table, tide.answer.consumer, sizeof(GraceUiEvent));
+  while (tide_wake != nullptr && WaitForSingleObject(tide_wake, 0) == WAIT_OBJECT_0) {
+  }
   const std::string on_row = menu.focused;
   press(window, VK_RETURN, 0x1C);
   menu = menu_after(game, grace, menu.lists);
@@ -6183,17 +6189,22 @@ void run_bindings_write(const std::wstring& dll) {
   const Json first = own_topic(game, grace, "graceui.hotkeys", [](const Json& b) {
     return hotkey_cell(b, "tide-charts/tide-table", "key") == "F8";
   });
+  const bool woken = tide_wake != nullptr && WaitForSingleObject(tide_wake, 0) == WAIT_OBJECT_0;
+  if (tide_wake != nullptr) {
+    CloseHandle(tide_wake);
+  }
   GraceUiStatus after_status = GRACEUI_FAULT;
   const GraceUiHotkeyBinding after = binding_of(table, tide.answer.consumer, tide_id, after_status);
   const std::vector<std::uint32_t> told = changes_of(table, tide.answer.consumer);
   check(on_row == "row:graceui.hotkeys/tide-charts/tide-table/key" && asks_for_key &&
             hotkey_cell(first, "tide-charts/tide-table", "key") == "F8" && after.key == VK_F8 &&
-            std::string(after.key_text) == "F8" && told == std::vector<std::uint32_t>{tide_id} && menu.open == 1,
+            std::string(after.key_text) == "F8" && told == std::vector<std::uint32_t>{tide_id} && menu.open == 1 &&
+            woken,
         "bindings: a key captured in the menu",
-        "focus on %s; the modal %s; the page's row: %s; describe_hotkey: \"%s\" (vk %u); told: %zu change(s); the "
-        "menu %s",
+        "focus on %s; the modal %s; the page's row: %s; describe_hotkey: \"%s\" (vk %u); told: %zu change(s), its "
+        "wait handle %s; the menu %s",
         on_row.c_str(), asks_for_key ? "asked for a key" : "DID NOT ASK", hotkey_cell(first, "tide-charts/tide-table", "key").c_str(),
-        after.key_text, after.key, told.size(), menu.open != 0 ? "still open" : "CLOSED");
+        after.key_text, after.key, told.size(), woken ? "set" : "NOT SET", menu.open != 0 ? "still open" : "CLOSED");
 
   // 2. F7, Quiet Camp's: asked first, Enter moves it; Quiet Camp's hotkey is left with no key and told so.
   press(window, VK_RETURN, 0x1C);
@@ -6343,6 +6354,134 @@ void run_bindings(const std::wstring& dll) {
     check(status == 0, name, "its process ended with %d", status);
   }
   DeleteFileW(settings_file_of(dll).c_str());
+}
+
+// ---- A wait handle for each mod's events (D212, ABI 1.5): set once when asked for, then whenever something is kept for
+// the mod's poll, timed by a thread that waits on it while this one plays the game's part.
+void run_wake(const std::wstring& dll) {
+  Game game(false, 1280, 720);
+  const HWND window = game.window();
+  cursor_into(window);
+  pump_messages();
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  const Connected connected = connect(table, request_for("wake-mod", GRACEUI_VERSION_PACK(0, 2, 17), "Wake mod",
+                                                         "hotkeys input holder-events display wake panels textures"));
+  HarnessMod mod{table, connected.answer.consumer, 0};
+  const std::uint32_t white_pixels[16] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                          0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                          0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
+  std::uint64_t field = 0;
+  const bool made = mod.texture(4, 4, white_pixels, mod.white) == GRACEUI_OK &&
+                    mod.panel(GRACEUI_LAYER_MODAL, GRACEUI_ANCHOR_TOP_LEFT, 200, 100, 300, 120, GRACEUI_PANEL_TAKES_INPUT,
+                              field) == GRACEUI_OK;
+  mod.quad(field, 300, 120, Colour{40, 60, 90});
+  table->show_panel(mod.me, field);
+  std::uint32_t f9 = 0;
+  const GraceUiStatus hotkey = hotkey_of(table, mod.me, "wake-key", "Wake key", VK_F9, f9);
+  const bool covers = GRACEUI_API1_COVERS(table, wake_event);
+  const GraceUiStatus refused = covers ? table->wake_event(mod.me, nullptr) : GRACEUI_NOT_YET;
+  void* handle = nullptr;
+  const GraceUiStatus got = covers ? table->wake_event(mod.me, &handle) : GRACEUI_NOT_YET;
+  const bool set_at_ask = handle != nullptr && WaitForSingleObject(handle, 0) == WAIT_OBJECT_0;
+  const bool then_unset = handle != nullptr && WaitForSingleObject(handle, 0) == WAIT_TIMEOUT;  // auto-reset
+  const bool cap = table->has_cap(GRACEUI_CAP_WAKE, std::strlen(GRACEUI_CAP_WAKE)) != 0;
+  check(made && hotkey == GRACEUI_OK && covers && cap && refused == GRACEUI_REFUSED && got == GRACEUI_OK && set_at_ask &&
+            then_unset && table->abi_minor >= 5u,
+        "wake: the handle", "has_cap(\"%s\") %s, minor %u; a null place %s; asked %s, set once at once %s, then unset %s",
+        GRACEUI_CAP_WAKE, cap ? "yes" : "NO", table->abi_minor, status_name(refused), status_name(got),
+        set_at_ask ? "yes" : "NO", then_unset ? "yes" : "NO");
+  if (handle == nullptr) {
+    return;
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  frames(game, 30);
+
+  // How long after `act` the waiting thread woke, in ms; -1 if it did not within 2 s. What waited before is taken first.
+  const auto timed = [&](const std::function<void()>& act) {
+    poll_holder(table, mod.me, sizeof(GraceUiEvent));
+    while (WaitForSingleObject(handle, 0) == WAIT_OBJECT_0) {
+    }
+    std::atomic<std::int64_t> woke{0};
+    std::thread waiter([&] {
+      if (WaitForSingleObject(handle, 2000) == WAIT_OBJECT_0) {
+        woke.store(std::chrono::steady_clock::now().time_since_epoch().count());
+      }
+    });
+    const auto start = std::chrono::steady_clock::now();
+    act();
+    for (int i = 0; i < 200 && woke.load() == 0; ++i) {
+      pump_messages();
+      game.frame(kInputColour, PresentWith::present);
+      Sleep(5);
+    }
+    waiter.join();
+    const std::int64_t at = woke.load();
+    if (at == 0) {
+      return -1.0;
+    }
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::duration(at) - start.time_since_epoch())
+        .count();
+  };
+  const auto kinds = [&] {
+    std::vector<std::uint32_t> out;
+    for (const GraceUiEvent& e : poll_holder(table, mod.me, sizeof(GraceUiEvent))) {
+      out.push_back(e.kind);
+    }
+    return out;
+  };
+  const auto has = [](const std::vector<std::uint32_t>& got_kinds, std::uint32_t kind) {
+    return std::find(got_kinds.begin(), got_kinds.end(), kind) != got_kinds.end();
+  };
+
+  // 1. A hotkey's press.
+  const double pressed_ms = timed([&] {
+    post_key(window, VK_F9, 0x43, true, false);
+    post_key(window, VK_F9, 0x43, false, false);
+  });
+  const std::vector<std::uint32_t> after_press = kinds();
+  // 2. A holder's event, with the mod holding input.
+  GraceUiStatus request_status = GRACEUI_FAULT;
+  const bool holds = mod.request(field, GRACEUI_HOLDER_MODAL, request_status, GRACEUI_WANT_KEYBOARD | GRACEUI_WANT_MOUSE,
+                                 GRACEUI_INPUT_EVENTS).answer == GRACEUI_INPUT_GRANTED;
+  frames(game, 2);
+  const double typed_ms = timed([&] {
+    post_key(window, VK_LEFT, 0x4B, true, false);
+    post_key(window, VK_LEFT, 0x4B, false, false);
+  });
+  const std::vector<std::uint32_t> after_typing = kinds();
+  table->release_input(mod.me);
+  frames(game, 3);
+  // 3. The display.
+  const double resized_ms = timed([&] { game.resize(1600, 900); });
+  const std::vector<std::uint32_t> after_resize = kinds();
+  // 4. Nothing: nothing wakes it.
+  poll_holder(table, mod.me, sizeof(GraceUiEvent));
+  while (WaitForSingleObject(handle, 0) == WAIT_OBJECT_0) {
+  }
+  for (int i = 0; i < 30; ++i) {
+    pump_messages();
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(10);
+  }
+  const bool quiet = WaitForSingleObject(handle, 0) == WAIT_TIMEOUT;
+  check(pressed_ms >= 0 && pressed_ms < 50 && has(after_press, GRACEUI_EVENT_HOTKEY) && holds && typed_ms >= 0 &&
+            typed_ms < 50 && has(after_typing, GRACEUI_EVENT_KEY) && resized_ms >= 0 &&
+            has(after_resize, GRACEUI_EVENT_DISPLAY) && quiet,
+        "wake: set for what the mod's poll has",
+        "a hotkey's press woke the waiting thread in %.1f ms (polled: hotkey %s); a holder's key in %.1f ms (key "
+        "%s); a resize in %.1f ms (display %s); with nothing to poll, it stayed unset %s",
+        pressed_ms, has(after_press, GRACEUI_EVENT_HOTKEY) ? "yes" : "NO", typed_ms,
+        has(after_typing, GRACEUI_EVENT_KEY) ? "yes" : "NO", resized_ms,
+        has(after_resize, GRACEUI_EVENT_DISPLAY) ? "yes" : "NO", quiet ? "yes" : "NO");
+  CloseHandle(handle);  // the mod's own; GraceUI keeps its event
 }
 
 // ---- Pad chords (D204, proposal 0005), through GraceUI_Test_PadRead (Wine has no pad): what the game's XInputGetState
@@ -7171,6 +7310,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"bindings-read") {
     std::printf("-- scenario: the next session keeps them; every hotkey reset (D208)\n");
     run_bindings_read(dll);
+  } else if (scenario == L"wake") {
+    std::printf("-- scenario: a wait handle for each mod's events through ABI 1.5 (D212)\n");
+    run_wake(dll);
   } else if (scenario == L"chords") {
     std::printf("-- scenario: pad chords for mods' hotkeys through ABI 1.3 (D204)\n");
     run_chords(dll);
@@ -7204,7 +7346,7 @@ int wmain(int argc, wchar_t** argv) {
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
             L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"spike", L"spike-after",
-            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings"}) {
+            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake"}) {
         run(child_scenario, dll, this_program());
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.

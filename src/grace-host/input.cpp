@@ -14,6 +14,7 @@
 #include "menu.h"
 #include "session.h"
 #include "state.h"
+#include "wake.h"
 
 // Dear ImGui's Win32 backend maps a key message to an ImGuiKey with this function, which it leaves non-static for
 // others to use; GraceUI calls it on the present thread with the virtual key and the scan code the message carried.
@@ -438,9 +439,13 @@ void push_event(HolderEvent event) noexcept {
   }
 }
 
+void notify_mail(std::uint16_t owner) noexcept { wake::signal(owner); }  // its mod's poll has a holder's event (D212)
+
 void make_holder_mail() {
   if (g_mail.load(std::memory_order_acquire) == nullptr) {
-    g_mail.store(new grace::input::HolderMail(), std::memory_order_release);  // never freed: GraceUI never unloads
+    auto* mail = new grace::input::HolderMail();  // never freed: GraceUI never unloads
+    mail->set_notify(&notify_mail);
+    g_mail.store(mail, std::memory_order_release);
   }
 }
 

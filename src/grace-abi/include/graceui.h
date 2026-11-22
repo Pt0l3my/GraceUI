@@ -49,9 +49,10 @@ extern "C" {
 
 /* The ABI major this header describes, and its minor: the number of the newest appends (0: the first table). */
 #define GRACEUI_ABI_MAJOR 1u
-#define GRACEUI_ABI1_MINOR 4u /* 1: a holder's events and set_caret (GraceUI 0.2.1, D176); 2: the display and scaled
+#define GRACEUI_ABI1_MINOR 5u /* 1: a holder's events and set_caret (GraceUI 0.2.1, D176); 2: the display and scaled
                                  faces (GraceUI 0.2.2, D180); 3: pad chords (GraceUI 0.2.14, D204); 4: a hotkey's
-                                 binding as the player set it (GraceUI 0.2.16, D210) */
+                                 binding as the player set it (GraceUI 0.2.16, D210); 5: a wait handle for the mod's
+                                 events (GraceUI 0.2.17, D212) */
 
 /*
  * GraceUI's own version (GRACEUI_VERSION_PACK). Needs no start: callable from any thread, at any time after the DLL is
@@ -148,6 +149,7 @@ typedef uint32_t GraceUiStatus;
 #define GRACEUI_CAP_PAD_CHORDS "pad-chords" /* register_hotkey's pad_chord: since 0.2.14, ABI 1.3 (D204) */
 #define GRACEUI_CAP_HOTKEY_BINDINGS "hotkey-bindings" /* describe_hotkey, GRACEUI_EVENT_HOTKEY_CHANGED: since 0.2.16, ABI
                                                         1.4 (D210) */
+#define GRACEUI_CAP_WAKE "wake" /* wake_event: since 0.2.17, ABI 1.5 (D212) */
 
 /* A connected mod's handle, which every slot after connect takes; 0 is none. */
 typedef uint64_t GraceUiConsumer;
@@ -668,6 +670,17 @@ typedef struct GraceUiApi1 {
   /* One of the mod's hotkeys as the player has bound it now (above): GRACEUI_OK; _REFUSED (an id not the mod's, or a
    * binding that is null or smaller than 1.4's). Since GraceUI 0.2.16 (GRACEUI_CAP_HOTKEY_BINDINGS). */
   GraceUiStatus (*describe_hotkey)(GraceUiConsumer consumer, uint32_t hotkey_id, GraceUiHotkeyBinding* binding);
+
+  /* ---- ABI 1.5 (GraceUI 0.2.17, D212). */
+
+  /* A wait handle for the mod's events (D71), so that its thread waits for GraceUI instead of polling on a timer:
+   * GRACEUI_OK with `*event` a Win32 HANDLE of the mod's own (SYNCHRONIZE access: wait on it, close it when done; ask
+   * again for another), or _REFUSED (event null), _FAULT (Windows made no event). GraceUI sets the event, auto-reset,
+   * whenever something is kept for the mod's poll: a hotkey's press or change, a holder's event, a view's watch,
+   * unwatch or command, the display event; and once when it is asked for. So a mod waits on it, then polls until
+   * GRACEUI_EVENT_NONE, then waits again; a wake with nothing to poll can happen and costs one poll. GraceUI never calls
+   * the mod's code to wake it. One event for the connection's life; since GraceUI 0.2.17 (GRACEUI_CAP_WAKE). */
+  GraceUiStatus (*wake_event)(GraceUiConsumer consumer, void** event);
 } GraceUiApi1;
 
 /* Whether `api`'s size covers `slot` (a member of GraceUiApi1): call a slot only then. */

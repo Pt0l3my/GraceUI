@@ -4,6 +4,7 @@
 #include <atomic>
 
 #include "grace/abi/consumers.h"
+#include "wake.h"
 
 namespace grace::host::display {
 namespace {
@@ -20,6 +21,7 @@ constinit std::atomic<std::uint32_t> g_seen[grace::abi::kMaxConsumers + 1] = {};
 void changed() noexcept {
   if (g_warm.load(std::memory_order_acquire)) {
     g_revision.fetch_add(1, std::memory_order_acq_rel);
+    wake::signal_all();  // each mod's poll has the display event (D212); rare, and it never waits
   }
 }
 
@@ -48,6 +50,7 @@ void set_faces_scale(float content_scale) noexcept {
   g_faces_scale.store(content_scale, std::memory_order_relaxed);
   g_warm.store(true, std::memory_order_release);
   g_revision.fetch_add(1, std::memory_order_acq_rel);
+  wake::signal_all();
 }
 
 Snapshot read() noexcept {

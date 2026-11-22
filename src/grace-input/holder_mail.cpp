@@ -54,6 +54,9 @@ void HolderMail::post(const Mail& mail) noexcept {
   }
   if (Box* box = box_of(static_cast<std::uint16_t>(now >> 32)); box != nullptr) {
     box->ring.push(mail);  // full: the newest dropped and counted
+    if (const Notify notify = notify_.load(std::memory_order_acquire); notify != nullptr) {
+      notify(static_cast<std::uint16_t>(now >> 32));  // dropped or kept, the mod has something to poll
+    }
   }
 }
 
@@ -101,6 +104,9 @@ void HolderMail::end(std::uint32_t generation, std::uint32_t why) noexcept {
         // own slot, which take() gives first: whatever the ring holds of this holder is discarded anyway (D207).
         box->pending_end.store((std::uint64_t{generation} << 32) | why, std::memory_order_release);
       }
+    }
+    if (const Notify notify = notify_.load(std::memory_order_acquire); notify != nullptr) {
+      notify(static_cast<std::uint16_t>(now >> 32));
     }
   }
 }

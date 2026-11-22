@@ -28,6 +28,7 @@
 #include "input.h"
 #include "log.h"
 #include "session.h"
+#include "wake.h"
 
 namespace grace::host::spaces {
 namespace {
@@ -116,6 +117,7 @@ grace::spaces::Registry& registry() noexcept {
       log_line("%.*s", static_cast<int>(line.size()), line.data());
     });
     made->set_game_wake([] { hooks::wake(); });  // the menu's: a space came or went, a state or a result came back
+    made->set_owner_wake(&wake::signal_consumer);  // a mod's: a view's watch, unwatch or command for its poll (D212)
     return made;
   }();
   return *made;
@@ -159,6 +161,7 @@ void apply_kept_to_registered() {
       input::hotkeys().rebind_chord(listed[i].id, chosen[i].chord, false, other);
     }
   }
+  wake::signal_owners(input::hotkeys().changed_owners());
 }
 
 void restore_saved(grace::spaces::OwnSpace& own) {
@@ -229,6 +232,7 @@ std::string uses_words(std::string_view caps) {
       {GRACEUI_CAP_HOLDER_EVENTS, "input events"}, {GRACEUI_CAP_HOTKEYS, "hotkeys"},
       {GRACEUI_CAP_WORLD_STATE, "world state"},    {GRACEUI_CAP_DISPLAY, "the display"},
       {GRACEUI_CAP_PAD_CHORDS, "pad chords"},      {GRACEUI_CAP_HOTKEY_BINDINGS, "hotkey bindings"},
+      {GRACEUI_CAP_WAKE, "a wait handle"},
   };
   std::string out;
   for (const auto& [cap, word] : kWords) {
@@ -616,6 +620,7 @@ grace::pages::Outcome hotkeys_command(const protocol::Cmd& command) {
 grace::pages::Outcome own_command(const protocol::Cmd& command) {
   grace::pages::Outcome out = command.name.rfind("hotkeys.", 0) == 0 ? hotkeys_command(command) : mods_notices(command);
   if (out.ok) {
+    wake::signal_owners(input::hotkeys().changed_owners());  // their mods' polls have the change (D210, D212)
     if (grace::spaces::OwnSpace* own = g_own.load(std::memory_order_acquire); own != nullptr) {
       refresh_topics(*own);
     }
@@ -678,6 +683,7 @@ void apply_menu_key(const grace::spaces::OwnSpace& own) {
   for (std::size_t i = 0; i < count && g_menu_key_applied; ++i) {
     keep_binding(lost[i]);
   }
+  wake::signal_owners(input::hotkeys().changed_owners());
   if (g_menu_key_applied || key != grace::input::kF5) {
     log_line("the menu's key is %s", grace::input::key_text(key, 0).c_str());
   }

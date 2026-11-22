@@ -1071,3 +1071,15 @@ The owner approved proposal 0009 as recommended, and it is built:
   and sends it as `value`; answer `confirm_required` with words to ask before a change, and the view sends it again with
   `confirm`. A row whose key cell is empty takes no row actions.
 
+## 50. A wait handle for your events (2026-11-22, D212; GraceUI 0.2.17, ABI 1.5)
+
+As answered on 2026-11-22, for your chat box's opening within 50 ms (your NPC §5.1):
+
+- `wake_event(consumer, &event)` (`has_cap("wake")`) gives you a Win32 handle of your own to an auto-reset event that
+  GraceUI sets whenever something waits for your poll: a hotkey's press or change, a holder's event, a view's watch,
+  unwatch or command, the display event; and once when you ask, so your first wait polls what may already be there.
+- T6: wait on it (with your 100 ms as the fallback), poll until `GRACEUI_EVENT_NONE`, then wait again. A wake with
+  nothing to poll can happen; it costs one poll. Close the handle when you are done with it; GraceUI keeps its event.
+- Under Wine in the harness, the waiting thread woke 1 to 5 ms after a hotkey's key was posted. Re-vendor `graceui.h`
+  at 0.2.17 (`GRACEUI_ABI1_MINOR` 5) and raise your floor to use it; nothing changes for you until then.
+

@@ -129,7 +129,7 @@ ChordStep PadChords::step(One& one, std::uint16_t real, Aside aside, Hotkeys& ho
 }
 
 ChordStep PadChords::filter(unsigned index, std::uint16_t real, std::uint16_t& buttons, std::uint32_t& packet,
-                            Aside aside, Hotkeys& hotkeys, std::int64_t now_ms) noexcept {
+                            Aside aside, Hotkeys& hotkeys, std::int64_t now_ms, std::uint32_t* fired) noexcept {
   if (index >= kPads) {
     return ChordStep::none;
   }
@@ -137,6 +137,9 @@ ChordStep PadChords::filter(unsigned index, std::uint16_t real, std::uint16_t& b
   ChordStep result = ChordStep::none;
   if (!one.busy.test_and_set(std::memory_order_acquire)) {
     result = step(one, real, aside, hotkeys, now_ms);
+    if (result == ChordStep::fired && fired != nullptr) {
+      *fired = one.id;
+    }
     one.busy.clear(std::memory_order_release);
   }
   const ChordView view = unpack(one.view.load(std::memory_order_acquire));

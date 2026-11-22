@@ -26,6 +26,7 @@
 #include "session.h"
 #include "spaces.h"
 #include "state.h"
+#include "wake.h"
 
 namespace grace::host::abi1 {
 namespace {
@@ -522,6 +523,19 @@ bool valid_action(std::string_view action) noexcept {
 
 }  // namespace
 
+GraceUiStatus wake_event(GraceUiConsumer consumer, void*& event) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  const std::uint32_t owner = admitted(consumer, status);
+  if (owner == 0) {
+    return status;
+  }
+  if (!wake::handle_for(owner, event)) {
+    log_line("a wait handle could not be made");
+    return GRACEUI_FAULT;
+  }
+  return GRACEUI_OK;
+}
+
 GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t id, GraceUiHotkeyBinding& out) noexcept {
   GraceUiStatus status = GRACEUI_OK;
   const std::uint32_t owner = admitted(consumer, status);
@@ -792,6 +806,7 @@ void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept {
   session::registry().retire_owner(consumer);
   spaces::registry().remove_owner(consumer);  // its space leaves the browser view, its commands' replies dropped
   input::hotkeys().remove_owner(static_cast<std::uint16_t>(owner));
+  wake::forget(owner);  // its event stays, unset, for the number's next mod (D212)
   apply_world(session::world().remove(consumer));
 }
 

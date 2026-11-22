@@ -501,3 +501,25 @@ TEST_CASE("the player's bindings kept: by mod and action, replaced, forgotten, b
   kept.forget_all();
   CHECK(kept.all(all, kKeptBindings) == 0);
 }
+
+TEST_CASE("a hotkey's owner without the lock, and the owners with a change waiting, for their wait handles (D212)") {
+  Hotkeys hotkeys;
+  std::uint32_t a = 0;
+  std::uint32_t b = 0;
+  Binding binding;
+  REQUIRE(hotkeys.add(3, "one", kF11, 0, 0, kF5, a, &binding, "One") == Added::bound);
+  REQUIRE(hotkeys.add(7, "two", kK, 0, 0, kF5, b, &binding, "Two") == Added::bound);
+  CHECK(hotkeys.owner_of(a) == 3);
+  CHECK(hotkeys.owner_of(b) == 7);
+  CHECK(hotkeys.owner_of(0) == 0);
+  CHECK(hotkeys.changed_owners() == 0);
+  Taken other;
+  REQUIRE(hotkeys.rebind_key(a, kK, 0, kF5, true, other) == Rebound::done);  // moved from 7's
+  CHECK(hotkeys.changed_owners() == ((std::uint64_t{1} << 3) | (std::uint64_t{1} << 7)));
+  std::uint32_t id = 0;
+  CHECK(hotkeys.take_changed(3, id));
+  CHECK(hotkeys.changed_owners() == (std::uint64_t{1} << 7));
+  hotkeys.remove(b);
+  CHECK(hotkeys.owner_of(b) == 0);
+  CHECK(hotkeys.changed_owners() == 0);
+}
