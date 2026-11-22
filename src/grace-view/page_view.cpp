@@ -971,8 +971,18 @@ void PageView::rebuild() {
     if (collapsed_.count(page.id + "/" + section.id) != 0) {
       continue;
     }
-    const auto add_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
-      for (const protocol::PageBlock& block : blocks) {
+    const auto add_blocks = [&](const std::vector<protocol::PageBlock>& blocks, bool advanced) {
+      for (std::size_t b = 0; b < blocks.size(); ++b) {
+        const protocol::PageBlock& block = blocks[b];
+        if (block.kind == protocol::BlockKind::form) {
+          // A form (D195): each of its fields a focus stop, then its button (G38 (a)).
+          const std::string form = form_id(section, b, advanced);
+          for (std::size_t k = 0; block.fields && k < block.fields->size(); ++k) {
+            focus_.push_back({FocusKind::form_field, form + "/" + (*block.fields)[k].id, k, &block});
+          }
+          focus_.push_back({FocusKind::form_submit, form, 0, &block});
+          continue;
+        }
         if (const Json* table = table_of(block); table != nullptr) {
           // A table's rows: each row's switch, if it has a switch column (D181), then its row actions (D192), each a
           // focus stop of its own, by the row's key.
@@ -988,6 +998,11 @@ void PageView::rebuild() {
             if (sw != nullptr) {
               const std::string id = row.is_object() ? cell_words(row, (*sw)["key"].get<std::string>()) : std::string();
               focus_.push_back({FocusKind::cell, cell_base(block) + "/" + (id.empty() ? std::to_string(r) : id), r});
+            }
+            // Its row secret (D194), set in game since G38 (a): a row that takes one and has a key.
+            if (block.row_secret && row.is_object() && cell_words(row, block.row_secret->column) != "none" &&
+                !cell_words(row, block.row_secret->key).empty()) {
+              focus_.push_back({FocusKind::row_secret, secret_id(block, row, r), r, &block});
             }
             for (std::size_t a = 0; a < actions; ++a) {
               const protocol::RowAction& act = (*block.row_actions)[a];
@@ -1007,11 +1022,11 @@ void PageView::rebuild() {
         }
       }
     };
-    add_blocks(section.blocks);
+    add_blocks(section.blocks, false);
     if (section.advanced && !section.advanced->empty()) {
       focus_.push_back({FocusKind::advanced, section.id, i});
       if (advanced_open_.count(page.id + "/" + section.id) != 0) {
-        add_blocks(*section.advanced);
+        add_blocks(*section.advanced, true);
       }
     }
   }
@@ -1070,7 +1085,7 @@ std::string PageView::name_of(Scope scope, std::size_t index) const {
     return "";
   }
   static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
-                                          "cell", "row", "section-action"};
+                                          "cell", "row", "section-action", "field", "submit", "secret"};
   const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -1290,6 +1305,32 @@ Action PageView::pointer(const Pointer& in) {
   }
   drag_.clear();
   const Hit* hit = hit_at(in.x, in.y);
+  if (editing()) {
+    const Rect& box = edit_box_;
+    if (box.w > 0 && in.x >= box.x && in.x < box.right() && in.y >= box.y && in.y < box.bottom()) {
+      // In the edited field: the caret to the boundary nearest the pointer.
+      std::size_t best = edit_.field.caret();
+      float nearest = 1e30f;
+      for (const auto& [at, x] : edit_stops_) {
+        if (std::fabs(x - in.x) < nearest) {
+          nearest = std::fabs(x - in.x);
+          best = at;
+        }
+      }
+      edit_.field.place(best);
+      return {};
+    }
+    if (!(edit_.kind == EditKind::search && hit != nullptr && hit->scope == Scope::top && hit->index > 0)) {
+      // A click elsewhere: a text's or a form field's text kept, as leaving a field in the browser keeps it; a
+      // secret's edit dropped; search's results closed.
+      const bool keep = (edit_.kind == EditKind::setting && !edit_.masked) || edit_.kind == EditKind::form_field;
+      Action left = edit_.kind == EditKind::search ? edit(EditInput{EditKey::tab}) : finish_edit(keep, 0);
+      if (left.kind == Action::Kind::command) {
+        return left;  // the edit's command; the click did only that
+      }
+      hit = hit_at(in.x, in.y);
+    }
+  }
   if (hit == nullptr) {
     return {};
   }
@@ -1301,7 +1342,18 @@ Action PageView::pointer(const Pointer& in) {
     return input(Input{Key::activate, false});
   }
   if (target.scope == Scope::top) {
-    scope_ = Scope::top;  // search waits for GraceUI's text field (§5.6): focus only
+    scope_ = Scope::top;
+    if (target.index > 0 && target.index - 1 < search_hits_.size()) {
+      // One of search's results (§4.3): its home page, the row focused.
+      const SearchHit picked = search_hits_[target.index - 1];
+      search_query_.clear();
+      search_hits_.clear();
+      end_edit();
+      return open_hit(picked);
+    }
+    if (!editing()) {
+      return input(Input{Key::activate, false});  // the search box: its field
+    }
     return {};
   }
   if (target.index >= focus_.size()) {
@@ -1349,7 +1401,10 @@ Action PageView::pointer(const Pointer& in) {
       if (st.type == SettingType::text && st.choices_from) {
         return change(st, 1, false);  // a picker: the next choice (D193)
       }
-      return {};  // a key, a text, a secret: edited in the browser view until GraceUI's own field
+      if (f.kind == FocusKind::setting && (st.type == SettingType::text || st.type == SettingType::secret)) {
+        return input(Input{Key::activate, false});  // GraceUI's own field (G38 (a))
+      }
+      return {};  // a key: Enter captures it (D209)
     }
     case FocusKind::cell:
       if (!on_control) {
@@ -1366,7 +1421,8 @@ void PageView::refused(std::string_view key, std::string_view reason) {
   refusals_[std::string(key)] = std::string(reason);
   for (std::size_t i = 0; i < focus_.size(); ++i) {
     if ((focus_[i].kind == FocusKind::setting || focus_[i].kind == FocusKind::cell ||
-         focus_[i].kind == FocusKind::row_action || focus_[i].kind == FocusKind::section_action) &&
+         focus_[i].kind == FocusKind::row_action || focus_[i].kind == FocusKind::section_action ||
+         focus_[i].kind == FocusKind::form_submit || focus_[i].kind == FocusKind::row_secret) &&
         focus_[i].id == key) {
       scope_ = Scope::page;
       page_focus_ = i;
@@ -1422,6 +1478,310 @@ std::vector<SearchHit> PageView::search(std::string_view query) const {
   return hits;
 }
 
+// ---- Text entry (§5.6, D57, G38 (a)).
+
+namespace {
+
+// A string's bytes overwritten, then emptied: a secret's copy, once it is in its command.
+void wipe(std::string& text) noexcept {
+  volatile char* bytes = text.data();
+  for (std::size_t i = 0; i < text.size(); ++i) {
+    bytes[i] = '\0';
+  }
+  text.clear();
+}
+
+constexpr std::size_t kSearchHits = 8;       // search's results in game (§4.3)
+constexpr std::size_t kSearchMax = 128;      // its query's bytes
+constexpr std::size_t kSettingTextMax = 1024;  // a text's or a secret's value, as the settings store bounds it
+
+}  // namespace
+
+std::string PageView::form_id(const protocol::PageSection& section, std::size_t index, bool advanced) {
+  return section.id + "/" + (advanced ? "a" : "") + std::to_string(index);
+}
+
+std::string PageView::secret_id(const protocol::PageBlock& block, const Json& row, std::size_t r) {
+  const std::string key = row.is_object() && block.row_secret ? cell_words(row, block.row_secret->key) : std::string();
+  return cell_base(block) + "/" + (key.empty() ? std::to_string(r) : key);
+}
+
+void PageView::start_edit(EditKind kind, std::string id, std::string_view text, std::size_t max, bool masked,
+                          const protocol::PageBlock* block, Json row_key) {
+  end_edit();
+  edit_.kind = kind;
+  edit_.id = std::move(id);
+  edit_.field = TextField(text, max);
+  edit_.masked = masked;
+  edit_.offset = 0;
+  edit_.block = block;
+  edit_.row_key = std::move(row_key);
+  refusals_.erase(edit_.id);  // a new try: the last refusal's line goes
+}
+
+void PageView::end_edit() {
+  if (edit_.masked) {
+    edit_.field.wipe();
+  }
+  edit_ = Edit{};
+  caret_rect_ = {};
+  edit_box_ = {};
+  edit_stops_.clear();
+}
+
+void PageView::edited() {
+  if (edit_.kind == EditKind::form_field) {
+    form_values_[edit_.id] = edit_.field.text();  // kept in the view until the space accepts the form (G38 (2))
+  } else if (edit_.kind == EditKind::search) {
+    search_query_ = edit_.field.text();
+    search_hits_ = search(search_query_);
+    if (search_hits_.size() > kSearchHits) {
+      search_hits_.resize(kSearchHits);
+    }
+    search_pick_ = 0;
+  }
+}
+
+Action PageView::finish_edit(bool keep, int move_on) {
+  Action action;
+  std::string text = edit_.field.text();
+  switch (edit_.kind) {
+    case EditKind::setting:
+      if (const Setting* st = setting(edit_.id); keep && st != nullptr) {
+        if (edit_.masked) {
+          if (!text.empty()) {
+            action = set(*st, Json(text));
+            values_[st->key] = "set";  // the view keeps whether it is set, never the secret (invariant 5)
+          }
+        } else if (value(st->key) != Json(text)) {
+          action = set(*st, Json(text));
+        }
+      }
+      break;
+    case EditKind::form_field:
+      form_values_[edit_.id] = text;
+      break;
+    case EditKind::row_secret:
+      if (keep && !text.empty() && edit_.block != nullptr && edit_.block->row_secret) {
+        action.kind = Action::Kind::command;
+        action.command.space = pages_.space;
+        action.command.name = edit_.block->row_secret->command;
+        action.command.args = Json::object({{edit_.block->row_secret->key, edit_.row_key}, {"value", text}});
+      }
+      break;
+    case EditKind::search:
+    case EditKind::none:
+      break;
+  }
+  if (edit_.masked) {
+    wipe(text);
+  }
+  end_edit();
+  if (move_on != 0 && !focus_.empty()) {
+    page_focus_ = move_on > 0 ? std::min(page_focus_ + 1, focus_.size() - 1) : (page_focus_ > 0 ? page_focus_ - 1 : 0);
+  }
+  return action;
+}
+
+void PageView::focus_setting(std::string_view key) {
+  // Its tab, its section opened and its Advanced disclosure if it is under one, then its row focused.
+  const protocol::Page& page = current();
+  const auto holds = [&](const std::vector<protocol::PageBlock>& blocks) {
+    for (const protocol::PageBlock& block : blocks) {
+      if (block.kind == protocol::BlockKind::settings) {
+        for (const std::string& k : block.keys.value_or(std::vector<std::string>{})) {
+          if (k == key) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  };
+  const auto open_in = [&](const std::vector<protocol::PageSection>& list) {
+    for (const protocol::PageSection& section : list) {
+      const bool plain = holds(section.blocks);
+      const bool advanced = section.advanced && holds(*section.advanced);
+      if (plain || advanced) {
+        collapsed_.erase(page.id + "/" + section.id);
+        if (advanced) {
+          advanced_open_.insert(page.id + "/" + section.id);
+        }
+        return true;
+      }
+    }
+    return false;
+  };
+  if (page.tabs) {
+    for (std::size_t t = 0; t < page.tabs->size(); ++t) {
+      if (open_in((*page.tabs)[t].sections)) {
+        tab_ = t;
+        break;
+      }
+    }
+  } else if (page.sections) {
+    open_in(*page.sections);
+  }
+  rebuild();
+  for (std::size_t i = 0; i < focus_.size(); ++i) {
+    if (focus_[i].kind == FocusKind::setting && focus_[i].id == key) {
+      page_focus_ = i;
+      scope_ = Scope::page;
+    }
+  }
+}
+
+Action PageView::open_hit(const SearchHit& hit) {
+  for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
+    if (pages_.pages[p].id == hit.page && present(hit.page)) {
+      Action action = open_index(p, Scope::page);
+      focus_setting(hit.key);  // the row focused on its home page, on its tab (§4.3)
+      return action;
+    }
+  }
+  return {};
+}
+
+Action PageView::edit(const EditInput& in) {
+  if (!editing()) {
+    return {};
+  }
+  using Move = TextField::Move;
+  TextField& f = edit_.field;
+  switch (in.key) {
+    case EditKey::left:
+      f.move(in.ctrl ? Move::word_left : Move::left, in.shift);
+      return {};
+    case EditKey::right:
+      f.move(in.ctrl ? Move::word_right : Move::right, in.shift);
+      return {};
+    case EditKey::home:
+      f.move(Move::home, in.shift);
+      return {};
+    case EditKey::end:
+      f.move(Move::end, in.shift);
+      return {};
+    case EditKey::backspace:
+      if (f.backspace(in.ctrl)) {
+        edited();
+      }
+      return {};
+    case EditKey::erase:
+      if (f.erase(in.ctrl)) {
+        edited();
+      }
+      return {};
+    case EditKey::select_all:
+      f.select_all();
+      return {};
+    case EditKey::copy:
+    case EditKey::cut:
+      if (!edit_.masked && f.selected()) {  // never a secret's (invariant 5)
+        clipboard_ = in.key == EditKey::cut ? f.cut() : std::string(f.selection());
+        has_clipboard_ = true;
+        if (in.key == EditKey::cut) {
+          edited();
+        }
+      }
+      return {};
+    case EditKey::up:
+    case EditKey::down:
+      if (edit_.kind == EditKind::search && !search_hits_.empty()) {
+        search_pick_ = in.key == EditKey::up ? (search_pick_ > 0 ? search_pick_ - 1 : 0)
+                                             : std::min(search_pick_ + 1, search_hits_.size() - 1);
+      }
+      return {};
+    case EditKey::enter:
+      if (edit_.kind == EditKind::search) {
+        if (search_hits_.empty()) {
+          return {};
+        }
+        const SearchHit hit = search_hits_[search_pick_];
+        search_query_.clear();
+        search_hits_.clear();
+        end_edit();
+        return open_hit(hit);
+      }
+      return finish_edit(true, edit_.kind == EditKind::form_field ? 1 : 0);
+    case EditKey::tab:
+      if (edit_.kind == EditKind::search) {
+        end_edit();  // its query stays in the box; its results close
+        scope_ = in.shift ? Scope::rail : Scope::page;
+        if (in.shift) {
+          rail_focus_ = rail_index_of_page();
+        }
+        return {};
+      }
+      return finish_edit(true, in.shift ? -1 : 1);
+    case EditKey::escape:
+      if (edit_.kind == EditKind::search) {
+        search_query_.clear();
+        search_hits_.clear();
+        end_edit();
+        return {};
+      }
+      return finish_edit(edit_.kind == EditKind::form_field, 0);  // a form field keeps its text; an edit is dropped
+  }
+  return {};
+}
+
+Action PageView::typed(char32_t code_point) {
+  if (capture_open()) {
+    return {};
+  }
+  if (!editing()) {
+    return code_point == U'/' ? input(Input{Key::search, false}) : Action{};  // `/` opens search (§4.3)
+  }
+  if (edit_.field.type(code_point)) {
+    edited();
+  }
+  return {};
+}
+
+Action PageView::pasted(std::string_view utf8) {
+  if (editing() && edit_.field.paste(utf8)) {
+    edited();
+  }
+  return {};
+}
+
+bool PageView::take_clipboard(std::string& out) {
+  if (!has_clipboard_) {
+    return false;
+  }
+  out = std::move(clipboard_);
+  clipboard_.clear();
+  has_clipboard_ = false;
+  return true;
+}
+
+void PageView::accepted(std::string_view where) {
+  const std::string prefix = std::string(where) + "/";
+  for (auto at = form_values_.lower_bound(prefix); at != form_values_.end() && at->first.rfind(prefix, 0) == 0;) {
+    at = form_values_.erase(at);  // the form the space took: its fields empty again (D195)
+  }
+  refusals_.erase(std::string(where));
+}
+
+std::string PageView::form_value(std::string_view field) const {
+  const auto found = form_values_.find(field);
+  return found != form_values_.end() ? found->second : std::string();
+}
+
+void PageView::cancel_confirmation() noexcept {
+  confirming_.clear();
+  capture_ = Capture{};  // and an open capture: nothing changes (D209)
+  if (editing()) {
+    // As Escape, whatever closed the menu (§5.1, G38 (2)): a form's fields keep their text for the next open (kept at
+    // each change), a setting's and a secret's edit is dropped, and search empties.
+    if (edit_.kind == EditKind::search) {
+      search_query_.clear();
+      search_hits_.clear();
+    }
+    end_edit();
+  }
+}
+
 // ---- Input (§5.3, §5.4, §5.7).
 
 // The first control of the page's focus order: past the section labels where there is one (§5.7).
@@ -1444,6 +1804,28 @@ Action PageView::open_index(std::size_t index, Scope scope) {
 Action PageView::input(const Input& in) {
   if (capture_open()) {
     return capture_input(in);  // the modal has every key until it closes (D209)
+  }
+  if (editing()) {
+    // A pad's buttons while a field edits (§5.4): A keeps, B leaves, the d-pad moves its caret or search's pick.
+    switch (in.key) {
+      case Key::activate: return edit(EditInput{EditKey::enter});
+      case Key::back: return edit(EditInput{EditKey::escape});
+      case Key::up: return edit(EditInput{EditKey::up});
+      case Key::down: return edit(EditInput{EditKey::down});
+      case Key::left: return edit(EditInput{EditKey::left});
+      case Key::right: return edit(EditInput{EditKey::right});
+      case Key::next: return edit(EditInput{EditKey::tab});
+      case Key::previous: return edit(EditInput{EditKey::tab, true});
+      default: return {};
+    }
+  }
+  if (in.key == Key::search) {
+    // `/` or Ctrl+F (§4.3): search's field, from anywhere in the menu.
+    confirming_.clear();
+    scope_ = Scope::top;
+    start_edit(EditKind::search, "search", search_query_, kSearchMax, false);
+    edited();
+    return {};
   }
   if (rail_.empty() && focus_.empty()) {
     return {};
@@ -1566,8 +1948,12 @@ Action PageView::input(const Input& in) {
         scope_ = Scope::rail;
         rail_focus_ = rail_index_of_page();
         return {};
+      case Key::activate:
+        start_edit(EditKind::search, "search", search_query_, kSearchMax, false);
+        edited();
+        return {};
       default:
-        return {};  // search's text field comes with GraceUI's own field (D57)
+        return {};
     }
   }
   // The page.
@@ -1675,6 +2061,15 @@ Action PageView::input(const Input& in) {
           if (s->type == SettingType::bool_ || s->type == SettingType::choice || s->type == SettingType::tri_state) {
             return change(*s, 1, false);
           }
+          if (((s->type == SettingType::text && !s->choices_from) || s->type == SettingType::secret) && !s->locked &&
+              !greyed(*s) && s->availability != "later") {
+            // GraceUI's own field (G38 (a)): a text from its value; a secret empty, masked, never shown (invariant 5).
+            const bool secret = s->type == SettingType::secret;
+            const Json& v = value(s->key);
+            start_edit(EditKind::setting, s->key, secret || !v.is_string() ? std::string() : v.get<std::string>(),
+                       kSettingTextMax, secret);
+            return {};
+          }
           if (s->type == SettingType::key_name && !s->locked && s->availability != "later") {
             capture_ = Capture{};  // a key's setting takes the next key press (D209)
             capture_.kind = CaptureKind::key;
@@ -1688,18 +2083,53 @@ Action PageView::input(const Input& in) {
         case FocusKind::cell:
           refusals_.erase(f.id);
           return toggle_cell(f);
+        case FocusKind::form_field: {
+          if (!greyed_words(current().id).empty() || f.block == nullptr || !f.block->fields) {
+            return {};  // a greyed page's form is inert (D188)
+          }
+          const protocol::FormField& field = (*f.block->fields)[f.index];
+          start_edit(EditKind::form_field, f.id, form_value(f.id), field.max_, false, f.block);
+          return {};
+        }
+        case FocusKind::form_submit: {
+          if (!greyed_words(current().id).empty() || f.block == nullptr || !f.block->command) {
+            return {};
+          }
+          Json args = Json::object();
+          for (const protocol::FormField& field : f.block->fields.value_or(std::vector<protocol::FormField>{})) {
+            args[field.id] = form_value(f.id + "/" + field.id);  // every field, an empty one as ""
+          }
+          refusals_.erase(f.id);
+          Action action;
+          action.kind = Action::Kind::command;
+          action.command.space = pages_.space;
+          action.command.name = *f.block->command;
+          action.command.args = std::move(args);
+          return action;
+        }
+        case FocusKind::row_secret: {
+          if (!greyed_words(current().id).empty() || f.block == nullptr || !f.block->row_secret) {
+            return {};
+          }
+          const Json* table = table_of(*f.block);
+          Json key;
+          if (table != nullptr && f.index < (*table)["rows"].size()) {
+            const Json& row = (*table)["rows"][f.index];
+            if (row.is_object() && row.contains(f.block->row_secret->key)) {
+              key = row[f.block->row_secret->key];
+            }
+          }
+          start_edit(EditKind::row_secret, f.id, std::string(), kSettingTextMax, true, f.block, std::move(key));
+          return {};
+        }
         case FocusKind::shortcut:
         case FocusKind::related: {
           const std::string target = f.kind == FocusKind::shortcut ? settings_[f.index].home : f.id;
           for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
             if (pages_.pages[p].id == target && present(target)) {
               Action action = open_index(p, Scope::page);
-              if (f.kind == FocusKind::shortcut) {  // the row focused on its home page
-                for (std::size_t i = 0; i < focus_.size(); ++i) {
-                  if (focus_[i].kind == FocusKind::setting && focus_[i].id == f.id) {
-                    page_focus_ = i;
-                  }
-                }
+              if (f.kind == FocusKind::shortcut) {  // the row focused on its home page, on its tab
+                focus_setting(f.id);
               }
               return action;
             }
@@ -1727,6 +2157,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     out.clips.push_back(Rect{0, 0, W, H});
     // Where the pointer acts (§5.5): each focusable element, within the clip it is drawn in.
     hits_.clear();
+    caret_rect_ = {};
+    edit_box_ = {};
+    edit_stops_.clear();
     const auto hit = [&](Rect rect, Scope scope, std::size_t index, Rect control = {}, Rect track = {},
                          std::size_t segments = 0) {
       const Rect& clip = out.clips[c.clip];
@@ -1752,6 +2185,81 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         }
       }
       return kNone;
+    };
+    // A text field (§5.6, D57): its well, its edge and its text. The one being edited shows its selection and its caret
+    // (steady: nothing loops, invariant 14), its text scrolled so that the caret stays in view; a masked one is drawn
+    // as discs, one a character, so that no glyph of a secret is laid out.
+    const auto draw_field = [&](const Rect& box, std::string_view shown, Colour ink, bool editing_it, std::uint8_t alpha,
+                                TypeRole role) {
+      const float r = std::round(tokens::radius::control * s);
+      c.fill(box, Colour::ground_well, r, alpha);
+      c.stroke(box, editing_it ? Colour::gold : Colour::edge, std::round(tokens::kGrace.size.edge_width * s), r, alpha);
+      const float pad = std::round(10 * s);
+      const float inner = box.w - std::round(20 * s);  // as a field's text always had it, so that nothing moves
+      const float lh = line_height(role, s);
+      const float ty = box.y + std::round((box.h - lh) / 2);
+      if (!editing_it) {
+        c.text(shown, role, box.x + pad, ty, inner, ink, alpha);
+        return;
+      }
+      const TextField& f = edit_.field;
+      const std::string& text = f.text();
+      const float disc = std::round(12 * s);  // a masked character's advance
+      const auto after = [&](std::size_t at) {
+        std::size_t next = at + 1;
+        while (next < text.size() && !at_boundary(text, next)) {
+          ++next;
+        }
+        return std::min(next, text.size());
+      };
+      const auto width = [&](std::size_t from, std::size_t to) {
+        if (!edit_.masked) {
+          return c.width(std::string_view(text).substr(from, to - from), role);
+        }
+        float w = 0;
+        for (std::size_t at = from; at < to; at = after(at)) {
+          w += disc;
+        }
+        return w;
+      };
+      if (f.caret() < edit_.offset) {
+        edit_.offset = f.caret();
+      }
+      while (edit_.offset < f.caret() && width(edit_.offset, f.caret()) > inner) {
+        edit_.offset = after(edit_.offset);
+      }
+      // The run drawn: from the offset, as far as it fits; each boundary's x kept for the pointer.
+      std::size_t end = edit_.offset;
+      edit_stops_.emplace_back(edit_.offset, box.x + pad);
+      while (end < text.size()) {
+        const std::size_t next = after(end);
+        const float w = width(edit_.offset, next);
+        if (w > inner) {
+          break;
+        }
+        end = next;
+        edit_stops_.emplace_back(end, box.x + pad + w);
+      }
+      const std::size_t a = std::clamp(f.selection_begin(), edit_.offset, end);
+      const std::size_t b = std::clamp(f.selection_end(), edit_.offset, end);
+      if (b > a) {
+        const float xa = box.x + pad + width(edit_.offset, a);
+        c.fill(Rect{xa, ty, box.x + pad + width(edit_.offset, b) - xa, lh}, Colour::tint_select);
+      }
+      if (edit_.masked) {
+        const float d = std::round(7 * s);
+        float x = box.x + pad;
+        for (std::size_t at = edit_.offset; at < end; at = after(at)) {
+          c.circle(Rect{x + std::round((disc - d) / 2), ty + std::round((lh - d) / 2), d, d}, Colour::ink_body);
+          x += disc;
+        }
+      } else {
+        c.text(std::string_view(text).substr(edit_.offset, end - edit_.offset), role, box.x + pad, ty, inner + 1, ink);
+      }
+      const float cx = box.x + pad + width(edit_.offset, std::clamp(f.caret(), edit_.offset, end));
+      caret_rect_ = Rect{cx, ty, std::max(1.0f, std::round(2 * s)), lh};
+      c.fill(caret_rect_, Colour::gold_hi);
+      edit_box_ = box;
     };
     // The scrim over the game, then the menu: at most 1.9 × the height wide, centred (§3.6).
     c.fill(Rect{0, 0, W, H}, Colour::scrim);
@@ -1832,11 +2340,15 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     const float bar_h = std::round(size::topbar * s);
     const float gutter = std::round(size::gutter * s);
     const Rect search{page_x + gutter, std::round(8 * s), std::round(280 * s), bar_h - std::round(16 * s)};
-    c.fill(search, Colour::ground_well, std::round(tokens::radius::control * s));
     hit(search, Scope::top, 0);
-    c.text("Search", TypeRole::ui_sm, search.x + std::round(10 * s),
-           search.y + std::round((search.h - line_height(TypeRole::ui_sm, s)) / 2), search.w - std::round(20 * s),
-           Colour::ink_faint);
+    if (edit_.kind == EditKind::search) {
+      draw_field(search, search_query_, Colour::ink_hi, true, 255, TypeRole::ui_sm);  // its field (§4.3, G38 (a))
+    } else {
+      c.fill(search, Colour::ground_well, std::round(tokens::radius::control * s));
+      c.text(search_query_.empty() ? std::string_view("Search") : std::string_view(search_query_), TypeRole::ui_sm,
+             search.x + std::round(10 * s), search.y + std::round((search.h - line_height(TypeRole::ui_sm, s)) / 2),
+             search.w - std::round(20 * s), search_query_.empty() ? Colour::ink_faint : Colour::ink_body);
+    }
     if (scope_ == Scope::top) {
       c.focused(search);
     }
@@ -2004,17 +2516,49 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         y += std::round(line_height(TypeRole::ui_sm, s));
       }
       y += std::round(8 * s);
-      const auto draw_blocks = [&](const std::vector<protocol::PageBlock>& blocks) {
-        for (const protocol::PageBlock& block : blocks) {
+      const auto draw_blocks = [&](const std::vector<protocol::PageBlock>& blocks, bool advanced) {
+        for (std::size_t b = 0; b < blocks.size(); ++b) {
+          const protocol::PageBlock& block = blocks[b];
           if (block.kind == protocol::BlockKind::form) {
-            // A form (D195): its fields are filled in the browser view until GraceUI has a text field of its own (§5.6).
-            std::string labels;
+            // A form (D195): a row a field, its label at the left and GraceUI's own field at the right (G38 (a)), then
+            // its button at the right; the space's refusal under it.
+            const std::string form = form_id(section, b, advanced);
+            const std::uint8_t alpha = greyed_words(page.id).empty() ? 255 : 128;
+            const float field_w = std::round(std::min((content_w - 2 * card_pad) * 0.6f, 560 * s));
             for (const protocol::FormField& field : block.fields.value_or(std::vector<protocol::FormField>{})) {
-              labels += (labels.empty() ? "" : ", ") + field.label;
+              const std::string id = form + "/" + field.id;
+              const Rect row{x0 + card_pad, y, content_w - 2 * card_pad, row_h};
+              if (hovered(row)) {
+                c.fill(row, Colour::tint_hover);
+              }
+              c.line(row.x, row.y, row.w, Colour::rule);
+              c.text(field.label, TypeRole::ui, row.x, y + std::round((row_h - line_height(TypeRole::ui, s)) / 2),
+                     row.w - field_w - std::round(24 * s), Colour::ink_hi, alpha);
+              const Rect box{row.right() - field_w, y + std::round((row_h - 28 * s) / 2), field_w, std::round(28 * s)};
+              draw_field(box, form_value(id), Colour::ink_body, edit_.kind == EditKind::form_field && edit_.id == id,
+                         alpha, TypeRole::ui_sm);
+              hit(row, Scope::page, focus_index(FocusKind::form_field, id), box);
+              if (page_focus(FocusKind::form_field, id)) {
+                c.focused(box);
+              }
+              y += row_h;
             }
-            c.text("Filled in the browser view: " + labels + ".", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
-                   content_w - 2 * card_pad, Colour::ink_mute);
-            y += row_h;
+            const std::string words = block.submit.value_or("Send");
+            const float w = c.width(words, TypeRole::ui) + std::round(32 * s);
+            const Rect button{x0 + content_w - card_pad - w, y + std::round(10 * s), w, std::round(32 * s)};
+            c.fill(button, Colour::gold, std::round(tokens::radius::control * s), alpha);
+            c.text(words, TypeRole::ui, button.x + std::round(16 * s),
+                   button.y + std::round((button.h - line_height(TypeRole::ui, s)) / 2), w, Colour::on_gold, alpha);
+            hit(button, Scope::page, focus_index(FocusKind::form_submit, form));
+            if (page_focus(FocusKind::form_submit, form)) {
+              c.focused(button);
+            }
+            y += std::round(52 * s);
+            if (const auto refusal = refusals_.find(form); refusal != refusals_.end()) {
+              c.text(refusal->second, TypeRole::ui_sm, x0 + card_pad, y - std::round(4 * s), content_w - 2 * card_pad,
+                     Colour::rot);
+              y += std::round(line_height(TypeRole::ui_sm, s));
+            }
             continue;
           }
           if (block.kind == protocol::BlockKind::component) {
@@ -2163,12 +2707,6 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             const std::vector<protocol::RowAction>& row_actions =
                 block.row_actions ? *block.row_actions : std::vector<protocol::RowAction>{};
             const Json& rows = (*table)["rows"];
-            bool takes_key = false;  // a row secret's line only when a row takes one (D200)
-            for (const Json& line : rows) {
-              if (block.row_secret && line.is_object() && cell_words(line, block.row_secret->column) != "none") {
-                takes_key = true;
-              }
-            }
             if (rows.empty()) {
               c.line(x0 + card_pad, y, content_w - 2 * card_pad, Colour::rule);
               c.text(none, TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
@@ -2236,6 +2774,37 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 }
                 right = button.x - std::round(12 * s);
               }
+              // Its row secret (D194): a Set button, or while it is edited GraceUI's own field, masked (G38 (a)).
+              if (block.row_secret && cell_words(line, block.row_secret->column) != "none" &&
+                  !cell_words(line, block.row_secret->key).empty()) {
+                const std::string id = secret_id(block, line, r);
+                if (edit_.kind == EditKind::row_secret && edit_.id == id) {
+                  const float fw = std::round(240 * s);
+                  const Rect box{right - fw, y + std::round((row_h - 28 * s) / 2), fw, std::round(28 * s)};
+                  draw_field(box, {}, Colour::ink_body, true, 255, TypeRole::ui_sm);
+                  hit(box, Scope::page, focus_index(FocusKind::row_secret, id));
+                  if (page_focus(FocusKind::row_secret, id)) {
+                    c.focused(box);
+                  }
+                  right = box.x - std::round(12 * s);
+                } else {
+                  const char* set_words = "Set";
+                  const float w = c.width(set_words, TypeRole::ui_sm) + std::round(24 * s);
+                  const Rect button{right - w, y + std::round((row_h - 28 * s) / 2), w, std::round(28 * s)};
+                  c.stroke(button, Colour::edge, std::round(tokens::kGrace.size.edge_width * s),
+                           std::round(tokens::radius::control * s));
+                  c.text(set_words, TypeRole::ui_sm, button.x + std::round(12 * s),
+                         button.y + std::round((button.h - line_height(TypeRole::ui_sm, s)) / 2), w, Colour::ink_hi);
+                  hit(button, Scope::page, focus_index(FocusKind::row_secret, id));
+                  if (page_focus(FocusKind::row_secret, id)) {
+                    c.focused(button);
+                  }
+                  right = button.x - std::round(12 * s);
+                }
+                if (refusals_.count(id) != 0) {
+                  row_refusal_id = id;
+                }
+              }
               const float actions_w = row.right() - right;
               const float rest_w = (sw != nullptr ? row.w - control_w : row.w) - actions_w - row.w / 3 - std::round(12 * s);
               c.text(rest, TypeRole::ui_sm, row.x + row.w / 3,
@@ -2269,11 +2838,6 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 c.text(said->second, TypeRole::ui_sm, row.x, y - std::round(8 * s), row.w, Colour::rot);
                 y += std::round(line_height(TypeRole::ui_sm, s));
               }
-            }
-            if (!secret_label.empty() && takes_key) {  // set in the browser view until GraceUI's own field (§5.6)
-              c.text(secret_label + ": set in the browser view.", TypeRole::ui_sm, x0 + card_pad, y + std::round(8 * s),
-                     content_w - 2 * card_pad, Colour::ink_faint);
-              y += std::round(line_height(TypeRole::ui_sm, s) + 12 * s);
             }
             continue;
           }
@@ -2436,17 +3000,13 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 c.text(none, TypeRole::ui_sm, row.x + label_w + std::round(12 * s), label_y + std::round(2 * s),
                        row.w - control_w - label_w - std::round(48 * s), Colour::ink_faint);
               }
-            } else {  // a key, a text, a secret: shown in a field; edited in the browser until GraceUI's own field
+            } else {  // a key, a text, a secret, in a field: a text and a secret edited in GraceUI's own (G38 (a))
               const std::string shown = format(key, v);
               const TypeRole role = st.type == SettingType::key_name ? TypeRole::num : TypeRole::ui_sm;
               const float w = st.type == SettingType::key_name ? c.width(shown, role) + std::round(20 * s) : control_w;
               control = Rect{col.right() - w, y + std::round((row_h - 28 * s) / 2), w, std::round(28 * s)};
-              c.fill(control, Colour::ground_well, r, alpha);
-              c.stroke(control, Colour::edge, edge, r, alpha);
               const Colour ink = st.type == SettingType::secret && shown == "Set" ? Colour::moss : Colour::ink_body;
-              c.text(shown, role, control.x + std::round(10 * s),
-                     control.y + std::round((control.h - line_height(role, s)) / 2), control.w - std::round(20 * s), ink,
-                     alpha);
+              draw_field(control, shown, ink, edit_.kind == EditKind::setting && edit_.id == key, alpha, role);
             }
             hit(row, Scope::page, focus_index(shortcut ? FocusKind::shortcut : FocusKind::setting, key), control, track_rect,
                 segment_count);
@@ -2458,7 +3018,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         }
       };
       if (!collapsed) {
-        draw_blocks(section.blocks);
+        draw_blocks(section.blocks, false);
         if (section.advanced && !section.advanced->empty()) {
           const bool open = advanced_open_.count(page.id + "/" + section.id) != 0;
           c.line(x0 + card_pad, y, content_w - 2 * card_pad, Colour::rule);
@@ -2471,7 +3031,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
           }
           y += std::round(40 * s);
           if (open) {
-            draw_blocks(*section.advanced);
+            draw_blocks(*section.advanced, true);
           }
         }
       }
@@ -2568,12 +3128,22 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                     ? "← →  Choose    R  Reset    Esc  Back"
                 : st.type == SettingType::key_name && st.availability != "later"
                     ? "Enter  Press a new key    R  Reset    Esc  Back"  // captured in game since D209
-                    : "Edited in the browser view    Esc  Back";
+                : st.type == SettingType::secret && st.availability != "later"
+                    ? "Enter  Set a new one    R  Reset    Esc  Back"  // GraceUI's own field since G38 (a)
+                : st.type == SettingType::text && st.availability != "later"
+                    ? "Enter  Edit    R  Reset    Esc  Back"
+                    : "Later version    Esc  Back";
         if (st.locked) {
           hints = "Locked in this version    Esc  Back";
         }
       } else if (f.kind == FocusKind::cell) {
         hints = "Enter  Toggle    Esc  Back";  // a table's switch, as a setting's but with no default to reset to
+      } else if (f.kind == FocusKind::form_field) {
+        hints = "Enter  Type    Esc  Back";
+      } else if (f.kind == FocusKind::form_submit) {
+        hints = "Enter  Send    Esc  Back";
+      } else if (f.kind == FocusKind::row_secret) {
+        hints = "Enter  Set    Esc  Back";
       } else if (f.kind == FocusKind::section_action) {
         hints = confirming_ == "section:" + f.id ? "Enter  Confirm    Esc  Back" : "Enter  Press    Esc  Back";
       } else if (f.kind == FocusKind::row_action) {
@@ -2583,6 +3153,15 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       }
     } else if (scope_ == Scope::rail) {
       hints = "↑ ↓  Move    Enter  Open    →  Page    Esc  Close";
+    } else if (scope_ == Scope::top) {
+      hints = "Enter  Search    ↓  Page    Esc  Back";
+    }
+    if (editing()) {
+      // A field's keys (§5.3): every other key types into it.
+      hints = edit_.kind == EditKind::search       ? "↑ ↓  Choose    Enter  Open    Esc  Close"
+              : edit_.kind == EditKind::form_field ? "Enter  Next    Esc  Done    Ctrl+V  Paste"
+              : edit_.masked                       ? "Enter  Set    Esc  Cancel    Ctrl+V  Paste"
+                                                   : "Enter  Save    Esc  Cancel    Ctrl+V  Paste";
     }
     if (capture_open()) {
       hints = capture_.stage == CaptureStage::asking ? "Enter  Use it here    Esc  Cancel"
@@ -2599,6 +3178,46 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       c.clip = scope_ == Scope::page ? 1 : 0;
       c.stroke(ring, Colour::gold_hi, std::round(tokens::kGrace.size.focus_width * s),
                std::round((tokens::radius::control + tokens::kGrace.size.focus_offset) * s));
+    }
+    // Search's results (§4.3), under its box and over the page: this space's settings, each by its label and its page.
+    if (edit_.kind == EditKind::search && !search_query_.empty()) {
+      c.clip = 0;
+      const float rr = std::round(tokens::radius::control * s);
+      const float rh = std::round(40 * s);
+      const float list_w = std::round(std::min(page_w - 2 * gutter, 560 * s));
+      const std::size_t shown_rows = std::max<std::size_t>(search_hits_.size(), 1);
+      const Rect list{search.x, search.bottom() + std::round(6 * s), list_w,
+                      rh * static_cast<float>(shown_rows) + std::round(12 * s)};
+      c.fill(list, Colour::ground_3, rr);
+      c.stroke(list, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), rr);
+      const float pad = std::round(14 * s);
+      if (search_hits_.empty()) {
+        c.text("No setting matches.", TypeRole::ui_sm, list.x + pad,
+               list.y + std::round(6 * s) + std::round((rh - line_height(TypeRole::ui_sm, s)) / 2), list.w - 2 * pad,
+               Colour::ink_mute);
+      }
+      for (std::size_t i = 0; i < search_hits_.size(); ++i) {
+        const SearchHit& found = search_hits_[i];
+        const Rect row{list.x, list.y + std::round(6 * s) + rh * static_cast<float>(i), list.w, rh};
+        if (i == search_pick_) {
+          c.fill(row, Colour::tint_select);
+          c.fill(Rect{row.x, row.y, std::round(2 * s), row.h}, Colour::gold);
+        } else if (hovered(row)) {
+          c.fill(row, Colour::tint_hover);
+        }
+        const float label_w = c.text(found.label, TypeRole::ui, row.x + pad,
+                                     row.y + std::round((rh - line_height(TypeRole::ui, s)) / 2), row.w / 2, Colour::ink_hi);
+        std::string where;
+        for (const protocol::Page& p : pages_.pages) {
+          if (p.id == found.page) {
+            where = p.name;
+          }
+        }
+        c.text(where, TypeRole::ui_sm, row.x + pad + label_w + std::round(12 * s),
+               row.y + std::round((rh - line_height(TypeRole::ui_sm, s)) / 2),
+               std::max(0.0f, row.w - 2 * pad - label_w - std::round(12 * s)), Colour::ink_mute);
+        hit(row, Scope::top, i + 1);
+      }
     }
     // The capture's modal (D209), over everything: the page under it takes no pointer.
     if (capture_open()) {

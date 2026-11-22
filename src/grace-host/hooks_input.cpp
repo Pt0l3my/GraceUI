@@ -106,6 +106,13 @@ std::uint32_t keyboard_code_page(HWND window) noexcept {
 }
 
 void push_code_points(const char32_t* points, int count, std::uint32_t generation) noexcept {
+  if (const grace::input::Holder holder = input::capture().holder();
+      holder.kind == grace::input::Kind::menu && holder.owner == 0) {
+    for (int i = 0; i < count; ++i) {
+      menu::character(points[i]);  // the menu's own field, or its search (G38 (a))
+    }
+    return;
+  }
   for (int i = 0; i < count; ++i) {
     HolderEvent event;
     event.type = HolderEvent::Type::character;

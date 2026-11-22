@@ -29,6 +29,10 @@ void open_requested() noexcept;
 // menu's keys (§5.3), which goes to GraceUI's thread. `shift` and `ctrl` held.
 bool key_down(std::uint32_t vk, grace::input::Key code, bool shift, bool ctrl, bool alt) noexcept;
 
+// The window procedure, for a character typed (a surrogate pair joined, an ANSI window's bytes decoded) while the menu
+// holds input: to the edited field, or `/` to open search (G38 (a), §4.3); dropped otherwise.
+void character(char32_t code_point) noexcept;
+
 // The present thread, for the menu holder's mouse (§5.5): a move (0), a left button's press (1) or release (2), the wheel
 // (3, in notches, positive away from the player) or the pointer gone (4), at `x`, `y` in the display's pixels as Dear
 // ImGui has them, so that a press lands where the Grace pointer is drawn; to GraceUI's thread as the page view's input.

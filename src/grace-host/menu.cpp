@@ -58,11 +58,21 @@ struct MenuInput {
   std::uint32_t generation = 0;  // the holder it is for
   grace::input::Key captured = grace::input::kNoKey;  // while a capture waits (D209): the key pressed, whole
   std::uint8_t modifiers = 0;                         // and its Ctrl, Shift and Alt (GRACEUI_MOD_*)
+  // While a field edits (G38 (a)): one of its keys (an EditKey, plus 1), a character typed, or the clipboard's text,
+  // which waits in g_paste.
+  std::uint8_t edit = 0;
+  char32_t character = 0;
+  bool paste = false;
 };
 
 // Whether the menu's view waits for a key to capture (D209): set on GraceUI's thread after each input, read by the
 // window procedure's key_down.
 constinit std::atomic<bool> g_awaiting_key{false};
+// Whether one of its fields edits (G38 (a)), likewise: its keys then go to the field, and characters to the menu.
+constinit std::atomic<bool> g_editing{false};
+// The clipboard's text for a paste, read on the window procedure's thread at Ctrl+V and taken on GraceUI's.
+constinit grace::abi::SpinLock g_paste_lock;
+constinit std::string* g_paste = nullptr;  // made at the first paste, never freed
 
 constinit grace::input::SpscRing<MenuInput, 64> g_keys;  // the window procedure's
 constinit grace::input::SpscRing<MenuInput, 64> g_pad;   // the present thread's
@@ -461,6 +471,12 @@ bool take_from_spaces(State& m) {
           view->view.restore(key, view->values.contains(key) ? view->values[key] : grace::protocol::Json());
         }
       }
+    } else {
+      for (auto& view : m.spaces) {
+        if (view->id == it->second.first && !it->second.second.empty()) {
+          view->view.accepted(it->second.second);  // a form the space took: its fields empty (D195)
+        }
+      }
     }
     m.commands.erase(it);
     changed = true;
@@ -527,6 +543,8 @@ void run(State& m, const grace::protocol::Cmd& command) {
     const std::string where = focused.rfind("cell:", 0) == 0             ? focused.substr(5)
                               : focused.rfind("row:", 0) == 0            ? focused.substr(4)
                               : focused.rfind("section-action:", 0) == 0 ? focused.substr(15)
+                              : focused.rfind("submit:", 0) == 0         ? focused.substr(7)  // a form's (D195)
+                              : focused.rfind("secret:", 0) == 0         ? focused.substr(7)  // a row secret's (D194)
                                                                          : key_of(command);
     std::uint64_t ticket = 0;
     const bool capture = space.view.capture_open();
@@ -604,18 +622,64 @@ void act(State& m, const grace::view::Action& action) {
   }
 }
 
+// Ctrl+C or Ctrl+X in a field (G38 (a)): its text on the clipboard, as Unicode, from GraceUI's own thread. The game's
+// window is the clipboard's owner, so that the clipboard takes the text (a null owner would refuse it).
+void put_on_clipboard(const std::string& utf8) noexcept {
+  const int units = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
+  if (units <= 0 || !OpenClipboard(input::window())) {
+    return;
+  }
+  EmptyClipboard();
+  if (HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, (static_cast<SIZE_T>(units) + 1) * sizeof(wchar_t)); memory != nullptr) {
+    if (auto* text = static_cast<wchar_t*>(GlobalLock(memory)); text != nullptr) {
+      MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), text, units);
+      text[units] = L'\0';
+      GlobalUnlock(memory);
+      if (SetClipboardData(CF_UNICODETEXT, memory) == nullptr) {
+        GlobalFree(memory);  // the clipboard did not take it
+      }
+    } else {
+      GlobalFree(memory);
+    }
+  }
+  CloseClipboard();
+}
+
 void take(State& m, const MenuInput& in, bool& dirty) {
   if (in.generation != m.generation) {
     return;  // pressed for an earlier holder
   }
-  const grace::view::Action action =
-      in.captured != grace::input::kNoKey
-          ? active_view(m).captured(grace::input::key_text(in.captured, in.modifiers))
-          : active_view(m).input(grace::view::Input{in.key, in.shift != 0});
+  grace::view::PageView& view = active_view(m);
+  if (in.character != 0 && !view.editing() && in.character != U'/') {
+    return;  // a menu key's own character (Q, E, Enter): nothing to type it into, nothing to lay out again
+  }
+  grace::view::Action action;
+  if (in.captured != grace::input::kNoKey) {
+    action = view.captured(grace::input::key_text(in.captured, in.modifiers));
+  } else if (in.character != 0) {
+    action = view.typed(in.character);
+  } else if (in.paste) {
+    std::string text;
+    g_paste_lock.lock();
+    if (g_paste != nullptr) {
+      text.swap(*g_paste);
+    }
+    g_paste_lock.unlock();
+    action = view.pasted(text);
+  } else if (in.edit != 0) {
+    action = view.edit(grace::view::PageView::EditInput{static_cast<grace::view::PageView::EditKey>(in.edit - 1),
+                                                         (in.modifiers & 2u) != 0, (in.modifiers & 1u) != 0});
+  } else {
+    action = view.input(grace::view::Input{in.key, in.shift != 0});
+  }
   g_inputs.fetch_add(1, std::memory_order_relaxed);
   dirty = true;
   act(m, action);
+  if (std::string copied; active_view(m).take_clipboard(copied)) {
+    put_on_clipboard(copied);
+  }
   g_awaiting_key.store(active_view(m).awaiting_key(), std::memory_order_release);
+  g_editing.store(active_view(m).editing(), std::memory_order_release);
 }
 
 void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
@@ -663,6 +727,13 @@ void publish(State& m) {
   std::vector<std::pair<std::string, grace::view::PageView::Bounds>> bounds = active_view(m).all_bounds();
   std::string shown = m.list.text;
 #endif
+  // The IME's composition window at the edited field's caret, in the back buffer's pixels (§5.6, D57); none otherwise.
+  if (const grace::view::Rect caret = active_view(m).caret(); caret.w > 0) {
+    input::set_caret(static_cast<std::int32_t>(caret.x), static_cast<std::int32_t>(caret.y),
+                     static_cast<std::int32_t>(caret.h));
+  } else {
+    input::set_caret(0, 0, 0);
+  }
   g_view_lock.lock();
   m.page.assign(active_view(m).page());
   m.focused = active_view(m).focused();
@@ -700,6 +771,8 @@ void serve_menu() {
     if (m.open) {
       m.open = false;
       active_view(m).cancel_confirmation();  // the close routine's part (§5.1): changes stay, the page is kept
+      g_editing.store(false, std::memory_order_release);  // an edit ends as Escape ends it (G38 (2))
+      input::set_caret(0, 0, 0);
       active_view(m).pointer(grace::view::Pointer{grace::view::Pointer::Kind::leave, 0, 0, 0});  // no hover, no drag
       watch(m, false);                       // a mod builds nothing the menu no longer shows
     }
@@ -757,6 +830,7 @@ void serve_menu() {
   }
   // A mod's answer may have closed the capture, or the menu closed with it open (D209).
   g_awaiting_key.store(m.open && active_view(m).awaiting_key(), std::memory_order_release);
+  g_editing.store(m.open && active_view(m).editing(), std::memory_order_release);
   if (dirty && m.open) {
     publish(m);
   }
@@ -880,7 +954,126 @@ void pointer(std::uint8_t kind, float x, float y, float wheel, std::uint32_t gen
   }
 }
 
+namespace {
+
+// Ctrl+V in a field (G38 (a)): the clipboard's Unicode text, as UTF-8, at most 16 KiB, read on the window procedure's
+// thread and handed to GraceUI's. False if it holds none.
+bool read_clipboard() noexcept {
+  if (!IsClipboardFormatAvailable(CF_UNICODETEXT) || !OpenClipboard(input::window())) {
+    return false;
+  }
+  bool any = false;
+  if (HANDLE data = GetClipboardData(CF_UNICODETEXT); data != nullptr) {
+    if (const auto* text = static_cast<const wchar_t*>(GlobalLock(data)); text != nullptr) {
+      const SIZE_T units = GlobalSize(data) / sizeof(wchar_t);
+      int length = 0;
+      while (static_cast<SIZE_T>(length) < units && length < 16384 && text[length] != L'\0') {
+        ++length;
+      }
+      const int bytes = WideCharToMultiByte(CP_UTF8, 0, text, length, nullptr, 0, nullptr, nullptr);
+      if (bytes > 0) {
+        try {
+          std::string utf8(static_cast<std::size_t>(bytes), '\0');
+          WideCharToMultiByte(CP_UTF8, 0, text, length, utf8.data(), bytes, nullptr, nullptr);
+          g_paste_lock.lock();
+          if (g_paste == nullptr) {
+            g_paste = new std::string();
+          }
+          g_paste->swap(utf8);
+          g_paste_lock.unlock();
+          any = true;
+        } catch (...) {
+          // no room for it: no paste
+        }
+      }
+      GlobalUnlock(data);
+    }
+  }
+  CloseClipboard();
+  return any;
+}
+
+// A key while a field edits (G38 (a)): its editing keys go to GraceUI's thread; every other key is the field's, and
+// types through the characters the window procedure takes.
+bool edit_key(std::uint32_t vk, bool shift, bool ctrl) noexcept {
+  using EditKey = grace::view::PageView::EditKey;
+  EditKey key{};
+  switch (vk) {
+    case VK_LEFT: key = EditKey::left; break;
+    case VK_RIGHT: key = EditKey::right; break;
+    case VK_UP: key = EditKey::up; break;
+    case VK_DOWN: key = EditKey::down; break;
+    case VK_HOME: key = EditKey::home; break;
+    case VK_END: key = EditKey::end; break;
+    case VK_BACK: key = EditKey::backspace; break;
+    case VK_DELETE: key = EditKey::erase; break;
+    case VK_RETURN: key = EditKey::enter; break;
+    case VK_ESCAPE: key = EditKey::escape; break;
+    case VK_TAB: key = EditKey::tab; break;
+    case 'A':
+      if (!ctrl) {
+        return true;
+      }
+      key = EditKey::select_all;
+      break;
+    case 'C':
+      if (!ctrl) {
+        return true;
+      }
+      key = EditKey::copy;
+      break;
+    case 'X':
+      if (!ctrl) {
+        return true;
+      }
+      key = EditKey::cut;
+      break;
+    case 'V': {
+      if (!ctrl) {
+        return true;
+      }
+      MenuInput in;
+      in.generation = input::capture().holder().generation;
+      in.paste = true;
+      if (read_clipboard() && g_keys.push(in)) {
+        hooks::wake();
+      }
+      return true;
+    }
+    default:
+      return true;  // the field's: its character comes as WM_CHAR
+  }
+  MenuInput in;
+  in.generation = input::capture().holder().generation;
+  in.edit = static_cast<std::uint8_t>(static_cast<std::uint8_t>(key) + 1);
+  in.modifiers = static_cast<std::uint8_t>((ctrl ? 1u : 0u) | (shift ? 2u : 0u));
+  if (g_keys.push(in)) {
+    hooks::wake();
+  }
+  return true;
+}
+
+}  // namespace
+
+void character(char32_t code_point) noexcept {
+  // While a capture waits, a character is none of the menu's. Otherwise it goes in order with the keys, even before
+  // GraceUI's thread has seen the Enter that starts an edit, and that thread drops what no field wants (only `/` opens
+  // search, §4.3).
+  if (g_awaiting_key.load(std::memory_order_acquire)) {
+    return;
+  }
+  MenuInput in;
+  in.generation = input::capture().holder().generation;
+  in.character = code_point;
+  if (g_keys.push(in)) {
+    hooks::wake();
+  }
+}
+
 bool key_down(std::uint32_t vk, grace::input::Key code, bool shift, bool ctrl, bool alt) noexcept {
+  if (g_editing.load(std::memory_order_acquire) && !g_awaiting_key.load(std::memory_order_acquire)) {
+    return edit_key(vk, shift, ctrl);
+  }
   if (g_awaiting_key.load(std::memory_order_acquire) && vk != VK_ESCAPE) {
     // A capture waits (D209): the key itself, with its modifiers; a modifier alone waits on, and Escape cancels below.
     if (code == grace::input::kNoKey || vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU || vk == VK_LSHIFT ||
@@ -912,9 +1105,15 @@ bool key_down(std::uint32_t vk, grace::input::Key code, bool shift, bool ctrl, b
     case VK_PRIOR: key = Key::previous_page; break;
     case VK_NEXT: key = Key::next_page; break;
     case 'R': key = Key::reset; break;
-    default: return false;  // search (`/`, Ctrl+F) comes with GraceUI's text field (§5.6)
+    case 'F':
+      if (!ctrl) {
+        return false;
+      }
+      key = Key::search;  // Ctrl+F (§4.3); `/` comes as its character
+      break;
+    default: return false;
   }
-  if (ctrl) {
+  if (ctrl && key != Key::search) {
     return false;
   }
   const std::uint32_t generation = input::capture().holder().generation;

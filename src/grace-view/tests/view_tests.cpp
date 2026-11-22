@@ -908,8 +908,10 @@ TEST_CASE("a table's row actions: a focus stop each, a destructive one sent afte
   REQUIRE(sent.kind == Action::Kind::command);
   CHECK(sent.command.name == "keepers.dismiss");
   CHECK(sent.command.args == Json::object({{"id", "k1"}, {"confirm", true}}));
-  // Another key lets the confirmation go; the next row's action is the next focus stop.
+  // Another key lets the confirmation go; the next row's secret, then its action, are the next focus stops (G38 (a)).
   press(view, Key::activate);
+  press(view, Key::down);
+  CHECK(view.focused() == "secret:lantern.keepers/k2");
   press(view, Key::down);
   CHECK(view.focused() == "row:lantern.keepers/k2/dismiss");
   CHECK(press(view, Key::activate).kind == Action::Kind::none);
@@ -918,13 +920,17 @@ TEST_CASE("a table's row actions: a focus stop each, a destructive one sent afte
   DisplayList refused;
   view.layout(Viewport{}, test::fonts(), refused);
   CHECK(refused.dump().find("rot          ") != std::string::npos);
-  // A row secret's status in words, set in the browser view (D194); a form's fields likewise (D195).
-  CHECK(refused.dump().find("Ward word: Set") != std::string::npos);
-  CHECK(refused.dump().find("Ward word: Missing") != std::string::npos);
-  CHECK(refused.dump().find("Ward word: Refused") != std::string::npos);  // D197
-  CHECK(refused.dump().find("Ward word: Not needed") != std::string::npos);
-  CHECK(refused.dump().find("Ward word: set in the browser view.") != std::string::npos);
-  CHECK(refused.dump().find("Filled in the browser view: Name, Post.") != std::string::npos);
+  // A row secret's status in words (D194, D197), and a Set on each row that takes one; a form's fields in game, its
+  // labels and its button (G38 (a)): nothing is left to the browser view.
+  const std::string dump = refused.dump();
+  CHECK(dump.find("Ward word: Set") != std::string::npos);
+  CHECK(dump.find("Ward word: Missing") != std::string::npos);
+  CHECK(dump.find("Ward word: Refused") != std::string::npos);  // D197
+  CHECK(dump.find("Ward word: Not needed") != std::string::npos);
+  CHECK(dump.find("in the browser view") == std::string::npos);
+  CHECK(dump.find("\"Name\"") != std::string::npos);
+  CHECK(dump.find("\"Post\"") != std::string::npos);
+  CHECK(dump.find("\"Hire\"") != std::string::npos);
 }
 
 TEST_CASE("a picker: its choices from a topic, ← and → through them, its value kept when the list lacks it (D193)") {
@@ -996,18 +1002,292 @@ TEST_CASE("a picker whose default is empty offers it first, as Default (D199)") 
   CHECK(press(view, Key::left).command.args["value"] == "");  // and back to the space's default
 }
 
-TEST_CASE("a row secret's line in game only when a row takes a key (D200)") {
+TEST_CASE("a row secret's Set only on a row that takes a key (D200, G38 (a))") {
   PageView view = loaded("demo", "demo.keepers");
+  const auto sets = [&]() {
+    DisplayList list;
+    view.layout(Viewport{}, test::fonts(), list);
+    const std::string dump = list.dump();
+    std::size_t n = 0;
+    for (std::size_t at = dump.find("glyphs 3 \"Set\""); at != std::string::npos; at = dump.find("glyphs 3 \"Set\"", at + 1)) {
+      ++n;
+    }
+    return std::make_pair(n, dump);
+  };
   view.set_topic("lantern.keepers", Json::parse(R"({"columns": [{"id": "name", "label": "Keeper"},
     {"id": "ward", "label": "Ward word"}], "rows": [{"id": "k3", "name": "Ada Marsh", "ward": "none"}]})"));
+  const auto [none, none_dump] = sets();
+  CHECK(none_dump.find("Ward word: Not needed") != std::string::npos);
+  CHECK(none == 0);
+  view.set_topic("lantern.keepers", kKeepers);
+  CHECK(sets().first == 3);  // k1, k2 and k3; k4 needs none
+}
+
+namespace {
+
+// Focus moved down the page to `id`; false if never reached (the Hotkeys tests' helper, below, does the same).
+bool move_to(PageView& view, std::string_view id) {
+  for (int i = 0; i < 64 && view.focused() != id; ++i) {
+    press(view, Key::down);
+  }
+  return view.focused() == id;
+}
+
+void type(PageView& view, std::string_view text) {
+  for (const char c : text) {
+    view.typed(static_cast<unsigned char>(c));
+  }
+}
+
+using EditKey = PageView::EditKey;
+using EditInput = PageView::EditInput;
+
+}  // namespace
+
+TEST_CASE("a text setting in GraceUI's own field: Enter edits, Enter sends, Escape drops (G38 (a), D57)") {
+  PageView view = loaded("demo", "demo.behaviour");
+  press(view, Key::next_tab);
+  press(view, Key::next_tab);
+  move_to(view, "setting:lantern.keeper");
+  REQUIRE(view.focused() == "setting:lantern.keeper");
+  CHECK_FALSE(view.editing());
+  // Typing does nothing until the field edits; R still resets.
+  CHECK(view.typed(U'x').kind == Action::Kind::none);
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);
+  CHECK(view.editing());
+  DisplayList open;
+  view.layout(Viewport{}, test::fonts(), open);
+  CHECK(open.dump().find("Enter  Save    Esc  Cancel") != std::string::npos);
+  CHECK(view.caret().w > 0);  // the IME's place
+  // Its text is the value; Ctrl+Backspace takes a word, then more is typed.
+  view.edit(EditInput{EditKey::backspace, false, true});
+  type(view, "lighthouse keeper");
+  Action sent = view.edit(EditInput{EditKey::enter});
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.name == "settings.set");
+  CHECK(sent.command.args == Json::object({{"key", "lantern.keeper"}, {"value", "The north lighthouse keeper"}}));
+  CHECK_FALSE(view.editing());
+  CHECK(view.caret().w == 0);
+  // Escape drops an edit; Enter with nothing changed sends nothing.
+  press(view, Key::activate);
+  type(view, " and more");
+  CHECK(view.edit(EditInput{EditKey::escape}).kind == Action::Kind::none);
+  CHECK(view.value("lantern.keeper") == "The north lighthouse keeper");
+  press(view, Key::activate);
+  CHECK(view.edit(EditInput{EditKey::enter}).kind == Action::Kind::none);
+  // A pad's A and B do as Enter and Escape while it edits.
+  press(view, Key::activate);
+  type(view, "!");
+  CHECK(press(view, Key::activate).command.args["value"] == "The north lighthouse keeper!");
+  // While it edits, every key is the field's: R types, Q does not change the tab.
+  press(view, Key::activate);
+  CHECK(press(view, Key::reset).kind == Action::Kind::none);
+  CHECK(press(view, Key::next_tab).kind == Action::Kind::none);
+  CHECK(view.focused() == "setting:lantern.keeper");
+  view.edit(EditInput{EditKey::escape});
+}
+
+TEST_CASE("a secret in GraceUI's own field: masked, empty at the start, sent once and never kept or copied (G38 (a))") {
+  PageView view = loaded("demo", "demo.behaviour");
+  press(view, Key::next_tab);
+  press(view, Key::next_tab);
+  move_to(view, "setting:lantern.oil_token");
+  REQUIRE(view.focused() == "setting:lantern.oil_token");
+  view.set_values(Json::object({{"lantern.oil_token", "set"}}));
+  press(view, Key::activate);
+  REQUIRE(view.editing());
+  type(view, "tok-1234");
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  const std::string dump = list.dump();
+  CHECK(dump.find("tok-1234") == std::string::npos);  // no glyph of it is laid out
+  std::size_t discs = 0;
+  for (std::size_t at = dump.find("circle  ink.body"); at != std::string::npos; at = dump.find("circle  ink.body", at + 1)) {
+    ++discs;
+  }
+  CHECK(discs == 8);
+  CHECK(dump.find("Enter  Set    Esc  Cancel") != std::string::npos);
+  view.edit(EditInput{EditKey::select_all});
+  view.edit(EditInput{EditKey::copy});
+  std::string clipboard;
+  CHECK_FALSE(view.take_clipboard(clipboard));  // never a secret's
+  view.edit(EditInput{EditKey::end});
+  Action sent = view.edit(EditInput{EditKey::enter});
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.args == Json::object({{"key", "lantern.oil_token"}, {"value", "tok-1234"}}));
+  CHECK(view.value("lantern.oil_token") == "set");  // the view keeps whether it is set, never the secret
+  CHECK(view.format("lantern.oil_token", view.value("lantern.oil_token")) == "Set");
+  // An empty secret sends nothing: R is how it is cleared.
+  press(view, Key::activate);
+  CHECK(view.edit(EditInput{EditKey::enter}).kind == Action::Kind::none);
+}
+
+TEST_CASE("a form in game: its fields typed in turn, sent together, kept until the space takes them (D195, G38)") {
+  PageView view = loaded("demo", "demo.keepers");
+  move_to(view, "field:hire/0/name");
+  REQUIRE(view.focused() == "field:hire/0/name");
+  press(view, Key::activate);
+  type(view, "Orla Venn");
+  CHECK(view.edit(EditInput{EditKey::enter}).kind == Action::Kind::none);  // Enter: on to the next field
+  CHECK(view.focused() == "field:hire/0/post");
+  CHECK_FALSE(view.editing());
+  press(view, Key::activate);
+  type(view, "North light");
+  view.edit(EditInput{EditKey::tab});
+  CHECK(view.focused() == "submit:hire/0");
+  // The menu closes, and opens again: the fields keep their text (G38 (2)).
+  view.cancel_confirmation();
+  CHECK(view.form_value("hire/0/name") == "Orla Venn");
+  CHECK(view.form_value("hire/0/post") == "North light");
+  DisplayList kept;
+  view.layout(Viewport{}, test::fonts(), kept);
+  CHECK(kept.dump().find("\"Orla Venn\"") != std::string::npos);
+  Action sent = press(view, Key::activate);
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.name == "keepers.hire");
+  CHECK(sent.command.args == Json::object({{"name", "Orla Venn"}, {"post", "North light"}}));
+  // Refused: the space's words under the form, the text kept; accepted: the fields empty.
+  view.refused("hire/0", "A keeper of that name is on the roster.");
+  DisplayList refused;
+  view.layout(Viewport{}, test::fonts(), refused);
+  CHECK(refused.dump().find("A keeper of that name is on the roster.") != std::string::npos);
+  CHECK(view.focused() == "submit:hire/0");
+  CHECK(view.form_value("hire/0/name") == "Orla Venn");
+  view.accepted("hire/0");
+  CHECK(view.form_value("hire/0/name").empty());
+  CHECK(view.form_value("hire/0/post").empty());
+  // A field holds no more than its max (32 bytes for Name), and Escape keeps a form field's text.
+  move_to(view, "field:hire/0/name");
+  press(view, Key::up);
+  press(view, Key::up);
+  for (int i = 0; i < 10 && view.focused() != "field:hire/0/name"; ++i) {
+    press(view, Key::up);
+  }
+  press(view, Key::activate);
+  type(view, "abcdefghijklmnopqrstuvwxyz0123456789");
+  view.edit(EditInput{EditKey::escape});
+  CHECK(view.form_value("hire/0/name") == "abcdefghijklmnopqrstuvwxyz012345");
+}
+
+TEST_CASE("a row secret in game: masked, sent with its row's key, then forgotten (D194, G38 (a))") {
+  PageView view = loaded("demo", "demo.keepers");
+  view.set_topic("lantern.keepers", kKeepers);
+  move_to(view, "secret:lantern.keepers/k2");
+  REQUIRE(view.focused() == "secret:lantern.keepers/k2");
+  press(view, Key::activate);
+  REQUIRE(view.editing());
+  type(view, "ember");
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(list.dump().find("ember") == std::string::npos);
+  Action sent = view.edit(EditInput{EditKey::enter});
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.name == "keepers.ward");
+  CHECK(sent.command.args == Json::object({{"id", "k2"}, {"value", "ember"}}));
+  CHECK_FALSE(view.editing());
+  press(view, Key::activate);
+  type(view, "ash");
+  CHECK(view.edit(EditInput{EditKey::escape}).kind == Action::Kind::none);  // dropped
+  view.refused("lantern.keepers/k2", "That word is already in use.");
+  DisplayList refused;
+  view.layout(Viewport{}, test::fonts(), refused);
+  CHECK(refused.dump().find("That word is already in use.") != std::string::npos);
+}
+
+TEST_CASE("search in game: `/` or Ctrl+F opens it, its results as it is typed, Enter opens the row (§4.3, G38 (a))") {
+  PageView view = loaded("demo", "demo.overview");
+  CHECK(view.typed(U'/').kind == Action::Kind::none);
+  REQUIRE(view.editing());
+  CHECK(view.scope() == Scope::top);
+  type(view, "token");
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(list.dump().find("\"Oil merchant's token\"") != std::string::npos);
+  CHECK(list.dump().find("↑ ↓  Choose    Enter  Open    Esc  Close") != std::string::npos);
+  Action opened = view.edit(EditInput{EditKey::enter});
+  CHECK(opened.kind == Action::Kind::opened_page);
+  CHECK(opened.page == "demo.behaviour");
+  CHECK(view.focused() == "setting:lantern.oil_token");  // on its tab, Keeper, the third
+  CHECK_FALSE(view.editing());
+  // A setting under a section's Advanced disclosure: the disclosure opens.
+  press(view, Key::search);
+  type(view, "night");
+  view.edit(EditInput{EditKey::enter});
+  CHECK(view.focused() == "setting:lantern.night_only");
+  // Escape empties it; nothing matching says so.
+  CHECK(press(view, Key::search).kind == Action::Kind::none);
+  REQUIRE(view.editing());
+  type(view, "zzz");
   DisplayList none;
   view.layout(Viewport{}, test::fonts(), none);
-  CHECK(none.dump().find("Ward word: Not needed") != std::string::npos);
-  CHECK(none.dump().find("set in the browser view") == std::string::npos);
+  CHECK(none.dump().find("No setting matches.") != std::string::npos);
+  view.edit(EditInput{EditKey::escape});
+  CHECK_FALSE(view.editing());
+  DisplayList closed;
+  view.layout(Viewport{}, test::fonts(), closed);
+  CHECK(closed.dump().find("\"Search\"") != std::string::npos);
+  // ↓ picks the next result.
+  press(view, Key::search);
+  type(view, "lantern");
+  view.edit(EditInput{EditKey::down});
+  CHECK(view.edit(EditInput{EditKey::enter}).kind == Action::Kind::opened_page);
+}
+
+TEST_CASE("the close routine ends an edit as Escape does; a click moves the caret or leaves the field (G38)") {
+  PageView view = loaded("demo", "demo.behaviour");
+  press(view, Key::next_tab);
+  press(view, Key::next_tab);
+  move_to(view, "setting:lantern.keeper");
+  press(view, Key::activate);
+  type(view, "!");
+  view.cancel_confirmation();
+  CHECK_FALSE(view.editing());
+  CHECK(view.value("lantern.keeper") == "The north keeper");  // dropped
+  // A click inside the field places the caret; one elsewhere sends a text's edit.
+  press(view, Key::activate);
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  const PageView::Bounds field = view.bounds_of("setting:lantern.keeper");
+  REQUIRE(field.control.w > 0);
+  view.pointer(Pointer{Pointer::Kind::press, field.control.x + 12, field.control.y + field.control.h / 2});
+  type(view, "A ");
+  view.layout(Viewport{}, test::fonts(), list);
+  Action left = view.pointer(Pointer{Pointer::Kind::press, 5, 5});
+  REQUIRE(left.kind == Action::Kind::command);
+  CHECK(left.command.args["value"] == "A The north keeper");
+}
+
+TEST_CASE("fields drawn in game: a form field edited with a selection, and search's results (G38 (a), goldens)") {
+  PageView view = loaded("demo", "demo.keepers");
   view.set_topic("lantern.keepers", kKeepers);
-  DisplayList some;
-  view.layout(Viewport{}, test::fonts(), some);
-  CHECK(some.dump().find("Ward word: set in the browser view.") != std::string::npos);
+  REQUIRE(move_to(view, "field:hire/0/name"));
+  press(view, Key::activate);
+  type(view, "Orla Venn");
+  view.edit(EditInput{EditKey::left, true, true});  // "Venn" selected
+  DisplayList form;
+  view.layout(Viewport{}, test::fonts(), form);
+  golden("keepers-editing-1920x1080.txt", form.dump());
+  view.edit(EditInput{EditKey::escape});
+  press(view, Key::search);
+  type(view, "keep");
+  DisplayList search;
+  view.layout(Viewport{}, test::fonts(), search);
+  golden("search-1920x1080.txt", search.dump());
+}
+
+TEST_CASE("Ctrl+C and Ctrl+X put a field's selection aside for the clipboard; a paste is one paragraph (G38 (a))") {
+  PageView view = loaded("demo", "demo.keepers");
+  move_to(view, "field:hire/0/post");
+  press(view, Key::activate);
+  view.pasted("Harbour\r\nwall");
+  CHECK(view.form_value("hire/0/post") == "Harbour wall");
+  view.edit(EditInput{EditKey::left, true, true});  // Ctrl+Shift+←: the word
+  view.edit(EditInput{EditKey::cut});
+  std::string clipboard;
+  REQUIRE(view.take_clipboard(clipboard));
+  CHECK(clipboard == "wall");
+  CHECK(view.form_value("hire/0/post") == "Harbour ");
+  CHECK_FALSE(view.take_clipboard(clipboard));  // taken once
 }
 
 TEST_CASE("a section's chip, live status and own actions: drawn in its head, a destructive one after its second press (D202)") {

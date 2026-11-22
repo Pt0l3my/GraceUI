@@ -16,6 +16,7 @@
 #include "grace/protocol/messages.h"
 #include "grace/view/display.h"
 #include "grace/view/text.h"
+#include "grace/view/text_field.h"
 
 namespace grace::view {
 
@@ -26,9 +27,10 @@ struct Viewport {
 };
 
 // What the host makes of a key or a button (§5.3, §5.4): ↑ ↓ and the d-pad; ← →; Tab and Shift+Tab; Enter, Space and A;
-// Esc and B; Q, E, LB and RB; Page Up, Page Down, LT and RT; R and X. `shift` is Shift held (a slider's ten steps).
+// Esc and B; Q, E, LB and RB; Page Up, Page Down, LT and RT; R and X; `/` and Ctrl+F, search (§4.3). `shift` is Shift
+// held (a slider's ten steps).
 enum class Key : std::uint8_t {
-  up, down, left, right, next, previous, activate, back, previous_tab, next_tab, previous_page, next_page, reset,
+  up, down, left, right, next, previous, activate, back, previous_tab, next_tab, previous_page, next_page, reset, search,
 };
 
 struct Input {
@@ -152,13 +154,40 @@ class PageView {
 
   // The menu's close routine (§5.1): a destructive action waiting for its second press asks again at the next open; the
   // page, tab and focused row stay for the next open in the session.
-  void cancel_confirmation() noexcept {
-    confirming_.clear();
-    capture_ = Capture{};  // and an open capture: nothing changes (D209)
-  }
+  // An edit ends as Escape ends it (G38 (2)).
+  void cancel_confirmation() noexcept;
 
   // Settings whose label, synonyms or key hold `query`, without case (§4.3's settings part).
   std::vector<SearchHit> search(std::string_view query) const;
+
+  // ---- Text entry (§5.6, D57, G38 (a)): GraceUI's own field, for a text setting with no choices, a secret setting
+  // (masked, write-only: it starts empty, and is sent and forgotten), a form's fields (D195), a table's row secret
+  // (D194, masked likewise) and search (§4.3, this space's settings). Enter, A or a click starts editing the focused
+  // one; while it edits, the host gives it characters (typed()), its editing keys (edit()) and the clipboard's text
+  // (pasted()), and every other key is the field's. Enter keeps the text (a setting's is sent, a form field's moves on
+  // to the next field, a row secret's is sent, search opens the chosen setting's row); Tab keeps it and moves on;
+  // Escape leaves (a setting's and a secret's edit is dropped, a form field keeps its text, search empties). The
+  // menu's close routine ends an edit as Escape does, a form's fields staying for the next open (G38 (2)).
+  enum class EditKey : std::uint8_t {
+    left, right, up, down, home, end, backspace, erase, enter, escape, tab, select_all, copy, cut,
+  };
+  struct EditInput {
+    EditKey key = EditKey::enter;
+    bool shift = false;
+    bool ctrl = false;  // by word (← → Backspace Delete)
+  };
+  bool editing() const noexcept { return edit_.kind != EditKind::none; }
+  Action edit(const EditInput& in);
+  Action typed(char32_t code_point);
+  Action pasted(std::string_view utf8);
+  // The text Ctrl+C or Ctrl+X put aside for the clipboard, taken once; never a masked field's.
+  bool take_clipboard(std::string& out);
+  // The edited field's caret as the last layout drew it (the IME's place, §5.6); empty while nothing is edited.
+  Rect caret() const noexcept { return caret_rect_; }
+  // A command the space accepted, by where its refusal's words would have gone: a form's fields clear (D195).
+  void accepted(std::string_view where);
+  // A form field's text as the view holds it (tests).
+  std::string form_value(std::string_view field) const;
 
   std::string_view page() const noexcept;
   Scope scope() const noexcept { return scope_; }
@@ -183,7 +212,7 @@ class PageView {
 
  private:
   enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related, cell, row_action,
-                                        section_action };
+                                        section_action, form_field, form_submit, row_secret };
   struct Focus {
     FocusKind kind;
     std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
@@ -249,6 +278,40 @@ class PageView {
   Action slide(float x);
   std::size_t rail_index_of_page() const;
   void focus_first_control();
+
+  // A form block's id (D195): its section's and its place among the section's blocks ("hire/0", "hire/a0" in Advanced).
+  static std::string form_id(const protocol::PageSection& section, std::size_t index, bool advanced);
+  // A table's row secret's id (D194): its cell base and the row's key, or the row's index.
+  static std::string secret_id(const protocol::PageBlock& block, const protocol::Json& row, std::size_t r);
+
+  enum class EditKind : std::uint8_t { none, setting, form_field, row_secret, search };
+  struct Edit {
+    EditKind kind = EditKind::none;
+    std::string id;                              // a setting's key, a form field's or a row secret's focus id
+    TextField field;
+    bool masked = false;                         // a secret: drawn as discs, never copied, never kept
+    std::size_t offset = 0;                      // the first byte drawn, so that the caret stays in view
+    const protocol::PageBlock* block = nullptr;  // a form's or a row secret's
+    protocol::Json row_key;                      // a row secret's row
+  };
+  Edit edit_;
+  void start_edit(EditKind kind, std::string id, std::string_view text, std::size_t max, bool masked,
+                  const protocol::PageBlock* block = nullptr, protocol::Json row_key = {});
+  Action finish_edit(bool keep, int move_on);  // move_on: +1 Enter or Tab, -1 Shift+Tab, 0 neither
+  void end_edit();  // the field gone, a masked one's text overwritten first
+  void edited();    // after a change: a form field's text kept, search's hits found again
+  std::map<std::string, std::string, std::less<>> form_values_;  // a form field's text, by its focus id
+  std::string search_query_;
+  std::vector<SearchHit> search_hits_;
+  std::size_t search_pick_ = 0;
+  Action open_hit(const SearchHit& hit);
+  // A setting's row focused on the open page: its tab chosen, its section opened, its Advanced disclosure open.
+  void focus_setting(std::string_view key);
+  Rect caret_rect_{};
+  Rect edit_box_{};                                         // the edited field, as the last layout drew it
+  std::vector<std::pair<std::size_t, float>> edit_stops_;   // its drawn boundaries: a byte offset and its x
+  std::string clipboard_;
+  bool has_clipboard_ = false;
 
   protocol::SpacePages pages_;
   std::vector<protocol::Setting> settings_;

@@ -5683,6 +5683,338 @@ void post_mouse(HWND window, UINT message, float x, float y, WPARAM wparam = 0) 
   PostMessageW(window, message, wparam, MAKELPARAM(static_cast<int>(x), static_cast<int>(y)));
 }
 
+// ---- The in-game text field (G38 (a), D57): GraceUI's own field for a text setting, a secret, a form's fields, a
+// table's row secret and search, typed through the window procedure's characters; the clipboard both ways; the IME at
+// the caret; and the close routine, which keeps a form's text for the next open.
+
+void post_text(HWND window, std::wstring_view text) {
+  for (const wchar_t unit : text) {
+    PostMessageW(window, WM_CHAR, static_cast<WPARAM>(unit), 1);
+  }
+}
+
+// Frames until the menu's last layout draws `text` (or no longer does, with `gone`), at most 3 s.
+bool until_shows(Game& game, const GraceUi& grace, const char* text, bool gone = false) {
+  for (int i = 0; i < 150; ++i) {
+    if ((grace.menu_shows(text) != 0) != gone) {
+      return true;
+    }
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+  }
+  return false;
+}
+
+bool until_focused(Game& game, const GraceUi& grace, const char* name) {
+  for (int i = 0; i < 150; ++i) {
+    if (std::strcmp(grace.menu().focused, name) == 0) {
+      return true;
+    }
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+  }
+  return false;
+}
+
+// ↓ until the menu's focus is on `name`, at most `steps` presses.
+bool down_to(Game& game, const GraceUi& grace, HWND window, const char* name, int steps = 16) {
+  for (int i = 0; i < steps && std::strcmp(grace.menu().focused, name) != 0; ++i) {
+    const std::uint64_t lists = grace.menu().lists;
+    press(window, VK_DOWN, 0x50);
+    menu_after(game, grace, lists);
+  }
+  return std::strcmp(grace.menu().focused, name) == 0;
+}
+
+std::wstring clipboard_text(HWND window) {
+  std::wstring out;
+  for (int i = 0; i < 20 && !OpenClipboard(window); ++i) {
+    Sleep(10);
+  }
+  if (HANDLE data = GetClipboardData(CF_UNICODETEXT); data != nullptr) {
+    if (const auto* text = static_cast<const wchar_t*>(GlobalLock(data)); text != nullptr) {
+      out = text;
+      GlobalUnlock(data);
+    }
+  }
+  CloseClipboard();
+  return out;
+}
+
+void set_clipboard(HWND window, std::wstring_view text) {
+  for (int i = 0; i < 20 && !OpenClipboard(window); ++i) {
+    Sleep(10);
+  }
+  EmptyClipboard();
+  if (HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, (text.size() + 1) * sizeof(wchar_t)); memory != nullptr) {
+    auto* units = static_cast<wchar_t*>(GlobalLock(memory));
+    std::copy(text.begin(), text.end(), units);
+    units[text.size()] = L'\0';
+    GlobalUnlock(memory);
+    SetClipboardData(CF_UNICODETEXT, memory);
+  }
+  CloseClipboard();
+}
+
+// A key pressed with Ctrl held, as the player's keyboard sends them, so that the window's key state has Ctrl down.
+void ctrl_press(UINT vk, UINT scan) {
+  inject_key(VK_CONTROL, 0x1D, true);
+  settle();
+  inject_key(vk, scan, true);
+  settle();
+  inject_key(vk, scan, false);
+  settle();
+  inject_key(VK_CONTROL, 0x1D, false);
+  settle();
+}
+
+// The mod's next command, answered ok; its frame as JSON (null if none came).
+grace::protocol::Json take_command(Game& game, const GraceUiApi1* table, GraceUiConsumer mod) {
+  const SpaceEvent command = wait_kind(game, table, mod, GRACEUI_EVENT_COMMAND);
+  if (command.kind != GRACEUI_EVENT_COMMAND) {
+    return grace::protocol::Json();
+  }
+  const std::string ok = R"({"v":1,"t":"result","space":"demo","id":0,"ok":true})";
+  table->answer(mod, command.reply, ok.data(), ok.size());
+  return grace::protocol::Json::parse(command.frame, nullptr, false);
+}
+
+void run_typing(const std::wstring& dll) {
+  using grace::protocol::Json;
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+  const Connected demo = connect(table, request_for("demo", GRACEUI_VERSION_PACK(0, 1, 0), "The demo space", "notices"));
+  const grace::pages::BuiltinSpace& space = grace::pages::builtin_spaces()[1];
+  const GraceUiSpaceDesc desc = game_space(space.pages, space.settings);
+  const GraceUiConsumer mod = demo.answer.consumer;
+  check(table->register_pages(mod, &desc) == GRACEUI_OK, "typing: register", "the demo space for the game's view");
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  wait_kind(game, table, mod, GRACEUI_EVENT_WATCHED);
+  const std::string values =
+      R"({"v":1,"t":"state","space":"demo","topic":"settings","rev":2,"body":{"values":{"lantern.keeper":"The north keeper","lantern.oil_token":""}}})";
+  table->publish(mod, values.data(), values.size());
+
+  // 1. A text setting: Behaviour's Keeper tab, the keeper's name. Enter edits it; characters type at the caret; Q, a
+  // menu key, types a letter while it edits; Backspace takes it again; Enter sends the text.
+  press(window, VK_NEXT, 0x51);
+  menu = menu_after(game, grace, menu.lists);
+  press(window, 'E', 0x12);
+  menu = menu_after(game, grace, menu.lists);
+  press(window, 'E', 0x12);
+  menu = menu_after(game, grace, menu.lists);
+  const bool on_keeper = down_to(game, grace, window, "setting:lantern.keeper");
+  press(window, VK_RETURN, 0x1C);
+  const bool editing = until_shows(game, grace, "Enter  Save    Esc  Cancel");
+  post_text(window, L" Orla");
+  until_shows(game, grace, "The north keeper Orla");
+  inject_key('Q', 0x10, true);  // a real press: its character comes before its release, as a keyboard's does
+  settle();
+  inject_key('Q', 0x10, false);
+  settle();
+  const bool typed_q = until_shows(game, grace, "The north keeper Orlaq");
+  press(window, VK_BACK, 0x0E);
+  const bool took_q = until_shows(game, grace, "Orlaq", true) && grace.menu_shows("The north keeper Orla") != 0;
+  const std::string tab_after = grace.menu().focused;
+  press(window, VK_RETURN, 0x1C);
+  const Json sent = take_command(game, table, mod);
+  check(on_keeper && editing && typed_q && took_q && tab_after == "setting:lantern.keeper" && sent.is_object() &&
+            sent["name"] == "settings.set" && sent["args"]["key"] == "lantern.keeper" &&
+            sent["args"]["value"] == "The north keeper Orla",
+        "typing: a text setting", "on the row %s; Enter edited it %s; typed, Q typed %s, Backspace took it %s; focus %s; "
+        "Enter sent %s",
+        on_keeper ? "yes" : "NO", editing ? "yes" : "NO", typed_q ? "yes" : "NO", took_q ? "yes" : "NO",
+        tab_after.c_str(), sent.is_object() ? sent.dump().c_str() : "NOTHING");
+  const std::string taken =
+      R"({"v":1,"t":"state","space":"demo","topic":"settings","rev":3,"body":{"values":{"lantern.keeper":"The north keeper Orla","lantern.oil_token":""}}})";
+  table->publish(mod, taken.data(), taken.size());
+
+  // 2. The IME's composition window at the field's caret, inside its field, while it edits; Escape drops the edit.
+  press(window, VK_RETURN, 0x1C);
+  until_shows(game, grace, "Enter  Save    Esc  Cancel");
+  frames(game, 3);
+  const MenuBounds field = menu_bounds(grace, "setting:lantern.keeper");
+  SendMessageW(window, WM_IME_STARTCOMPOSITION, 0, 0);
+  COMPOSITIONFORM composition{};
+  const HIMC context = ImmGetContext(window);
+  const bool read_form = context != nullptr && ImmGetCompositionWindow(context, &composition) != FALSE;
+  if (context != nullptr) {
+    ImmReleaseContext(window, context);
+  }
+  SendMessageW(window, WM_IME_ENDCOMPOSITION, 0, 0);
+  // The field's bounds are the back buffer's pixels (1920 by 1080), the composition window's the client area's.
+  RECT client{};
+  GetClientRect(window, &client);
+  const float sx = static_cast<float>(client.right) / 1920.0f;
+  const float sy = static_cast<float>(client.bottom) / 1080.0f;
+  const float px = static_cast<float>(composition.ptCurrentPos.x);
+  const float py = static_cast<float>(composition.ptCurrentPos.y);
+  const bool in_field = read_form && field.found && px >= std::floor(field.control[0] * sx) &&
+                        px <= std::ceil((field.control[0] + field.control[2]) * sx) &&
+                        py >= std::floor(field.control[1] * sy) &&
+                        py <= std::ceil((field.control[1] + field.control[3]) * sy);
+  post_text(window, L"!");
+  until_shows(game, grace, "Orla!");
+  press(window, VK_ESCAPE, kScanEscape);
+  const bool dropped = until_shows(game, grace, "Enter  Edit    R  Reset    Esc  Back") &&
+                       grace.menu_shows("Orla!") == 0;
+  check(in_field && dropped, "typing: the IME at the caret",
+        "the composition window at %ld,%ld in a client area of %ldx%ld; the field at %.0f,%.0f %.0fx%.0f in the back "
+        "buffer: %s; Escape dropped the edit %s",
+        composition.ptCurrentPos.x, composition.ptCurrentPos.y, client.right, client.bottom, field.control[0],
+        field.control[1], field.control[2], field.control[3], in_field ? "inside" : "OUTSIDE", dropped ? "yes" : "NO");
+
+  // 3. The clipboard: Ctrl+A and Ctrl+C put the field's text on it; Ctrl+V pastes the clipboard's, one paragraph.
+  press(window, VK_RETURN, 0x1C);
+  until_shows(game, grace, "Enter  Save    Esc  Cancel");
+  ctrl_press('A', kScanA);
+  ctrl_press('C', 0x2E);
+  frames(game, 5);
+  const std::wstring copied = clipboard_text(window);
+  set_clipboard(window, L"Lantern\r\nwarden");
+  ctrl_press('A', kScanA);
+  ctrl_press('V', 0x2F);
+  const bool pasted = until_shows(game, grace, "Lantern warden");
+  press(window, VK_RETURN, 0x1C);
+  const Json paste_sent = take_command(game, table, mod);
+  check(copied == L"The north keeper Orla" && pasted && paste_sent.is_object() &&
+            paste_sent["args"]["value"] == "Lantern warden",
+        "typing: the clipboard", "Ctrl+C put %zu characters on it (%s); Ctrl+V pasted %s; sent %s", copied.size(),
+        copied == L"The north keeper Orla" ? "the field's" : "NOT THE FIELD'S", pasted ? "one paragraph" : "NOTHING",
+        paste_sent.is_object() ? paste_sent.dump().c_str() : "NOTHING");
+
+  // 4. A secret: masked, no glyph of it laid out; sent once; shown as Set when the mod says so.
+  const bool on_token = down_to(game, grace, window, "setting:lantern.oil_token");
+  const bool missing = grace.menu_shows("Missing") != 0;  // the control, and the help line's default
+  press(window, VK_RETURN, 0x1C);
+  const bool masked_open = until_shows(game, grace, "Enter  Set    Esc  Cancel");
+  post_text(window, L"tok-9431");
+  frames(game, 5);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const bool no_glyphs = grace.menu_shows("tok-9431") == 0 && grace.menu_shows("9431") == 0;
+  press(window, VK_RETURN, 0x1C);
+  const Json token = take_command(game, table, mod);
+  const std::string set_state =
+      R"({"v":1,"t":"state","space":"demo","topic":"settings","rev":4,"body":{"values":{"lantern.keeper":"Lantern warden","lantern.oil_token":"set"}}})";
+  table->publish(mod, set_state.data(), set_state.size());
+  // The control reads Set; with the row no longer focused its help line (whose default reads Missing) closes.
+  press(window, VK_UP, 0x48);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const bool shown_set = until_shows(game, grace, "Missing", true) && grace.menu_shows("Set") != 0;
+  check(on_token && missing && masked_open && no_glyphs && token.is_object() &&
+            token["args"]["key"] == "lantern.oil_token" && token["args"]["value"] == "tok-9431" && shown_set,
+        "typing: a secret", "on the row %s (Missing %s); masked %s; its glyphs laid out: %s; sent to the mod %s; "
+        "Missing no longer shown %s",
+        on_token ? "yes" : "NO", missing ? "shown" : "NOT SHOWN", masked_open ? "yes" : "NO", no_glyphs ? "none" : "SOME",
+        token.is_object() && token["args"]["value"] == "tok-9431" ? "once" : "NOT", shown_set ? "yes" : "NO");
+
+  // 5. A form: Keepers' Hire a keeper, typed field by field (Enter moves on), sent together, empty once taken.
+  press(window, VK_NEXT, 0x51);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const std::string roster =
+      R"({"v":1,"t":"state","space":"demo","topic":"lantern.keepers","rev":1,"body":{"columns":[{"id":"name","label":"Keeper"},{"id":"ward","label":"Ward word"}],"rows":[{"id":"k1","name":"Corin Ash","ward":""},{"id":"k2","name":"Tamsin Reed","ward":"set"}]}})";
+  wait_kind(game, table, mod, GRACEUI_EVENT_WATCHED);
+  for (int i = 0; i < 5 && grace.menu_shows("Tamsin Reed") == 0; ++i) {  // once the menu watches the roster
+    table->publish(mod, roster.data(), roster.size());
+    until_shows(game, grace, "Tamsin Reed");
+  }
+  const bool on_name = down_to(game, grace, window, "field:hire/0/name", 24);
+  press(window, VK_RETURN, 0x1C);
+  until_shows(game, grace, "Enter  Next    Esc  Done    Ctrl+V  Paste");
+  post_text(window, L"Wren Hale");
+  until_shows(game, grace, "Wren Hale");
+  press(window, VK_RETURN, 0x1C);
+  const bool moved_on = until_focused(game, grace, "field:hire/0/post");
+  press(window, VK_RETURN, 0x1C);
+  until_shows(game, grace, "Enter  Next    Esc  Done    Ctrl+V  Paste");
+  post_text(window, L"Bell tower");
+  until_shows(game, grace, "Bell tower");
+  press(window, VK_RETURN, 0x1C);
+  const bool on_hire = until_focused(game, grace, "submit:hire/0");
+  press(window, VK_RETURN, 0x1C);
+  const Json hire = take_command(game, table, mod);
+  const bool emptied = until_shows(game, grace, "Wren Hale", true) && grace.menu_shows("Bell tower") == 0;
+  check(on_name && moved_on && on_hire && hire.is_object() && hire["name"] == "keepers.hire" &&
+            hire["args"] == Json::object({{"name", "Wren Hale"}, {"post", "Bell tower"}}) && emptied,
+        "typing: a form", "on Name %s; Enter moved to Post %s, then to Hire %s; sent %s; its fields empty once taken %s",
+        on_name ? "yes" : "NO", moved_on ? "yes" : "NO", on_hire ? "yes" : "NO",
+        hire.is_object() ? hire.dump().c_str() : "NOTHING", emptied ? "yes" : "NO");
+
+  // 6. A row secret: Corin's ward word, masked, sent with the row's key.
+  for (int i = 0; i < 16 && std::strcmp(grace.menu().focused, "secret:lantern.keepers/k1") != 0; ++i) {
+    const std::uint64_t lists = grace.menu().lists;
+    press(window, VK_UP, 0x48);
+    menu_after(game, grace, lists);
+  }
+  const bool on_ward = std::strcmp(grace.menu().focused, "secret:lantern.keepers/k1") == 0;
+  press(window, VK_RETURN, 0x1C);
+  until_shows(game, grace, "Enter  Set    Esc  Cancel");
+  post_text(window, L"ember");
+  frames(game, 5);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const bool ward_hidden = grace.menu_shows("ember") == 0;
+  press(window, VK_RETURN, 0x1C);
+  const Json ward = take_command(game, table, mod);
+  check(on_ward && ward_hidden && ward.is_object() && ward["name"] == "keepers.ward" &&
+            ward["args"] == Json::object({{"id", "k1"}, {"value", "ember"}}),
+        "typing: a row secret", "on Corin's Set %s; its glyphs laid out: %s; sent %s", on_ward ? "yes" : "NO",
+        ward_hidden ? "none" : "SOME", ward.is_object() && ward["args"]["id"] == "k1" ? "with the row's key" : "NOT");
+
+  // 7. Search: `/` opens it from the page, its results as it is typed; Enter opens the setting's page on its row.
+  post_text(window, L"/");
+  const bool search_open = until_shows(game, grace, "↑ ↓  Choose    Enter  Open    Esc  Close");
+  post_text(window, L"token");
+  const bool found = until_shows(game, grace, "Oil merchant's token");
+  press(window, VK_RETURN, 0x1C);
+  const bool opened = until_focused(game, grace, "setting:lantern.oil_token") &&
+                      std::strcmp(grace.menu().page, "demo.behaviour") == 0;
+  const std::string opened_on = std::string(grace.menu().page) + ", " + grace.menu().focused;
+  ctrl_press('F', 0x21);
+  const bool ctrl_f = until_shows(game, grace, "↑ ↓  Choose    Enter  Open    Esc  Close");
+  press(window, VK_ESCAPE, kScanEscape);
+  const bool closed = until_shows(game, grace, "↑ ↓  Choose    Enter  Open    Esc  Close", true);
+  check(search_open && found && opened && ctrl_f && closed, "typing: search",
+        "`/` opened it %s; \"token\" found %s; Enter opened %s; Ctrl+F opened it %s; Escape closed it %s",
+        search_open ? "yes" : "NO", found ? "the merchant's token" : "NOTHING", opened_on.c_str(),
+        ctrl_f ? "yes" : "NO", closed ? "yes" : "NO");
+
+  // 8. The close routine (G38 (2)): F5 while a form field edits; at the next open the field is not edited, and its
+  // text is still there.
+  press(window, VK_NEXT, 0x51);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const bool on_name_again = down_to(game, grace, window, "field:hire/0/name", 24);
+  press(window, VK_RETURN, 0x1C);
+  until_shows(game, grace, "Enter  Next    Esc  Done    Ctrl+V  Paste");
+  post_text(window, L"Ash Moor");
+  until_shows(game, grace, "Ash Moor");
+  press(window, VK_F5, kScanF5);
+  for (int i = 0; i < 100 && grace.menu().open != 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  const bool shut = grace.menu().open == 0;
+  for (int i = 0; i < 110; ++i) {  // past the 2 s in which a second press of the menu key is the player's exit
+    frames(game, 1);
+    Sleep(20);
+  }
+  press(window, VK_F5, kScanF5);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const bool kept = until_shows(game, grace, "Ash Moor") && grace.menu_shows("Enter  Type    Esc  Back") != 0 &&
+                    std::strcmp(grace.menu().focused, "field:hire/0/name") == 0;
+  check(on_name_again && shut && kept, "typing: the close routine keeps a form's text",
+        "F5 while Name was edited closed the menu %s; reopened on %s, not editing, its text kept %s",
+        shut ? "yes" : "NO", grace.menu().focused, kept ? "yes" : "NO");
+  press(window, VK_F5, kScanF5);
+  frames(game, 5);
+}
+
 void run_menu_mouse(const std::wstring& dll) {
   Game game(false, 1920, 1080);
   const HWND window = game.window();
@@ -7268,6 +7600,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"menu-mouse") {
     std::printf("-- scenario: the in-game menu by mouse (§5.5)\n");
     run_menu_mouse(dll);
+  } else if (scenario == L"typing") {
+    std::printf("-- scenario: GraceUI's own text field in game (G38 (a), D57)\n");
+    run_typing(dll);
   } else if (scenario == L"menu-space") {
     std::printf("-- scenario: the in-game menu on mods' spaces, with GraceUI's at the rail's foot (D171)\n");
     run_menu_space(dll);
@@ -7345,7 +7680,7 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"spike", L"spike-after",
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"typing", L"spike", L"spike-after",
             L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake"}) {
         run(child_scenario, dll, this_program());
       }

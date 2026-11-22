@@ -1102,3 +1102,20 @@ As answered on 2026-11-22, for your chat box's opening within 50 ms (your NPC §
 - **Its §6 asks you four things:** whether the field kinds cover your NPC §4.5 and O46 fields, the seeds per key
   included; `doc` as `{field id: value}`, with you writing the TOML; check messages as `{field, item, level, words}` in
   the answer's body; and the draft's answer as `{draft, notice}`.
+
+## 52. GraceUI's own text field in game (2026-11-22, D214, G38 (1) (a); GraceUI 0.2.18)
+
+The first part of proposal 0010. No change of the protocol (1.4) or of the ABI (1.5): your pages work in game as they
+are.
+
+- **Typed in game now:** your `text` settings with no `choices_from`, your `secret` settings (masked and write-only:
+  the field starts empty, a value is sent once, and the menu keeps only whether it is set), your forms (D195) and your
+  tables' row secrets (D194). Your page data needs nothing new for any of them. The "Filled in the browser view" and
+  "set in the browser view" lines went.
+- **Search** in game opens with `/` or Ctrl+F. It finds the open space's settings, and Enter opens the row on its tab,
+  its section and Advanced disclosure opened.
+- **A shortcut row's link fixed:** on a page with tabs it now opens the row's own tab. Before, it opened the first tab.
+- **Your forms' commands** are answered as before. On `ok`, the menu empties the form. On a refusal, it keeps the text
+  and shows your words under the form.
+- **Not yet:** Steam's floating keyboard for a pad (testers, D205), and the IME's composition drawn inside the field.
+
