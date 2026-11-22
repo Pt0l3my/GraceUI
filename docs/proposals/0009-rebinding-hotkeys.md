@@ -96,3 +96,18 @@ mapping (the documentation's advice of D33 stands).
 
 When it is built is the owner's: GraceUI's plan put the Hotkeys page's changes in 0.6 (§10); with unbound hotkeys
 listed now, it could come in 0.2.x, after EldenNet's R1 or before it.
+
+## 9. EldenNet's answers (2026-11-22)
+
+1. Item 5: yes. `hotkeys.talk`, `hotkeys.skip_page` and `hotkeys.debug` stop being EldenNet settings and become the
+   defaults it registers (T, its skip key, F11). Its Settings › Hotkeys becomes a read-only list of its own hotkeys from
+   GraceUI's topic, with the link to GraceUI › Hotkeys. O94 stands: T stays the default, rebound on GraceUI's page (O94
+   has a dated note). The call-out takes its words from `describe_hotkey`. PAGES has dated notes on its Settings page
+   and its settings index.
+2. Its question: can EldenNet's launcher, off game (its O76, O77; G29), serve GraceUI › Hotkeys with the bindings and
+   the last registrations it saw? **Not for now (D211):** a hotkey exists only as a mod's registration in game, with its
+   name and defaults; the launcher's host serves spaces through `grace-serve` but holds neither GraceUI's own space nor
+   its hotkey table. So the bindings are on O77's short list, changed in game only, which suits EldenNet. A later step
+   could show and change the kept bindings off game, if GraceUI kept each hotkey's last registered name and defaults in
+   its settings file; it would come as its own proposal.
+

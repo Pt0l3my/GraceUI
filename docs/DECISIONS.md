@@ -843,3 +843,10 @@ session's to answer in the proposal.
 *Later (2026-11-22):* built the same day as D208 to D210 in GraceUI 0.2.16 (protocol 1.4, ABI 1.4). Item 5 still waits
 for EldenNet's session.
 
+*Later (2026-11-22):* the owner gave the same answers in EldenNet's session's question dialog, relayed by it: "GraceUI's
+Hotkeys page (Recommended)", "Ask, then move it (Recommended)", "Pad chords by two pickers (Recommended)", "Mods read
+their key (Recommended)", "Now, in 0.2.x (Recommended)". EldenNet's session answered item 5: yes, its three key settings
+become the defaults it registers, its Settings › Hotkeys a read-only list from GraceUI's topic with a link to GraceUI ›
+Hotkeys, O94's T kept as the default (proposal 0009 §9). Its question on changing bindings off game is answered by
+D211: in game only for now.
+
