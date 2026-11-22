@@ -1139,3 +1139,14 @@ The second part of proposal 0010. No change of the ABI.
 - **Where proposal 0010 differs:** its §3.2 had master–detail as a block. It is the page's, so that your tabs are the
   detail.
 
+## 54. Slow commands (2026-11-22, D216, G38 (1) (a); GraceUI 0.2.20, protocol 1.6)
+
+The third part of proposal 0010. No change of the ABI but a constant in `graceui.h`.
+
+- **Name `profile.draft` in your page data's `slow_commands`** (at most 8 of your own commands; never `settings.set` or
+  `settings.reset`). GraceUI then waits up to `GRACEUI_SLOW_ANSWER_DEADLINE_MS` (90 s) for your answer, not 10 s, from
+  the browser and from the menu alike. Past that it answers `internal`, as for any command.
+- **While it waits,** in game the control that sent it reads "Working…" and takes no press; in the browser a form's
+  button and a row's actions wait as before. The editor's draft button (part d) will show its own words.
+- **Your other commands keep their 10 s.** A slow one still counts in a view's 20 a second and your queue of 32.
+
