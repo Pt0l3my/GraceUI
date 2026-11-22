@@ -996,3 +996,44 @@ to change on your side.
 In game, the line under a table with a row secret ("Key: set in the browser view.") is now left out when every row's
 cell is `"none"`. Nothing to change on your side.
 
+## 45. Sections as cards (2026-11-21, G36, D202; GraceUI 0.2.12, protocol 1.3)
+
+ABI 1.2, unchanged. For AI › Models' per-job cards, a section in your page data may now carry, all optional:
+
+- `"chip": "dialogue"`: 1 to 24 characters after the title, faint.
+- `"status": {"topic": "health", "field": "dialogue"}`: a state topic you declare (not `settings` or `space.state`),
+  its body or the member `field` names holding `{"word": "Ready", "tone": "moss"}` (moss, ember, glint or rot; any
+  other tone is drawn glint). Nothing is drawn until you publish it.
+- `"actions": [{"id": "prebake", "label": "Prepare lines now", "command": "pools.prebake", "tone": "secondary"}]`: 1 or
+  2, a header action's shape and rules (a declared command; a destructive one with `confirm` words, sent with
+  `"confirm": true`). Refuse it in words at your entry point when it cannot run now, as you planned.
+
+Page data that uses them should say `"minor": 3`. The browser draws the actions and the status at the head's right; in
+game they sit in the head, the actions as focus stops after the section's head. When pairing comes, `pools.prebake`
+joins the commands to refuse from a paired device (proposal 0008 §7).
+
+## 46. The browser view paces its subs (2026-11-21, D203; GraceUI 0.2.13)
+
+The web shell now sends subs, unsubs and commands through one queue at 16 a second (the server still allows 20 and
+drops the rest), so AI › Models' 14 topics arrive in about a second after connecting and none is lost. No change of
+the protocol or the ABI, nothing to change on your side; your preview's own browser may keep its 16 a second.
+
+## 47. Pad chords (2026-11-22, G35, D204, D205; GraceUI 0.2.14, ABI 1.3)
+
+Proposal 0005 is built, as decided. For the chat box's gesture (your NPC §5.6, O11):
+
+- Check `has_cap("pad-chords")`, then register the talk hotkey with
+  `pad_chord = GRACEUI_PAD_CHORD(XINPUT_GAMEPAD_DPAD_UP, XINPUT_GAMEPAD_BACK)` (the anchor in the high 16 bits, the key
+  in the low). The hotkey may keep its key too: the key and the chord are bound each on its own and either fires it;
+  `GRACEUI_UNBOUND` means a default you named is taken (the log line says which).
+- A mod connected with an ABI minor below 3 still gets `GRACEUI_NOT_YET` for a chord, as before, so re-vendor
+  `graceui.h` at 0.2.14 (`GRACEUI_ABI1_MINOR` 3) and raise your GraceUI floor to 0.2.14 to use it.
+- On the chord: one `GRACEUI_EVENT_HOTKEY`, as for a key; you ask for input on it with D176's events as on your talk
+  key. View never reaches the game when the chord completes, and both buttons stay hidden until each is released;
+  a chord broken before 0.4 s gives the game View as one tap. Nothing fires, and View reaches the game at once,
+  whenever `request_input` would answer `not_now` (your `safe_context` failing among them), and while any holder has
+  input.
+- The owner tests with keyboard and mouse only (2026-11-22: no pad, VR set or handheld). GraceUI checks chords with a
+  simulated pad, in unit tests and the harness on both toolchains (D205). What only a real pad shows (the 150 ms, 0.4 s
+  and tap estimates, that D-pad Up then View is free in the game, that the late View opens the map, Steam's floating
+  keyboard on a Deck) is for testers' machines in S4's second round and your matrix, not for the owner.

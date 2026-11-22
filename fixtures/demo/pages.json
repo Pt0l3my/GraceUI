@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 2,
+  "minor": 3,
   "categories": [
     {
       "id": "lanterns",
@@ -301,6 +301,15 @@
                 "key": "id"
               }
             }
+          ],
+          "actions": [
+            {
+              "id": "dismiss_all",
+              "label": "Dismiss all",
+              "command": "keepers.dismiss_all",
+              "tone": "destructive",
+              "confirm": "Every keeper leaves the roster, with their ward words."
+            }
           ]
         },
         {
@@ -335,6 +344,19 @@
               "keys": [
                 "lantern.oil_kind"
               ]
+            }
+          ],
+          "chip": "store",
+          "status": {
+            "topic": "lantern.oils",
+            "field": "stock"
+          },
+          "actions": [
+            {
+              "id": "order",
+              "label": "Order oil",
+              "command": "oil.order",
+              "tone": "secondary"
             }
           ]
         }
@@ -376,6 +398,8 @@
     "lantern.clear_log",
     "keepers.dismiss",
     "keepers.ward",
-    "keepers.hire"
+    "keepers.hire",
+    "keepers.dismiss_all",
+    "oil.order"
   ]
 }

@@ -197,6 +197,28 @@ class Seeded(unittest.TestCase):
         setting(desc, "lantern.wicks")["choices_from"] = "lantern.oils"
         self.expect("choices_from is on a text setting", sp, desc, fx)
 
+    def test_section_cards(self):  # G36, D202
+        def keepers(sp):
+            return page(sp, "demo.keepers")["sections"]
+        sp, desc, fx = demo()
+        keepers(sp)[2]["chip"] = "a very long chip for a card"
+        self.expect("chip: longer than 24 bytes", sp, desc, fx)  # the schema's bound, before the lint
+        sp, desc, fx = demo()
+        keepers(sp)[2]["chip"] = ""
+        self.expect("its chip is 1 to 24 characters", sp, desc, fx)
+        sp, desc, fx = demo()
+        keepers(sp)[2]["status"] = {"topic": "lantern.log"}
+        self.expect("its status names a state topic of the space's own", sp, desc, fx)
+        sp, desc, fx = demo()
+        keepers(sp)[2]["status"]["field"] = "Stock!"
+        self.expect("its status field is a name", sp, desc, fx)
+        sp, desc, fx = demo()
+        del keepers(sp)[0]["actions"][0]["confirm"]
+        self.expect("destructive action dismiss_all has no confirmation", sp, desc, fx)
+        sp, desc, fx = demo()
+        keepers(sp)[2]["actions"][0]["command"] = "oil.steal"
+        self.expect("action order has a label and sends a command of the space", sp, desc, fx)
+
     def test_setting_descriptions(self):
         cases = [
             ("lantern.oil_token", "default", "hunter2", "a secret's default is empty"),

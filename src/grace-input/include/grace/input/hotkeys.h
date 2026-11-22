@@ -12,6 +12,10 @@
 // hotkey exists, and fires nothing until the player binds it on GraceUI's Hotkeys page (GraceUI 0.6). A key bound with
 // no modifier is never the game's while bound, as the menu key is not; a press with modifiers is the hotkey's from its
 // press to its release. Hotkeys stand aside while any holder has input (§5.2).
+//
+// A hotkey may also have a default pad chord (D204, proposal 0005): an anchor button and a key button, which chords.h
+// watches for in XInput's reads. A chord another hotkey has bound registers unbound alike; the key and the chord are
+// bound or unbound each on its own, and either fires the hotkey.
 #pragma once
 
 #include <atomic>
@@ -36,10 +40,29 @@ inline constexpr std::uint8_t kModAll = 7;
 bool reserved_key(Key key) noexcept;
 
 enum class Added : std::uint8_t {
-  bound = 0,      // its default is bound: a press fires it
-  unbound = 1,    // no default, or its default is taken (by another hotkey, or the menu key): it fires nothing yet
-  invalid = 2,    // a reserved key, an unknown modifier, Alt+F4, or an action already the mod's
+  bound = 0,      // every default it names is bound: a press fires it
+  unbound = 1,    // no default, or a default it names is taken (by another hotkey, or the menu key)
+  invalid = 2,    // a reserved key, an unknown modifier, Alt+F4, a chord that is not one (valid_chord), or an action
+                  // already the mod's
   full = 3,       // kHotkeysPerMod of the mod's, or kMaxHotkeys in the session
+};
+
+// A pad chord as graceui.h's GraceUiHotkeyDesc.pad_chord gives it (D204): the key's button in the low 16 bits and the
+// anchor's in the high 16, each exactly one of XInput's fourteen buttons (no triggers, no sticks), the two different.
+inline constexpr std::uint16_t kChordButtons = 0xF3FFu;  // the XINPUT_GAMEPAD_* buttons; 0x0400 and 0x0800 are none
+constexpr std::uint16_t chord_key(std::uint32_t chord) noexcept { return static_cast<std::uint16_t>(chord & 0xFFFFu); }
+constexpr std::uint16_t chord_anchor(std::uint32_t chord) noexcept { return static_cast<std::uint16_t>(chord >> 16); }
+constexpr bool one_button(std::uint16_t bits) noexcept {
+  return bits != 0 && (bits & (bits - 1)) == 0 && (bits & ~kChordButtons) == 0;
+}
+constexpr bool valid_chord(std::uint32_t chord) noexcept {
+  return one_button(chord_key(chord)) && one_button(chord_anchor(chord)) && chord_key(chord) != chord_anchor(chord);
+}
+
+// Which of a hotkey's defaults are bound, as add() found them.
+struct Binding {
+  bool key = false;
+  bool chord = false;
 };
 
 struct Press {
@@ -58,7 +81,12 @@ class Hotkeys {
   // A hotkey of `owner`'s for `action` (checked by the caller: 1 to kActionMax bytes), its default `key` (kNoKey for
   // none) with `modifiers`. `menu_key` is the host's, which no hotkey takes. `id` is set with bound and unbound.
   Added add(std::uint16_t owner, std::string_view action, Key key, std::uint8_t modifiers, Key menu_key,
-            std::uint32_t& id) noexcept;
+            std::uint32_t& id) noexcept {
+    return add(owner, action, key, modifiers, 0, menu_key, id, nullptr);
+  }
+  // The same with a default pad `chord` (0 for none, else valid_chord), and which defaults are bound in `binding`.
+  Added add(std::uint16_t owner, std::string_view action, Key key, std::uint8_t modifiers, std::uint32_t chord,
+            Key menu_key, std::uint32_t& id, Binding* binding) noexcept;
 
   // The mod has gone: its hotkeys and their presses go with it.
   void remove_owner(std::uint16_t owner) noexcept;
@@ -73,8 +101,15 @@ class Hotkeys {
 
   // The bound hotkey whose key and modifiers these are exactly, or 0.
   std::uint32_t match(Key key, std::uint8_t modifiers) const noexcept;
-  // Counts a press of `id`; false if it was removed meanwhile.
+  // Counts a press of `id` (from its key or its chord); false if it was removed meanwhile.
   bool pressed(std::uint32_t id) noexcept;
+
+  // ---- XInput's readers.
+
+  // The hotkey whose bound chord is `anchor` then `key` (one button each), or 0.
+  std::uint32_t match_chord(std::uint16_t anchor, std::uint16_t key) const noexcept;
+  // The key buttons of every bound chord: a fresh press of any other starts no chord, so no table need be searched.
+  std::uint16_t chord_keys() const noexcept { return chord_keys_.load(std::memory_order_acquire); }
   // A press with modifiers that a hotkey took: hidden from DirectInput's readers until released (held()).
   void hold(Key key) noexcept;
   void let_go(Key key) noexcept;
@@ -114,8 +149,14 @@ class Hotkeys {
   void unlock() noexcept { lock_.clear(std::memory_order_release); }
   void update_bare() noexcept;  // under the lock
 
+  // A hotkey's chord word: bits 0-31 its chord, bit 32 set while bound, bits 33-51 the hotkey's generation.
+  static constexpr std::uint64_t pack_chord(std::uint32_t chord, bool bound, std::uint32_t generation) noexcept {
+    return std::uint64_t{chord} | (std::uint64_t{bound ? 1u : 0u} << 32) | (std::uint64_t{generation & 0x7FFFFu} << 33);
+  }
+
   struct Slot {
     std::atomic<std::uint64_t> word{0};
+    std::atomic<std::uint64_t> chord{0};
     std::uint16_t owner = 0;            // under the lock
     std::uint8_t action_length = 0;     // under the lock
     char action[kActionMax] = {};       // under the lock
@@ -127,6 +168,7 @@ class Hotkeys {
   AtomicKeyBits bare_;
   AtomicKeyBits bound_;
   AtomicKeyBits held_;
+  std::atomic<std::uint16_t> chord_keys_{0};
 };
 
 }  // namespace grace::input

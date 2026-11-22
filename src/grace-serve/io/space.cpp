@@ -67,6 +67,11 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
   };
   const auto blocks_of = [&](const std::vector<protocol::PageSection>& sections) {
     for (const protocol::PageSection& section : sections) {
+      for (const protocol::PageAction& action : section.actions.value_or(std::vector<protocol::PageAction>{})) {
+        if (action.tone == protocol::ActionTone::destructive) {
+          add(description.destructive, action.command);  // a section's own action (D202)
+        }
+      }
       for (const auto* blocks : {&section.blocks, section.advanced ? &*section.advanced : nullptr}) {
         if (blocks == nullptr) {
           continue;

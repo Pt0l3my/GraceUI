@@ -31,6 +31,7 @@ constinit grace::input::KeyboardLedger g_keyboard;
 constinit grace::input::MouseLedger g_mouse;
 constinit grace::input::PadLedger g_pads;
 constinit grace::input::Hotkeys g_hotkeys;
+constinit grace::input::PadChords g_chords;
 constinit grace::input::MessageRules g_messages{g_capture, g_keyboard, g_mouse, &g_hotkeys};
 constinit grace::input::SpscRing<HolderEvent, 256> g_events;
 
@@ -345,6 +346,19 @@ grace::input::MouseLedger& mouse() noexcept { return g_mouse; }
 grace::input::PadLedger& pads() noexcept { return g_pads; }
 grace::input::MessageRules& messages() noexcept { return g_messages; }
 grace::input::Hotkeys& hotkeys() noexcept { return g_hotkeys; }
+grace::input::PadChords& chords() noexcept { return g_chords; }
+
+grace::input::Aside chord_aside() noexcept {
+  if (g_capture.holder().holds()) {
+    return grace::input::Aside::holder;
+  }
+  // Exactly when request_input would answer not_now (D204, proposal 0005 §3), or in the notice-only mode.
+  const grace::input::Conditions now = read_conditions(nullptr);
+  if (!now.ready || now.off || now.danger || now.loading || now.game_menu || session::notice_only()) {
+    return grace::input::Aside::not_now;
+  }
+  return grace::input::Aside::none;
+}
 
 grace::input::KeyBits hidden_keys() noexcept {
   grace::input::KeyBits hidden = g_hotkeys.bare() | g_hotkeys.held();

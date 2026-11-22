@@ -44,7 +44,7 @@ class FakeSocket implements SocketLike {
 
 const TICKET = "x".repeat(43);
 const WELCOME: Welcome = {
-  v: 1, t: "welcome", protocol: "1.2", caps: [], graceui: "0.2.0", session: "s1",
+  v: 1, t: "welcome", protocol: "1.3", caps: [], graceui: "0.2.0", session: "s1",
   spaces: [{ id: "demo", name: "Demo space", version: "0.2.0", increment: "0.2", settings_schema: { number: 1, hash: "h" } }],
 };
 
@@ -113,7 +113,7 @@ test("the handshake: a same-origin POST for the ticket, the socket on this origi
   assert.equal(request?.init.body, "{}");
   assert.deepEqual(request?.init.headers, { "Content-Type": "application/json" });
   assert.equal(socket.url, "ws://127.0.0.1:8642/api/ws");
-  assert.deepEqual(socket.frames()[0], { v: 1, t: "hello", protocol: "1.2", bundle: "0.2.0", caps: [], ticket: TICKET });
+  assert.deepEqual(socket.frames()[0], { v: 1, t: "hello", protocol: "1.3", bundle: "0.2.0", caps: [], ticket: TICKET });
   assert.equal(got.welcome?.length, 1);
 });
 
@@ -255,7 +255,7 @@ test("liveness: a ping every 15 s; two missed pongs close the socket", async () 
   }
 });
 
-test("at most 20 commands a second: the rest wait their turn, in order", async () => {
+test("at most 16 frames a second, the server's 20 less a margin: commands wait their turn, in order (D203)", async () => {
   mock.timers.enable({ apis: ["setInterval", "setTimeout", "Date"] });
   try {
     const { transport, socket } = await connected();
@@ -263,10 +263,36 @@ test("at most 20 commands a second: the rest wait their turn, in order", async (
     for (let i = 0; i < 25; ++i) {
       void transport.command("demo", "lantern.trim", {});
     }
-    assert.equal(socket.sent.length - before, 20);
+    assert.ok(socket.sent.length - before <= 16, `${socket.sent.length - before} sent in the first second`);
+    mock.timers.tick(1000);
     mock.timers.tick(1000);
     const ids = socket.frames().slice(before).map((f) => f.id);
     assert.deepEqual(ids, Array.from({ length: 25 }, (_, i) => i + 1));
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("subs and unsubs keep to the same pace, so a page opening many topics loses none (D203)", async () => {
+  mock.timers.enable({ apis: ["setInterval", "setTimeout", "Date"] });
+  try {
+    const { transport, socket } = await connected();
+    const before = socket.sent.length;
+    const ids: number[] = [];
+    for (let i = 0; i < 30; ++i) {
+      ids.push(transport.subscribe("demo", `topic.${i}`));
+    }
+    const first = socket.sent.length - before;
+    assert.ok(first <= 16, `${first} sent in the first second`);
+    // An unsub of a sub still waiting takes it back: neither is sent.
+    transport.unsubscribe("demo", ids[29] ?? 0, "topic.29");
+    for (let i = 0; i < 3; ++i) {
+      mock.timers.tick(1000);
+    }
+    const subs = socket.frames().slice(before);
+    assert.equal(subs.length, 29);
+    assert.ok(subs.every((f) => f.t === "sub"));
+    assert.deepEqual(subs.map((f) => f.topic), Array.from({ length: 29 }, (_, i) => `topic.${i}`));
   } finally {
     mock.timers.reset();
   }

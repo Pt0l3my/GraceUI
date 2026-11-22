@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 2;
-inline constexpr std::string_view kProtocolVersion = "1.2";
+inline constexpr std::uint32_t kProtocolMinor = 3;
+inline constexpr std::string_view kProtocolVersion = "1.3";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -315,7 +315,16 @@ struct PageBlock {
 bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError& e);
 Json encode(const PageBlock& in);
 
-// A section: a card with a label, an optional line, its blocks and an Advanced disclosure.
+// A section's live status (D202): a state topic of the space's, or a member of its body, holding {word, tone} in the lamp's tones.
+struct SectionStatus {
+  std::string topic{};
+  std::optional<std::string> field{};
+  bool operator==(const SectionStatus&) const = default;
+};
+bool decode(const Json& in, SectionStatus& out, const std::string& path, DecodeError& e);
+Json encode(const SectionStatus& in);
+
+// A section: a card with a label, an optional line, its blocks and an Advanced disclosure; a chip, a live status and actions of its own (D202).
 struct PageSection {
   std::string id{};
   std::string title{};
@@ -323,6 +332,9 @@ struct PageSection {
   std::optional<bool> collapsed{};
   std::vector<PageBlock> blocks{};
   std::optional<std::vector<PageBlock>> advanced{};
+  std::optional<std::string> chip{};
+  std::optional<SectionStatus> status{};
+  std::optional<std::vector<PageAction>> actions{};
   bool operator==(const PageSection&) const = default;
 };
 bool decode(const Json& in, PageSection& out, const std::string& path, DecodeError& e);

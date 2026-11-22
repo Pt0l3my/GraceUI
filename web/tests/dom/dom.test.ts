@@ -415,6 +415,46 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("proposal 0008 in the browser: a section's chip, live status and own actions, a destructive one asking " +
+       "first (D202)", async () => {
+    const { page, close } = await fresh();
+    const named = (name: string) => () => host.received.filter((f) => f.t === "cmd" && f.name === name);
+    const settle = async (got: () => unknown[], n: number) => {
+      for (let i = 0; i < 40 && got().length < n; ++i) {
+        await page.waitForTimeout(50);
+      }
+    };
+    try {
+      await openFromRail(page, "demo", "demo.keepers");
+      const oil = page.locator("[data-section='oil']");
+      assert.equal((await oil.locator(".card__chip").textContent())?.trim(), "store");
+      await oil.locator(".card__status").waitFor();
+      assert.match((await oil.locator(".card__status").textContent()) ?? "", /Low/);
+      assert.equal(await oil.locator(".card__status .lamp__dot--ember").count(), 1);
+      // Not destructive: at once, with no confirmation.
+      const order = named("oil.order");
+      await oil.locator("[data-section-action='order']").click();
+      await settle(order, 1);
+      assert.deepEqual(order()[0]?.args, {});
+      // Destructive: its confirmation first; Cancel sends nothing; its button sends "confirm": true.
+      const all = named("keepers.dismiss_all");
+      const roster = page.locator("[data-section='roster']");
+      await roster.locator("[data-section-action='dismiss_all']").click();
+      await page.locator("dialog[open]").waitFor();
+      assert.match((await page.locator("dialog[open] .prose").textContent()) ?? "", /Every keeper leaves/);
+      await page.locator("dialog[open] .button--secondary").click();
+      await page.waitForTimeout(100);
+      assert.equal(all().length, 0);
+      await roster.locator("[data-section-action='dismiss_all']").click();
+      await page.locator("dialog[open] [data-confirm='dismiss_all']").click();
+      await settle(all, 1);
+      assert.deepEqual(all()[0]?.args, { confirm: true });
+      assert.deepEqual(await violations(page), []);
+    } finally {
+      await close();
+    }
+  });
+
   test("proposal 0006 in the browser: a block's field and empty words, a newest-first log tail, a greyed page, a " +
        "shortcut's control (D185 to D189)", async () => {
     // The demo space with the five: its overview's tiles from a member, its sentence's own empty words; its log tail

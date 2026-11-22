@@ -2,6 +2,7 @@
 # unit-tested on Linux. grace-host links them into graceui.dll and feeds them from its window-procedure filter and its
 # input detours.
 add_library(grace_input STATIC
+  chords.cpp
   devices.cpp
   holder.cpp
   holder_mail.cpp
@@ -15,6 +16,7 @@ if(GRACEUI_UNIT_TESTS)
   add_executable(grace_input_tests
     tests/main.cpp
     tests/chars_tests.cpp
+    tests/chords_tests.cpp
     tests/devices_tests.cpp
     tests/holder_tests.cpp
     tests/holder_mail_tests.cpp

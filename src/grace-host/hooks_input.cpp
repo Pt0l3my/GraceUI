@@ -624,7 +624,11 @@ void filter_pad(DWORD user, XINPUT_STATE* state, DWORD result) noexcept {
 #if defined(GRACEUI_TEST_EXPORTS)
         const grace::input::Pad before = pad;
 #endif
-        input::pads().filter(user, packet, pad, input::capture(), input::now_ms());
+        const std::int64_t now = input::now_ms();
+        const std::uint16_t real = pad.buttons;
+        input::pads().filter(user, packet, pad, input::capture(), now);
+        // The mods' chords (D204): a chord's key held back while it resolves, its tap, both hidden after it fires.
+        input::chords().filter(user, real, pad.buttons, packet, input::chord_aside(), input::hotkeys(), now);
 #if defined(GRACEUI_TEST_EXPORTS)
         if (!(pad == before)) {
           counters::count_masked(counters::xinput, input::capture().holder().holds());
@@ -640,6 +644,7 @@ void filter_pad(DWORD user, XINPUT_STATE* state, DWORD result) noexcept {
         gamepad.sThumbRY = pad.right_y;
       } else if (result == ERROR_DEVICE_NOT_CONNECTED) {
         input::pads().disconnected(user);
+        input::chords().disconnected(user);
       }
       input::tick();
     } catch (...) {
@@ -679,6 +684,15 @@ void test_pad(std::uint32_t user, std::uint16_t buttons) noexcept {
   state.dwPacketNumber = static_cast<DWORD>(input::now_ms());
   state.Gamepad.wButtons = buttons;
   filter_pad(user, &state, ERROR_SUCCESS);
+}
+
+std::uint16_t test_pad_read(std::uint32_t user, std::uint16_t buttons, std::uint32_t& packet) noexcept {
+  XINPUT_STATE state{};
+  state.dwPacketNumber = packet;
+  state.Gamepad.wButtons = buttons;
+  filter_pad(user, &state, ERROR_SUCCESS);
+  packet = state.dwPacketNumber;
+  return state.Gamepad.wButtons;
 }
 #endif
 

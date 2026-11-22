@@ -58,6 +58,11 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 
 **See also.** EldenNet O25 (the hudhook pin), which rules out (b)–(d) and (f) without a change; G10 keeps the one overlay in EldenNet.
 
+*Later (2026-11-21):* the owner's look review of the in-game menu (EldenNet's roadmap S11.2.d; its first answers on
+2026-11-20 gave D177, G31 and G32), made from screenshots of GraceUI's own pages, the demo space and EldenNet's first
+pages in game and in the browser, was approved as drawn: "both approved" (with G36). (a) stands.
+
+
 ## G2
 
 **GraceUI as a standalone mod** · *2026-11-07 · Decided by the owner; the recommendation was (a), a library*
@@ -766,9 +771,15 @@ second round needs it, after EldenNet's R1, unless there is room before.
 
 **Owner's words.** "I am fine with everything you and grace done so far, so that's approved." (relayed by EldenNet's session, 2026-11-21).
 
+*Later (2026-11-22):* built before S4's second round, there being room, as D204 in GraceUI 0.2.14 (ABI 1.3). The owner,
+asked whether to start it, answered: "alright, but keep in mind I don't have a pad, controller, VR set, or handheld to
+test with, only a PC with keyboard and mouse." So every pad behaviour is checked without one (D205): by unit
+timelines, and in the harness under Wine on both toolchains; the three estimates, the chord's freedom in the game and
+the Deck's checks wait for testers' machines, never for the owner.
+
 ## G36
 
-**Sections as cards: a chip, a live status and their own actions** · *Open since 2026-11-21*
+**Sections as cards: a chip, a live status and their own actions** · *Decided 2026-11-21*
 
 **Question.** EldenNet's AI › Models wants one card per job slot (its PAGES §4.6): a title with the slot id as a chip, a
 health dot and word, its pickers and budgets, and on Prepared lines a button of its own. Sections are already drawn
@@ -788,4 +799,9 @@ change of the ABI.
 
 *Later (2026-11-21):* EldenNet's session answered that the proposal fits its PAGES §4.6 as written and that its view is
 (a), all three (proposal 0008 §7).
+
+**Decision (2026-11-21).** (a) All three, as recommended: a section's chip, its live status and its own actions. To be
+built in GraceUI 0.2.12 (protocol 1.3); built as D202. Home's grid of cards stays for a later proposal.
+
+**Owner's words.** "both approved" (of G36 and the look review of the in-game menu, 2026-11-21).
 

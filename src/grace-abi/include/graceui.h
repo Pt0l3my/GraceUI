@@ -49,8 +49,8 @@ extern "C" {
 
 /* The ABI major this header describes, and its minor: the number of the newest appends (0: the first table). */
 #define GRACEUI_ABI_MAJOR 1u
-#define GRACEUI_ABI1_MINOR 2u /* 1: a holder's events and set_caret (GraceUI 0.2.1, D176); 2: the display and scaled
-                                 faces (GraceUI 0.2.2, D180) */
+#define GRACEUI_ABI1_MINOR 3u /* 1: a holder's events and set_caret (GraceUI 0.2.1, D176); 2: the display and scaled
+                                 faces (GraceUI 0.2.2, D180); 3: pad chords (GraceUI 0.2.14, D204) */
 
 /*
  * GraceUI's own version (GRACEUI_VERSION_PACK). Needs no start: callable from any thread, at any time after the DLL is
@@ -144,6 +144,7 @@ typedef uint32_t GraceUiStatus;
                                                     0.2.1, ABI 1.1 (D176) */
 #define GRACEUI_CAP_DISPLAY "display" /* connect's display fields, GRACEUI_EVENT_DISPLAY, GRACEUI_FACE_SCALED: since 0.2.2,
                                         ABI 1.2 (D180) */
+#define GRACEUI_CAP_PAD_CHORDS "pad-chords" /* register_hotkey's pad_chord: since 0.2.14, ABI 1.3 (D204) */
 
 /* A connected mod's handle, which every slot after connect takes; 0 is none. */
 typedef uint64_t GraceUiConsumer;
@@ -392,7 +393,21 @@ typedef struct GraceUiCaret {
  * The press, its repeats, characters and release never reach the game; a key bound with no modifier is never the
  * game's while it is bound, through DirectInput as well. A default already taken (by another hotkey, or the menu key)
  * registers unbound: the hotkey exists and fires nothing until the player binds it (GraceUI 0.6's Hotkeys page), and
- * GraceUI's log names it. GraceUI 0.1 takes keys alone: a pad chord answers GRACEUI_NOT_YET. */
+ * GraceUI's log names it.
+ *
+ * A pad chord (ABI 1.3, GRACEUI_CAP_PAD_CHORDS, D204; proposal 0005): two of XInput's buttons in order, an anchor and a
+ * key, given as GRACEUI_PAD_CHORD(anchor, key). The anchor always reaches the game. A key pressed while the anchor has
+ * been held for 150 ms is held back from the game; both held for 0.4 s from the key's press fire the hotkey, the key
+ * never reaches the game, and both are hidden from it until each is released. Either released sooner replays the key
+ * to the game as one tap. Chords stand aside while any holder has input and whenever request_input would answer
+ * not_now (danger, a game menu, loading, not ready): then the key reaches the game at once. The times are estimates
+ * (EST) that S4 confirms on a pad. A chord another hotkey has bound registers unbound, as a taken key does; one action
+ * may have a key and a chord, each bound on its own, and either fires it. A mod built before ABI 1.3, and any GraceUI
+ * before 0.2.14, answers a chord GRACEUI_NOT_YET. */
+
+/* A pad chord for GraceUiHotkeyDesc.pad_chord: `anchor` then `key`, each exactly one XINPUT_GAMEPAD_* button (not a
+ * trigger or a stick), the two different. */
+#define GRACEUI_PAD_CHORD(anchor, key) ((((0u + (anchor)) & 0xFFFFu) << 16) | ((0u + (key)) & 0xFFFFu))
 
 #define GRACEUI_MOD_CTRL 1u
 #define GRACEUI_MOD_SHIFT 2u
@@ -403,7 +418,7 @@ typedef struct GraceUiHotkeyDesc {
   uint32_t key;          /* the default key, a Windows virtual key (not Escape, a modifier or a mouse button); 0 for
                             none */
   uint32_t modifiers;    /* GRACEUI_MOD_*; Alt with F4 is refused */
-  uint32_t pad_chord;    /* the default pad chord, XInput's button bits; 0 for none (GraceUI 0.1: 0 only) */
+  uint32_t pad_chord;    /* the default pad chord, GRACEUI_PAD_CHORD(anchor, key); 0 for none (ABI 1.3) */
   const char* action;    /* the action's id within the mod: 1 to 32 of a-z, 0-9 and '-', not the mod's already */
   uint64_t action_length;
   const char* name;      /* what the Hotkeys page calls it: 1 to 64 bytes of UTF-8 */
@@ -601,8 +616,9 @@ typedef struct GraceUiApi1 {
   GraceUiStatus (*release_input)(GraceUiConsumer consumer);
   /* A hotkey (above): GRACEUI_OK with its id, bound; GRACEUI_UNBOUND with its id, registered but unbound (D164); _REFUSED (a reserved key, an
    * unknown modifier, Alt+F4, an action that is not an id or already the mod's, a name that is not 1 to 64 bytes of
-   * UTF-8, a key with no place on the keyboard); _FULL (GRACEUI_HOTKEYS_PER_MOD, or the session's); _NOT_YET for a pad
-   * chord. */
+   * UTF-8, a key with no place on the keyboard, a pad chord that is not two different buttons); _FULL
+   * (GRACEUI_HOTKEYS_PER_MOD, or the session's); _NOT_YET for a pad chord from a mod built before ABI 1.3. With a key
+   * and a chord, _UNBOUND if either is taken; the other still fires it. */
   GraceUiStatus (*register_hotkey)(GraceUiConsumer consumer, const GraceUiHotkeyDesc* hotkey, uint32_t* hotkey_id);
 
   /* Shows, replaces or withdraws one of the mod's notices: GRACEUI_OK, _REFUSED (a text that is not UTF-8, too long,

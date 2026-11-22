@@ -1,7 +1,8 @@
 # Proposal 0008: Sections as cards: a chip, a live status and their own actions
 
 **Status: proposal, 2026-11-21, put to the owner and EldenNet's session (G36); EldenNet's session agreed the same day
-(§7); not built, waiting on the owner's decision.** EldenNet's session met this
+(§7). The owner approved it on 2026-11-21 (G36); built as D202 in GraceUI 0.2.12, where this text and the
+design differ, the design holds.** EldenNet's session met this
 building AI › Models (its PAGES §4.6, its third pages slice): PAGES asks for **one card per job slot**, and the slice
 used one settings block under the Jobs table "until GraceUI has cards". It adds to the page data and to what GraceUI's
 views draw, for every mod (G16, G18), so it is put here rather than settled alone. A bare § is a section of
