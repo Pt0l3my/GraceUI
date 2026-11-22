@@ -1854,7 +1854,7 @@ recommended; G33 was put the same day with proposal 0006 and decided the same da
 2026-11-21 with proposal 0007 and decided the same day, as recommended; G35, proposal 0005 (put on 2026-11-20 and
 entered here with its answer), was decided on 2026-11-21, as proposed; G36 was put on 2026-11-21 with proposal 0008 and
 decided the same day, as recommended; G37 was put on 2026-11-22 with proposal 0009 and decided the same day, as
-recommended; G38 was put on 2026-11-22 with proposal 0010 and is open.**
+recommended; G38 was put on 2026-11-22 with proposal 0010 and decided the same day, as recommended.**
 Every decision is recorded in full in [DECISIONS.md](DECISIONS.md), the one record: the question as it was put, the
 options, the recommendation as written, what was decided, the owner's words and what each amends. This section is its
 index; each G-number the documents cite is a row here and an entry there. G11 and G12 were not questions of §12: they
@@ -1904,7 +1904,7 @@ in the entry with its date, and a later decision amends an earlier one by a note
 | [G35](DECISIONS.md#g35) | Pad chords for hotkeys (proposal 0005)? | As proposed: an anchor then a key (EldenNet's D-pad Up, then View), 150 ms and 0.4 s EST, standing aside when input would be refused, ABI 1.3 | Decided 2026-11-21, as proposed; built 2026-11-22 (D204, GraceUI 0.2.14) |
 | [G37](DECISIONS.md#g37) | Where and how a hotkey is rebound (proposal 0009)? | Recommended: on GraceUI's Hotkeys page for every mod, kept under the mod's and the action's ids; a taken key asked, then moved; chords from two pickers; a mod may read its current key (ABI 1.4) | Decided 2026-11-22, as recommended; built as D208 to D210 (GraceUI 0.2.16) |
 | [G33](DECISIONS.md#g33) | Which of five additions for mods' pages to build (proposal 0006)? | Recommended: all five, a space's greyed state as a framework topic mapping each greyed page to its words (EldenNet's answer) | Decided 2026-11-20: all five, as recommended; built as D185 to D189 |
-| [G38](DECISIONS.md#g38) | What the profile editor needs from GraceUI (proposal 0010)? | Recommended: topic families, master–detail in both views, an editor block, slow commands and the text field in game, all now in 0.2.x, text field first; unsaved edits kept in memory when the menu closes; prose as one paragraph | Open (put 2026-11-22) |
+| [G38](DECISIONS.md#g38) | What the profile editor needs from GraceUI (proposal 0010)? | Recommended: topic families, master–detail in both views, an editor block, slow commands and the text field in game, all now in 0.2.x, text field first; unsaved edits kept in memory when the menu closes; prose as one paragraph | Decided 2026-11-22: all three, as recommended; to be built in 0.2.x, the text field first |
 
 ---
 
