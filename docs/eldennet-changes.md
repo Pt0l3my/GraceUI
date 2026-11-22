@@ -1018,3 +1018,22 @@ The web shell now sends subs, unsubs and commands through one queue at 16 a seco
 drops the rest), so AI › Models' 14 topics arrive in about a second after connecting and none is lost. No change of
 the protocol or the ABI, nothing to change on your side; your preview's own browser may keep its 16 a second.
 
+## 47. Pad chords (2026-11-22, G35, D204, D205; GraceUI 0.2.14, ABI 1.3)
+
+Proposal 0005 is built, as decided. For the chat box's gesture (your NPC §5.6, O11):
+
+- Check `has_cap("pad-chords")`, then register the talk hotkey with
+  `pad_chord = GRACEUI_PAD_CHORD(XINPUT_GAMEPAD_DPAD_UP, XINPUT_GAMEPAD_BACK)` (the anchor in the high 16 bits, the key
+  in the low). The hotkey may keep its key too: the key and the chord are bound each on its own and either fires it;
+  `GRACEUI_UNBOUND` means a default you named is taken (the log line says which).
+- A mod connected with an ABI minor below 3 still gets `GRACEUI_NOT_YET` for a chord, as before, so re-vendor
+  `graceui.h` at 0.2.14 (`GRACEUI_ABI1_MINOR` 3) and raise your GraceUI floor to 0.2.14 to use it.
+- On the chord: one `GRACEUI_EVENT_HOTKEY`, as for a key; you ask for input on it with D176's events as on your talk
+  key. View never reaches the game when the chord completes, and both buttons stay hidden until each is released;
+  a chord broken before 0.4 s gives the game View as one tap. Nothing fires, and View reaches the game at once,
+  whenever `request_input` would answer `not_now` (your `safe_context` failing among them), and while any holder has
+  input.
+- The owner tests with keyboard and mouse only (2026-11-22: no pad, VR set or handheld). GraceUI checks chords with a
+  simulated pad, in unit tests and the harness on both toolchains (D205). What only a real pad shows (the 150 ms, 0.4 s
+  and tap estimates, that D-pad Up then View is free in the game, that the late View opens the map, Steam's floating
+  keyboard on a Deck) is for testers' machines in S4's second round and your matrix, not for the owner.

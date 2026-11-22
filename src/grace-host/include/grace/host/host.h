@@ -120,6 +120,7 @@ void test_set_world(std::uint32_t flags) noexcept;
 void test_set_caret(std::int32_t x, std::int32_t y, std::int32_t height) noexcept;
 void test_set_code_page(std::uint32_t code_page) noexcept;
 void test_pad(std::uint32_t user, std::uint16_t buttons) noexcept;
+std::uint16_t test_pad_read(std::uint32_t user, std::uint16_t buttons, std::uint32_t& packet) noexcept;
 void test_fill_input(GraceUiTestInput& out) noexcept;
 std::uint32_t test_copy_chars(std::uint32_t* out, std::uint32_t capacity) noexcept;
 std::uint32_t test_copy_input_costs(std::uint32_t kind, std::uint32_t* out, std::uint32_t capacity) noexcept;

@@ -33,7 +33,12 @@ void Hotkeys::lock() noexcept {
 void Hotkeys::update_bare() noexcept {
   KeyBits bare;
   KeyBits keys;
+  std::uint16_t chord_keys = 0;
   for (const Slot& slot : slots_) {
+    const std::uint64_t chord = slot.chord.load(std::memory_order_relaxed);
+    if ((chord >> 32 & 1u) != 0) {
+      chord_keys = static_cast<std::uint16_t>(chord_keys | chord_key(static_cast<std::uint32_t>(chord)));
+    }
     const std::uint64_t word = slot.word.load(std::memory_order_relaxed);
     if (state_of(word) == bound) {
       keys.set(key_of(word));
@@ -44,12 +49,13 @@ void Hotkeys::update_bare() noexcept {
   }
   bare_.store(bare);
   bound_.store(keys);
+  chord_keys_.store(chord_keys, std::memory_order_release);
 }
 
-Added Hotkeys::add(std::uint16_t owner, std::string_view action, Key key, std::uint8_t modifiers, Key menu_key,
-                   std::uint32_t& id) noexcept {
+Added Hotkeys::add(std::uint16_t owner, std::string_view action, Key key, std::uint8_t modifiers, std::uint32_t chord,
+                   Key menu_key, std::uint32_t& id, Binding* binding) noexcept {
   if (action.empty() || action.size() > kActionMax || (modifiers & ~kModAll) != 0 || reserved_key(key) ||
-      (key == kF4 && (modifiers & kModAlt) != 0)) {
+      (key == kF4 && (modifiers & kModAlt) != 0) || (chord != 0 && !valid_chord(chord))) {
     return Added::invalid;
   }
   lock();
@@ -57,6 +63,7 @@ Added Hotkeys::add(std::uint16_t owner, std::string_view action, Key key, std::u
   std::uint32_t used = 0;
   std::uint32_t free_index = kMaxHotkeys;
   bool taken = key == kNoKey || key == menu_key;  // the menu key is the host's, whatever the modifiers (§5.1)
+  bool chord_taken = chord == 0;                  // GraceUI's menu has no chord (D33)
   for (std::uint32_t i = 0; i < kMaxHotkeys; ++i) {
     const Slot& slot = slots_[i];
     const std::uint64_t word = slot.word.load(std::memory_order_relaxed);
@@ -77,6 +84,10 @@ Added Hotkeys::add(std::uint16_t owner, std::string_view action, Key key, std::u
     if (state_of(word) == bound && key_of(word) == key && modifiers_of(word) == modifiers) {
       taken = true;
     }
+    const std::uint64_t other = slot.chord.load(std::memory_order_relaxed);
+    if (chord != 0 && (other >> 32 & 1u) != 0 && static_cast<std::uint32_t>(other) == chord) {
+      chord_taken = true;
+    }
   }
   if (mine >= kHotkeysPerMod || used >= kMaxHotkeys || free_index == kMaxHotkeys) {
     unlock();
@@ -90,11 +101,20 @@ Added Hotkeys::add(std::uint16_t owner, std::string_view action, Key key, std::u
   if (generation_ == 0) {
     generation_ = 1;
   }
+  // The chord word first: a reader that finds the hotkey's word finds its chord too.
+  slot.chord.store(pack_chord(chord, !chord_taken, generation_), std::memory_order_release);
   slot.word.store(pack(taken ? unbound : bound, key, modifiers, generation_), std::memory_order_release);
   update_bare();
   id = id_of(free_index, generation_);
   unlock();
-  return taken ? Added::unbound : Added::bound;
+  if (binding != nullptr) {
+    binding->key = !taken;
+    binding->chord = !chord_taken;
+  }
+  // Unbound when it names no default, or when a default it names is taken (D164, D204): the mod learns of it.
+  const bool none = key == kNoKey && chord == 0;
+  const bool lost = (key != kNoKey && taken) || (chord != 0 && chord_taken);
+  return none || lost ? Added::unbound : Added::bound;
 }
 
 void Hotkeys::remove_owner(std::uint16_t owner) noexcept {
@@ -102,6 +122,7 @@ void Hotkeys::remove_owner(std::uint16_t owner) noexcept {
   for (Slot& slot : slots_) {
     if (state_of(slot.word.load(std::memory_order_relaxed)) != free && slot.owner == owner) {
       slot.word.store(0, std::memory_order_release);
+      slot.chord.store(0, std::memory_order_release);
       slot.owner = 0;
       slot.action_length = 0;
     }
@@ -120,6 +141,7 @@ void Hotkeys::remove(std::uint32_t id) noexcept {
   const std::uint64_t word = slot.word.load(std::memory_order_relaxed);
   if (state_of(word) != free && generation_of(word) == (id >> 8)) {
     slot.word.store(0, std::memory_order_release);
+    slot.chord.store(0, std::memory_order_release);
     slot.owner = 0;
     slot.action_length = 0;
     update_bare();
@@ -172,8 +194,10 @@ bool Hotkeys::pressed(std::uint32_t id) noexcept {
   std::atomic<std::uint64_t>& slot = slots_[index].word;
   std::uint64_t word = slot.load(std::memory_order_acquire);
   for (;;) {
-    if (state_of(word) != bound || generation_of(word) != (id >> 8)) {
-      return false;  // removed, or replaced by another hotkey, since it matched
+    // Removed, or replaced by another hotkey, since it matched. A hotkey whose key is unbound may be pressed by its
+    // chord (D204), so any hotkey of this generation counts; match() and match_chord() find bound defaults alone.
+    if (state_of(word) == free || generation_of(word) != (id >> 8)) {
+      return false;
     }
     if (presses_of(word) == 0xFFFFFFFFu) {
       return true;  // as many as the count holds: more change nothing a mod does
@@ -183,6 +207,20 @@ bool Hotkeys::pressed(std::uint32_t id) noexcept {
       return true;
     }
   }
+}
+
+std::uint32_t Hotkeys::match_chord(std::uint16_t anchor, std::uint16_t key) const noexcept {
+  if ((chord_keys() & key) == 0) {
+    return 0;
+  }
+  const std::uint32_t chord = (std::uint32_t{anchor} << 16) | key;
+  for (std::uint32_t i = 0; i < kMaxHotkeys; ++i) {
+    const std::uint64_t word = slots_[i].chord.load(std::memory_order_acquire);
+    if ((word >> 32 & 1u) != 0 && static_cast<std::uint32_t>(word) == chord) {
+      return id_of(i, static_cast<std::uint32_t>(word >> 33) & 0x7FFFFu);
+    }
+  }
+  return 0;
 }
 
 void Hotkeys::hold(Key key) noexcept {

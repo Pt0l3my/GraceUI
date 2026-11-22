@@ -254,7 +254,8 @@ GU_AT(GraceUiApi1, log, 168);
 GU_AT(GraceUiApi1, set_caret, 176);
 
 /* The numbers a mod compiles in. */
-GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 2u, "ABI 1.2");
+GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 3u, "ABI 1.3");
+GU_ASSERT(GRACEUI_PAD_CHORD(0x0001u, 0x0020u) == 0x00010020u, "a chord: the anchor high, the key low (D204)");
 GU_ASSERT(GRACEUI_VERSION_PACK(1, 2, 3) == ((1u << 22) | (2u << 12) | 3u), "the version's packing");
 GU_ASSERT(GRACEUI_VERSION_MAJOR(GRACEUI_VERSION_PACK(1023, 1023, 4095)) == 1023u, "a major's ten bits");
 GU_ASSERT(GRACEUI_VERSION_MINOR(GRACEUI_VERSION_PACK(1023, 1023, 4095)) == 1023u, "a minor's ten bits");

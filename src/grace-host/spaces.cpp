@@ -176,6 +176,7 @@ std::string uses_words(std::string_view caps) {
       {GRACEUI_CAP_FACES, "faces"},         {GRACEUI_CAP_INPUT, "input"},
       {GRACEUI_CAP_HOLDER_EVENTS, "input events"}, {GRACEUI_CAP_HOTKEYS, "hotkeys"},
       {GRACEUI_CAP_WORLD_STATE, "world state"},    {GRACEUI_CAP_DISPLAY, "the display"},
+      {GRACEUI_CAP_PAD_CHORDS, "pad chords"},
   };
   std::string out;
   for (const auto& [cap, word] : kWords) {

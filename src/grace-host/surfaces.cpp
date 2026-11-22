@@ -518,7 +518,11 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
     return status;
   }
   if (pad_chord != 0) {
-    return GRACEUI_NOT_YET;  // GraceUI 0.1 takes keys alone (D155)
+    // A mod built before ABI 1.3 meant nothing by the field's halves, and was answered not_yet: it still is (D204).
+    grace::abi::ConsumerInfo info;
+    if (!session::consumers().info_of(owner, info) || info.abi_minor < 3) {
+      return GRACEUI_NOT_YET;
+    }
   }
   const grace::input::Key place = key_of_virtual(key);
   if (!valid_action(action) || !grace::abi::valid_name(name) || (key != 0 && place == grace::input::kNoKey) ||
@@ -528,23 +532,26 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
     return GRACEUI_REFUSED;
   }
   std::uint32_t added_id = 0;
+  grace::input::Binding binding;
   const grace::input::Added added = input::hotkeys().add(static_cast<std::uint16_t>(owner), action, place,
-                                                         static_cast<std::uint8_t>(modifiers), input::menu_key(),
-                                                         added_id);
+                                                         static_cast<std::uint8_t>(modifiers), pad_chord,
+                                                         input::menu_key(), added_id, &binding);
   switch (added) {
     case grace::input::Added::bound:
       break;
     case grace::input::Added::unbound:
-      if (key != 0) {
+      if ((key != 0 && !binding.key) || (pad_chord != 0 && !binding.chord)) {
         char mod_id[GRACEUI_ID_MAX + 1];
         id_of(owner, mod_id);
-        log_line("%s's hotkey %.*s is unbound: its default key is taken", mod_id, static_cast<int>(action.size()),
-                 action.data());
+        const char* what = key != 0 && !binding.key && pad_chord != 0 && !binding.chord ? "its default key and chord are"
+                           : key != 0 && !binding.key                                    ? "its default key is"
+                                                                                         : "its default chord is";
+        log_line("%s's hotkey %.*s is unbound: %s taken", mod_id, static_cast<int>(action.size()), action.data(), what);
       }
       break;
     case grace::input::Added::invalid:
-      refused("register_hotkey", "a reserved key (Escape, a modifier, Alt+F4), an unknown modifier, or an action "
-                                 "the mod has already");
+      refused("register_hotkey", "a reserved key (Escape, a modifier, Alt+F4), an unknown modifier, a pad chord that "
+                                 "is not two different buttons, or an action the mod has already");
       return GRACEUI_REFUSED;
     case grace::input::Added::full:
       return GRACEUI_FULL;

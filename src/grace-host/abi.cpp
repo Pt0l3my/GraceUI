@@ -526,6 +526,9 @@ void test_set_caret(std::int32_t x, std::int32_t y, std::int32_t height) noexcep
 void test_set_code_page(std::uint32_t code_page) noexcept { input::test_set_code_page(code_page); }
 
 void test_pad(std::uint32_t user, std::uint16_t buttons) noexcept { hooks_input::test_pad(user, buttons); }
+std::uint16_t test_pad_read(std::uint32_t user, std::uint16_t buttons, std::uint32_t& packet) noexcept {
+  return hooks_input::test_pad_read(user, buttons, packet);
+}
 
 void test_fill_input(GraceUiTestInput& out) noexcept {
   const grace::input::Holder holder = input::capture().holder();

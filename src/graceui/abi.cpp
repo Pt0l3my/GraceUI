@@ -221,6 +221,17 @@ GRACEUI_API void GraceUI_Test_Pad(uint32_t user, uint32_t buttons) {
   }
 }
 
+GRACEUI_API uint32_t GraceUI_Test_PadRead(uint32_t user, uint32_t buttons, uint32_t* packet) {
+  try {
+    if (packet == nullptr) {
+      return 0;
+    }
+    return grace::host::test_pad_read(user, static_cast<std::uint16_t>(buttons), *packet);
+  } catch (...) {
+    return 0;
+  }
+}
+
 GRACEUI_API uint32_t GraceUI_Test_GetInput(GraceUiTestInput* out) {
   try {
     if (out == nullptr || out->size < sizeof(GraceUiTestInput)) {

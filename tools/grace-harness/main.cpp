@@ -748,6 +748,7 @@ struct GraceUi {
   decltype(&GraceUI_Test_SetCaret) set_caret = nullptr;
   decltype(&GraceUI_Test_SetCodePage) set_code_page = nullptr;
   decltype(&GraceUI_Test_Pad) pad = nullptr;
+  decltype(&GraceUI_Test_PadRead) pad_read = nullptr;
   decltype(&GraceUI_Test_GetInput) get_input = nullptr;
   decltype(&GraceUI_Test_GetChars) get_chars = nullptr;
   decltype(&GraceUI_Test_GetInputCosts) input_costs = nullptr;
@@ -792,6 +793,7 @@ struct GraceUi {
     set_caret = function_of<decltype(set_caret)>(module, "GraceUI_Test_SetCaret");
     set_code_page = function_of<decltype(set_code_page)>(module, "GraceUI_Test_SetCodePage");
     pad = function_of<decltype(pad)>(module, "GraceUI_Test_Pad");
+    pad_read = function_of<decltype(pad_read)>(module, "GraceUI_Test_PadRead");
     get_input = function_of<decltype(get_input)>(module, "GraceUI_Test_GetInput");
     get_chars = function_of<decltype(get_chars)>(module, "GraceUI_Test_GetChars");
     input_costs = function_of<decltype(input_costs)>(module, "GraceUI_Test_GetInputCosts");
@@ -817,7 +819,7 @@ struct GraceUi {
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
            request_input != nullptr && release_input != nullptr && set_world != nullptr && set_caret != nullptr &&
-           set_code_page != nullptr && pad != nullptr && get_input != nullptr && get_chars != nullptr && input_costs != nullptr &&
+           set_code_page != nullptr && pad != nullptr && pad_read != nullptr && get_input != nullptr && get_chars != nullptr && input_costs != nullptr &&
            set_anti_cheat_names != nullptr && get_notice != nullptr && clear_notices != nullptr &&
            get_consumer != nullptr;
   }
@@ -2212,13 +2214,13 @@ void run_input(const std::wstring& dll) {
     check(first_answer.status == GRACEUI_OK && second_answer.status == GRACEUI_OK && api.has_cap("hotkeys") &&
               f11_status == GRACEUI_OK && chat_status == GRACEUI_OK && taken_status == GRACEUI_UNBOUND && taken != 0 &&
               unbound_logged && escape_status == GRACEUI_REFUSED && again_status == GRACEUI_REFUSED &&
-              bad_action == GRACEUI_REFUSED && chord_status == GRACEUI_NOT_YET && nothing_yet == 0 && !f11_read &&
+              bad_action == GRACEUI_REFUSED && chord_status == GRACEUI_REFUSED && nothing_yet == 0 && !f11_read &&
               f11_fired && second_events == 0 && f11_messages == 0 && k_hidden && chat_fired && k_with_ctrl == 0 &&
               k_read && k_alone >= 1 && after_k == 0 && held && while_held == 0 && f11_free &&
               f11_free_messages >= 1 && gone_status == GRACEUI_NOT_CONNECTED && second_after == 0,
           "hotkeys",
           "two mods connected (%s, %s); F11 %s, Ctrl+K %s, F11 again by the second %s (unbound, logged: %s), Escape "
-          "%s, an action again %s, an action not an id %s, a pad chord %s; F11 pressed: DirectInput %s, %u event(s) "
+          "%s, an action again %s, an action not an id %s, a pad chord as a mask %s; F11 pressed: DirectInput %s, %u event(s) "
           "(%s), the second mod %u, its messages reaching the game %d; Ctrl+K: K %s from DirectInput, the hotkey %s, "
           "K's messages reaching the game %d; K alone: read %s, messages %d, events %u; with a holder (%s): %u "
           "event(s); after the first's disconnect: F11 read %s, messages %d, its poll %s, the second's events %u",
@@ -6045,6 +6047,203 @@ std::string display_text(const std::vector<GraceUiEvent>& events) {
   return text.empty() ? "none" : text;
 }
 
+// ---- Pad chords (D204, proposal 0005), through GraceUI_Test_PadRead (Wine has no pad): what the game's XInputGetState
+// returns read by read, and the mod's hotkey event. The times are the proposal's estimates, with margins for Wine's
+// clock; S4's second round confirms them on a pad.
+void run_chords(const std::wstring& dll) {
+  Game game(false);
+  cursor_into(game.window());
+  pump_messages();
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  constexpr std::uint32_t kUp = XINPUT_GAMEPAD_DPAD_UP;
+  constexpr std::uint32_t kView = XINPUT_GAMEPAD_BACK;
+  constexpr std::uint32_t kPacket = 40;  // the pad's own packet number, which these reads never change
+  const Connected first = connect(table, request_for("chord-mod", GRACEUI_VERSION_PACK(0, 2, 14), "Chord mod",
+                                                     "hotkeys input pad-chords"));
+  const Connected second = connect(table, request_for("chord-two", GRACEUI_VERSION_PACK(0, 2, 14), "Chord two",
+                                                      "hotkeys pad-chords"));
+  GraceUiConnectRequest older_request = request_for("chord-older", GRACEUI_VERSION_PACK(0, 2, 2), "Chord older", "hotkeys");
+  older_request.abi_minor = 2;  // built before ABI 1.3
+  const Connected older = connect(table, older_request);
+  const auto chord_of = [&](GraceUiConsumer mod, const char* action, std::uint32_t key, std::uint32_t pad_chord,
+                            std::uint32_t& id) {
+    GraceUiHotkeyDesc desc{};
+    desc.size = sizeof desc;
+    desc.key = key;
+    desc.pad_chord = pad_chord;
+    desc.action = action;
+    desc.action_length = std::strlen(action);
+    desc.name = action;
+    desc.name_length = std::strlen(action);
+    return table->register_hotkey(mod, &desc, &id);
+  };
+  std::uint32_t talk = 0;
+  std::uint32_t unused = 0;
+  std::uint32_t shout = 0;
+  const GraceUiStatus talk_status = chord_of(first.answer.consumer, "talk", 0, GRACEUI_PAD_CHORD(kUp, kView), talk);
+  const GraceUiStatus mask_status = chord_of(first.answer.consumer, "mask", 0, kUp | kView, unused);
+  const GraceUiStatus same_status = chord_of(first.answer.consumer, "same", 0, GRACEUI_PAD_CHORD(kUp, kUp), unused);
+  const GraceUiStatus taken_status =
+      chord_of(second.answer.consumer, "shout", VK_F9, GRACEUI_PAD_CHORD(kUp, kView), shout);
+  const GraceUiStatus older_status =
+      chord_of(older.answer.consumer, "talk", 0, GRACEUI_PAD_CHORD(kUp, kView), unused);
+  const bool taken_logged = grace.logged("hotkey shout is unbound: its default chord is taken");
+  const bool cap = table->has_cap(GRACEUI_CAP_PAD_CHORDS, std::strlen(GRACEUI_CAP_PAD_CHORDS)) != 0;
+  check(first.status == GRACEUI_OK && second.status == GRACEUI_OK && older.status == GRACEUI_OK && cap &&
+            table->abi_minor == 3u && talk_status == GRACEUI_OK && talk != 0 && mask_status == GRACEUI_REFUSED &&
+            same_status == GRACEUI_REFUSED && taken_status == GRACEUI_UNBOUND && shout != 0 && taken_logged &&
+            older_status == GRACEUI_NOT_YET,
+        "chords: registered",
+        "has_cap(\"%s\") %s, the table's minor %u; D-pad Up then View %s; as a mask %s; one button twice %s; the same "
+        "chord by a second mod, with F9, %s (logged: %s); from a mod built before ABI 1.3 %s",
+        GRACEUI_CAP_PAD_CHORDS, cap ? "yes" : "NO", table->abi_minor, status_name(talk_status),
+        status_name(mask_status), status_name(same_status), status_name(taken_status), taken_logged ? "yes" : "NO",
+        status_name(older_status));
+
+  start_host(game, grace);
+  frames(game, 30);
+  until_atlas(game, grace);
+  struct Seen {
+    std::uint32_t buttons = 0;
+    std::uint32_t packet = 0;
+  };
+  const auto read = [&](std::uint32_t buttons) {
+    game.frame(kInputColour, PresentWith::present);  // the overlay stays ready: a request would be granted
+    Seen seen;
+    seen.packet = kPacket;
+    seen.buttons = grace.pad_read(0, buttons, &seen.packet);
+    return seen;
+  };
+  const auto presses = [&](GraceUiConsumer mod, std::uint32_t id) {
+    std::uint32_t count = 0;
+    GraceUiEvent event{};
+    event.size = sizeof event;
+    for (int i = 0; i < 16 && table->poll(mod, &event) == GRACEUI_OK && event.kind != GRACEUI_EVENT_NONE; ++i) {
+      if (event.kind == GRACEUI_EVENT_HOTKEY && event.hotkey_id == id) {
+        count += event.count;
+      }
+    }
+    return count;
+  };
+  const auto wait = [&](DWORD ms) {
+    const DWORD start = GetTickCount();
+    while (GetTickCount() - start < ms) {
+      game.frame(kInputColour, PresentWith::present);
+      Sleep(10);
+    }
+  };
+
+  // 1. The anchor reaches the game; a key 250 ms later is held back; held 0.5 s more, the hotkey fires once and both
+  // are hidden until released, the packet number changed so that the game reads it.
+  read(0);
+  const Seen anchor = read(kUp);
+  wait(250);
+  const Seen held = read(kUp | kView);
+  wait(150);
+  const Seen still = read(kUp | kView);
+  wait(400);
+  const Seen fired = read(kUp | kView);
+  const std::uint32_t fired_presses = presses(first.answer.consumer, talk);
+  const Seen long_hold = read(kUp | kView);
+  const Seen view_up = read(kUp);
+  const Seen both_up = read(0);
+  const Seen fresh = read(kUp);
+  read(0);
+  check(anchor.buttons == kUp && held.buttons == kUp && still.buttons == kUp && fired.buttons == 0 &&
+            fired.packet != still.packet && fired_presses == 1 && long_hold.buttons == 0 && view_up.buttons == 0 &&
+            both_up.buttons == 0 && fresh.buttons == kUp,
+        "chords: complete",
+        "the game read: the anchor %#x; the key 250 ms on %#x, then %#x; at 0.65 s %#x (packet %u, then %u), the "
+        "hotkey %u time(s); held on %#x, View up %#x, both up %#x, Up afresh %#x",
+        anchor.buttons, held.buttons, still.buttons, fired.buttons, still.packet, fired.packet, fired_presses,
+        long_hold.buttons, view_up.buttons, both_up.buttons, fresh.buttons);
+
+  // 2. A key released before 0.4 s: one tap, of two reads and 50 ms, the packet number changing at each step.
+  const Seen up_again = read(kUp);
+  wait(250);
+  const Seen held_again = read(kUp | kView);
+  wait(60);
+  const Seen tap = read(kUp);
+  const Seen tap_two = read(kUp);
+  wait(80);
+  const Seen tap_end = read(kUp);
+  const Seen after_tap = read(kUp);
+  read(0);
+  const std::uint32_t tap_presses = presses(first.answer.consumer, talk);
+  check(up_again.buttons == kUp && held_again.buttons == kUp && tap.buttons == (kUp | kView) &&
+            tap.packet != held_again.packet && tap_two.buttons == (kUp | kView) && tap_end.buttons == kUp &&
+            tap_end.packet != tap.packet && after_tap.buttons == kUp && tap_presses == 0,
+        "chords: a tap",
+        "held back %#x; released at 60 ms: the game read %#x (packet %u, then %u), %#x, and 80 ms on %#x (packet %u), "
+        "then %#x; the hotkey %u time(s)",
+        held_again.buttons, tap.buttons, held_again.packet, tap.packet, tap_two.buttons, tap_end.buttons,
+        tap_end.packet, after_tap.buttons, tap_presses);
+
+  // 3. In danger a request would be answered not_now: the key reaches the game at once, and nothing fires.
+  grace.set_world(GRACEUI_TEST_WORLD_DANGER);
+  read(kUp);
+  wait(250);
+  const Seen danger = read(kUp | kView);
+  wait(500);
+  const Seen danger_later = read(kUp | kView);
+  read(0);
+  grace.set_world(0);
+  const std::uint32_t danger_presses = presses(first.answer.consumer, talk);
+
+  // 4. A key within 150 ms of the anchor is not a chord.
+  read(kUp);
+  wait(40);
+  const Seen quick = read(kUp | kView);
+  wait(500);
+  const Seen quick_later = read(kUp | kView);
+  read(0);
+  const std::uint32_t quick_presses = presses(first.answer.consumer, talk);
+
+  // 5. While a holder has input it has the pad: the game sees it at rest, and nothing fires.
+  const bool granted = take(grace, game, 1, kPanelKind);
+  read(kUp);
+  wait(250);
+  const Seen holding = read(kUp | kView);
+  wait(500);
+  const Seen holding_later = read(kUp | kView);
+  read(0);
+  grace.release_input(1);
+  frames(game, 2);
+  read(0);
+  wait(300);  // past the close's window, in which a press held is taken for the closing one (invariant 8)
+  read(0);
+  const std::uint32_t holder_presses = presses(first.answer.consumer, talk);
+  check(danger.buttons == (kUp | kView) && danger_later.buttons == (kUp | kView) && danger_presses == 0 &&
+            quick.buttons == (kUp | kView) && quick_later.buttons == (kUp | kView) && quick_presses == 0 && granted &&
+            holding.buttons == 0 && holding_later.buttons == 0 && holder_presses == 0,
+        "chords: standing aside",
+        "in danger the game read %#x, then %#x, the hotkey %u time(s); a key 40 ms after the anchor %#x, then %#x, "
+        "%u time(s); with a holder (%s) %#x, then %#x, %u time(s)",
+        danger.buttons, danger_later.buttons, danger_presses, quick.buttons, quick_later.buttons, quick_presses,
+        granted ? "granted" : "NOT GRANTED", holding.buttons, holding_later.buttons, holder_presses);
+
+  // 6. A mod's chords go with it: the key then reaches the game. The second mod's chord stays unbound until the player
+  // binds it (GraceUI 0.6's Hotkeys page), so nothing fires.
+  table->disconnect(first.answer.consumer);
+  read(kUp);
+  wait(250);
+  const Seen gone = read(kUp | kView);
+  wait(500);
+  read(0);
+  const std::uint32_t second_presses = presses(second.answer.consumer, shout);
+  check(gone.buttons == (kUp | kView) && second_presses == 0, "chords: a mod's go with it",
+        "after the first mod's disconnect, the key 250 ms after the anchor reached the game (%#x); the second's "
+        "unbound chord fired %u time(s)",
+        gone.buttons, second_presses);
+}
+
 void run_display(const std::wstring& dll) {
   Game game(false, 1280, 720);
   const HWND window = game.window();
@@ -6069,7 +6268,7 @@ void run_display(const std::wstring& dll) {
   check(first.status == GRACEUI_OK && close_to(first.answer.ui_scale, 1.25f) &&
             close_to(first.answer.ui_scale_default, 1.25f) && first.answer.display_width == 0 &&
             first.answer.display_height == 0 && table->has_cap(GRACEUI_CAP_DISPLAY, std::strlen(GRACEUI_CAP_DISPLAY)) &&
-            older_status == GRACEUI_OK && older_answer.ui_scale == 7.0f && GRACEUI_ABI1_MINOR == 2u,
+            older_status == GRACEUI_OK && older_answer.ui_scale == 7.0f && GRACEUI_ABI1_MINOR >= 2u,
         "display: at connect",
         "ui.scale %.2f, its default %.2f, the size %ux%u (no swap chain bound yet); has_cap(\"display\") %s; a 1.0 "
         "answer's bytes past its end %s",
@@ -6631,6 +6830,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"quiet-read") {
     std::printf("-- scenario: the next session keeps the switch (D181)\n");
     run_quiet_read(dll);
+  } else if (scenario == L"chords") {
+    std::printf("-- scenario: pad chords for mods' hotkeys through ABI 1.3 (D204)\n");
+    run_chords(dll);
   } else if (scenario == L"display") {
     std::printf("-- scenario: the display at connect and in its event, and scaled faces (D180)\n");
     run_display(dll);
@@ -6661,7 +6863,7 @@ int wmain(int argc, wchar_t** argv) {
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
             L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"spike", L"spike-after",
-            L"holder-events", L"settings", L"display", L"quiet"}) {
+            L"holder-events", L"settings", L"display", L"quiet", L"chords"}) {
         run(child_scenario, dll, this_program());
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.

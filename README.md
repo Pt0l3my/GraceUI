@@ -34,7 +34,9 @@ choices a mod publishes, a key field on each row, and small forms. **GraceUI 0.2
 or "Not needed", and takes a row's changed mark from the mod. **GraceUI 0.2.10** shows a picker's empty default as
 "Default"; **0.2.11** leaves out a row key's line in game when no row takes a key. **GraceUI 0.2.12** lets a page's
 sections serve as cards, each with a chip, a live status and buttons of its own (protocol 1.3); **0.2.13**'s browser
-view paces every frame it sends, so a page with many topics loses none. Hotkeys and the log are declared for the increments
+view paces every frame it sends, so a page with many topics loses none. **GraceUI 0.2.14** gives a mod's hotkey a
+pad chord (ABI 1.3): a button held, then another, as EldenNet's D-pad Up then View opens its chat box, with the game
+losing no press of its own; checked with a simulated pad, the timings to be confirmed on testers' pads. Hotkeys and the log are declared for the increments
 that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the
