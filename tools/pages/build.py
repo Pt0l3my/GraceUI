@@ -55,7 +55,7 @@ NUMERIC = {"integer", "number", "duration_s"}
 TRI_THIRDS = ("auto", "inherit")
 AVAILABILITY = re.compile(r"live|later|inert|check:[a-z0-9._-]{1,48}|version:\d+\.\d+|requires:[a-z0-9._/-]{1,64}")
 PAGE_FIELDS = ("id", "category", "name", "description", "help", "related", "increment", "tag", "actions", "tabs",
-               "sections")
+               "sections", "master")
 SETTING_FIELDS = ("key", "type", "default", "min", "max", "step", "unit", "choices", "choices_from", "third", "label", "help", "synonyms",
                   "home", "effect", "availability", "locked")
 
@@ -177,6 +177,9 @@ def lint(space_pages, description, fixtures, known_spaces):
             failures.append(f"{space}: topic {t['id']}: a stream names its ring, a state does not")
         if t["id"] == SPACE_STATE and t["shape"] != "state":
             failures.append(f"{space}: topic {SPACE_STATE} is a state topic (D188)")
+        if t.get("family") and (t["shape"] != "state" or t["id"] in ("settings", SPACE_STATE)):
+            failures.append(f"{space}: topic {t['id']}: a family is a state topic of the space's own (D215)")
+    families = {tid for tid, t in topics.items() if t.get("family")}
 
     # 2. The rail.
     placed = {}
@@ -213,6 +216,19 @@ def lint(space_pages, description, fixtures, known_spaces):
         sections = list(p.get("sections", []))
         for tab in p.get("tabs", []):
             sections += tab["sections"]
+        master = p.get("master")  # a master list, its detail the page's own tabs and sections (D215)
+        if master is not None:
+            mt = master.get("topic")
+            if mt not in topics or topics[mt]["shape"] != "state" or mt in families or mt in ("settings", SPACE_STATE):
+                failures.append(f"{where}: its master list's topic is a state topic of the space's own, not a family")
+            if master.get("detail") not in families:
+                failures.append(f"{where}: its master list's detail is a family the space declares (D215)")
+            if not FIELD_NAME.match(master.get("key", "")) or not master.get("label"):
+                failures.append(f"{where}: its master list has a key column (a name) and a label")
+            for words in ("empty", "none"):
+                if words in master and not 1 <= len(master[words]) <= 160:
+                    failures.append(f"{where}: its master list's {words} is 1 to 160 characters")
+        detail = master.get("detail") if master is not None else None
         unique("tab", [t["id"] for t in p.get("tabs", [])], where)
         unique("section", [s["id"] for s in sections], where)
         unique("action", [a["id"] for a in p.get("actions", [])], where)
@@ -223,7 +239,8 @@ def lint(space_pages, description, fixtures, known_spaces):
             status = section.get("status")
             if status is not None:
                 topic = status.get("topic")
-                if (topic not in topics or topics[topic]["shape"] != "state" or topic in ("settings", SPACE_STATE)):
+                if (topic not in topics or topics[topic]["shape"] != "state" or topic in ("settings", SPACE_STATE) or
+                        topic in families):
                     failures.append(f"{swhere}: its status names a state topic of the space's own")
                 if "field" in status and not FIELD_NAME.match(status["field"]):
                     failures.append(f"{swhere}: its status field is a name (a-z, 0-9, _; 1 to 32)")
@@ -285,6 +302,9 @@ def lint(space_pages, description, fixtures, known_spaces):
                         failures.append(f"{bwhere}: {component} cannot draw {topics[topic]['shape']} topic {topic}")
                     elif topic == SPACE_STATE:
                         failures.append(f"{bwhere}: {SPACE_STATE} is the framework's topic, drawn by no component")
+                    elif topic in families and topic != detail:
+                        failures.append(f"{bwhere}: {component} draws family {topic} on a page whose master list "
+                                        "names it as its detail, and only there (D215)")
                     props = block.get("props") or {}
                     if "field" in props and (component in STREAM_COMPONENTS or topic is None or
                                              not isinstance(props["field"], str) or
@@ -310,7 +330,8 @@ def lint(space_pages, description, fixtures, known_spaces):
         lint_setting(space, s, failures)
         source = s.get("choices_from")
         if source is not None and (s["type"] != "text" or "choices" in s or source not in topics or
-                                   topics[source]["shape"] != "state" or source in ("settings", SPACE_STATE)):
+                                   topics[source]["shape"] != "state" or source in ("settings", SPACE_STATE) or
+                                   source in families):
             failures.append(f"{space}: setting {key}: choices_from is on a text setting, naming a state topic of "
                             "the space's own (D193)")
         if source is not None and len(str(s["default"]).encode("utf-8")) > 200:
@@ -327,6 +348,14 @@ def lint(space_pages, description, fixtures, known_spaces):
         for tid, t in topics.items():
             if tid == "settings":
                 continue
+            if tid in families:
+                members = [k for k in fixtures if k.startswith(tid + "/")]
+                if not members:
+                    failures.append(f"{space}: family {tid} has no member's fixture")
+                for k in members:
+                    if "/" in k[len(tid) + 1:] or not isinstance(fixtures[k], dict):
+                        failures.append(f"{space}: fixture {k} is not an object for one member of {tid}")
+                continue
             body = fixtures.get(tid)
             if body is None:
                 failures.append(f"{space}: topic {tid} has no fixture")
@@ -338,8 +367,8 @@ def lint(space_pages, description, fixtures, known_spaces):
                         any(not isinstance(q, int) for q in seqs) or seqs != sorted(set(seqs)):
                     failures.append(f"{space}: fixture {tid} is not a list of rows with rising seq numbers")
         for tid in fixtures:
-            if tid not in topics:
-                failures.append(f"{space}: fixture {tid} is for no declared topic")
+            if tid not in topics and tid.rpartition("/")[0] not in families:
+                failures.append(f"{space}: fixture {tid} is for no declared topic or family")
     return failures
 
 

@@ -26,6 +26,7 @@ using Clock = std::chrono::steady_clock;
 // dropped once nobody watches it (§2.4).
 struct TopicCache {
   std::size_t watchers = 0;
+  std::uint64_t generation = 0;  // a family member's slot: which member it holds (D215); a state of another is dropped
   // A state's newest revision and its frame, encoded once for every view (D55).
   bool has_state = false;
   std::uint64_t rev = 0;
@@ -36,16 +37,28 @@ struct TopicCache {
   bool started = false;
 };
 
+// A space's slots for its families' members (D215), after its declared topics, each taken by the first view that
+// watches a member and given back once nobody watches it and the space has heard so: at most this many members of a
+// space are watched at once (EST).
+inline constexpr std::size_t kMemberSlots = 64;
+
 // One registered space: its description and what it shares with the I/O thread.
 struct PortState {
   SpaceDescription description;
   SpaceWake wake;
+  std::size_t declared = 0;  // description.topics.size(): slot `declared + i` is member slot i
 
   std::mutex mutex;
   // Under `mutex`:
   std::deque<SpaceEvent> commands;     // at most protocol::kCommandQueue (§6.8)
-  std::vector<std::uint8_t> watched;   // per topic, as the I/O thread last set it
-  std::vector<std::uint8_t> reported;  // per topic, as poll last reported it
+  std::vector<std::uint8_t> watched;   // per topic and member slot, as the I/O thread last set it
+  std::vector<std::uint8_t> reported;  // per topic and member slot, as poll last reported it
+  struct Member {
+    std::string id;                    // the member's topic ("profiles/p1"); empty: the slot is free
+    std::uint64_t generation = 0;      // set by the I/O thread when it takes the slot
+  };
+  std::vector<Member> members;         // kMemberSlots
+  std::uint64_t next_generation = 1;
 
   std::atomic<bool> registered{true};
 
@@ -56,6 +69,12 @@ struct PortState {
   // The index of a declared topic or command, or npos.
   std::size_t topic_index(std::string_view id) const noexcept;
   bool has_command(std::string_view name) const noexcept;
+  // Whether `id` is a member of a family the space declares: "<family>/<key>", the key not empty and with no '/'.
+  bool is_member(std::string_view id) const noexcept;
+  // A watched member's slot (`declared + i`), or npos; `mutex` held.
+  std::size_t member_slot_locked(std::string_view id) const noexcept;
+  // A topic's or a member slot's id; `mutex` held for a slot.
+  std::string_view topic_id_locked(std::size_t index) const noexcept;
 };
 
 inline constexpr std::size_t npos = static_cast<std::size_t>(-1);
@@ -70,6 +89,7 @@ struct Outgoing {
   std::size_t topic = 0;
   std::uint64_t rev = 0;
   std::uint64_t from_seq = 0;
+  std::uint64_t generation = 0;  // a member's state: its slot's generation when it was published (D215)
   std::vector<protocol::Json> rows;
   std::uint64_t dropped = 0;
   CommandRef reply;

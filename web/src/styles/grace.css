@@ -1687,3 +1687,86 @@ ul, ol {
     width: 260px;
   }
 }
+
+/* ---- Master and detail (D215, D36): the list at the left, the chosen row's detail at the right; stacked when
+   narrow. The chosen row has the gold edge and the select tint, as the rail's open page has. */
+.master-detail {
+  display: grid;
+  grid-template-columns: minmax(14rem, 34%) minmax(0, 1fr);
+  gap: var(--space-24);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .master-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.master {
+  padding: var(--space-12) var(--space-8);
+  background: var(--ground-2);
+  border: var(--size-edge-width) solid var(--rule);
+  border-radius: var(--radius-card);
+}
+
+.master__label {
+  margin: 0 var(--space-12) var(--space-8);
+  font-family: var(--stack-sans);
+  font-size: var(--type-eyebrow-size);
+  line-height: var(--type-eyebrow-line);
+  font-weight: var(--type-eyebrow-weight);
+  letter-spacing: var(--type-eyebrow-tracking);
+  text-transform: var(--type-eyebrow-case);
+  color: var(--gold);
+}
+
+.master__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.master__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-8) var(--space-12);
+  border-left: 2px solid transparent;
+  cursor: pointer;
+}
+
+.master__row:hover {
+  background: var(--tint-hover);
+}
+
+.master__row[aria-selected="true"] {
+  background: var(--tint-select);
+  border-left-color: var(--gold);
+}
+
+.master__name {
+  color: var(--ink-hi);
+}
+
+.master__row[aria-selected="true"] .master__name {
+  color: var(--gold-hi);
+}
+
+.master__more, .master__empty, .detail__none {
+  color: var(--ink-mute);
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+}
+
+.master__empty {
+  margin: 0 var(--space-12);
+}
+
+.detail__none {
+  margin: 0;
+  padding: var(--space-20);
+  background: var(--ground-2);
+  border: var(--size-edge-width) solid var(--rule);
+  border-radius: var(--radius-card);
+}

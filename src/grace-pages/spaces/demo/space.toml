@@ -2,8 +2,9 @@
 # The demo space (D82, D160): GraceUI's own test space, a lantern keeper's pages with invented names and our own words.
 # It uses every setting type, tabs, an Advanced disclosure, state and stream topics, a locked setting, a setting waiting
 # on a check, a later-version page and a destructive action, a table with row actions and a row secret, a form and a
-# setting whose choices come from a topic (G34), sections with a chip, a live status and their own actions (G36), so the
-# views, the page lint and the fake host are tested against it. Its fixtures are fixtures/demo/topics.json.
+# setting whose choices come from a topic (G34), sections with a chip, a live status and their own actions (G36), a
+# page with a master list whose detail is a topic family (G38, D215), so the views, the page lint and the fake host are
+# tested against it. Its fixtures are fixtures/demo/topics.json.
 # tools/pages/build.py compiles it into grace-pages.
 
 [space]
@@ -30,6 +31,15 @@ id = "lantern.oils"
 shape = "state"
 
 [[topic]]
+id = "lantern.lamps"
+shape = "state"
+
+[[topic]]
+id = "lantern.lamp"
+shape = "state"
+family = true
+
+[[topic]]
 id = "lantern.log"
 shape = "stream"
 ring = 200
@@ -47,7 +57,7 @@ pages = ["demo.overview", "demo.behaviour", "demo.keepers"]
 [[category]]
 id = "records"
 name = "Records"
-pages = ["demo.log", "demo.festival"]
+pages = ["demo.log", "demo.festival", "demo.lamps"]
 
 # ---- Settings: one of every type (§6.9).
 
@@ -327,3 +337,24 @@ blocks = [{ kind = "settings", keys = ["lantern.oil_kind"] }]
 chip = "store"
 status = { topic = "lantern.oils", field = "stock" }
 actions = [{ id = "order", label = "Order oil", command = "oil.order", tone = "secondary" }]
+
+[[page]]
+id = "demo.lamps"
+category = "records"
+name = "Lamps"
+description = "Every lamp on the harbour wall, and how each one burns."
+increment = "0.2"
+related = ["demo.overview", "demo.log"]
+help.purpose = "Look over the harbour wall's lamps, one at a time."
+help.steps = ["Choose a lamp in the list.", "Read how it burns on the Lamp tab, and its keeper's notes on the Notes tab.", "The list follows the wall from the harbour mouth inwards."]
+master = { topic = "lantern.lamps", key = "id", detail = "lantern.lamp", label = "Lamps", empty = "No lamp is lit on the wall yet.", none = "Choose a lamp to see how it burns." }
+
+[[page.tabs]]
+id = "lamp"
+name = "Lamp"
+sections = [{ id = "burning", title = "Burning", blocks = [{ kind = "component", component = "stat_tiles", topic = "lantern.lamp" }, { kind = "component", component = "key_value_list", topic = "lantern.lamp", props = { field = "facts" } }] }]
+
+[[page.tabs]]
+id = "notes"
+name = "Notes"
+sections = [{ id = "notes", title = "Keeper's notes", blocks = [{ kind = "component", component = "computed_sentence", topic = "lantern.lamp", props = { empty = "No note for this lamp yet." } }] }]

@@ -13,6 +13,13 @@ export interface Greyed {
 }
 export const GreyedContext = createContext<Greyed>({ page: "", words: () => null });
 
+/** A master page's detail (D215): the family its blocks may name, and the chosen row's member (null while none). */
+export interface MasterDetail {
+  family: string;
+  member: string | null;
+}
+export const MasterContext = createContext<MasterDetail | null>(null);
+
 export function useSession(): Session {
   const session = useContext(SessionContext);
   if (session === null) {

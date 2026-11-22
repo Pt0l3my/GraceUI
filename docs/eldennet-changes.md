@@ -1119,3 +1119,23 @@ are.
   and shows your words under the form.
 - **Not yet:** Steam's floating keyboard for a pad (testers, D205), and the IME's composition drawn inside the field.
 
+## 53. Topic families and master–detail (2026-11-22, D215, G38 (1) (a); GraceUI 0.2.19, protocol 1.5)
+
+The second part of proposal 0010. No change of the ABI.
+
+- **A family** is a state topic you declare with `family = true` in your page data. Its members, `<family>/<key>`, are
+  topics of their own: you hear each watched and unwatched through `GRACEUI_EVENT_WATCHED` and `_UNWATCHED`, with its
+  own id, as for any topic. You publish a member while it is watched; a state for an unwatched member is taken and
+  dropped. Publish a member, never the family itself, which is refused. A key is a-z, 0-9, '.', '_' and '-', and the
+  member's whole id is at most 64 bytes. Your `named/<id>`, `journal/<id>` and `conversation/<id>` fit as families
+  `named`, `journal` and `conversation`, and `profiles/<target>` for the editor.
+- **A page's `master`**: `{topic, key, detail, label, empty?, none?}`. The `topic` is a state topic whose body is a
+  table's (`columns`, `rows`), `key` is the column holding each row's key, and `detail` is the family. The list is
+  drawn at the left, its rows by their first column's words and their second's. Your page's own tabs and sections are
+  the detail, and a component block whose `topic` is the family draws the chosen row's member. This is the shape for
+  Named NPCs (the roster, then Profile, Allowances and Reactions), NPC types and Playthrough.
+- **The first row is chosen** as soon as the list has one, and a page keeps its chosen row for the session. A row's
+  key never goes into an address, browser storage or a log. A row whose key is not a member's is not listed.
+- **Where proposal 0010 differs:** its §3.2 had master–detail as a block. It is the page's, so that your tabs are the
+  detail.
+

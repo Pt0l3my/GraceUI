@@ -1,39 +1,208 @@
 {
   "lantern.keepers": {
     "columns": [
-      {"id": "name", "label": "Keeper"},
-      {"id": "post", "label": "Post"},
-      {"id": "ward", "label": "Ward word"}
+      {
+        "id": "name",
+        "label": "Keeper"
+      },
+      {
+        "id": "post",
+        "label": "Post"
+      },
+      {
+        "id": "ward",
+        "label": "Ward word"
+      }
     ],
     "rows": [
-      {"id": "k1", "name": "Orla Venn", "post": "North light", "ward": "set"},
-      {"id": "k2", "name": "Tamsin Reed", "post": "Harbour wall", "ward": ""},
-      {"id": "k3", "name": "Ada Marsh", "post": "Store room", "ward": "none"}
+      {
+        "id": "k1",
+        "name": "Orla Venn",
+        "post": "North light",
+        "ward": "set"
+      },
+      {
+        "id": "k2",
+        "name": "Tamsin Reed",
+        "post": "Harbour wall",
+        "ward": ""
+      },
+      {
+        "id": "k3",
+        "name": "Ada Marsh",
+        "post": "Store room",
+        "ward": "none"
+      }
     ]
   },
   "lantern.oils": {
     "choices": [
-      {"value": "rapeseed", "label": "Rapeseed oil"},
-      {"value": "olive", "label": "Olive oil"},
-      {"value": "tallow", "label": "Tallow"}
+      {
+        "value": "rapeseed",
+        "label": "Rapeseed oil"
+      },
+      {
+        "value": "olive",
+        "label": "Olive oil"
+      },
+      {
+        "value": "tallow",
+        "label": "Tallow"
+      }
     ],
-    "stock": {"word": "Low", "tone": "ember"}
+    "stock": {
+      "word": "Low",
+      "tone": "ember"
+    }
+  },
+  "lantern.lamps": {
+    "columns": [
+      {
+        "id": "name",
+        "label": "Lamp"
+      },
+      {
+        "id": "place",
+        "label": "Where"
+      }
+    ],
+    "rows": [
+      {
+        "id": "harbour-mouth",
+        "name": "Harbour mouth",
+        "place": "The north end of the wall"
+      },
+      {
+        "id": "fish-steps",
+        "name": "Fish steps",
+        "place": "Halfway along, above the steps"
+      },
+      {
+        "id": "old-crane",
+        "name": "Old crane",
+        "place": "The inner end, by the crane"
+      }
+    ]
+  },
+  "lantern.lamp/harbour-mouth": {
+    "tiles": [
+      {
+        "label": "Flame",
+        "value": "Tall"
+      },
+      {
+        "label": "Oil",
+        "value": "80%"
+      }
+    ],
+    "facts": {
+      "items": [
+        {
+          "label": "Glass",
+          "value": "Green, for the harbour mouth"
+        },
+        {
+          "label": "Lit",
+          "value": "At dusk"
+        }
+      ]
+    },
+    "sentence": "The harbour-mouth lamp burns tall behind its green glass, the first light a boat sees."
+  },
+  "lantern.lamp/fish-steps": {
+    "tiles": [
+      {
+        "label": "Flame",
+        "value": "Low"
+      },
+      {
+        "label": "Oil",
+        "value": "35%"
+      }
+    ],
+    "facts": {
+      "items": [
+        {
+          "label": "Glass",
+          "value": "Clear"
+        },
+        {
+          "label": "Lit",
+          "value": "When the boats come in"
+        }
+      ]
+    },
+    "sentence": "The fish-steps lamp burns low; the steps are wet, and it is trimmed short on purpose."
+  },
+  "lantern.lamp/old-crane": {
+    "tiles": [
+      {
+        "label": "Flame",
+        "value": "Steady"
+      },
+      {
+        "label": "Oil",
+        "value": "58%"
+      }
+    ],
+    "facts": {
+      "items": [
+        {
+          "label": "Glass",
+          "value": "Amber"
+        },
+        {
+          "label": "Lit",
+          "value": "All night"
+        }
+      ]
+    },
+    "sentence": "The old-crane lamp burns steady amber and lights the crane's arm for the night watch."
   },
   "lantern.status": {
     "tiles": [
-      {"label": "Flame", "value": "Steady"},
-      {"label": "Oil", "value": "62%"},
-      {"label": "Since the last trim", "value": "14 min"}
+      {
+        "label": "Flame",
+        "value": "Steady"
+      },
+      {
+        "label": "Oil",
+        "value": "62%"
+      },
+      {
+        "label": "Since the last trim",
+        "value": "14 min"
+      }
     ],
     "sentence": "The north lantern burns steady amber, with oil for about three hours."
   },
   "lantern.log": [
-    {"seq": 1, "time": "19:02", "line": "The lantern was lit."},
-    {"seq": 2, "time": "19:16", "line": "The wick was trimmed."},
-    {"seq": 3, "time": "19:40", "line": "The flame guttered in a draught, then steadied."}
+    {
+      "seq": 1,
+      "time": "19:02",
+      "line": "The lantern was lit."
+    },
+    {
+      "seq": 2,
+      "time": "19:16",
+      "line": "The wick was trimmed."
+    },
+    {
+      "seq": 3,
+      "time": "19:40",
+      "line": "The flame guttered in a draught, then steadied."
+    }
   ],
   "lantern.journal": [
-    {"seq": 1, "time": "Yesterday", "line": "Oil delivered: two flasks."},
-    {"seq": 2, "time": "Today", "line": "The glass was cleaned."}
+    {
+      "seq": 1,
+      "time": "Yesterday",
+      "line": "Oil delivered: two flasks."
+    },
+    {
+      "seq": 2,
+      "time": "Today",
+      "line": "The glass was cleaned."
+    }
   ]
 }

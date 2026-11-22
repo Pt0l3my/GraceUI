@@ -70,6 +70,9 @@ void Engine::dispatch(Outgoing& item) {
   if (item.topic >= port.topics.size() || port.topics[item.topic].watchers == 0) {
     return;  // nobody watches it: nothing is kept (§2.4)
   }
+  if (item.topic >= port.declared && port.topics[item.topic].generation != item.generation) {
+    return;  // a member's state, its slot since given to another member (D215)
+  }
   if (item.kind == Outgoing::Kind::state) {
     TopicCache& cache = port.topics[item.topic];
     cache.has_state = true;
@@ -273,8 +276,35 @@ void Engine::release(Connection& c) noexcept {
 }
 
 void Engine::unwatch(PortState& port, std::size_t topic) noexcept {
+  const std::uint64_t generation = port.topics[topic].generation;  // a member's slot keeps whose it is (D215)
   port.topics[topic] = TopicCache{};
+  port.topics[topic].generation = generation;
   set_watched(port, topic, false);
+}
+
+std::size_t Engine::take_member(PortState& port, std::string_view id) noexcept {
+  try {
+    std::lock_guard lock(port.mutex);
+    if (const std::size_t held = port.member_slot_locked(id); held != npos) {
+      port.topics[held].generation = port.members[held - port.declared].generation;
+      return held;
+    }
+    // A free slot: never taken, or watched by nobody and its unwatch already told to the space, so that the space
+    // hears each member's watch and unwatch under its own id.
+    for (std::size_t i = 0; i < port.members.size(); ++i) {
+      const std::size_t slot = port.declared + i;
+      PortState::Member& member = port.members[i];
+      if (member.id.empty() || (port.topics[slot].watchers == 0 && port.watched[slot] == 0 && port.reported[slot] == 0)) {
+        member.id = std::string(id);
+        member.generation = port.next_generation++;
+        port.topics[slot] = TopicCache{};
+        port.topics[slot].generation = member.generation;
+        return slot;
+      }
+    }
+  } catch (...) {
+  }
+  return npos;
 }
 
 void Engine::set_watched(PortState& port, std::size_t topic, bool on) noexcept {
@@ -509,12 +539,25 @@ void Engine::subscribe(Connection& c, const protocol::Sub& sub) {
     send_message(c, state);
     return;
   }
-  const std::size_t topic = port->topic_index(sub.topic);
+  std::size_t topic = port->topic_index(sub.topic);
+  if (topic != npos && port->description.topics[topic].family.value_or(false)) {
+    send_error(c, port.get(), protocol::ErrorCode::unknown_topic,
+               numbered("sub", sub.id, "a family: a view watches one of its members"));
+    return;
+  }
+  if (topic == npos && port->is_member(sub.topic)) {
+    topic = take_member(*port, sub.topic);  // a family's member (D215): its slot
+    if (topic == npos) {
+      send_error(c, port.get(), protocol::ErrorCode::not_now,
+                 numbered("sub", sub.id, "as many of this space's members are watched as may be"));
+      return;
+    }
+  }
   if (topic == npos) {
     send_error(c, port.get(), protocol::ErrorCode::unknown_topic, numbered("sub", sub.id, "not a topic of this space"));
     return;
   }
-  const bool stream = port->description.topics[topic].shape == protocol::TopicShape::stream;
+  const bool stream = topic < port->declared && port->description.topics[topic].shape == protocol::TopicShape::stream;
   for (Subscription& held : c.subs) {
     if (held.port == port && held.topic == topic) {
       // Watched already: the newest state again, or the stream from where the view now asks.
@@ -551,7 +594,11 @@ void Engine::unsubscribe(Connection& c, const protocol::Unsub& unsub) {
       port->topic_index(unsub.topic) == npos) {
     return;  // the framework's own topic: sent once, nothing held
   }
-  const std::size_t topic = port != nullptr ? port->topic_index(unsub.topic) : npos;
+  std::size_t topic = port != nullptr ? port->topic_index(unsub.topic) : npos;
+  if (port != nullptr && topic == npos && port->is_member(unsub.topic)) {
+    std::lock_guard lock(port->mutex);
+    topic = port->member_slot_locked(unsub.topic);
+  }
   if (topic == npos) {
     send_error(c, port.get(), protocol::ErrorCode::unknown_topic,
                numbered("unsub", unsub.id,

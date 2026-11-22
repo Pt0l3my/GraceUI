@@ -386,6 +386,8 @@ bool PageView::open(std::string_view page_id) {
       confirming_.clear();
       rebuild();
       focus_first_control();
+      focus_master_on_open();
+      follow_master();  // a master list's first row, chosen once the list has one (D215)
       return true;
     }
   }
@@ -494,6 +496,27 @@ void PageView::set_topic(std::string_view topic, const Json& body) {
       }
     }
   }
+  if (const protocol::PageMaster* m = master(); m != nullptr && topic == m->topic) {
+    // The list changed: a chosen row it no longer has is let go, and the first row chosen if none is (D215).
+    const auto rows = master_rows();
+    const auto at = chosen_.find(current().id);
+    if (at != chosen_.end() &&
+        std::none_of(rows.begin(), rows.end(), [&](const auto& row) { return row.first == at->second; })) {
+      topics_.erase(m->detail + "/" + at->second);
+      chosen_.erase(at);
+    }
+    if (master_focus_pending_ && scope_ == Scope::page) {
+      // Opened before the list had a row, and no key has moved focus since: the first row, as an open with rows gives.
+      for (std::size_t i = 0; i < focus_.size(); ++i) {
+        if (focus_[i].kind == FocusKind::master_row) {
+          page_focus_ = i;
+          master_focus_pending_ = false;
+          break;
+        }
+      }
+    }
+    follow_master();
+  }
 }
 
 bool PageView::drawn_in_game(protocol::Component component) {
@@ -527,7 +550,11 @@ PageView::Drawn PageView::drawn(const protocol::PageBlock& block) const {
   if (!block.topic) {
     return out;
   }
-  const auto found = topics_.find(*block.topic);
+  const std::string topic = topic_of(block);  // a family's block: the chosen row's member (D215)
+  if (topic.empty()) {
+    return out;
+  }
+  const auto found = topics_.find(topic);
   if (found == topics_.end() || !found->second.is_object()) {
     return out;
   }
@@ -815,11 +842,16 @@ std::vector<std::string> PageView::component_topics() const {
       out.push_back(topic.id);  // its greyed pages (D188), watched with every page
     }
   }
+  if (const protocol::PageMaster* m = master(); m != nullptr) {
+    out.push_back(m->topic);  // its list (D215); the chosen row's member comes with the blocks that draw it
+  }
   const auto add = [&](const std::vector<protocol::PageBlock>& blocks) {
     for (const protocol::PageBlock& block : blocks) {
-      if (block.kind == protocol::BlockKind::component && block.topic && block.component && drawn_in_game(*block.component) &&
-          std::find(out.begin(), out.end(), *block.topic) == out.end()) {
-        out.push_back(*block.topic);
+      if (block.kind == protocol::BlockKind::component && block.topic && block.component && drawn_in_game(*block.component)) {
+        if (const std::string topic = topic_of(block); !topic.empty() &&
+                                                       std::find(out.begin(), out.end(), topic) == out.end()) {
+          out.push_back(topic);
+        }
       }
     }
   };
@@ -958,10 +990,19 @@ void PageView::rebuild() {
   for (std::size_t a = 0; page.actions && a < page.actions->size(); ++a) {
     focus_.push_back({FocusKind::action, (*page.actions)[a].id, a});
   }
-  for (std::size_t t = 0; page.tabs && t < page.tabs->size(); ++t) {
+  if (const protocol::PageMaster* m = master(); m != nullptr) {
+    // The master list's rows (D215), before its detail: by the list's topic and each row's key.
+    const auto rows = master_rows();
+    for (std::size_t r = 0; r < rows.size(); ++r) {
+      focus_.push_back({FocusKind::master_row, m->topic + "/" + rows[r].first, r});
+    }
+  }
+  // A master page with no row chosen draws no detail: its tabs and sections are no focus stops then (D215).
+  const bool detail = master() == nullptr || !chosen().empty();
+  for (std::size_t t = 0; detail && page.tabs && t < page.tabs->size(); ++t) {
     focus_.push_back({FocusKind::tab, (*page.tabs)[t].id, t});
   }
-  const auto& list = sections();
+  const auto& list = detail ? sections() : no_sections_;
   for (std::size_t i = 0; i < list.size(); ++i) {
     const protocol::PageSection& section = list[i];
     focus_.push_back({FocusKind::section, section.id, i});
@@ -1085,7 +1126,7 @@ std::string PageView::name_of(Scope scope, std::size_t index) const {
     return "";
   }
   static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
-                                          "cell", "row", "section-action", "field", "submit", "secret"};
+                                          "cell", "row", "section-action", "field", "submit", "secret", "item"};
   const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -1282,7 +1323,7 @@ Action PageView::slide(float x) {
   return set(*s, now);
 }
 
-Action PageView::pointer(const Pointer& in) {
+Action PageView::pointer_body(const Pointer& in) {
   pointer_x_ = in.x;
   pointer_y_ = in.y;
   pointer_in_ = in.kind != Pointer::Kind::leave;
@@ -1412,6 +1453,8 @@ Action PageView::pointer(const Pointer& in) {
       }
       refusals_.erase(f.id);
       return toggle_cell(f);
+    case FocusKind::master_row:
+      return {};  // focused: the row is chosen (D215); Enter would go into the detail
     default:
       return input(Input{Key::activate, false});  // an action, a tab, a section, a shortcut, a related page: as Enter
   }
@@ -1476,6 +1519,145 @@ std::vector<SearchHit> PageView::search(std::string_view query) const {
   }
   std::sort(hits.begin(), hits.end(), [](const SearchHit& a, const SearchHit& b) { return a.label < b.label; });
   return hits;
+}
+
+// ---- Master and detail (D215, D36).
+
+namespace {
+
+// A row's key as a member's: 1 or more of the id characters but '/', the member's whole id at most 64 bytes.
+bool member_key(std::string_view family, std::string_view key) noexcept {
+  if (key.empty() || family.size() + 1 + key.size() > 64) {
+    return false;
+  }
+  return std::all_of(key.begin(), key.end(), [](char c) {
+    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
+  });
+}
+
+}  // namespace
+
+const protocol::PageMaster* PageView::master() const {
+  if (pages_.pages.empty()) {
+    return nullptr;
+  }
+  const auto& m = current().master;
+  return m ? &*m : nullptr;
+}
+
+std::vector<std::pair<std::string, const Json*>> PageView::master_rows() const {
+  std::vector<std::pair<std::string, const Json*>> out;
+  const protocol::PageMaster* m = master();
+  if (m == nullptr) {
+    return out;
+  }
+  const auto found = topics_.find(m->topic);
+  if (found == topics_.end() || !found->second.is_object() || !found->second.contains("rows") ||
+      !found->second["rows"].is_array()) {
+    return out;
+  }
+  for (const Json& row : found->second["rows"]) {
+    if (!row.is_object()) {
+      continue;
+    }
+    const std::string key = cell_words(row, m->key);
+    if (member_key(m->detail, key)) {
+      out.emplace_back(key, &row);  // a row whose key names no member is not shown: it could open nothing
+    }
+  }
+  return out;
+}
+
+std::string PageView::topic_of(const protocol::PageBlock& block) const {
+  if (!block.topic) {
+    return {};
+  }
+  if (const protocol::PageMaster* m = master(); m != nullptr && *block.topic == m->detail) {
+    const std::string key = chosen();
+    return key.empty() ? std::string() : m->detail + "/" + key;
+  }
+  return *block.topic;
+}
+
+std::string PageView::chosen() const {
+  if (master() == nullptr) {
+    return {};
+  }
+  const auto at = chosen_.find(current().id);
+  return at != chosen_.end() ? at->second : std::string();
+}
+
+void PageView::choose(const std::string& key) {
+  const protocol::PageMaster* m = master();
+  if (m == nullptr || chosen() == key) {
+    return;
+  }
+  if (const std::string was = chosen(); !was.empty()) {
+    topics_.erase(m->detail + "/" + was);  // the last row's member: not drawn again from what it was
+  }
+  chosen_[current().id] = key;
+  const std::string focused_name = focused();
+  rebuild();  // the detail's tables have the new member's rows
+  for (std::size_t i = 0; scope_ == Scope::page && i < focus_.size(); ++i) {
+    if (name_of(Scope::page, i) == focused_name) {
+      page_focus_ = i;
+      break;
+    }
+  }
+}
+
+void PageView::follow_master() {
+  const protocol::PageMaster* m = master();
+  if (m == nullptr) {
+    return;
+  }
+  if (scope_ == Scope::page && page_focus_ < focus_.size() && focus_[page_focus_].kind == FocusKind::master_row) {
+    choose(focus_[page_focus_].id.substr(m->topic.size() + 1));
+    return;
+  }
+  if (chosen().empty()) {
+    const auto rows = master_rows();
+    if (!rows.empty()) {
+      choose(rows.front().first);
+    }
+  }
+}
+
+Action PageView::input(const Input& in) {
+  master_focus_pending_ = false;  // a key moves focus on its own from now on
+  Action action = input_body(in);
+  follow_master();
+  return action;
+}
+
+Action PageView::pointer(const Pointer& in) {
+  if (in.kind == Pointer::Kind::press) {
+    master_focus_pending_ = false;
+  }
+  Action action = pointer_body(in);
+  if (in.kind == Pointer::Kind::press) {
+    follow_master();
+  }
+  return action;
+}
+
+void PageView::focus_master_on_open() {
+  const protocol::PageMaster* m = master();
+  master_focus_pending_ = false;
+  if (m == nullptr) {
+    return;
+  }
+  const std::string key = chosen();
+  bool any = false;
+  for (std::size_t i = 0; i < focus_.size(); ++i) {
+    if (focus_[i].kind == FocusKind::master_row) {
+      if (!any || focus_[i].id == m->topic + "/" + key) {
+        page_focus_ = i;  // the row it chose last time, or the first (D215)
+      }
+      any = true;
+    }
+  }
+  master_focus_pending_ = !any;
 }
 
 // ---- Text entry (§5.6, D57, G38 (a)).
@@ -1793,6 +1975,7 @@ Action PageView::open_index(std::size_t index, Scope scope) {
   confirming_.clear();
   rebuild();
   focus_first_control();
+  focus_master_on_open();
   rail_focus_ = rail_index_of_page();
   scope_ = scope;
   Action action;
@@ -1801,7 +1984,7 @@ Action PageView::open_index(std::size_t index, Scope scope) {
   return action;
 }
 
-Action PageView::input(const Input& in) {
+Action PageView::input_body(const Input& in) {
   if (capture_open()) {
     return capture_input(in);  // the modal has every key until it closes (D209)
   }
@@ -1966,6 +2149,45 @@ Action PageView::input(const Input& in) {
   }
   const Focus f = focus_[page_focus_];
   const Setting* s = f.kind == FocusKind::setting ? &settings_[f.index] : nullptr;
+  if (const protocol::PageMaster* m = master(); m != nullptr) {
+    // Master and detail (D215): ↑ ↓ along the list, → or Enter into the detail; ← or Esc in the detail back to the row.
+    std::size_t first = focus_.size();
+    std::size_t last = 0;
+    std::size_t chosen_at = focus_.size();
+    for (std::size_t i = 0; i < focus_.size(); ++i) {
+      if (focus_[i].kind == FocusKind::master_row) {
+        first = std::min(first, i);
+        last = i;
+        if (focus_[i].id == m->topic + "/" + chosen()) {
+          chosen_at = i;
+        }
+      }
+    }
+    const bool on_row = f.kind == FocusKind::master_row;
+    if (on_row && (in.key == Key::up || in.key == Key::down)) {
+      if (in.key == Key::up && page_focus_ > first) {
+        --page_focus_;
+      } else if (in.key == Key::down && page_focus_ < last) {
+        ++page_focus_;
+      }
+      return {};
+    }
+    if (on_row && (in.key == Key::right || in.key == Key::activate)) {
+      if (last + 1 < focus_.size()) {
+        page_focus_ = last + 1;  // the detail's first stop
+      }
+      return {};
+    }
+    const bool takes_sideways = f.kind == FocusKind::cell ||
+                                (s != nullptr && s->type != SettingType::key_name &&
+                                 (s->type != SettingType::text || s->choices_from) && s->type != SettingType::secret);
+    if (!on_row && chosen_at < focus_.size() &&
+        (in.key == Key::back || (in.key == Key::left && !takes_sideways) ||
+         ((in.key == Key::up || in.key == Key::previous) && page_focus_ == last + 1))) {
+      page_focus_ = chosen_at;  // back to the chosen row, not the rail, nor the list's last row
+      return {};
+    }
+  }
   // A shortcut row's control changes as its home's does (D189); Enter follows its link.
   const Setting* changeable = f.kind == FocusKind::setting || f.kind == FocusKind::shortcut ? &settings_[f.index] : nullptr;
   switch (in.key) {
@@ -2014,6 +2236,8 @@ Action PageView::input(const Input& in) {
       return {};
     case Key::activate:
       switch (f.kind) {
+        case FocusKind::master_row:
+          return {};  // handled above, with the master's keys (D215)
         case FocusKind::row_action:
           return row_action(f);
         case FocusKind::section_action:
@@ -2415,8 +2639,101 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
              band.w - std::round(32 * s), Colour::ink_hi);
       y += band.h + std::round(16 * s);
     }
+    // Master and detail (D215, D36): the list at the left, in a card of its own; the page's tabs and sections at the
+    // right, as the chosen row's detail.
+    const protocol::PageMaster* m = master();
+    const bool show_detail = m == nullptr || !chosen().empty();
+    const float detail_top = y;
+    float detail_x = x0;
+    float detail_w = content_w;
+    float master_bottom = y;
+    if (m != nullptr) {
+      const float mw = std::round(std::min(content_w * 0.34f, 440 * s));
+      const float gap = std::round(24 * s);
+      const float mpad = std::round(20 * s);
+      detail_x = x0 + mw + gap;
+      detail_w = content_w - mw - gap;
+      const std::size_t card_at = out.items.size();
+      float my = y + std::round(16 * s);
+      c.text(m->label, TypeRole::eyebrow, x0 + mpad, my, mw - 2 * mpad, Colour::gold);
+      my += std::round(line_height(TypeRole::eyebrow, s) + 8 * s);
+      const auto rows = master_rows();
+      std::string first_column;
+      std::string second_column;
+      if (const auto body = topics_.find(m->topic); body != topics_.end() && body->second.is_object() &&
+                                                    body->second.contains("columns") &&
+                                                    body->second["columns"].is_array()) {
+        for (const Json& column : body->second["columns"]) {
+          if (column.is_object() && column.contains("id") && column["id"].is_string()) {
+            (first_column.empty() ? first_column : second_column) = column["id"].get<std::string>();
+            if (!second_column.empty()) {
+              break;
+            }
+          }
+        }
+      }
+      const float row_hm = std::round(14 * s + line_height(TypeRole::ui, s) + line_height(TypeRole::ui_sm, s));
+      for (const auto& [key, row] : rows) {
+        const std::string id = m->topic + "/" + key;
+        const Rect r{x0 + std::round(8 * s), my, mw - std::round(16 * s), row_hm};
+        const bool chosen_row = key == chosen();
+        if (chosen_row) {
+          c.fill(r, Colour::tint_select);
+          c.fill(Rect{r.x, r.y, std::round(2 * s), r.h}, Colour::gold);
+        } else if (hovered(r)) {
+          c.fill(r, Colour::tint_hover);
+        }
+        const std::string label = first_column.empty() ? key : cell_words(*row, first_column);
+        c.text(label, TypeRole::ui, r.x + std::round(12 * s), r.y + std::round(7 * s), r.w - std::round(24 * s),
+               chosen_row ? Colour::gold_hi : Colour::ink_hi);
+        if (!second_column.empty()) {
+          c.text(cell_words(*row, second_column), TypeRole::ui_sm, r.x + std::round(12 * s),
+                 r.y + std::round(7 * s) + line_height(TypeRole::ui, s), r.w - std::round(24 * s), Colour::ink_mute);
+        }
+        hit(r, Scope::page, focus_index(FocusKind::master_row, id));
+        if (page_focus(FocusKind::master_row, id)) {
+          c.focused(r);
+        }
+        my += row_hm;
+      }
+      if (rows.empty()) {
+        // Its own words once its topic has spoken (D186), nothing else until then (invariant 2).
+        const bool published = topics_.count(m->topic) != 0;
+        c.text(published && m->empty ? *m->empty : std::string("Nothing to show yet."), TypeRole::ui_sm, x0 + mpad,
+               my + std::round(4 * s), mw - 2 * mpad, Colour::ink_mute);
+        my += std::round(line_height(TypeRole::ui_sm, s) + 12 * s);
+      }
+      my += std::round(12 * s);
+      Item ground;
+      ground.shape = Shape::fill;
+      ground.colour = Colour::ground_2;
+      ground.clip = 1;
+      ground.rect = Rect{x0, y, mw, my - y};
+      ground.radius = std::round(tokens::radius::card * s);
+      Item border = ground;
+      border.shape = Shape::stroke;
+      border.colour = Colour::rule;
+      border.width = std::max(1.0f, std::round(s));
+      out.items.insert(out.items.begin() + static_cast<std::ptrdiff_t>(card_at), {ground, border});
+      master_bottom = my + std::round(16 * s);
+    }
+    {
+    // The detail's column (D215): on a page with a master list, every block below is laid out in it.
+    const float x0 = detail_x;
+    const float content_w = detail_w;
+    y = detail_top;
+    if (!show_detail) {
+      // No row chosen yet: the list's own words for it, in a card where the detail goes.
+      const Rect card{x0, y, content_w, std::round(72 * s)};
+      c.fill(card, Colour::ground_2, std::round(tokens::radius::card * s));
+      c.stroke(card, Colour::rule, std::max(1.0f, std::round(s)), std::round(tokens::radius::card * s));
+      c.text(m->none ? *m->none : std::string("Choose one in the list."), TypeRole::ui, x0 + std::round(20 * s),
+             y + std::round((card.h - line_height(TypeRole::ui, s)) / 2), content_w - std::round(40 * s),
+             Colour::ink_mute);
+      y += card.h + std::round(16 * s);
+    }
     // Tabs.
-    if (page.tabs && !page.tabs->empty()) {
+    if (show_detail && page.tabs && !page.tabs->empty()) {
       float tx = x0;
       for (std::size_t t = 0; t < page.tabs->size(); ++t) {
         const protocol::PageTab& tab = (*page.tabs)[t];
@@ -2441,7 +2758,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     const float card_pad = std::round(20 * s);
     const float control_w = std::round(size::settings_control * s);
     const float row_h = std::round(size::settings_row * s);
-    for (const protocol::PageSection& section : sections()) {
+    for (const protocol::PageSection& section : show_detail ? sections() : no_sections_) {
       const float card_top = y;
       const std::size_t card_at = out.items.size();  // the card's ground goes under its rows, inserted below
       y += std::round(16 * s);
@@ -3101,6 +3418,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       out.items.insert(out.items.begin() + static_cast<std::ptrdiff_t>(card_at), {ground, border});
       y += std::round(16 * s);
     }
+    }
+    y = std::max(y, master_bottom);
     const float content_bottom = y + scroll_;
 
     // ---- The key hints for the focused control, and the focus ring.
@@ -3138,6 +3457,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         }
       } else if (f.kind == FocusKind::cell) {
         hints = "Enter  Toggle    Esc  Back";  // a table's switch, as a setting's but with no default to reset to
+      } else if (f.kind == FocusKind::master_row) {
+        hints = "↑ ↓  Choose    →  Open    Esc  Back";
       } else if (f.kind == FocusKind::form_field) {
         hints = "Enter  Type    Esc  Back";
       } else if (f.kind == FocusKind::form_submit) {

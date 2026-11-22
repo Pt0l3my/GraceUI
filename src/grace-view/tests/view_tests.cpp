@@ -1275,6 +1275,108 @@ TEST_CASE("fields drawn in game: a form field edited with a selection, and searc
   golden("search-1920x1080.txt", search.dump());
 }
 
+namespace {
+
+const Json kLamps = Json::parse(R"({"columns": [{"id": "name", "label": "Lamp"}, {"id": "place", "label": "Where"}],
+  "rows": [{"id": "harbour-mouth", "name": "Harbour mouth", "place": "The north end of the wall"},
+           {"id": "fish-steps", "name": "Fish steps", "place": "Halfway along, above the steps"},
+           {"id": "a/b", "name": "Not a member's key", "place": "Never listed"},
+           {"id": "old-crane", "name": "Old crane", "place": "The inner end, by the crane"}]})");
+const Json kHarbour = Json::parse(R"({"tiles": [{"label": "Flame", "value": "Tall"}, {"label": "Oil", "value": "80%"}],
+  "facts": {"items": [{"label": "Glass", "value": "Green"}]}, "sentence": "The harbour-mouth lamp burns tall."})");
+
+bool watches(const PageView& view, std::string_view topic) {
+  const auto topics = view.component_topics();
+  return std::find(topics.begin(), topics.end(), topic) != topics.end();
+}
+
+}  // namespace
+
+TEST_CASE("master and detail in game: the list's rows, the first chosen, its member watched and drawn (D215)") {
+  PageView view = loaded("demo", "demo.lamps");
+  CHECK(watches(view, "lantern.lamps"));
+  CHECK(view.chosen().empty());
+  CHECK_FALSE(watches(view, "lantern.lamp"));  // a family is never watched itself
+  DisplayList before;
+  view.layout(Viewport{}, test::fonts(), before);
+  CHECK(before.dump().find("Nothing to show yet.") != std::string::npos);
+  CHECK(before.dump().find("Choose a lamp to see how it burns.") != std::string::npos);
+  // An empty list: the space's own words.
+  view.set_topic("lantern.lamps", Json::parse(R"({"columns": [], "rows": []})"));
+  DisplayList empty;
+  view.layout(Viewport{}, test::fonts(), empty);
+  CHECK(empty.dump().find("No lamp is lit on the wall yet.") != std::string::npos);
+  // Rows: the first is chosen at once, and its member is what the page's blocks watch.
+  view.set_topic("lantern.lamps", kLamps);
+  CHECK(view.chosen() == "harbour-mouth");
+  CHECK(watches(view, "lantern.lamp/harbour-mouth"));
+  view.set_topic("lantern.lamp/harbour-mouth", kHarbour);
+  DisplayList shown;
+  view.layout(Viewport{}, test::fonts(), shown);
+  const std::string dump = shown.dump();
+  CHECK(dump.find("\"Harbour mouth\"") != std::string::npos);
+  CHECK(dump.find("\"The north end of the wall\"") != std::string::npos);
+  CHECK(dump.find("Not a member's key") == std::string::npos);  // a key with '/' names no member: not listed
+  CHECK(dump.find("\"Tall\"") != std::string::npos);            // the member's tiles, in the detail
+  CHECK(dump.find("\"Green\"") != std::string::npos);
+  golden("lamps-1920x1080.txt", dump);
+}
+
+TEST_CASE("master and detail in game: ↑ ↓ along the list choose, → into the detail, ← and Esc back (D215)") {
+  PageView view = loaded("demo", "demo.lamps");
+  view.set_topic("lantern.lamps", kLamps);
+  view.set_topic("lantern.lamp/harbour-mouth", kHarbour);
+  // The page opens on the list's first row; ↓ moves along it, each row chosen as focus comes onto it.
+  REQUIRE(view.focused() == "item:lantern.lamps/harbour-mouth");
+  press(view, Key::up);  // the first row: ↑ stays on it
+  CHECK(view.focused() == "item:lantern.lamps/harbour-mouth");
+  press(view, Key::down);
+  press(view, Key::down);
+  CHECK(view.focused() == "item:lantern.lamps/old-crane");
+  CHECK(view.chosen() == "old-crane");
+  CHECK_FALSE(watches(view, "lantern.lamp/harbour-mouth"));  // the last row's member is let go
+  CHECK(watches(view, "lantern.lamp/old-crane"));
+  press(view, Key::down);  // the list's last row: ↓ stays on it
+  CHECK(view.focused() == "item:lantern.lamps/old-crane");
+  press(view, Key::up);
+  CHECK(view.chosen() == "fish-steps");
+  // → into the detail; ↑ from its first stop, Esc and ← come back to the chosen row, not to the rail.
+  press(view, Key::right);
+  CHECK(view.focused() == "tab:lamp");
+  CHECK(view.chosen() == "fish-steps");
+  press(view, Key::up);
+  CHECK(view.focused() == "item:lantern.lamps/fish-steps");
+  press(view, Key::right);
+  press(view, Key::back);
+  CHECK(view.focused() == "item:lantern.lamps/fish-steps");
+  press(view, Key::activate);
+  CHECK(view.focused() == "tab:lamp");
+  press(view, Key::left);
+  CHECK(view.focused() == "item:lantern.lamps/fish-steps");
+  CHECK(view.scope() == Scope::page);
+  press(view, Key::left);  // from the list, ← goes to the rail
+  CHECK(view.scope() == Scope::rail);
+  // The page keeps its chosen row: another page, then back, focus on it.
+  view.open("demo.log");
+  view.open("demo.lamps");
+  CHECK(view.chosen() == "fish-steps");
+  // A list that loses the chosen row lets it go and chooses its first.
+  view.set_topic("lantern.lamps", Json::parse(R"({"columns": [{"id": "name"}], "rows": [{"id": "old-crane", "name": "Old crane"}]})"));
+  CHECK(view.chosen() == "old-crane");
+}
+
+TEST_CASE("master and detail in game: a click on a row chooses it (D215)") {
+  PageView view = loaded("demo", "demo.lamps");
+  view.set_topic("lantern.lamps", kLamps);
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  const PageView::Bounds row = view.bounds_of("item:lantern.lamps/fish-steps");
+  REQUIRE(row.row.w > 0);
+  view.pointer(Pointer{Pointer::Kind::press, row.row.x + 10, row.row.y + 10});
+  CHECK(view.chosen() == "fish-steps");
+  CHECK(view.focused() == "item:lantern.lamps/fish-steps");
+}
+
 TEST_CASE("Ctrl+C and Ctrl+X put a field's selection aside for the clipboard; a paste is one paragraph (G38 (a))") {
   PageView view = loaded("demo", "demo.keepers");
   move_to(view, "field:hire/0/post");

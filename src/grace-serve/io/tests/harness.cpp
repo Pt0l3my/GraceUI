@@ -145,6 +145,13 @@ void TestSpace::publish_topic(const std::string& topic) {
   const auto& topics = port->description().topics;
   const auto info = std::find_if(topics.begin(), topics.end(), [&](const auto& t) { return t.id == topic; });
   if (info == topics.end()) {
+    if (family_member(port->description(), topic)) {  // a family's member (D215): its fixture, by its own id
+      protocol::State state;
+      state.topic = topic;
+      state.rev = 1;
+      state.body = fixtures_.contains(topic) ? fixtures_[topic] : protocol::Json{{"fixture", topic}};
+      port->publish(protocol::Message{std::move(state)});
+    }
     return;
   }
   if (info->shape == protocol::TopicShape::state) {

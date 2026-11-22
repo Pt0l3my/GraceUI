@@ -388,7 +388,7 @@ TEST_CASE("the menu's side, with no server: the space listed, a watch, its state
   REQUIRE(listed.size() == 1);
   CHECK(listed[0].id == "demo");
   CHECK(listed[0].name == "Demo space");
-  CHECK(listed[0].pages->pages.size() == 5);
+  CHECK(listed[0].pages->pages.size() == 6);
   CHECK(listed[0].settings->settings.size() == 13);
 
   registry.game_watch("demo", "settings", true);
@@ -440,6 +440,38 @@ TEST_CASE("the menu's side, with no server: the space listed, a watch, its state
   registry.game_watch("demo", "settings", false);
   CHECK(poll(registry).kind == EventKind::unwatched);
   CHECK_FALSE(registry.game_state("demo", "settings", 0, body, rev));  // forgotten with the watch
+}
+
+TEST_CASE("a family's member through the registry: watched by the menu, published, kept; the family itself refused (D215)") {
+  spaces::Registry registry;
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame), why) == Status::ok);
+  registry.game_watch("demo", "lantern.lamp/fish-steps", true);
+  const Polled watched = poll(registry);
+  REQUIRE(watched.kind == EventKind::watched);
+  CHECK(Json::parse(watched.frame)["topic"] == "lantern.lamp/fish-steps");
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.lamp/fish-steps","rev":2,"body":{"sentence":"Low."}})",
+                         why) == Status::ok);
+  Json body;
+  std::uint64_t rev = 0;
+  REQUIRE(registry.game_state("demo", "lantern.lamp/fish-steps", 0, body, rev));
+  CHECK(body["sentence"] == "Low.");
+  // A member nobody watches: taken, and dropped; the family itself, a stream's member and a key with '/': refused.
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.lamp/old-crane","rev":1,"body":{}})",
+                         why) == Status::ok);
+  CHECK_FALSE(registry.game_state("demo", "lantern.lamp/old-crane", 0, body, rev));
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.lamp","rev":1,"body":{}})",
+                         why) == Status::refused);
+  CHECK(why == "a family: its members are published, each as <family>/<key>");
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.log/one","rev":1,"body":{}})",
+                         why) == Status::refused);
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.lamp/a/b","rev":1,"body":{}})",
+                         why) == Status::refused);
+  registry.game_watch("demo", "lantern.lamp/fish-steps", false);
+  CHECK(poll(registry).kind == EventKind::unwatched);
+  CHECK_FALSE(registry.game_state("demo", "lantern.lamp/fish-steps", 0, body, rev));
 }
 
 TEST_CASE("the menu's watch and the browser's merge: one WATCHED, one UNWATCHED, whichever comes first") {

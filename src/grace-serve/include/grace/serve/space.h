@@ -50,6 +50,10 @@ struct SpaceDescription {
 // The framework's topic that carries a space's page data to a view (D166): every space has it, answered by the server.
 inline constexpr std::string_view kPagesTopic = "pages";
 
+// Whether `topic` is a member of a family `description` declares (D215): "<family>/<key>", the family a state topic
+// marked as one, the key not empty and with no '/'. A view watches a member, and a space publishes it, as a state.
+bool family_member(const SpaceDescription& description, std::string_view topic) noexcept;
+
 // A description from a space's page data and settings description, as grace-pages and a mod's register_pages give them.
 SpaceDescription describe_space(const protocol::SpacePages& pages, const protocol::SettingsDescription& settings,
                                 std::string version, std::string increment);

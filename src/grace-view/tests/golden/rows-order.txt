@@ -12,3 +12,5 @@ demo demo.behaviour#keeper: setting:lantern.keeper setting:lantern.trim_key sett
 demo demo.log:
 demo demo.festival: setting:lantern.festival
 demo demo.keepers: setting:lantern.oil_kind
+demo demo.lamps#lamp:
+demo demo.lamps#notes:

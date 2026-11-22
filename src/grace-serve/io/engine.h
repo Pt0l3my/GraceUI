@@ -169,6 +169,8 @@ class Engine {
                     Clock::time_point now);
   void release(Connection& c) noexcept;
   void unwatch(PortState& port, std::size_t topic) noexcept;
+  // A family member's slot (D215): the one it holds, or a free one taken for it; npos if every slot is in use.
+  std::size_t take_member(PortState& port, std::string_view id) noexcept;
   void set_watched(PortState& port, std::size_t topic, bool on) noexcept;
   std::shared_ptr<PortState> space_of(const Connection& c, std::string_view id) const noexcept;
   bool take_token(Connection& c, Clock::time_point now) noexcept;

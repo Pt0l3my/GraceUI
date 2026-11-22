@@ -189,6 +189,14 @@ class PageView {
   // A form field's text as the view holds it (tests).
   std::string form_value(std::string_view field) const;
 
+  // ---- Master and detail (D215, D36). A page with a master list draws its rows at the left, each by its first
+  // column's words and its second's, and its tabs and sections at the right as their detail: a block bound to the
+  // master's family draws the chosen row's member (<family>/<key>), which the host watches as one of the page's
+  // component topics. Focus on a row chooses it; ↑ ↓ move along the list, → or Enter go into the detail, and ← or Esc
+  // in the detail come back to the chosen row. The first row is chosen as soon as the list has one, and a page keeps its
+  // chosen row for the session. Nothing of the row's key goes into a log or an address (§3.6 of proposal 0010).
+  std::string chosen() const;  // the open page's chosen row's key, or empty
+
   std::string_view page() const noexcept;
   Scope scope() const noexcept { return scope_; }
   // The focused element, as "rail:<page or category>", "search", "action:<id>", "tab:<id>", "section:<id>",
@@ -212,7 +220,7 @@ class PageView {
 
  private:
   enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related, cell, row_action,
-                                        section_action, form_field, form_submit, row_secret };
+                                        section_action, form_field, form_submit, row_secret, master_row };
   struct Focus {
     FocusKind kind;
     std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
@@ -307,6 +315,21 @@ class PageView {
   Action open_hit(const SearchHit& hit);
   // A setting's row focused on the open page: its tab chosen, its section opened, its Advanced disclosure open.
   void focus_setting(std::string_view key);
+
+  // Master and detail (D215).
+  const protocol::PageMaster* master() const;
+  // The master's rows that name a member: each row's key and the row, in the list's order.
+  std::vector<std::pair<std::string, const protocol::Json*>> master_rows() const;
+  // The topic a block draws: its own, or for a block bound to the master's family the chosen row's member (empty if none).
+  std::string topic_of(const protocol::PageBlock& block) const;
+  // After a key or the pointer: focus on a row chooses it; a list with rows and none chosen chooses its first.
+  void follow_master();
+  void choose(const std::string& key);
+  void focus_master_on_open();  // after an open: focus on the chosen row, or the first, or once the list has one
+  Action input_body(const Input& in);
+  Action pointer_body(const Pointer& in);
+  std::map<std::string, std::string, std::less<>> chosen_;  // a page's chosen row's key, by the page's id
+  bool master_focus_pending_ = false;  // a master page opened before its list had rows: focus goes to the first one
   Rect caret_rect_{};
   Rect edit_box_{};                                         // the edited field, as the last layout drew it
   std::vector<std::pair<std::size_t, float>> edit_stops_;   // its drawn boundaries: a byte offset and its x

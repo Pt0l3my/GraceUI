@@ -42,7 +42,8 @@ a holder's end when its mod's events pile up. **GraceUI 0.2.16** lets the player
 or its pad chord, and the menu's own key, kept between sessions; a mod can read its hotkey's key to name it (ABI 1.4). **GraceUI
 0.2.17** gives each mod a wait handle that GraceUI sets whenever something waits for its poll (ABI 1.5). **GraceUI 0.2.18**
 brings GraceUI's own text field to the menu in game: text and secret settings, forms, row secrets and search are typed
-there now, with the clipboard and the IME, rather than in the browser view alone. Hotkeys and the log are declared for the increments
+there now, with the clipboard and the IME, rather than in the browser view alone. **GraceUI 0.2.19** gives a page a
+list and its detail, in both views, the detail drawing a topic for the chosen row alone (protocol 1.5). Hotkeys and the log are declared for the increments
 that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the

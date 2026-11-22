@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 4,
+  "minor": 5,
   "categories": [
     {
       "id": "lanterns",
@@ -17,7 +17,8 @@
       "name": "Records",
       "pages": [
         "demo.log",
-        "demo.festival"
+        "demo.festival",
+        "demo.lamps"
       ]
     }
   ],
@@ -361,6 +362,80 @@
           ]
         }
       ]
+    },
+    {
+      "id": "demo.lamps",
+      "category": "records",
+      "name": "Lamps",
+      "description": "Every lamp on the harbour wall, and how each one burns.",
+      "help": {
+        "purpose": "Look over the harbour wall's lamps, one at a time.",
+        "steps": [
+          "Choose a lamp in the list.",
+          "Read how it burns on the Lamp tab, and its keeper's notes on the Notes tab.",
+          "The list follows the wall from the harbour mouth inwards."
+        ]
+      },
+      "related": [
+        "demo.overview",
+        "demo.log"
+      ],
+      "increment": "0.2",
+      "tabs": [
+        {
+          "id": "lamp",
+          "name": "Lamp",
+          "sections": [
+            {
+              "id": "burning",
+              "title": "Burning",
+              "blocks": [
+                {
+                  "kind": "component",
+                  "component": "stat_tiles",
+                  "topic": "lantern.lamp"
+                },
+                {
+                  "kind": "component",
+                  "component": "key_value_list",
+                  "topic": "lantern.lamp",
+                  "props": {
+                    "field": "facts"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "notes",
+          "name": "Notes",
+          "sections": [
+            {
+              "id": "notes",
+              "title": "Keeper's notes",
+              "blocks": [
+                {
+                  "kind": "component",
+                  "component": "computed_sentence",
+                  "topic": "lantern.lamp",
+                  "props": {
+                    "empty": "No note for this lamp yet."
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "master": {
+        "topic": "lantern.lamps",
+        "key": "id",
+        "detail": "lantern.lamp",
+        "label": "Lamps",
+        "empty": "No lamp is lit on the wall yet.",
+        "none": "Choose a lamp to see how it burns."
+      }
     }
   ],
   "topics": [
@@ -379,6 +454,15 @@
     {
       "id": "lantern.oils",
       "shape": "state"
+    },
+    {
+      "id": "lantern.lamps",
+      "shape": "state"
+    },
+    {
+      "id": "lantern.lamp",
+      "shape": "state",
+      "family": true
     },
     {
       "id": "lantern.log",

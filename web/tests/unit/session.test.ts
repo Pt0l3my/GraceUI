@@ -138,7 +138,7 @@ test("a setting's home: its tab opened and focus asked for its row; Page Up and 
   assert.equal(session.route.value?.page, "demo.keepers");
   assert.equal(session.step(1), true);
   assert.equal(session.route.value?.page, "demo.log");
-  session.open("demo", "demo.festival");
+  session.open("demo", "demo.lamps");  // the last page in rail order, since D215's Lamps
   assert.equal(session.step(1), false);
   assert.equal(session.open("demo", "demo.nowhere"), false);
 });

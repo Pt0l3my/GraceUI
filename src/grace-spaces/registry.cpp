@@ -259,8 +259,14 @@ Status Registry::publish(std::uint64_t owner, std::string_view frame, std::strin
     const auto declared = std::find_if(topics.begin(), topics.end(), [&](const protocol::TopicInfo& t) {
       return t.id == *topic;
     });
-    if (declared == topics.end() || declared->shape != shape) {
+    const bool member = declared == topics.end() && shape == protocol::TopicShape::state &&
+                        serve::family_member(space->description, *topic);  // a family's member (D215)
+    if (!member && (declared == topics.end() || declared->shape != shape)) {
       why = declared == topics.end() ? "not a topic the space declares" : "not the topic's shape";
+      return Status::refused;
+    }
+    if (declared != topics.end() && declared->family.value_or(false)) {
+      why = "a family: its members are published, each as <family>/<key>";
       return Status::refused;
     }
     if (shape == protocol::TopicShape::state && *topic == "settings") {

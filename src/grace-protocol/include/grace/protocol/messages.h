@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 4;
-inline constexpr std::string_view kProtocolVersion = "1.4";
+inline constexpr std::uint32_t kProtocolMinor = 5;
+inline constexpr std::string_view kProtocolVersion = "1.5";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -250,11 +250,12 @@ struct SettingsDescription {
 bool decode(const Json& in, SettingsDescription& out, const std::string& path, DecodeError& e);
 Json encode(const SettingsDescription& in);
 
-// A topic a space publishes: its shape, and for a stream its ring's size.
+// A topic a space publishes: its shape, and for a stream its ring's size; a family (1.5, D215), whose members <id>/<key> are state topics a view watches one by one.
 struct TopicInfo {
   std::string id{};
   TopicShape shape{};
   std::optional<std::uint32_t> ring{};
+  std::optional<bool> family{};
   bool operator==(const TopicInfo&) const = default;
 };
 bool decode(const Json& in, TopicInfo& out, const std::string& path, DecodeError& e);
@@ -367,7 +368,20 @@ struct PageHelp {
 bool decode(const Json& in, PageHelp& out, const std::string& path, DecodeError& e);
 Json encode(const PageHelp& in);
 
-// A page: its place, its header, its help, its Related links, and its tabs or its sections.
+// A page's master list (1.5, D215, D36): a table's state topic, the column of each row's key, and the family whose member that key names; the page's tabs and sections are its detail, and a block bound to the family draws the chosen row's member.
+struct PageMaster {
+  std::string topic{};
+  std::string key{};
+  std::string detail{};
+  std::string label{};
+  std::optional<std::string> empty{};
+  std::optional<std::string> none{};
+  bool operator==(const PageMaster&) const = default;
+};
+bool decode(const Json& in, PageMaster& out, const std::string& path, DecodeError& e);
+Json encode(const PageMaster& in);
+
+// A page: its place, its header, its help, its Related links, and its tabs or its sections; a master list, its tabs and sections then its detail (1.5).
 struct Page {
   std::string id{};
   std::string category{};
@@ -380,6 +394,7 @@ struct Page {
   std::optional<std::vector<PageAction>> actions{};
   std::optional<std::vector<PageTab>> tabs{};
   std::optional<std::vector<PageSection>> sections{};
+  std::optional<PageMaster> master{};
   bool operator==(const Page&) const = default;
 };
 bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e);

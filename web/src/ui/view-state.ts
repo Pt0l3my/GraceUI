@@ -18,6 +18,17 @@ export const menuWidth = signal<number>(typeof globalThis.innerWidth === "number
 export const expanded = signal<string | null>(null);
 /** The row a search result or a shortcut opened, focused and tinted, by "space\u0000key". */
 export const found = signal<string | null>(null);
+/** A master page's chosen row's key, by "space/page" (D215), for the session; never in the address or storage. */
+export const chosen = signal<ReadonlyMap<string, string>>(new Map());
+
+export function choose(space: string, page: string, key: string): void {
+  const id = `${space}/${page}`;
+  if (chosen.value.get(id) !== key) {
+    const next = new Map(chosen.value);
+    next.set(id, key);
+    chosen.value = next;
+  }
+}
 
 export function sectionId(space: string, page: string, section: string): string {
   return `${space}/${page}/${section}`;

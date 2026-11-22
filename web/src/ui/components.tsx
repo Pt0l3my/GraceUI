@@ -10,7 +10,7 @@ import type { Signal } from "@preact/signals";
 import type { Json, JsonObject, PageBlock, RowAction, RowSecret } from "../protocol.ts";
 import type { TopicData } from "../model/session.ts";
 import { refusalWords } from "../model/session.ts";
-import { GreyedContext, useSession } from "./context.ts";
+import { GreyedContext, MasterContext, useSession } from "./context.ts";
 import { Warning } from "./icons.tsx";
 import { CaptureDialog } from "./capture.tsx";
 import { ConfirmDialog } from "./modal.tsx";
@@ -383,7 +383,10 @@ function CheckList({ body, empty }: { body: JsonObject; empty: JSX.Element }) {
 
 /** A component block: its topic watched while it is shown, its body drawn by its kind. */
 export function ComponentBlock({ space, block }: { space: string; block: PageBlock }) {
-  const data = useTopic(space, block.component === "statement" ? undefined : block.topic);
+  // A block bound to the page's master family draws the chosen row's member (D215).
+  const master = useContext(MasterContext);
+  const topic = master !== null && block.topic === master.family ? (master.member ?? undefined) : block.topic;
+  const data = useTopic(space, block.component === "statement" ? undefined : topic);
   const props = block.props ?? {};
   // D185: one topic feeding several blocks, each drawing the member its props.field names.
   const field = typeof props.field === "string" ? props.field : undefined;

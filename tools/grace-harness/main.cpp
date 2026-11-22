@@ -6015,6 +6015,112 @@ void run_typing(const std::wstring& dll) {
   frames(game, 5);
 }
 
+// ---- Master and detail in game (D215): a mod's master list, its first row chosen, the chosen row's member watched
+// as a topic of its own and drawn, ↓ moving the watch to the next member, → into the detail and Esc back, and the
+// close letting every member go.
+
+// Polls until the mod hears `kind` for `topic` (its sub or unsub frame names it), at most 3 s; other events are passed
+// over (a command among them answered ok).
+bool heard(Game& game, const GraceUiApi1* table, GraceUiConsumer mod, std::uint32_t kind, const std::string& topic) {
+  for (int i = 0; i < 150; ++i) {
+    const SpaceEvent event = poll_space(table, mod);
+    if (event.status != GRACEUI_OK) {
+      return false;
+    }
+    if (event.kind == kind && event.frame.find("\"topic\":\"" + topic + "\"") != std::string::npos) {
+      return true;
+    }
+    if (event.kind == GRACEUI_EVENT_COMMAND) {
+      const std::string ok = R"({"v":1,"t":"result","space":"demo","id":0,"ok":true})";
+      table->answer(mod, event.reply, ok.data(), ok.size());
+    }
+    if (event.kind == GRACEUI_EVENT_NONE) {
+      game.frame(kInputColour, PresentWith::present);
+      Sleep(20);
+    }
+  }
+  return false;
+}
+
+void publish_state(const GraceUiApi1* table, GraceUiConsumer mod, const std::string& topic, std::uint64_t rev,
+                   const std::string& body) {
+  const std::string frame = R"({"v":1,"t":"state","space":"demo","topic":")" + topic + R"(","rev":)" +
+                            std::to_string(rev) + R"(,"body":)" + body + "}";
+  table->publish(mod, frame.data(), frame.size());
+}
+
+void run_master(const std::wstring& dll) {
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+  const Connected demo = connect(table, request_for("demo", GRACEUI_VERSION_PACK(0, 1, 0), "The demo space", "notices"));
+  const grace::pages::BuiltinSpace& space = grace::pages::builtin_spaces()[1];
+  const GraceUiSpaceDesc desc = game_space(space.pages, space.settings);
+  const GraceUiConsumer mod = demo.answer.consumer;
+  check(table->register_pages(mod, &desc) == GRACEUI_OK, "master: register", "the demo space for the game's view");
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  for (int i = 0; i < 5 && std::strcmp(grace.menu().page, "demo.lamps") != 0; ++i) {
+    press(window, VK_NEXT, 0x51);
+    menu = menu_after(game, grace, grace.menu().lists);
+  }
+  // 1. The list's topic watched; once the mod publishes it, its first row is chosen and its member watched.
+  const bool on_lamps = std::strcmp(grace.menu().page, "demo.lamps") == 0;
+  const bool list_watched = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.lamps");
+  const bool none_yet = until_shows(game, grace, "Choose a lamp to see how it burns.");
+  publish_state(table, mod, "lantern.lamps", 1,
+                R"({"columns":[{"id":"name","label":"Lamp"},{"id":"place","label":"Where"}],"rows":[{"id":"harbour-mouth","name":"Harbour mouth","place":"The north end of the wall"},{"id":"fish-steps","name":"Fish steps","place":"Halfway along"},{"id":"old-crane","name":"Old crane","place":"The inner end"}]})");
+  const bool listed = until_shows(game, grace, "Harbour mouth");
+  const bool first_watched = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.lamp/harbour-mouth");
+  const bool focused_first = until_focused(game, grace, "item:lantern.lamps/harbour-mouth");
+  publish_state(table, mod, "lantern.lamp/harbour-mouth", 1,
+                R"({"tiles":[{"label":"Flame","value":"Tall"}],"facts":{"items":[{"label":"Glass","value":"Green"}]}})");
+  const bool drawn = until_shows(game, grace, "Tall") && grace.menu_shows("Green") != 0;
+  check(on_lamps && list_watched && none_yet && listed && first_watched && focused_first && drawn,
+        "master: the first row chosen, its member watched and drawn",
+        "on Lamps %s; the list watched %s; no row yet, its words %s; listed %s; harbour-mouth watched %s, focused %s; "
+        "its tiles drawn %s",
+        on_lamps ? "yes" : "NO", list_watched ? "yes" : "NO", none_yet ? "shown" : "NOT SHOWN", listed ? "yes" : "NO",
+        first_watched ? "yes" : "NO", focused_first ? "yes" : "NO", drawn ? "yes" : "NO");
+  const Frame shot = game.frame_and_read(kInputColour, PresentWith::present);
+  save_shot(shot, "master-1920x1080.bmp");
+
+  // 2. ↓: the next row chosen; the mod hears the first member let go and the next one watched; its state drawn.
+  press(window, VK_DOWN, 0x50);
+  const bool let_go = heard(game, table, mod, GRACEUI_EVENT_UNWATCHED, "lantern.lamp/harbour-mouth");
+  const bool next_watched = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.lamp/fish-steps");
+  publish_state(table, mod, "lantern.lamp/fish-steps", 1, R"({"tiles":[{"label":"Flame","value":"Low"}]})");
+  const bool next_drawn = until_shows(game, grace, "Low") && grace.menu_shows("Tall") == 0;
+  // A state for the member let go is taken and goes nowhere.
+  publish_state(table, mod, "lantern.lamp/harbour-mouth", 2, R"({"tiles":[{"label":"Flame","value":"Stale"}]})");
+  frames(game, 5);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const bool not_stale = grace.menu_shows("Stale") == 0;
+  check(let_go && next_watched && next_drawn && not_stale && std::strcmp(grace.menu().focused, "item:lantern.lamps/fish-steps") == 0,
+        "master: ↓ moves the watch to the next member",
+        "harbour-mouth let go %s; fish-steps watched %s, drawn %s; the old member's late state shown: %s; focus %s",
+        let_go ? "yes" : "NO", next_watched ? "yes" : "NO", next_drawn ? "yes" : "NO", not_stale ? "no" : "YES",
+        grace.menu().focused);
+
+  // 3. → into the detail, Esc back to the chosen row; then F5: the menu lets the list and the member go.
+  press(window, VK_RIGHT, 0x4D);
+  const bool into = until_focused(game, grace, "tab:lamp");
+  press(window, VK_ESCAPE, kScanEscape);
+  const bool back = until_focused(game, grace, "item:lantern.lamps/fish-steps");
+  press(window, VK_F5, kScanF5);
+  const bool member_gone = heard(game, table, mod, GRACEUI_EVENT_UNWATCHED, "lantern.lamp/fish-steps");
+  check(into && back && member_gone, "master: into the detail and back; the close lets the member go",
+        "→ into the detail %s; Esc back to the row %s; F5: the member unwatched %s", into ? "yes" : "NO",
+        back ? "yes" : "NO", member_gone ? "yes" : "NO");
+  frames(game, 5);
+}
+
 void run_menu_mouse(const std::wstring& dll) {
   Game game(false, 1920, 1080);
   const HWND window = game.window();
@@ -7603,6 +7709,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"typing") {
     std::printf("-- scenario: GraceUI's own text field in game (G38 (a), D57)\n");
     run_typing(dll);
+  } else if (scenario == L"master") {
+    std::printf("-- scenario: master and detail in game (G38, D215)\n");
+    run_master(dll);
   } else if (scenario == L"menu-space") {
     std::printf("-- scenario: the in-game menu on mods' spaces, with GraceUI's at the rail's foot (D171)\n");
     run_menu_space(dll);
@@ -7680,7 +7789,7 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"typing", L"spike", L"spike-after",
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"typing", L"master", L"spike", L"spike-after",
             L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake"}) {
         run(child_scenario, dll, this_program());
       }

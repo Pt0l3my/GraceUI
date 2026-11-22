@@ -44,7 +44,7 @@ TEST_CASE("hello with a ticket: welcome names both spaces, the protocol and an o
   const std::string cookie = fixture.cookie();
   WsClient ws;
   REQUIRE(ws.join(fixture.port, cookie, fixture.ticket(cookie), &welcome));
-  CHECK(welcome["protocol"] == "1.4");
+  CHECK(welcome["protocol"] == "1.5");
   CHECK(welcome["graceui"] == "0.2.0");
   REQUIRE(welcome["spaces"].size() == 2);
   CHECK(welcome["spaces"][0]["id"] == "graceui");
@@ -67,7 +67,7 @@ TEST_CASE("the framework's pages topic: each space's page data, answered by the 
   CHECK((*state)["space"] == "demo");
   CHECK((*state)["topic"] == "pages");
   CHECK((*state)["body"]["space"] == "demo");
-  CHECK((*state)["body"]["pages"].size() == 5);
+  CHECK((*state)["body"]["pages"].size() == 6);
   REQUIRE(ws->send_json(frame("unsub", {{"space", "demo"}, {"id", 4}, {"topic", "pages"}})));
   CHECK(ws->quiet(std::chrono::milliseconds(200)));  // nothing held, nothing refused
   CHECK(fixture.demo->watched().empty());            // the space never saw it
@@ -313,6 +313,57 @@ TEST_CASE("a space's state and rows reach the connections that watch them, from 
   b->socket().close();
   CHECK(fixture.demo->wait_for([&] { return !has(fixture.demo->watched(), "lantern.log"); }));
   CHECK(has(fixture.demo->watched(), "lantern.status"));
+}
+
+TEST_CASE("a family's members: each watched as a topic of its own, the family never; a slot given back goes to another (D215)") {
+  Fixture fixture;
+  const std::unique_ptr<WsClient> a = fixture.join();
+  const std::unique_ptr<WsClient> b = fixture.join();
+  // A member: its state, and the space hears it watched under its own id.
+  a->send_json(sub("demo", "lantern.lamp/harbour-mouth", 1));
+  const std::optional<Json> harbour = a->next_of("state");
+  REQUIRE(harbour.has_value());
+  CHECK((*harbour)["topic"] == "lantern.lamp/harbour-mouth");
+  CHECK((*harbour)["body"] == demo_fixtures()["lantern.lamp/harbour-mouth"]);
+  CHECK(fixture.demo->wait_for([&] { return has(fixture.demo->watched(), "lantern.lamp/harbour-mouth"); }));
+  // The family itself, a key with a '/', and a member of a topic that is no family: unknown.
+  for (const char* topic : {"lantern.lamp", "lantern.lamp/a/b", "lantern.status/one", "lantern.lamp/"}) {
+    a->send_json(sub("demo", topic, 2));
+    const std::optional<Json> refused = a->next_of("error");
+    REQUIRE_MESSAGE(refused.has_value(), topic);
+    CHECK((*refused)["code"] == "unknown_topic");
+  }
+  // Another member for another view; a state the space publishes reaches only that member's watchers.
+  b->send_json(sub("demo", "lantern.lamp/fish-steps", 3));
+  REQUIRE(b->next_of("state").has_value());
+  grace::protocol::State newer;
+  newer.topic = "lantern.lamp/fish-steps";
+  newer.rev = 2;
+  newer.body = Json{{"sentence", "The fish-steps lamp is trimmed."}};
+  REQUIRE(fixture.demo->port->publish(grace::protocol::Message{newer}));
+  const std::optional<Json> fish = b->next_of("state");
+  REQUIRE(fish.has_value());
+  CHECK((*fish)["rev"] == 2);
+  CHECK(a->quiet(150ms));
+  // Unwatched: the space hears it; a state published for it now goes nowhere, and is not refused.
+  a->send_json(frame("unsub", {{"space", "demo"}, {"id", 4}, {"topic", "lantern.lamp/harbour-mouth"}}));
+  CHECK(fixture.demo->wait_for([&] { return !has(fixture.demo->watched(), "lantern.lamp/harbour-mouth"); }));
+  // Its slot, given back, goes to another member; the old member's state never reaches the new one's watcher.
+  a->send_json(sub("demo", "lantern.lamp/old-crane", 5));
+  const std::optional<Json> crane = a->next_of("state");
+  REQUIRE(crane.has_value());
+  CHECK((*crane)["topic"] == "lantern.lamp/old-crane");
+  grace::protocol::State stale;
+  stale.topic = "lantern.lamp/harbour-mouth";
+  stale.rev = 9;
+  stale.body = Json{{"sentence", "Not for the crane."}};
+  CHECK(fixture.demo->port->publish(grace::protocol::Message{stale}));
+  CHECK(a->quiet(150ms));
+  // The family's own id is no topic the space publishes either.
+  grace::protocol::State whole;
+  whole.topic = "lantern.lamp";
+  whole.body = Json::object();
+  CHECK_FALSE(fixture.demo->port->publish(grace::protocol::Message{whole}));
 }
 
 TEST_CASE("an empty batch past a gap clears a stream: it reaches its watchers, and a later watcher gets no old rows (1.1)") {

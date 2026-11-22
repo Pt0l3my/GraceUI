@@ -686,6 +686,15 @@ bool decode(const Json& in, TopicInfo& out, const std::string& path, DecodeError
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "family", false, path, e)) {
+    const std::string p = path.empty() ? std::string("family") : path + ".family";
+    out.family.emplace();
+    if (!read_bool(*v, *out.family, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -695,6 +704,9 @@ Json encode(const TopicInfo& in) {
   out["shape"] = Json(to_string(in.shape));
   if (in.ring) {
     out["ring"] = Json(*in.ring);
+  }
+  if (in.family) {
+    out["family"] = Json(*in.family);
   }
   return out;
 }
@@ -1260,6 +1272,78 @@ Json encode(const PageHelp& in) {
   return out;
 }
 
+bool decode(const Json& in, PageMaster& out, const std::string& path, DecodeError& e) {
+  if (!in.is_object()) {
+    return fail(e, path, "not an object");
+  }
+  if (const Json* v = field(in, "topic", true, path, e)) {
+    const std::string p = path.empty() ? std::string("topic") : path + ".topic";
+    if (!read_id(*v, out.topic, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "key", true, path, e)) {
+    const std::string p = path.empty() ? std::string("key") : path + ".key";
+    if (!read_id(*v, out.key, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "detail", true, path, e)) {
+    const std::string p = path.empty() ? std::string("detail") : path + ".detail";
+    if (!read_id(*v, out.detail, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "label", true, path, e)) {
+    const std::string p = path.empty() ? std::string("label") : path + ".label";
+    if (!read_string(*v, 64, out.label, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "empty", false, path, e)) {
+    const std::string p = path.empty() ? std::string("empty") : path + ".empty";
+    out.empty.emplace();
+    if (!read_string(*v, 160, *out.empty, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "none", false, path, e)) {
+    const std::string p = path.empty() ? std::string("none") : path + ".none";
+    out.none.emplace();
+    if (!read_string(*v, 160, *out.none, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  return true;
+}
+
+Json encode(const PageMaster& in) {
+  Json out = Json::object();
+  out["topic"] = Json(in.topic);
+  out["key"] = Json(in.key);
+  out["detail"] = Json(in.detail);
+  out["label"] = Json(in.label);
+  if (in.empty) {
+    out["empty"] = Json(*in.empty);
+  }
+  if (in.none) {
+    out["none"] = Json(*in.none);
+  }
+  return out;
+}
+
 bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e) {
   if (!in.is_object()) {
     return fail(e, path, "not an object");
@@ -1357,6 +1441,15 @@ bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e) 
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "master", false, path, e)) {
+    const std::string p = path.empty() ? std::string("master") : path + ".master";
+    out.master.emplace();
+    if (!decode(*v, *out.master, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -1382,6 +1475,9 @@ Json encode(const Page& in) {
   }
   if (in.sections) {
     out["sections"] = [&] { Json a = Json::array(); for (const auto& x : *in.sections) { a.push_back(encode(x)); } return a; }();
+  }
+  if (in.master) {
+    out["master"] = encode(*in.master);
   }
   return out;
 }

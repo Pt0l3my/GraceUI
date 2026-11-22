@@ -219,6 +219,36 @@ class Seeded(unittest.TestCase):
         keepers(sp)[2]["actions"][0]["command"] = "oil.steal"
         self.expect("action order has a label and sends a command of the space", sp, desc, fx)
 
+    def test_families_and_master_lists(self):  # G38, D215
+        def topic(sp, tid):
+            return next(t for t in sp["topics"] if t["id"] == tid)
+        sp, desc, fx = demo()
+        topic(sp, "lantern.lamp")["shape"] = "stream"
+        topic(sp, "lantern.lamp")["ring"] = 10
+        self.expect("a family is a state topic of the space's own", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.lamps")["master"]["detail"] = "lantern.lamps"
+        self.expect("its master list's detail is a family the space declares", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.lamps")["master"]["topic"] = "lantern.lamp"
+        self.expect("its master list's topic is a state topic of the space's own, not a family", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.lamps")["master"]["key"] = "lamp.id"
+        self.expect("its master list has a key column (a name) and a label", sp, desc, fx)
+        sp, desc, fx = demo()
+        del page(sp, "demo.lamps")["master"]
+        self.expect("draws family lantern.lamp on a page whose master list names it as its detail", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.keepers")["sections"][2]["status"] = {"topic": "lantern.lamp"}
+        self.expect("its status names a state topic of the space's own", sp, desc, fx)
+        sp, desc, fx = demo()
+        for k in [k for k in fx if k.startswith("lantern.lamp/")]:
+            del fx[k]
+        self.expect("family lantern.lamp has no member's fixture", sp, desc, fx)
+        sp, desc, fx = demo()
+        fx["lantern.lamp/a/b"] = {}
+        self.expect("is not an object for one member of lantern.lamp", sp, desc, fx)
+
     def test_setting_descriptions(self):
         cases = [
             ("lantern.oil_token", "default", "hunter2", "a secret's default is empty"),

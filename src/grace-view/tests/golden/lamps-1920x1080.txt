@@ -1,0 +1,62 @@
+fill    scrim           0,   0 1920x1080
+fill    ground.1        0,   0 1920x1080
+fill    ground.0        0,   0  240x1080
+text    gold           24,  24  114x28   glyphs 9 "Demo space"
+text    ink.mute       24,  76   68x24   glyphs 8 "Lanterns"
+line    rule           24, 108  192x1   
+text    ink.hi         24, 116   60x24   glyphs 7 "Records"
+text    ink.mute       40, 154   20x20   glyphs 3 "Log"
+text    ink.mute       40, 186   54x20   glyphs 8 "Festival"
+fill    tint.select     0, 212  240x32  
+fill    gold            0, 212    2x32  
+text    gold.hi        40, 218   34x20   glyphs 5 "Lamps"
+fill    ground.well   272,   8  280x28   r2
+text    ink.faint     282,  12   40x20   glyphs 6 "Search"
+text    ink.faint    1827,  12   61x20   glyphs 7 "F5  Close"
+line    rule          240,  44 1680x1   
+text    ink.hi        272,  69   79x36   clip1 glyphs 5 "Lamps"
+text    ink.mute      272, 109  371x20   clip1 glyphs 45 "Every lamp on the harbour wall, and how each one burns."
+line    rule.strong   272, 141 1600x1    clip1
+diamond gold.deep     272, 137    9x9    w1 clip1
+fill    ground.2      272, 161  440x220  r4 clip1
+stroke  rule          272, 161  440x220  r4 w1 clip1
+text    gold          292, 177   38x16   clip1 glyphs 5 "Lamps"
+fill    tint.select   280, 201  424x56   clip1
+fill    gold          280, 201    2x56   clip1
+text    gold.hi       292, 208   98x22   clip1 glyphs 12 "Harbour mouth"
+text    ink.mute      292, 230  169x20   clip1 glyphs 20 "The north end of the wall"
+text    ink.hi        292, 264   75x22   clip1 glyphs 9 "Fish steps"
+text    ink.mute      292, 286  202x20   clip1 glyphs 26 "Halfway along, above the steps"
+text    ink.hi        292, 320   68x22   clip1 glyphs 8 "Old crane"
+text    ink.mute      292, 342  182x20   clip1 glyphs 22 "The inner end, by the crane"
+text    gold.hi       736, 161   31x18   clip1 glyphs 4 "Lamp"
+fill    gold          736, 185   30x2    clip1
+text    ink.mute      790, 161   39x18   clip1 glyphs 5 "Notes"
+line    rule          736, 188 1136x1    clip1
+fill    ground.2      736, 208 1136x188  r4 clip1
+stroke  rule          736, 208 1136x188  r4 w1 clip1
+text    gold          756, 224   54x16   clip1 glyphs 7 "Burning"
+text    ink.faint    1842, 224    7x20   clip1 glyphs 1 "-"
+fill    ground.3      756, 258  542x72   r2 clip1
+text    ink.mute      768, 266   34x20   clip1 glyphs 5 "Flame"
+text    ink.hi        768, 286   46x28   clip1 glyphs 4 "Tall"
+fill    ground.3     1310, 258  542x72   r2 clip1
+text    ink.mute     1322, 266   20x20   clip1 glyphs 3 "Oil"
+text    ink.hi       1322, 286   34x28   clip1 glyphs 3 "80%"
+line    rule          756, 336 1096x1    clip1
+text    ink.hi        756, 349   38x22   clip1 glyphs 5 "Glass"
+text    ink.body     1121, 350   34x20   clip1 glyphs 5 "Green"
+fill    ground.2      736, 412 1136x140  r4 clip1
+stroke  rule          736, 412 1136x140  r4 w1 clip1
+text    gold          756, 428   54x16   clip1 glyphs 7 "Related"
+line    rule          756, 452 1096x1    clip1
+text    ink.hi        756, 456   60x22   clip1 glyphs 8 "Overview"
+text    ink.mute     1121, 458  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
+text    gold         1836, 456    8x22   clip1 glyphs 1 "→"
+line    rule          756, 496 1096x1    clip1
+text    ink.hi        756, 500   22x22   clip1 glyphs 3 "Log"
+text    ink.mute     1121, 502  418x20   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
+text    gold         1836, 500    8x22   clip1 glyphs 1 "→"
+line    rule          240,1044 1680x1   
+text    ink.faint     272,1052  236x20   glyphs 20 "↑ ↓  Choose    →  Open    Esc  Back"
+stroke  gold.hi       278, 199  428x60   r4 w2 clip1

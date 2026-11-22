@@ -165,7 +165,7 @@ StartResult Engine::start() {
     hub_->spaces_removed = false;
     hub_->inbox.clear();
     for (const auto& port : hub_->spaces) {
-      port->topics.assign(port->description.topics.size(), TopicCache{});
+      port->topics.assign(port->declared + kMemberSlots, TopicCache{});
     }
   }
   stopping_ = false;
@@ -980,9 +980,11 @@ std::shared_ptr<SpacePort> Server::add_space(SpaceDescription description, Space
   const std::size_t topics = description.topics.size();
   state->description = std::move(description);
   state->wake = std::move(wake);
-  state->watched.assign(topics, 0);
-  state->reported.assign(topics, 0);
-  state->topics.assign(topics, detail::TopicCache{});
+  state->declared = topics;
+  state->watched.assign(topics + detail::kMemberSlots, 0);
+  state->reported.assign(topics + detail::kMemberSlots, 0);
+  state->members.assign(detail::kMemberSlots, detail::PortState::Member{});
+  state->topics.assign(topics + detail::kMemberSlots, detail::TopicCache{});
   {
     std::lock_guard lock(hub_->mutex);
     for (const auto& space : hub_->spaces) {

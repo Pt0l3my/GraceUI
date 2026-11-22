@@ -190,6 +190,10 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       const ours: string[] = [];
       for (const p of allPages()) {
         await openFromRail(page, p.category, p.page);
+        if (await page.locator(".master").count() > 0) {
+          // A master page's detail, its tabs among it, once its first row is chosen (D215).
+          await page.locator(".master__row[aria-selected=true]").waitFor();
+        }
         const tabs = await page.locator("[role=tab]").count();
         for (let tab = 0; tab < Math.max(tabs, 1); ++tab) {
           if (tabs > 0) {
@@ -402,6 +406,44 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
         await page.waitForTimeout(50);
       }
       assert.deepEqual(chords()[1]?.args, { id: "quiet-camp/pitch-tent", value: 0 });
+    } finally {
+      await close();
+    }
+  });
+
+  test("master and detail in the browser: the first row chosen, its member watched and drawn, ↓ the next, Enter into " +
+       "the detail, no key in the address (D215)", async () => {
+    const { page, close } = await fresh();
+    const subs = () => host.received.filter((f) => f.t === "sub" && typeof f.topic === "string" &&
+                                                   f.topic.startsWith("lantern.lamp/")).map((f) => f.topic);
+    const unsubs = () => host.received.filter((f) => f.t === "unsub" && typeof f.topic === "string" &&
+                                                     f.topic.startsWith("lantern.lamp/")).map((f) => f.topic);
+    try {
+      await openFromRail(page, "records", "demo.lamps");
+      await page.locator(".master__row[aria-selected=true]").waitFor();
+      assert.equal(await page.locator(".master__row").count(), 3);
+      assert.equal(await page.locator(".master__row[aria-selected=true]").getAttribute("data-key"), "harbour-mouth");
+      await page.locator(".tile__value", { hasText: "Tall" }).waitFor();
+      assert.deepEqual(subs(), ["lantern.lamp/harbour-mouth"]);
+      // ↓ chooses the next row: its member watched, the last one let go, its tiles drawn.
+      await page.locator(".master__row[aria-selected=true]").focus();
+      await page.keyboard.press("ArrowDown");
+      await page.locator(".master__row[data-key='fish-steps'][aria-selected=true]").waitFor();
+      await page.locator(".tile__value", { hasText: "Low" }).waitFor();
+      for (let i = 0; i < 20 && unsubs().length === 0; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(subs(), ["lantern.lamp/harbour-mouth", "lantern.lamp/fish-steps"]);
+      assert.deepEqual(unsubs(), ["lantern.lamp/harbour-mouth"]);
+      // Enter goes into the detail; nothing of the row's key is in the address or the title.
+      await page.keyboard.press("Enter");
+      const inDetail = await page.evaluate(() => document.getElementById(document.activeElement?.closest(".detail")?.id ?? "") !== null);
+      assert.equal(inDetail, true);
+      const where = await page.evaluate(() => location.href + " " + document.title);
+      assert.equal(where.includes("fish-steps"), false);
+      // The Notes tab draws the same member's sentence.
+      await page.locator("[role=tab]", { hasText: "Notes" }).click();
+      await page.locator(".sentence", { hasText: "trimmed short on purpose" }).waitFor();
     } finally {
       await close();
     }
@@ -699,7 +741,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.equal(await page.locator(".mark").count(), 3);
       await page.locator("[data-rail='category:records']").click();
       await page.locator(".flyout").waitFor();
-      assert.equal(await page.locator(".flyout .flyout__page").count(), 2);
+      assert.equal(await page.locator(".flyout .flyout__page").count(), 3);  // Log, Festival and Lamps (D215)
       await page.waitForFunction(() => document.activeElement?.classList.contains("flyout__page") === true);
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => document.querySelector(".flyout") === null);

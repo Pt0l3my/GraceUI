@@ -117,9 +117,17 @@ export class FixtureSpace {
     if (topic === SETTINGS_TOPIC) {
       return this.stateFrame(topic, this.settingsBody() as unknown as JsonObject);
     }
+    const slash = topic.lastIndexOf("/");
+    const family = slash > 0 ? this.data.pages.topics.find((t) => t.id === topic.slice(0, slash)) : undefined;
+    if (family?.family === true && family.shape === "state" && /^[a-z0-9._-]+$/.test(topic.slice(slash + 1))) {
+      // A family's member (D215): its fixture by its own id, as a state.
+      const fixture = this.data.topics?.[topic];
+      return typeof fixture === "object" && fixture !== null && !Array.isArray(fixture)
+        ? this.stateFrame(topic, fixture) : null;
+    }
     const declared = this.data.pages.topics.find((t) => t.id === topic);
-    if (!declared) {
-      return { error: "unknown_topic" };
+    if (!declared || declared.family === true) {
+      return { error: "unknown_topic" };  // a family itself is never watched: one of its members is
     }
     const fixture = this.data.topics?.[topic];
     if (fixture === undefined) {

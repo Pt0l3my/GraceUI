@@ -19,6 +19,22 @@ std::size_t PortState::topic_index(std::string_view id) const noexcept {
   return npos;
 }
 
+bool PortState::is_member(std::string_view id) const noexcept { return family_member(description, id); }
+
+std::size_t PortState::member_slot_locked(std::string_view id) const noexcept {
+  for (std::size_t i = 0; i < members.size(); ++i) {
+    if (members[i].id == id) {
+      return declared + i;
+    }
+  }
+  return npos;
+}
+
+std::string_view PortState::topic_id_locked(std::size_t index) const noexcept {
+  return index < declared ? std::string_view(description.topics[index].id)
+                          : std::string_view(members[index - declared].id);
+}
+
 bool PortState::has_command(std::string_view name) const noexcept {
   for (const std::string& command : description.commands) {
     if (command == name) {
@@ -49,6 +65,20 @@ std::shared_ptr<const std::string> encode_to_page(const protocol::Message& messa
 }
 
 }  // namespace detail
+
+bool family_member(const SpaceDescription& description, std::string_view topic) noexcept {
+  const std::size_t slash = topic.rfind('/');
+  if (slash == std::string_view::npos || slash == 0 || slash + 1 >= topic.size()) {
+    return false;
+  }
+  const std::string_view family = topic.substr(0, slash);
+  for (const protocol::TopicInfo& t : description.topics) {
+    if (t.id == family) {
+      return t.family.value_or(false) && t.shape == protocol::TopicShape::state;
+    }
+  }
+  return false;
+}
 
 SpaceDescription describe_space(const protocol::SpacePages& pages, const protocol::SettingsDescription& settings,
                                 std::string version, std::string increment) {
@@ -130,7 +160,7 @@ bool SpacePort::poll(SpaceEvent& event) noexcept {
       if (state_->watched[i] != state_->reported[i]) {
         state_->reported[i] = state_->watched[i];
         event.kind = state_->watched[i] != 0 ? SpaceEvent::Kind::watched : SpaceEvent::Kind::unwatched;
-        event.topic = state_->description.topics[i].id;
+        event.topic = std::string(state_->topic_id_locked(i));  // a member's slot keeps its id until this is said
         return true;
       }
     }
@@ -152,8 +182,18 @@ bool SpacePort::publish(protocol::Message message) noexcept {
     out.port = state_;
     if (auto* state = std::get_if<protocol::State>(&message)) {
       out.topic = state_->topic_index(state->topic);
-      if (out.topic == detail::npos || state_->description.topics[out.topic].shape != protocol::TopicShape::state) {
-        return false;
+      if (out.topic == detail::npos && state_->is_member(state->topic)) {
+        // A family's member (D215): to its slot while a view watches it, else nowhere (as for any unwatched topic).
+        std::lock_guard lock(state_->mutex);
+        out.topic = state_->member_slot_locked(state->topic);
+        if (out.topic == detail::npos || state_->watched[out.topic] == 0) {
+          return true;
+        }
+        out.generation = state_->members[out.topic - state_->declared].generation;
+      } else if (out.topic == detail::npos ||
+                 state_->description.topics[out.topic].shape != protocol::TopicShape::state ||
+                 state_->description.topics[out.topic].family.value_or(false)) {
+        return false;  // not a topic of the space's; or a family itself, whose members alone are published
       }
       state->space = state_->description.info.id;
       out.kind = detail::Outgoing::Kind::state;
