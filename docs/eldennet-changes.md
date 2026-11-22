@@ -1180,3 +1180,16 @@ The fourth and last part of proposal 0010, with your five additions (its §7). N
 - **Unsaved edits** stay in the view's memory for the session, by the document's topic, through the menu's close and
   across pages; nothing is written until Save. A draft lives while its page is open.
 
+## 56. A save's chosen row (2026-11-22, D218, your WHY§387; GraceUI 0.2.22)
+
+No change of the ABI or the protocol.
+
+- **When a save turns a `named.<param>` row into `mine.<id>`,** put `chosen: "mine.<id>"` in the save's answer body
+  (`{"ok": true, "body": {"chosen": "mine.<id>"}}`). The view that saved chooses that row as soon as your list has it,
+  whether your list's new state comes before the answer or after it; if the player chooses a row by hand in between, their
+  choice stands.
+- **The key** is a member's key of the page's master family, as D215's: `a-z`, `0-9`, `.`, `_` and `-`, the member's
+  whole id at most 64 bytes. Anything else is ignored, as is `chosen` on any answer but a save's that is ok.
+- **Focus** stays on Save, in game and in the browser, once the new row's profile is drawn; publish it when its member is
+  watched, as for any row.
+
