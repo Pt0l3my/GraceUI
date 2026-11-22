@@ -3,6 +3,7 @@
 // the world-state providers' claims. The rules are grace-abi's (panels.h, drawlist.h, registry.h, world.h); this file
 // applies them to the session and logs, once, what a mod is refused. Nothing here reads a mod's memory: the DLL's abi
 // files copy it, through the functions they pass.
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -494,6 +495,18 @@ grace::input::Key key_of_virtual(std::uint32_t vk) noexcept {
   return static_cast<grace::input::Key>((scan & 0x7Fu) | (extended ? 0x80u : 0u));
 }
 
+// The other way, for describe_hotkey (D210): a DirectInput code's virtual key, or 0.
+std::uint32_t virtual_of_key(grace::input::Key key) noexcept {
+  switch (key) {
+    case grace::input::kNoKey: return 0;
+    case 0xC5: return VK_PAUSE;
+    case 0x45: return VK_NUMLOCK;
+    default: break;
+  }
+  const UINT scan = (key & 0x80u) != 0 ? (0xE000u | (key & 0x7Fu)) : key;
+  return MapVirtualKeyW(scan, MAPVK_VSC_TO_VK_EX);
+}
+
 // An action's id within its mod: 1 to 32 of a-z, 0-9 and '-'.
 bool valid_action(std::string_view action) noexcept {
   if (action.empty() || action.size() > grace::input::kActionMax) {
@@ -508,6 +521,36 @@ bool valid_action(std::string_view action) noexcept {
 }
 
 }  // namespace
+
+GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t id, GraceUiHotkeyBinding& out) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  const std::uint32_t owner = admitted(consumer, status);
+  if (owner == 0) {
+    return status;
+  }
+  try {
+    grace::input::Listed one;
+    if (!input::hotkeys().find(id, one) || one.owner != owner) {
+      refused("describe_hotkey", "a hotkey id that is not the mod's");
+      return GRACEUI_REFUSED;
+    }
+    out.bound = (one.key_bound ? GRACEUI_HOTKEY_KEY_BOUND : 0u) | (one.chord_bound ? GRACEUI_HOTKEY_CHORD_BOUND : 0u);
+    out.key = virtual_of_key(one.key);
+    out.modifiers = one.key == grace::input::kNoKey ? 0u : one.modifiers;
+    out.pad_chord = one.chord;
+    out.reserved = 0;
+    const std::string key = one.key == grace::input::kNoKey ? std::string() : grace::input::key_text(one.key, one.modifiers);
+    const std::string chord = one.chord == 0 ? std::string() : grace::input::chord_text(one.chord);
+    std::memset(out.key_text, 0, sizeof out.key_text);
+    std::memset(out.chord_text, 0, sizeof out.chord_text);
+    std::memcpy(out.key_text, key.data(), std::min(key.size(), sizeof out.key_text - 1));
+    std::memcpy(out.chord_text, chord.data(), std::min(chord.size(), sizeof out.chord_text - 1));
+    return GRACEUI_OK;
+  } catch (...) {
+    fault("describe_hotkey");
+    return GRACEUI_FAULT;
+  }
+}
 
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::uint32_t modifiers,
                               std::uint32_t pad_chord, std::string_view action, std::string_view name,
@@ -615,6 +658,16 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, b
     out.hotkey_id = press.id;
     out.count = press.count;
     return GRACEUI_OK;
+  }
+  // The player changed one of its hotkeys (D210): to a mod built for ABI 1.4 or later, which knows the kind.
+  if (grace::abi::ConsumerInfo info; session::consumers().info_of(owner, info) && info.abi_minor >= 4) {
+    std::uint32_t changed = 0;
+    if (input::hotkeys().take_changed(static_cast<std::uint16_t>(owner), changed)) {
+      out.kind = GRACEUI_EVENT_HOTKEY_CHANGED;
+      out.hotkey_id = changed;
+      out.count = 0;
+      return GRACEUI_OK;
+    }
   }
   out.kind = GRACEUI_EVENT_NONE;
   if (!protocol) {

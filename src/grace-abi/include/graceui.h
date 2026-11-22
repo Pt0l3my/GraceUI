@@ -49,8 +49,9 @@ extern "C" {
 
 /* The ABI major this header describes, and its minor: the number of the newest appends (0: the first table). */
 #define GRACEUI_ABI_MAJOR 1u
-#define GRACEUI_ABI1_MINOR 3u /* 1: a holder's events and set_caret (GraceUI 0.2.1, D176); 2: the display and scaled
-                                 faces (GraceUI 0.2.2, D180); 3: pad chords (GraceUI 0.2.14, D204) */
+#define GRACEUI_ABI1_MINOR 4u /* 1: a holder's events and set_caret (GraceUI 0.2.1, D176); 2: the display and scaled
+                                 faces (GraceUI 0.2.2, D180); 3: pad chords (GraceUI 0.2.14, D204); 4: a hotkey's
+                                 binding as the player set it (GraceUI 0.2.16, D210) */
 
 /*
  * GraceUI's own version (GRACEUI_VERSION_PACK). Needs no start: callable from any thread, at any time after the DLL is
@@ -145,6 +146,8 @@ typedef uint32_t GraceUiStatus;
 #define GRACEUI_CAP_DISPLAY "display" /* connect's display fields, GRACEUI_EVENT_DISPLAY, GRACEUI_FACE_SCALED: since 0.2.2,
                                         ABI 1.2 (D180) */
 #define GRACEUI_CAP_PAD_CHORDS "pad-chords" /* register_hotkey's pad_chord: since 0.2.14, ABI 1.3 (D204) */
+#define GRACEUI_CAP_HOTKEY_BINDINGS "hotkey-bindings" /* describe_hotkey, GRACEUI_EVENT_HOTKEY_CHANGED: since 0.2.16, ABI
+                                                        1.4 (D210) */
 
 /* A connected mod's handle, which every slot after connect takes; 0 is none. */
 typedef uint64_t GraceUiConsumer;
@@ -405,6 +408,23 @@ typedef struct GraceUiCaret {
  * may have a key and a chord, each bound on its own, and either fires it. A mod built before ABI 1.3, and any GraceUI
  * before 0.2.14, answers a chord GRACEUI_NOT_YET. */
 
+/* A hotkey as the player has bound it (ABI 1.4, D210; G37): GraceUI's Hotkeys page lets the player change any mod's
+ * key and pad chord, kept between sessions, and the mod learns of a change by GRACEUI_EVENT_HOTKEY_CHANGED. A mod that
+ * names its key in its own words ("Press T to talk") reads it here. */
+#define GRACEUI_HOTKEY_KEY_BOUND 1u    /* its key fires it now */
+#define GRACEUI_HOTKEY_CHORD_BOUND 2u  /* its pad chord fires it now */
+
+typedef struct GraceUiHotkeyBinding {
+  uint32_t size;        /* set by the caller to sizeof(GraceUiHotkeyBinding) */
+  uint32_t bound;       /* GRACEUI_HOTKEY_*_BOUND */
+  uint32_t key;         /* its key, a Windows virtual key; 0 for none */
+  uint32_t modifiers;   /* GRACEUI_MOD_* */
+  uint32_t pad_chord;   /* GRACEUI_PAD_CHORD(anchor, key); 0 for none */
+  uint32_t reserved;    /* 0 */
+  char key_text[32];    /* the key as the Hotkeys page writes it ("Ctrl+K"), NUL-terminated; empty for none */
+  char chord_text[48];  /* the chord likewise ("D-pad Up, then View"); empty for none */
+} GraceUiHotkeyBinding;
+
 /* A pad chord for GraceUiHotkeyDesc.pad_chord: `anchor` then `key`, each exactly one XINPUT_GAMEPAD_* button (not a
  * trigger or a stick), the two different. */
 #define GRACEUI_PAD_CHORD(anchor, key) ((((0u + (anchor)) & 0xFFFFu) << 16) | ((0u + (key)) & 0xFFFFu))
@@ -443,6 +463,9 @@ typedef struct GraceUiHotkeyDesc {
 #define GRACEUI_EVENT_PAD 9u         /* with GRACEUI_WANT_PAD: a pad button's press or release (button, pressed, pad) */
 /* From ABI 1.2 (D180), to every mod that polls with an event of 1.2's size: */
 #define GRACEUI_EVENT_DISPLAY 10u    /* the display: once after warm-up, then after each change of its size or ui.scale */
+/* From ABI 1.4 (D210), to a mod connected with ABI minor 4 or more: */
+#define GRACEUI_EVENT_HOTKEY_CHANGED 11u /* the player changed a hotkey's key or pad chord (hotkey_id): describe_hotkey
+                                            gives it as it is now */
 
 /* Why a holder ended (GRACEUI_EVENT_INPUT_ENDED's `why`). */
 #define GRACEUI_CLOSED_RELEASED 1u   /* release_input, the holding panel hidden, or its mod gone */
@@ -639,6 +662,12 @@ typedef struct GraceUiApi1 {
    * and the caret ends with its holder, so a mod sets it while it holds (each frame its field has the caret). Since
    * GraceUI 0.2.1 (GRACEUI_CAP_HOLDER_EVENTS). */
   GraceUiStatus (*set_caret)(GraceUiConsumer consumer, const GraceUiCaret* caret);
+
+  /* ---- ABI 1.4 (GraceUI 0.2.16, D210). */
+
+  /* One of the mod's hotkeys as the player has bound it now (above): GRACEUI_OK; _REFUSED (an id not the mod's, or a
+   * binding that is null or smaller than 1.4's). Since GraceUI 0.2.16 (GRACEUI_CAP_HOTKEY_BINDINGS). */
+  GraceUiStatus (*describe_hotkey)(GraceUiConsumer consumer, uint32_t hotkey_id, GraceUiHotkeyBinding* binding);
 } GraceUiApi1;
 
 /* Whether `api`'s size covers `slot` (a member of GraceUiApi1): call a slot only then. */

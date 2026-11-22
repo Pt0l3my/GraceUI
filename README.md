@@ -38,7 +38,8 @@ view paces every frame it sends, so a page with many topics loses none. **GraceU
 pad chord (ABI 1.3): a button held, then another, as EldenNet's D-pad Up then View opens its chat box, with the game
 losing no press of its own; checked with a simulated pad, the timings to be confirmed on testers' pads. **GraceUI
 0.2.15** lists every mod's hotkeys on its Hotkeys page, with their keys, chords and conflicts, and never loses
-a holder's end when its mod's events pile up. Hotkeys and the log are declared for the increments
+a holder's end when its mod's events pile up. **GraceUI 0.2.16** lets the player change any mod's hotkey there, its key
+or its pad chord, and the menu's own key, kept between sessions; a mod can read its hotkey's key to name it (ABI 1.4). Hotkeys and the log are declared for the increments
 that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the

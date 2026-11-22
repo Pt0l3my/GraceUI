@@ -28,6 +28,8 @@ grace::spaces::OwnSpace* loaded_own() noexcept;
 // GraceUI's thread, after a change of its settings from either view: writes them to user\settings.json for the next
 // session (D84, D179), once a revision.
 void keep_own_settings() noexcept;
+// hotkeys.menu as the store holds it, applied at once (D208): after a change from either view.
+void publish_menu_key(const grace::spaces::OwnSpace& own) noexcept;
 // ui.scale and its default, as the own space holds them, to the display's values (D180).
 void publish_ui_scale(const grace::spaces::OwnSpace& own) noexcept;
 

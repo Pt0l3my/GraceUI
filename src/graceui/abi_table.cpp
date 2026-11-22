@@ -583,6 +583,27 @@ GraceUiStatus set_caret(GraceUiConsumer consumer, const GraceUiCaret* caret) noe
   }
 }
 
+// ---- ABI 1.4's slot (D210).
+
+GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t hotkey_id, GraceUiHotkeyBinding* binding) noexcept {
+  try {
+    if (binding == nullptr || binding->size < sizeof(GraceUiHotkeyBinding)) {
+      return refused_argument(consumer, "describe_hotkey", "a binding that is null or below 1.4's size");
+    }
+    GraceUiHotkeyBinding out{};
+    out.size = binding->size;
+    const GraceUiStatus status = grace::host::abi1::describe_hotkey(consumer, hotkey_id, out);
+    if (status == GRACEUI_OK) {
+      out.size = binding->size;
+      *binding = out;  // 1.4's size, which the check above guarantees the caller's struct has
+    }
+    return status;
+  } catch (...) {
+    grace::host::abi1::fault("describe_hotkey");
+    return GRACEUI_FAULT;
+  }
+}
+
 constinit const GraceUiApi1 kTable = {
     sizeof(GraceUiApi1),
     GRACEUI_ABI1_MINOR,
@@ -609,6 +630,7 @@ constinit const GraceUiApi1 kTable = {
     &set_world_state,
     &log,
     &set_caret,
+    &describe_hotkey,
 };
 
 }  // namespace

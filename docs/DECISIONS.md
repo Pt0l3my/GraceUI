@@ -840,3 +840,6 @@ session's to answer in the proposal.
 
 **Owner's words.** "approved as recommended, build it now" (2026-11-22).
 
+*Later (2026-11-22):* built the same day as D208 to D210 in GraceUI 0.2.16 (protocol 1.4, ABI 1.4). Item 5 still waits
+for EldenNet's session.
+

@@ -82,6 +82,8 @@ GraceUiStatus set_world_state(GraceUiConsumer consumer, std::uint32_t flags) noe
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::uint32_t modifiers,
                               std::uint32_t pad_chord, std::string_view action, std::string_view name,
                               std::uint32_t& id) noexcept;
+// One of the mod's hotkeys as the player has bound it (ABI 1.4, D210): GRACEUI_OK, or _REFUSED for an id not the mod's.
+GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t id, GraceUiHotkeyBinding& out) noexcept;
 // The mod's next event (D155, D169, D176): with `holder` (the mod's event is ABI 1.1's), its holder's events first;
 // then hotkey presses; then, with `protocol` (the mod's event is large enough), its space's events, written into
 // out.frame (the mod's buffer, out.frame_capacity bytes); `out` is GraceUI's own, zeroed by the caller but for those

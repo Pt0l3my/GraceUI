@@ -6047,6 +6047,304 @@ std::string display_text(const std::vector<GraceUiEvent>& events) {
   return text.empty() ? "none" : text;
 }
 
+// ---- Rebinding hotkeys (G37, D208 to D210): in the menu, a row's key captured, a taken one asked about and moved, the
+// menu's key moved; each mod built for ABI 1.4 told by GRACEUI_EVENT_HOTKEY_CHANGED and describe_hotkey; all kept for
+// the next session, in two processes of their own; then every hotkey reset from the page's action.
+
+GraceUiStatus hotkey_of(const GraceUiApi1* table, GraceUiConsumer mod, const char* action, const char* name,
+                        std::uint32_t vk, std::uint32_t& id) {
+  GraceUiHotkeyDesc desc{};
+  desc.size = sizeof desc;
+  desc.key = vk;
+  desc.action = action;
+  desc.action_length = std::strlen(action);
+  desc.name = name;
+  desc.name_length = std::strlen(name);
+  return table->register_hotkey(mod, &desc, &id);
+}
+
+GraceUiHotkeyBinding binding_of(const GraceUiApi1* table, GraceUiConsumer mod, std::uint32_t id, GraceUiStatus& status) {
+  GraceUiHotkeyBinding out{};
+  out.size = sizeof out;
+  status = GRACEUI_API1_COVERS(table, describe_hotkey) ? table->describe_hotkey(mod, id, &out) : GRACEUI_NOT_YET;
+  return out;
+}
+
+// The ids of the hotkeys whose change the mod was told of, until it has none waiting.
+std::vector<std::uint32_t> changes_of(const GraceUiApi1* table, GraceUiConsumer mod) {
+  std::vector<std::uint32_t> ids;
+  for (const GraceUiEvent& e : poll_holder(table, mod)) {
+    if (e.kind == GRACEUI_EVENT_HOTKEY_CHANGED) {
+      ids.push_back(e.hotkey_id);
+    }
+  }
+  return ids;
+}
+
+// The cell `column` of the Hotkeys page's row `id`, as GraceUI's space last published it.
+std::string hotkey_cell(const grace::protocol::Json& body, const char* id, const char* column) {
+  if (body.is_object() && body.contains("rows") && body["rows"].is_array()) {
+    for (const grace::protocol::Json& row : body["rows"]) {
+      if (row.is_object() && row.value("id", std::string()) == id) {
+        return row.value(column, std::string());
+      }
+    }
+  }
+  return {};
+}
+
+// The menu opened (with `menu_vk`), on the Hotkeys page, focus moved down to `focus`.
+GraceUiTestMenu to_hotkeys(Game& game, const GraceUi& grace, HWND window, const char* focus, UINT menu_vk = VK_F5,
+                           UINT menu_scan = kScanF5) {
+  GraceUiTestMenu menu = grace.menu();
+  if (menu.open == 0) {
+    press(window, menu_vk, menu_scan);
+    menu = menu_after(game, grace, 0);
+  }
+  for (int i = 0; i < 6 && std::string_view(menu.page) != "graceui.hotkeys"; ++i) {
+    press(window, VK_NEXT, 0x51);
+    menu = menu_after(game, grace, menu.lists);
+  }
+  for (int i = 0; i < 6 && std::string_view(menu.focused) != "action:reset-all"; ++i) {
+    press(window, VK_UP, 0x48);
+    menu = menu_after(game, grace, menu.lists);
+  }
+  for (int i = 0; i < 30 && std::string_view(menu.focused) != focus; ++i) {
+    press(window, VK_DOWN, 0x50);
+    menu = menu_after(game, grace, menu.lists);
+  }
+  return menu;
+}
+
+grace::protocol::Json wait_for_bindings(Game& game, const std::wstring& dll, bool want_some) {
+  grace::protocol::Json kept;
+  for (int i = 0; i < 150; ++i) {
+    kept = kept_settings(dll);
+    if (!kept.is_discarded() && kept.is_object() && kept.contains("hotkey_bindings") == want_some) {
+      break;
+    }
+    frames(game, 1);
+    Sleep(20);
+  }
+  return kept;
+}
+
+void run_bindings_write(const std::wstring& dll) {
+  using grace::protocol::Json;
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  const Connected tide = connect(table, request_for("tide-charts", GRACEUI_VERSION_PACK(0, 2, 16), "Tide Charts", "hotkeys hotkey-bindings"));
+  const Connected camp = connect(table, request_for("quiet-camp", GRACEUI_VERSION_PACK(0, 2, 16), "Quiet Camp", "hotkeys hotkey-bindings"));
+  GraceUiConnectRequest older_request = request_for("older-mod", GRACEUI_VERSION_PACK(0, 2, 2), "Older mod", "hotkeys");
+  older_request.abi_minor = 3;
+  const Connected older = connect(table, older_request);
+  std::uint32_t tide_id = 0, camp_id = 0, older_id = 0;
+  const GraceUiStatus tide_status = hotkey_of(table, tide.answer.consumer, "tide-table", "Show the tide table", VK_F9, tide_id);
+  const GraceUiStatus camp_status = hotkey_of(table, camp.answer.consumer, "pitch-tent", "Pitch the tent", VK_F7, camp_id);
+  const GraceUiStatus older_status = hotkey_of(table, older.answer.consumer, "old", "An old one", VK_F11, older_id);
+  GraceUiStatus described_status = GRACEUI_FAULT;
+  const GraceUiHotkeyBinding before = binding_of(table, tide.answer.consumer, tide_id, described_status);
+  GraceUiStatus foreign_status = GRACEUI_FAULT;
+  binding_of(table, camp.answer.consumer, tide_id, foreign_status);
+  GraceUiHotkeyBinding short_one{};
+  short_one.size = 16;
+  const GraceUiStatus small_status = table->describe_hotkey(tide.answer.consumer, tide_id, &short_one);
+  const bool cap = table->has_cap(GRACEUI_CAP_HOTKEY_BINDINGS, std::strlen(GRACEUI_CAP_HOTKEY_BINDINGS)) != 0;
+  check(tide.status == GRACEUI_OK && camp.status == GRACEUI_OK && older.status == GRACEUI_OK && cap &&
+            tide_status == GRACEUI_OK && camp_status == GRACEUI_OK && older_status == GRACEUI_OK &&
+            described_status == GRACEUI_OK && before.key == VK_F9 && std::string(before.key_text) == "F9" &&
+            before.bound == GRACEUI_HOTKEY_KEY_BOUND && before.chord_text[0] == '\0' &&
+            foreign_status == GRACEUI_REFUSED && small_status == GRACEUI_REFUSED && table->abi_minor == 4u,
+        "bindings: describe_hotkey",
+        "has_cap(\"%s\") %s, minor %u; Tide Charts' F9: %s, key %u \"%s\", bound %u; another mod's id %s; a binding "
+        "of 16 bytes %s",
+        GRACEUI_CAP_HOTKEY_BINDINGS, cap ? "yes" : "NO", table->abi_minor, status_name(described_status), before.key,
+        before.key_text, before.bound, status_name(foreign_status), status_name(small_status));
+
+  start_host(game, grace);
+  until_atlas(game, grace);
+  // 1. Change key on Tide Charts' row in the menu: Enter, then F8, taken whole.
+  GraceUiTestMenu menu = to_hotkeys(game, grace, window, "row:graceui.hotkeys/tide-charts/tide-table/key");
+  const std::string on_row = menu.focused;
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  const bool asks_for_key = grace.menu_shows("Press the key to use");
+  press(window, VK_F8, 0x42);
+  menu = menu_after(game, grace, menu.lists);
+  const Json first = own_topic(game, grace, "graceui.hotkeys", [](const Json& b) {
+    return hotkey_cell(b, "tide-charts/tide-table", "key") == "F8";
+  });
+  GraceUiStatus after_status = GRACEUI_FAULT;
+  const GraceUiHotkeyBinding after = binding_of(table, tide.answer.consumer, tide_id, after_status);
+  const std::vector<std::uint32_t> told = changes_of(table, tide.answer.consumer);
+  check(on_row == "row:graceui.hotkeys/tide-charts/tide-table/key" && asks_for_key &&
+            hotkey_cell(first, "tide-charts/tide-table", "key") == "F8" && after.key == VK_F8 &&
+            std::string(after.key_text) == "F8" && told == std::vector<std::uint32_t>{tide_id} && menu.open == 1,
+        "bindings: a key captured in the menu",
+        "focus on %s; the modal %s; the page's row: %s; describe_hotkey: \"%s\" (vk %u); told: %zu change(s); the "
+        "menu %s",
+        on_row.c_str(), asks_for_key ? "asked for a key" : "DID NOT ASK", hotkey_cell(first, "tide-charts/tide-table", "key").c_str(),
+        after.key_text, after.key, told.size(), menu.open != 0 ? "still open" : "CLOSED");
+
+  // 2. F7, Quiet Camp's: asked first, Enter moves it; Quiet Camp's hotkey is left with no key and told so.
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  press(window, VK_F7, 0x41);
+  menu = menu_after(game, grace, menu.lists);
+  const bool asked = grace.menu_shows("F7 is Quiet Camp's Pitch the tent. Use it here, and leave that one with no key?");
+  const Json unmoved = own_topic(game, grace, "graceui.hotkeys", [](const Json&) { return true; });
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  const Json moved = own_topic(game, grace, "graceui.hotkeys", [](const Json& b) {
+    return hotkey_cell(b, "quiet-camp/pitch-tent", "key") == "No key";
+  });
+  const std::vector<std::uint32_t> camp_told = changes_of(table, camp.answer.consumer);
+  GraceUiStatus camp_status_now = GRACEUI_FAULT;
+  const GraceUiHotkeyBinding camp_now = binding_of(table, camp.answer.consumer, camp_id, camp_status_now);
+  check(asked && hotkey_cell(unmoved, "quiet-camp/pitch-tent", "key") == "F7" &&
+            hotkey_cell(moved, "tide-charts/tide-table", "key") == "F7" &&
+            hotkey_cell(moved, "quiet-camp/pitch-tent", "key") == "No key" &&
+            camp_told == std::vector<std::uint32_t>{camp_id} && camp_now.key == 0 && camp_now.bound == 0 &&
+            changes_of(table, older.answer.consumer).empty(),
+        "bindings: a taken key asked about, then moved",
+        "asked %s; before Enter Quiet Camp kept %s; after: Tide Charts %s, Quiet Camp %s (told %zu, key %u); the older "
+        "mod told nothing",
+        asked ? "yes" : "NO", hotkey_cell(unmoved, "quiet-camp/pitch-tent", "key").c_str(),
+        hotkey_cell(moved, "tide-charts/tide-table", "key").c_str(),
+        hotkey_cell(moved, "quiet-camp/pitch-tent", "key").c_str(), camp_told.size(), camp_now.key);
+
+  // 3. The menu's key moved to F6 on its row: F6 then closes the menu, and F5 opens nothing.
+  menu = to_hotkeys(game, grace, window, "setting:hotkeys.menu");
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  press(window, VK_F6, 0x40);
+  menu = menu_after(game, grace, menu.lists);
+  std::string menu_key;
+  for (int i = 0; i < 100 && menu_key != "\"F6\""; ++i) {
+    menu_key = grace.setting("hotkeys.menu");
+    frames(game, 1);
+    Sleep(20);
+  }
+  frames(game, 10);
+  press(window, VK_F6, 0x40);
+  for (int i = 0; i < 100 && grace.menu().open != 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  const bool closed_by_f6 = grace.menu().open == 0;
+  press(window, VK_F5, kScanF5);
+  frames(game, 20);
+  Sleep(200);
+  const bool f5_opens = grace.menu().open != 0;
+  check(menu_key == "\"F6\"" && closed_by_f6 && !f5_opens && grace.logged("the menu's key is F6"),
+        "bindings: the menu's key moved", "hotkeys.menu %s; F6 %s the menu; F5 then %s it", menu_key.c_str(),
+        closed_by_f6 ? "closed" : "DID NOT CLOSE", f5_opens ? "OPENED" : "did not open");
+
+  // 4. Kept for the next session: ids and key names only.
+  const Json file = wait_for_bindings(game, dll, true);
+  const Json bindings = file.is_object() ? file.value("hotkey_bindings", Json()) : Json();
+  const Json want = Json::array({Json::object({{"mod", "tide-charts"}, {"action", "tide-table"}, {"key", "F7"}, {"chord", 0}}),
+                                 Json::object({{"mod", "quiet-camp"}, {"action", "pitch-tent"}, {"key", ""}, {"chord", 0}})});
+  bool same = bindings.is_array() && bindings.size() == 2;
+  for (const Json& one : want) {
+    same = same && std::find(bindings.begin(), bindings.end(), one) != bindings.end();
+  }
+  check(same && file.value("values", Json()).value("hotkeys.menu", Json()) == "F6", "bindings: kept for the next session",
+        "the file: %s", file.is_discarded() ? "NO FILE" : file.dump().c_str());
+}
+
+void run_bindings_read(const std::wstring& dll) {
+  using grace::protocol::Json;
+  g_keep_settings = true;  // what bindings-write kept (D208)
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  // Tide Charts connects before GraceUI's thread has read its settings: its default F9 first, the kept F7 once read.
+  const Connected tide = connect(table, request_for("tide-charts", GRACEUI_VERSION_PACK(0, 2, 16), "Tide Charts", "hotkeys hotkey-bindings"));
+  std::uint32_t tide_id = 0, camp_id = 0;
+  const GraceUiStatus tide_first = hotkey_of(table, tide.answer.consumer, "tide-table", "Show the tide table", VK_F9, tide_id);
+  start_host(game, grace);
+  until_atlas(game, grace);
+  for (int i = 0; i < 150 && !grace.logged("2 hotkey bindings kept"); ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  // Quiet Camp connects after: its kept "no key" at once, over its default F7.
+  const Connected camp = connect(table, request_for("quiet-camp", GRACEUI_VERSION_PACK(0, 2, 16), "Quiet Camp", "hotkeys hotkey-bindings"));
+  const GraceUiStatus camp_second = hotkey_of(table, camp.answer.consumer, "pitch-tent", "Pitch the tent", VK_F7, camp_id);
+  GraceUiStatus a = GRACEUI_FAULT, b = GRACEUI_FAULT;
+  const GraceUiHotkeyBinding tide_now = binding_of(table, tide.answer.consumer, tide_id, a);
+  const GraceUiHotkeyBinding camp_now = binding_of(table, camp.answer.consumer, camp_id, b);
+  const std::vector<std::uint32_t> tide_told = changes_of(table, tide.answer.consumer);
+  for (int i = 0; i < 30; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  press(window, VK_F5, kScanF5);
+  frames(game, 20);
+  Sleep(200);
+  const bool f5_opens = grace.menu().open != 0;
+  press(window, VK_F6, 0x40);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  check(tide_first == GRACEUI_OK && camp_second == GRACEUI_UNBOUND && tide_now.key == VK_F7 &&
+            std::string(tide_now.key_text) == "F7" &&
+            (tide_told.empty() || tide_told == std::vector<std::uint32_t>{tide_id}) &&
+            camp_now.key == 0 && !f5_opens && menu.open == 1 && grace.logged("2 hotkey bindings kept"),
+        "bindings: the next session keeps them",
+        "Tide Charts, registered as GraceUI started, %s and now \"%s\" (told %zu: 1 if its thread read the settings "
+        "after, 0 if before); Quiet Camp, after, %s, "
+        "its key %u; F5 %s; F6 %s",
+        status_name(tide_first), tide_now.key_text, tide_told.size(), status_name(camp_second), camp_now.key,
+        f5_opens ? "OPENED the menu" : "opened nothing", menu.open != 0 ? "opened the menu" : "DID NOT OPEN IT");
+
+  // Reset every hotkey, from the page's action and its second press: the mods' defaults where free, nothing kept.
+  menu = to_hotkeys(game, grace, window, "action:reset-all", VK_F6, 0x40);
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  const Json reset = own_topic(game, grace, "graceui.hotkeys", [](const Json& body) {
+    return hotkey_cell(body, "tide-charts/tide-table", "key") == "F9";
+  });
+  const Json file = wait_for_bindings(game, dll, false);
+  check(hotkey_cell(reset, "tide-charts/tide-table", "key") == "F9" &&
+            hotkey_cell(reset, "quiet-camp/pitch-tent", "key") == "F7" &&
+            hotkey_cell(reset, "quiet-camp/pitch-tent", "state") == "Bound" && file.is_object() &&
+            !file.contains("hotkey_bindings"),
+        "bindings: every hotkey reset", "Tide Charts %s, Quiet Camp %s (%s); the file: %s",
+        hotkey_cell(reset, "tide-charts/tide-table", "key").c_str(), hotkey_cell(reset, "quiet-camp/pitch-tent", "key").c_str(),
+        hotkey_cell(reset, "quiet-camp/pitch-tent", "state").c_str(), file.is_discarded() ? "NO FILE" : file.dump().c_str());
+}
+
+void run_bindings(const std::wstring& dll) {
+  DeleteFileW(settings_file_of(dll).c_str());
+  for (const wchar_t* child : {L"bindings-write", L"bindings-read"}) {
+    std::fflush(stdout);
+    const int status = run_child(dll, child);
+    char name[64];
+    std::snprintf(name, sizeof name, "%ls scenario", child);
+    check(status == 0, name, "its process ended with %d", status);
+  }
+  DeleteFileW(settings_file_of(dll).c_str());
+}
+
 // ---- Pad chords (D204, proposal 0005), through GraceUI_Test_PadRead (Wine has no pad): what the game's XInputGetState
 // returns read by read, and the mod's hotkey event. The times are the proposal's estimates, with margins for Wine's
 // clock; S4's second round confirms them on a pad.
@@ -6864,6 +7162,15 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"quiet-read") {
     std::printf("-- scenario: the next session keeps the switch (D181)\n");
     run_quiet_read(dll);
+  } else if (scenario == L"bindings") {
+    std::printf("-- scenario: hotkeys rebound in the menu and kept, in two processes of their own (G37, D208 to D210)\n");
+    run_bindings(dll);
+  } else if (scenario == L"bindings-write") {
+    std::printf("-- scenario: a key captured, a taken one moved, the menu's key moved, all kept (D208)\n");
+    run_bindings_write(dll);
+  } else if (scenario == L"bindings-read") {
+    std::printf("-- scenario: the next session keeps them; every hotkey reset (D208)\n");
+    run_bindings_read(dll);
   } else if (scenario == L"chords") {
     std::printf("-- scenario: pad chords for mods' hotkeys through ABI 1.3 (D204)\n");
     run_chords(dll);
@@ -6897,7 +7204,7 @@ int wmain(int argc, wchar_t** argv) {
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
             L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"spike", L"spike-after",
-            L"holder-events", L"settings", L"display", L"quiet", L"chords"}) {
+            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings"}) {
         run(child_scenario, dll, this_program());
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.

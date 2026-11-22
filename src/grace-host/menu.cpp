@@ -479,6 +479,7 @@ void take_effects(State& m) {
   own_view(m).view.set_values(store.values());
   m.revision = own_space().revision();
   spaces::publish_ui_scale(own_space());  // the mods hear of a new ui.scale (D180)
+  spaces::publish_menu_key(own_space());  // a new menu key works at once (D208)
   spaces::keep_own_settings();  // for the next session (D179): only after a change
 }
 

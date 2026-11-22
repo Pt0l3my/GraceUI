@@ -2566,6 +2566,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 : (st.type == SettingType::choice || st.type == SettingType::tri_state ||
                    (st.type == SettingType::text && st.choices_from))
                     ? "← →  Choose    R  Reset    Esc  Back"
+                : st.type == SettingType::key_name && st.availability != "later"
+                    ? "Enter  Press a new key    R  Reset    Esc  Back"  // captured in game since D209
                     : "Edited in the browser view    Esc  Back";
         if (st.locked) {
           hints = "Locked in this version    Esc  Back";

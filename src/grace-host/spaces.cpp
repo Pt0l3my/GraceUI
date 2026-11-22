@@ -136,6 +136,31 @@ bool settings_path(std::filesystem::path& out) {
   return true;
 }
 
+// A mod that connected before GraceUI's thread read its settings registered its hotkeys with their defaults: the kept
+// bindings now go over them (D208), each kept one's key and chord freed first so that one given up is free for another.
+void apply_kept_to_registered() {
+  static grace::input::Listed listed[grace::input::kMaxHotkeys];  // GraceUI's thread alone
+  const std::size_t count = input::hotkeys().list(listed, grace::input::kMaxHotkeys);
+  grace::input::Chosen chosen[grace::input::kMaxHotkeys];
+  bool kept[grace::input::kMaxHotkeys] = {};
+  grace::input::Taken other;
+  for (std::size_t i = 0; i < count; ++i) {
+    grace::abi::ConsumerInfo info;
+    kept[i] = session::consumers().info_of(listed[i].owner, info) &&
+              input::kept_bindings().find(info.id, listed[i].action(), chosen[i]);
+    if (kept[i]) {
+      input::hotkeys().rebind_key(listed[i].id, grace::input::kNoKey, 0, input::menu_key(), false, other);
+      input::hotkeys().rebind_chord(listed[i].id, 0, false, other);
+    }
+  }
+  for (std::size_t i = 0; i < count; ++i) {
+    if (kept[i]) {
+      input::hotkeys().rebind_key(listed[i].id, chosen[i].key, chosen[i].modifiers, input::menu_key(), false, other);
+      input::hotkeys().rebind_chord(listed[i].id, chosen[i].chord, false, other);
+    }
+  }
+}
+
 void restore_saved(grace::spaces::OwnSpace& own) {
   std::filesystem::path path;
   std::error_code error;
@@ -190,6 +215,7 @@ void restore_saved(grace::spaces::OwnSpace& own) {
                                            entry["action"].get_ref<const std::string&>(), chosen) ? 1 : 0;
     }
     log_line("GraceUI's settings: %u hotkey bindings kept", static_cast<unsigned>(taken));
+    apply_kept_to_registered();
   }
   g_kept_bindings = input::kept_bindings().revision();
 }
@@ -202,7 +228,7 @@ std::string uses_words(std::string_view caps) {
       {GRACEUI_CAP_FACES, "faces"},         {GRACEUI_CAP_INPUT, "input"},
       {GRACEUI_CAP_HOLDER_EVENTS, "input events"}, {GRACEUI_CAP_HOTKEYS, "hotkeys"},
       {GRACEUI_CAP_WORLD_STATE, "world state"},    {GRACEUI_CAP_DISPLAY, "the display"},
-      {GRACEUI_CAP_PAD_CHORDS, "pad chords"},
+      {GRACEUI_CAP_PAD_CHORDS, "pad chords"},      {GRACEUI_CAP_HOTKEY_BINDINGS, "hotkey bindings"},
   };
   std::string out;
   for (const auto& [cap, word] : kWords) {
@@ -619,9 +645,23 @@ std::optional<grace::pages::Outcome> check_setting(const protocol::Cmd& command)
   return std::nullopt;
 }
 
+void apply_menu_key(const grace::spaces::OwnSpace& own);
+
+}  // namespace
+
 // hotkeys.menu as the player set it, applied (D208): a mod's hotkey on the new key loses it, kept so once the player
 // moved it; at the start it is only applied.
-void publish_menu_key(const grace::spaces::OwnSpace& own) {
+void publish_menu_key(const grace::spaces::OwnSpace& own) noexcept {
+  try {
+    apply_menu_key(own);
+  } catch (...) {
+    log_line("the menu's key could not be applied; it stays as it was");
+  }
+}
+
+namespace {
+
+void apply_menu_key(const grace::spaces::OwnSpace& own) {
   const protocol::Json& value = own.store().held("hotkeys.menu");
   grace::input::Key key = grace::input::kNoKey;
   std::uint8_t modifiers = 0;
