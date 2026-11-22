@@ -1,8 +1,11 @@
 // The mods' hotkeys (hotkeys.h) and what the window procedure's filter and DirectInput's view do with them (D155).
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <atomic>
+#include <string_view>
 #include <thread>
+#include <vector>
 
 #include "grace/input/devices.h"
 #include "grace/input/hotkeys.h"
@@ -289,4 +292,65 @@ TEST_CASE("presses counted on one thread while another adds, removes and takes a
     taken += press.count;
   }
   CHECK(taken == kPresses);
+}
+
+TEST_CASE("the Hotkeys page's list: each hotkey's mod, name, defaults and which of them are bound (D206)") {
+  Hotkeys hotkeys;
+  std::uint32_t f11 = 0;
+  std::uint32_t taken = 0;
+  std::uint32_t talk = 0;
+  Binding binding;
+  REQUIRE(hotkeys.add(1, "debug-view", kF11, 0, 0, kF5, f11, &binding, "Debug view") == Added::bound);
+  REQUIRE(hotkeys.add(2, "debug", kF11, 0, 0, kF5, taken, &binding, "Debug") == Added::unbound);
+  const std::uint32_t chord = 0x0020u | (0x0001u << 16);
+  REQUIRE(hotkeys.add(2, "talk", kNoKey, 0, chord, kF5, talk, &binding, "Talk") == Added::bound);
+  Listed listed[kMaxHotkeys];
+  REQUIRE(hotkeys.list(listed, kMaxHotkeys) == 3);
+  CHECK(listed[0].id == f11);
+  CHECK(listed[0].owner == 1);
+  CHECK(listed[0].name() == "Debug view");
+  CHECK(listed[0].action() == "debug-view");
+  CHECK(listed[0].key == kF11);
+  CHECK(listed[0].key_bound);
+  CHECK(listed[1].name() == "Debug");
+  CHECK_FALSE(listed[1].key_bound);
+  CHECK(listed[2].chord == chord);
+  CHECK(listed[2].chord_bound);
+  CHECK(listed[2].key == kNoKey);
+  CHECK(hotkeys.list(listed, 1) == 1);  // at most its capacity
+  hotkeys.remove_owner(2);
+  REQUIRE(hotkeys.list(listed, kMaxHotkeys) == 1);
+  CHECK(listed[0].name() == "Debug view");
+  std::uint32_t again = 0;
+  REQUIRE(hotkeys.add(3, "again", kK, 0, 0, kF5, again, &binding, "") == Added::bound);
+  REQUIRE(hotkeys.list(listed, kMaxHotkeys) == 2);
+  CHECK(listed[1].name().empty());  // a freed slot keeps no name of its last hotkey's
+}
+
+TEST_CASE("keys' names: one per key, as the settings' key names allow, and modifiers before them (D206)") {
+  CHECK(key_name(kF5) == "F5");
+  CHECK(key_name(kF11) == "F11");
+  CHECK(key_name(kA) == "A");
+  CHECK(key_name(0x02) == "1");
+  CHECK(key_name(0xC9) == "PageUp");
+  CHECK(key_name(0x9C) == "NumpadEnter");
+  CHECK(key_name(0xD3) == "Delete");
+  CHECK(key_name(kNoKey).empty());
+  CHECK(key_name(0xFF).empty());
+  CHECK(key_text(kK, kModCtrl) == "Ctrl+K");
+  CHECK(key_text(kK, kModCtrl | kModShift | kModAlt) == "Ctrl+Shift+Alt+K");
+  std::vector<std::string_view> seen;
+  for (int code = 0; code < 256; ++code) {
+    const std::string_view name = key_name(static_cast<Key>(code));
+    if (name.empty()) {
+      continue;
+    }
+    CHECK(name.size() <= 12);
+    for (const char c : name) {
+      CHECK(((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')));
+    }
+    CHECK(std::find(seen.begin(), seen.end(), name) == seen.end());
+    seen.push_back(name);
+  }
+  CHECK(seen.size() >= 100);
 }

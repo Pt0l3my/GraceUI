@@ -1,0 +1,55 @@
+fill    scrim           0,   0 1920x1080
+fill    ground.1        0,   0 1920x1080
+fill    ground.0        0,   0  300x1080
+text    gold           30,  30  100x35   glyphs 7 "GraceUI"
+text    ink.hi         30,  95   74x30   glyphs 7 "GraceUI"
+text    ink.mute       50, 143   34x25   glyphs 4 "Menu"
+fill    tint.select     0, 175  300x40  
+fill    gold            0, 175    3x40  
+text    gold.hi        50, 183   59x25   glyphs 7 "Hotkeys"
+text    ink.mute       50, 223  101x25   glyphs 11 "Browser view"
+text    ink.mute       50, 263  118x25   glyphs 13 "Installed mods"
+text    ink.mute       50, 303   42x25   glyphs 5 "About"
+fill    ground.well   340,  10  350x35   r3
+text    ink.faint     353,  15   51x25   glyphs 6 "Search"
+text    ink.faint    1804,  15   76x25   glyphs 7 "F5  Close"
+line    rule          300,  55 1620x1   
+text    ink.hi        340,  86  139x45   clip1 glyphs 7 "Hotkeys"
+text    ink.mute      340, 136  515x25   clip1 glyphs 52 "The menu's key, and every mod's hotkeys with their conflicts."
+line    rule.strong   340, 176 1540x1    clip1
+diamond gold.deep     340, 171   11x11   w1 clip1
+fill    ground.2      340, 201 1540x155  r5 clip1
+stroke  rule          340, 201 1540x155  r5 w1 clip1
+text    gold          365, 221   77x20   clip1 glyphs 7 "The menu"
+text    ink.faint    1842, 221    8x25   clip1 glyphs 1 "-"
+line    rule          365, 256 1490x1    clip1
+text    ink.hi        365, 272  122x28   a128 clip1 glyphs 11 "Open the menu"
+text    ink.mute      365, 306  667x25   clip1 glyphs 65 "The key that opens and closes the menu. It never reaches the game. Default: F5."
+text    ink.faint    1745, 274  110x25   clip1 glyphs 12 "Later version"
+fill    ground.2      340, 376 1540x250  r5 clip1
+stroke  rule          340, 376 1540x250  r5 w1 clip1
+text    gold          365, 396  182x20   clip1 glyphs 17 "Every mod's hotkeys"
+text    ink.faint    1842, 396    8x25   clip1 glyphs 1 "-"
+line    rule          365, 431 1490x1    clip1
+text    ink.hi        365, 447   66x28   clip1 glyphs 7 "GraceUI"
+text    ink.mute      862, 449  397x25   clip1 glyphs 31 "Open the menu  ·  F5  ·  No pad chord  ·  Bound"
+line    rule          365, 491 1490x1    clip1
+text    ink.hi        365, 507  103x28   clip1 glyphs 10 "Tide Charts"
+text    ink.mute      862, 509  532x25   clip1 glyphs 45 "Show the tide table  ·  Ctrl+T  ·  D-pad Down, then A  ·  Bound"
+line    rule          365, 551 1490x1    clip1
+text    ink.hi        365, 567   94x28   clip1 glyphs 9 "Quiet Camp"
+text    ink.mute      862, 569  793x25   clip1 glyphs 70 "Pitch the tent  ·  No key  ·  D-pad Down, then A  ·  Unbound: Tide Charts took its chord first"
+fill    ground.2      340, 646 1540x175  r5 clip1
+stroke  rule          340, 646 1540x175  r5 w1 clip1
+text    gold          365, 666   67x20   clip1 glyphs 7 "Related"
+line    rule          365, 696 1490x1    clip1
+text    ink.hi        365, 701   38x28   clip1 glyphs 4 "Menu"
+text    ink.mute      862, 704  548x25   clip1 glyphs 53 "How the menu looks: its size, its theme, its motion and its type."
+text    gold         1835, 701    9x28   clip1 glyphs 1 "→"
+line    rule          365, 751 1490x1    clip1
+text    ink.hi        365, 756  131x28   clip1 glyphs 13 "Installed mods"
+text    ink.mute      862, 759  759x25   clip1 glyphs 76 "Every mod connected to GraceUI this session, what each uses, and whether its notices show."
+text    gold         1835, 756    9x28   clip1 glyphs 1 "→"
+line    rule          300,1035 1620x1   
+text    ink.faint     340,1045  295x25   glyphs 26 "Locked in this version    Esc  Back"
+stroke  gold.hi      1502, 253  356x66   r5 w3 clip1

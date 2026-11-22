@@ -6,6 +6,8 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <string>
+#include <string_view>
 
 namespace grace::input {
 
@@ -36,6 +38,14 @@ constexpr Key key_from_message(std::uint32_t lparam, std::uint32_t vk) noexcept 
   }
   return static_cast<Key>(scan | (((lparam >> 24) & 1u) != 0 ? 0x80u : 0u));
 }
+
+// A key's name as GraceUI shows and stores it (D206): 1 to 12 of A-Z, a-z and 0-9, after the browser's
+// KeyboardEvent.code without its "Key" and "Digit" prefixes (A, 7, F5, PageUp, BracketLeft, NumpadEnter), for the key at
+// that place on a US layout, whatever the player's own layout prints on it. Empty for a code with no name.
+std::string_view key_name(Key key) noexcept;
+
+// A key with its modifiers (GRACEUI_MOD_*: Ctrl 1, Shift 2, Alt 4) as the settings' key names write it: "Ctrl+Shift+K".
+std::string key_text(Key key, std::uint8_t modifiers);
 
 // A set of keys, by their code.
 class KeyBits {

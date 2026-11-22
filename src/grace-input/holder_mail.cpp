@@ -32,6 +32,7 @@ void HolderMail::enable(std::uint16_t owner, std::uint64_t token, std::uint32_t 
     while (box->ring.pop(stale)) {
     }
     box->held = false;
+    box->pending_end.store(0, std::memory_order_release);
     box->ring.take_dropped();
     box->owner.store(owner, std::memory_order_release);
     box->token.store(token, std::memory_order_release);
@@ -95,7 +96,11 @@ void HolderMail::end(std::uint32_t generation, std::uint32_t why) noexcept {
       Mail stale;
       while (box->ring.pop(stale)) {
       }
-      box->ring.push(mail);
+      if (!box->ring.push(mail)) {
+        // Still full: a pop on another thread has claimed a slot and not yet given it back. The end waits in the box's
+        // own slot, which take() gives first: whatever the ring holds of this holder is discarded anyway (D207).
+        box->pending_end.store((std::uint64_t{generation} << 32) | why, std::memory_order_release);
+      }
     }
   }
 }
@@ -118,6 +123,14 @@ bool HolderMail::take(std::uint16_t owner, std::uint64_t token, Mail& out, std::
   const std::uint64_t now = active_.load(std::memory_order_acquire);
   const std::uint32_t current =
       now != 0 && static_cast<std::uint16_t>(now >> 32) == owner ? static_cast<std::uint32_t>(now) : 0;
+  if (const std::uint64_t pending = box->pending_end.exchange(0, std::memory_order_acq_rel); pending != 0) {
+    out = Mail{};
+    out.kind = MailKind::ended;
+    out.generation = static_cast<std::uint32_t>(pending >> 32);
+    out.why = static_cast<std::uint32_t>(pending);
+    dropped = box->ring.take_dropped();
+    return true;
+  }
   Mail mail;
   while (pop(*box, mail)) {
     if (mail.kind != MailKind::ended && mail.generation != current) {

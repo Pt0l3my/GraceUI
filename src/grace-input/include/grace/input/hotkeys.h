@@ -29,6 +29,7 @@ namespace grace::input {
 inline constexpr std::uint32_t kMaxHotkeys = 64;     // the session's (EST; GRACEUI_HOTKEYS_MAX)
 inline constexpr std::uint32_t kHotkeysPerMod = 8;   // a mod's (EST; GRACEUI_HOTKEYS_PER_MOD)
 inline constexpr std::size_t kActionMax = 32;        // bytes of an action's id
+inline constexpr std::size_t kHotkeyNameMax = 64;    // bytes of what the Hotkeys page calls it
 
 // The modifiers a hotkey names, as graceui.h's GRACEUI_MOD_* give them.
 inline constexpr std::uint8_t kModCtrl = 1;
@@ -65,6 +66,23 @@ struct Binding {
   bool chord = false;
 };
 
+// One hotkey as the Hotkeys page lists it (D206).
+struct Listed {
+  std::uint32_t id = 0;
+  std::uint16_t owner = 0;
+  Key key = kNoKey;
+  std::uint8_t modifiers = 0;
+  std::uint32_t chord = 0;
+  bool key_bound = false;
+  bool chord_bound = false;
+  std::string_view action() const noexcept { return {action_bytes, action_length}; }
+  std::string_view name() const noexcept { return {name_bytes, name_length}; }
+  std::uint8_t action_length = 0;
+  std::uint8_t name_length = 0;
+  char action_bytes[kActionMax] = {};
+  char name_bytes[kHotkeyNameMax] = {};
+};
+
 struct Press {
   std::uint32_t id = 0;     // the hotkey's id: never 0
   std::uint32_t count = 0;  // presses since its last one was taken
@@ -85,8 +103,14 @@ class Hotkeys {
     return add(owner, action, key, modifiers, 0, menu_key, id, nullptr);
   }
   // The same with a default pad `chord` (0 for none, else valid_chord), and which defaults are bound in `binding`.
+  // `name` is what the Hotkeys page calls it (checked by the caller; at most kHotkeyNameMax bytes are kept).
   Added add(std::uint16_t owner, std::string_view action, Key key, std::uint8_t modifiers, std::uint32_t chord,
-            Key menu_key, std::uint32_t& id, Binding* binding) noexcept;
+            Key menu_key, std::uint32_t& id, Binding* binding, std::string_view name = {}) noexcept;
+
+  // ---- GraceUI's thread.
+
+  // Every hotkey added and not yet removed, in the table's order, at most `capacity`: how many were written.
+  std::size_t list(Listed* out, std::size_t capacity) const noexcept;
 
   // The mod has gone: its hotkeys and their presses go with it.
   void remove_owner(std::uint16_t owner) noexcept;
@@ -145,8 +169,8 @@ class Hotkeys {
     return (generation << 8) | (index + 1);
   }
 
-  void lock() noexcept;
-  void unlock() noexcept { lock_.clear(std::memory_order_release); }
+  void lock() const noexcept;
+  void unlock() const noexcept { lock_.clear(std::memory_order_release); }
   void update_bare() noexcept;  // under the lock
 
   // A hotkey's chord word: bits 0-31 its chord, bit 32 set while bound, bits 33-51 the hotkey's generation.
@@ -160,9 +184,11 @@ class Hotkeys {
     std::uint16_t owner = 0;            // under the lock
     std::uint8_t action_length = 0;     // under the lock
     char action[kActionMax] = {};       // under the lock
+    std::uint8_t name_length = 0;       // under the lock
+    char name[kHotkeyNameMax] = {};     // under the lock
   };
 
-  std::atomic_flag lock_{};
+  mutable std::atomic_flag lock_{};
   std::uint32_t generation_ = 0;  // under the lock
   Slot slots_[kMaxHotkeys];
   AtomicKeyBits bare_;

@@ -82,6 +82,9 @@ class HolderMail {
     std::mutex taking;  // the mod's takes, against each other only
     bool held = false;  // under `taking`: an event read past a coalesced move, to give next
     Mail next{};
+    // An end the ring could not take even once emptied (another thread's pop still held its slot): its generation and
+    // why, 0 for none, given before anything in the ring (D207).
+    std::atomic<std::uint64_t> pending_end{0};
   };
 
   static std::uint64_t pack(std::uint16_t owner, std::uint32_t generation) noexcept {

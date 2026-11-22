@@ -174,10 +174,13 @@ TEST_CASE("posted from three threads while the mod takes from two: in order per 
       Mail one;
       std::uint32_t dropped = 0;
       for (;;) {
+        // Read before taking: the other taker may take the end between this take and its bookkeeping, so only a key
+        // taken once the end was already gone comes after it.
+        const bool end_gone = ended.load();
         if (mail.take(kOwner, kToken, one, dropped)) {
           if (one.kind == MailKind::ended) {
             ended.store(true);
-          } else if (ended.load()) {
+          } else if (end_gone) {
             after_end.store(true);
           }
           taken.fetch_add(1);

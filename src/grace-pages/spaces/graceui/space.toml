@@ -101,7 +101,8 @@ help = "The key that opens and closes the menu. It never reaches the game."
 synonyms = ["menu key", "open", "shortcut"]
 home = "graceui.hotkeys"
 effect = "now"
-availability = "live"
+availability = "later"
+locked = true
 
 [[setting]]
 key = "dashboard.enabled"
@@ -167,10 +168,10 @@ id = "graceui.hotkeys"
 category = "graceui"
 name = "Hotkeys"
 description = "The menu's key, and every mod's hotkeys with their conflicts."
-increment = "0.6"
+increment = "0.2"
 related = ["graceui.menu", "graceui.mods"]
 help.purpose = "See every hotkey GraceUI watches for, and which mod each belongs to."
-help.steps = ["Choose the key that opens the menu.", "Look down the list for a hotkey marked unbound: another took its key first.", "Change a mod's hotkey on that mod's own page."]
+help.steps = ["Look down the list: every mod's hotkeys, with their keys and pad chords.", "A hotkey marked unbound fires nothing: another took its key or its chord first, and its state says whose.", "A later version lets you choose another key for it, and for the menu."]
 
 [[page.sections]]
 id = "menu-key"

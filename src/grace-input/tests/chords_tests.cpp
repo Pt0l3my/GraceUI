@@ -247,3 +247,13 @@ TEST_CASE("a chord another hotkey has is registered unbound; the key and the cho
   CHECK(hotkeys.add(3, "wave", kNoKey, 0, kChord, kF5, third, &binding) == Added::bound);
   CHECK(hotkeys.pressed(third));  // a press through its chord, its key unbound
 }
+
+TEST_CASE("a chord reads as its two buttons, the anchor first (D206)") {
+  CHECK(chord_text(kChord) == "D-pad Up, then View");
+  CHECK(chord_text(kA | (std::uint32_t{kDown} << 16)) == "D-pad Down, then A");
+  CHECK(chord_text(kView | kUp).empty());
+  for (unsigned bit = 0; bit < 16; ++bit) {
+    const auto button = static_cast<std::uint16_t>(1u << bit);
+    CHECK(button_name(button).empty() == ((button & kChordButtons) == 0));
+  }
+}

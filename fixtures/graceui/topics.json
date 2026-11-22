@@ -4,13 +4,14 @@
       {"id": "mod", "label": "Mod"},
       {"id": "action", "label": "Action"},
       {"id": "key", "label": "Key"},
+      {"id": "chord", "label": "Pad chord"},
       {"id": "state", "label": "State"}
     ],
     "rows": [
-      {"mod": "GraceUI", "action": "Open the menu", "key": "F5", "state": "Bound"},
-      {"mod": "Demo space", "action": "Trim the wick", "key": "T", "state": "Bound"},
-      {"mod": "Tide Charts", "action": "Show the tide table", "key": "Ctrl+T", "state": "Bound"},
-      {"mod": "Quiet Camp", "action": "Pitch the tent", "key": "T", "state": "Unbound: Demo space took T first"}
+      {"mod": "GraceUI", "action": "Open the menu", "key": "F5", "chord": "No pad chord", "state": "Bound"},
+      {"mod": "Demo space", "action": "Trim the wick", "key": "T", "chord": "No pad chord", "state": "Bound"},
+      {"mod": "Tide Charts", "action": "Show the tide table", "key": "Ctrl+T", "chord": "D-pad Down, then A", "state": "Bound"},
+      {"mod": "Quiet Camp", "action": "Pitch the tent", "key": "T", "chord": "D-pad Down, then A", "state": "Unbound: Demo space took T first; Tide Charts took its chord first"}
     ]
   },
   "graceui.dashboard": {

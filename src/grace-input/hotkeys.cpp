@@ -24,7 +24,7 @@ bool reserved_key(Key key) noexcept {
   }
 }
 
-void Hotkeys::lock() noexcept {
+void Hotkeys::lock() const noexcept {
   while (lock_.test_and_set(std::memory_order_acquire)) {
     std::this_thread::yield();
   }
@@ -53,7 +53,7 @@ void Hotkeys::update_bare() noexcept {
 }
 
 Added Hotkeys::add(std::uint16_t owner, std::string_view action, Key key, std::uint8_t modifiers, std::uint32_t chord,
-                   Key menu_key, std::uint32_t& id, Binding* binding) noexcept {
+                   Key menu_key, std::uint32_t& id, Binding* binding, std::string_view name) noexcept {
   if (action.empty() || action.size() > kActionMax || (modifiers & ~kModAll) != 0 || reserved_key(key) ||
       (key == kF4 && (modifiers & kModAlt) != 0) || (chord != 0 && !valid_chord(chord))) {
     return Added::invalid;
@@ -97,6 +97,11 @@ Added Hotkeys::add(std::uint16_t owner, std::string_view action, Key key, std::u
   slot.owner = owner;
   slot.action_length = static_cast<std::uint8_t>(action.size());
   std::memcpy(slot.action, action.data(), action.size());
+  const std::size_t name_size = name.size() < kHotkeyNameMax ? name.size() : kHotkeyNameMax;
+  slot.name_length = static_cast<std::uint8_t>(name_size);
+  if (name_size != 0) {
+    std::memcpy(slot.name, name.data(), name_size);
+  }
   generation_ = (generation_ + 1) & 0x7FFFFu;
   if (generation_ == 0) {
     generation_ = 1;
@@ -125,6 +130,7 @@ void Hotkeys::remove_owner(std::uint16_t owner) noexcept {
       slot.chord.store(0, std::memory_order_release);
       slot.owner = 0;
       slot.action_length = 0;
+      slot.name_length = 0;
     }
   }
   update_bare();
@@ -144,6 +150,7 @@ void Hotkeys::remove(std::uint32_t id) noexcept {
     slot.chord.store(0, std::memory_order_release);
     slot.owner = 0;
     slot.action_length = 0;
+    slot.name_length = 0;
     update_bare();
   }
   unlock();
@@ -207,6 +214,34 @@ bool Hotkeys::pressed(std::uint32_t id) noexcept {
       return true;
     }
   }
+}
+
+std::size_t Hotkeys::list(Listed* out, std::size_t capacity) const noexcept {
+  std::size_t written = 0;
+  lock();
+  for (std::uint32_t i = 0; i < kMaxHotkeys && written < capacity; ++i) {
+    const Slot& slot = slots_[i];
+    const std::uint64_t word = slot.word.load(std::memory_order_relaxed);
+    if (state_of(word) == free) {
+      continue;
+    }
+    const std::uint64_t chord = slot.chord.load(std::memory_order_relaxed);
+    Listed& listed = out[written++];
+    listed = Listed{};
+    listed.id = id_of(i, generation_of(word));
+    listed.owner = slot.owner;
+    listed.key = key_of(word);
+    listed.modifiers = modifiers_of(word);
+    listed.chord = static_cast<std::uint32_t>(chord);
+    listed.key_bound = state_of(word) == bound;
+    listed.chord_bound = (chord >> 32 & 1u) != 0;
+    listed.action_length = slot.action_length;
+    std::memcpy(listed.action_bytes, slot.action, slot.action_length);
+    listed.name_length = slot.name_length;
+    std::memcpy(listed.name_bytes, slot.name, slot.name_length);
+  }
+  unlock();
+  return written;
 }
 
 std::uint32_t Hotkeys::match_chord(std::uint16_t anchor, std::uint16_t key) const noexcept {

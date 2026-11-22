@@ -805,3 +805,30 @@ built in GraceUI 0.2.12 (protocol 1.3); built as D202. Home's grid of cards stay
 
 **Owner's words.** "both approved" (of G36 and the look review of the in-game menu, 2026-11-21).
 
+## G37
+
+**Where and how a hotkey is rebound** · *Open, put 2026-11-22 with proposal 0009*
+
+**Question.** Since GraceUI 0.2.15 (D206) the Hotkeys page lists every mod's hotkeys, and nothing can change them: a
+hotkey whose default another took stays unbound, and the menu's key reads F5 alone. The design says two things: §5.2,
+that the player binds every mod's keys on GraceUI's Hotkeys page; D115 (and EldenNet's PAGES after it), that each
+hotkey is changed on its own space's page. ABI 1 has no slot to change a hotkey. [Proposal 0009](proposals/0009-rebinding-hotkeys.md)
+asks (1) where: (a) GraceUI's Hotkeys page for every mod, the binding kept in GraceUI's settings under the mod's and
+the action's ids, or (b) each mod's own page, through a new `rebind_hotkey`; (2) a key already taken: (a) ask, then
+move it, or (b) refuse; (3) pad chords chosen with two pickers in both views, a chord held on a pad captured later;
+(4) whether a mod may read its hotkey's current key (ABI 1.4, `describe_hotkey` and a changed event); (5) for
+EldenNet's session, whether retiring `hotkeys.talk`, `hotkeys.skip_page` and `hotkeys.debug` as EldenNet settings, in
+favour of the defaults it registers, suits PAGES and O94.
+
+**Recommendation.** (1) (a), one home for each binding (invariant 12), every conflict in one place, and mods with no
+page served; (2) (a); (3) yes; (4) (a). The menu's key becomes live with it. When to build it is the owner's: GraceUI's
+plan put it in 0.6, and with unbound hotkeys listed now it could come sooner.
+
+**What each answer changes.** Proposal 0009 §6: `grace-input`'s bindings over the defaults, the capture modal in both
+views, GraceUI's settings file, the menu's key, the page's row actions, the harness; with (4) (a), ABI 1.4. Under (1)
+(a), EldenNet's three key settings and its Settings › Hotkeys; under (1) (b), a `rebind_hotkey` slot and each mod's own
+capture.
+
+**Follows from.** §5.2, §5.9, D33, D77, D115, D155, D204, D205, D206; invariants 8, 12 and 17; EldenNet's PAGES (its
+Settings › Hotkeys) and O94.
+

@@ -514,12 +514,15 @@ TEST_CASE("a refused change shows the space's own value again, or the default (D
 TEST_CASE("a page of a later increment is absent: rail, Page Down, search, related links and open (§4.2.2, D173)") {
   PageView view = loaded("graceui", "graceui.menu");
   view.set_increment("0.2");
-  CHECK_FALSE(view.present("graceui.hotkeys"));  // 0.6
-  CHECK(view.present("graceui.browser"));        // 0.2
-  CHECK(view.present("graceui.mods"));           // 0.2 since D181 (G32's switches)
+  CHECK(view.present("graceui.hotkeys"));  // 0.2 since D206 (every hotkey listed)
+  CHECK(view.present("graceui.browser"));  // 0.2
+  CHECK(view.present("graceui.mods"));     // 0.2 since D181 (G32's switches)
+  CHECK_FALSE(view.present("graceui.compatibility"));  // 0.6
   CHECK_FALSE(view.open("graceui.compatibility"));
-  CHECK(view.search("menu key").empty());  // hotkeys.menu lives on Hotkeys, a 0.6 page
-  // Page Down from Menu skips Hotkeys: Browser view, Installed mods, then About past Compatibility.
+  CHECK_FALSE(view.search("menu key").empty());  // hotkeys.menu lives on Hotkeys
+  // Page Down from Menu: Hotkeys, Browser view, Installed mods, then About past Compatibility.
+  press(view, Key::next_page);
+  CHECK(view.page() == "graceui.hotkeys");
   press(view, Key::next_page);
   CHECK(view.page() == "graceui.browser");
   press(view, Key::next_page);
@@ -530,9 +533,8 @@ TEST_CASE("a page of a later increment is absent: rail, Page Down, search, relat
   view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
   const std::string dump = list.dump();
   CHECK(dump.find("Compatibility") == std::string::npos);  // neither on the rail nor among About's related pages
-  CHECK(dump.find("Hotkeys") == std::string::npos);
   view.set_increment("0.6");
-  CHECK(view.open("graceui.hotkeys"));
+  CHECK(view.open("graceui.compatibility"));
   view.set_increment("");
   CHECK(view.present("graceui.compatibility"));
 }
@@ -1037,4 +1039,36 @@ TEST_CASE("a section's chip, live status and own actions: drawn in its head, a d
   const Action order = press(view, Key::activate);  // not destructive: at once
   CHECK(order.command.name == "oil.order");
   CHECK(order.command.args == Json::object());
+}
+
+TEST_CASE("the Hotkeys page in game (D206): the menu's key shown for a later version, and every hotkey with its chord") {
+  PageView view = loaded("graceui", "graceui.hotkeys");
+  view.set_increment("0.2");
+  REQUIRE(view.present("graceui.hotkeys"));
+  const Json hotkeys = {
+      {"columns", Json::array({{{"id", "mod"}, {"label", "Mod"}},
+                               {{"id", "action"}, {"label", "Action"}},
+                               {{"id", "key"}, {"label", "Key"}},
+                               {{"id", "chord"}, {"label", "Pad chord"}},
+                               {{"id", "state"}, {"label", "State"}}})},
+      {"rows", Json::array({{{"mod", "GraceUI"}, {"action", "Open the menu"}, {"key", "F5"}, {"chord", "No pad chord"},
+                             {"state", "Bound"}},
+                            {{"mod", "Tide Charts"}, {"action", "Show the tide table"}, {"key", "Ctrl+T"},
+                             {"chord", "D-pad Down, then A"}, {"state", "Bound"}},
+                            {{"mod", "Quiet Camp"}, {"action", "Pitch the tent"}, {"key", "No key"},
+                             {"chord", "D-pad Down, then A"}, {"state", "Unbound: Tide Charts took its chord first"}}})}};
+  view.set_topic("graceui.hotkeys", hotkeys);
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  const std::string dump = list.dump();
+  CHECK(dump.find("Ctrl+T  ·  D-pad Down, then A  ·  Bound") != std::string::npos);  // a row's cells, in order
+  CHECK(dump.find("F5  ·  No pad chord") != std::string::npos);
+  CHECK(dump.find("Unbound: Tide Charts took its chord first") != std::string::npos);
+  CHECK(dump.find("Later version") != std::string::npos);  // the menu's key, until a later version rebinds it
+  // The menu's key is not changed here yet: activating its row changes nothing.
+  view.open("graceui.hotkeys");
+  CHECK(view.focused() == "setting:hotkeys.menu");
+  const Action a = press(view, Key::activate);
+  CHECK(a.kind != Action::Kind::command);
+  golden("hotkeys-1920x1080.txt", dump);
 }

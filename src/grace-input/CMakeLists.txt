@@ -7,6 +7,7 @@ add_library(grace_input STATIC
   holder.cpp
   holder_mail.cpp
   hotkeys.cpp
+  keys.cpp
   messages.cpp)
 target_include_directories(grace_input PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 gu_own_code(grace_input)

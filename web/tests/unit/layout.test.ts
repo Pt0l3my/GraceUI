@@ -50,9 +50,10 @@ test("every setting sits on exactly its home page, on one tab", () => {
 test("a page of a later increment is absent, as grace-view's set_increment leaves it (§4.2.2, D173)", () => {
   const own = builtinSpaces()[0]!.pages;
   const shown = withinIncrement(own, "0.2");
-  // Installed mods is a 0.2 page since D181 (G32's switches); Hotkeys and Compatibility are 0.6.
-  assert.deepEqual(shown.pages.map((p) => p.id), ["graceui.menu", "graceui.browser", "graceui.mods", "graceui.about"]);
-  assert.deepEqual(shown.categories.map((c) => c.pages), [["graceui.menu", "graceui.browser", "graceui.mods", "graceui.about"]]);
+  // Installed mods is a 0.2 page since D181 (G32's switches), Hotkeys since D206; Compatibility is 0.6.
+  const ids = ["graceui.menu", "graceui.hotkeys", "graceui.browser", "graceui.mods", "graceui.about"];
+  assert.deepEqual(shown.pages.map((p) => p.id), ids);
+  assert.deepEqual(shown.categories.map((c) => c.pages), [ids]);
   assert.ok(shown.pages.every((p) => p.related.every((id) => shown.pages.some((q) => q.id === id))));
   assert.equal(withinIncrement(own, "0.6").pages.length, own.pages.length);
   assert.equal(withinIncrement(own, "").pages.length, own.pages.length, "an increment that does not parse hides nothing");

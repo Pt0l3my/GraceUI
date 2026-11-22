@@ -622,8 +622,8 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     try {
       await openFromRail(page, "graceui", "graceui.menu");
       assert.equal(await page.locator("[data-rail='page:graceui.about']").count(), 1);
-      assert.equal(await page.locator("[data-rail='page:graceui.hotkeys']").count(), 0);  // ships in 0.6
-      assert.equal(await page.locator("[data-rail='page:graceui.compatibility']").count(), 0);
+      assert.equal(await page.locator("[data-rail='page:graceui.hotkeys']").count(), 1);  // 0.2 since D206
+      assert.equal(await page.locator("[data-rail='page:graceui.compatibility']").count(), 0);  // ships in 0.6
     } finally {
       await close();
     }

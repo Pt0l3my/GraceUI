@@ -221,6 +221,81 @@ protocol::Json mods_body() {
           {"rows", std::move(rows)}};
 }
 
+// The Hotkeys page's list (D206): the menu's key, then every mod's hotkeys with their defaults, and for each default
+// another took first, whose it is. Built on GraceUI's thread at every wake, published only when it changes.
+protocol::Json hotkeys_body() {
+  static grace::input::Listed listed[grace::input::kMaxHotkeys];  // GraceUI's thread alone; kept off its stack
+  const std::size_t count = input::hotkeys().list(listed, grace::input::kMaxHotkeys);
+  const auto mod_name = [](std::uint16_t owner) {
+    grace::abi::ConsumerInfo info;
+    return session::consumers().info_of(owner, info) ? std::string(info.name) : std::string("A mod that has gone");
+  };
+  const grace::input::Key menu = input::menu_key();
+  // Whose a default is: the hotkey that has it bound, or the menu's.
+  const auto key_holder = [&](const grace::input::Listed& one) -> std::string {
+    if (one.key == menu) {
+      return "the menu";
+    }
+    for (std::size_t i = 0; i < count; ++i) {
+      if (listed[i].key_bound && listed[i].key == one.key && listed[i].modifiers == one.modifiers) {
+        return mod_name(listed[i].owner);
+      }
+    }
+    return "another hotkey";
+  };
+  const auto chord_holder = [&](const grace::input::Listed& one) -> std::string {
+    for (std::size_t i = 0; i < count; ++i) {
+      if (listed[i].chord_bound && listed[i].chord == one.chord) {
+        return mod_name(listed[i].owner);
+      }
+    }
+    return "another hotkey";
+  };
+  protocol::Json rows = protocol::Json::array();
+  rows.push_back({{"mod", "GraceUI"},
+                  {"action", "Open the menu"},
+                  {"key", grace::input::key_text(menu, 0)},
+                  {"chord", "No pad chord"},
+                  {"state", "Bound"}});
+  for (std::size_t i = 0; i < count; ++i) {
+    const grace::input::Listed& one = listed[i];
+    const bool has_key = one.key != grace::input::kNoKey;
+    const bool has_chord = one.chord != 0;
+    const std::string key = has_key ? grace::input::key_text(one.key, one.modifiers) : "No key";
+    const bool key_lost = has_key && !one.key_bound;
+    const bool chord_lost = has_chord && !one.chord_bound;
+    std::string state;
+    if (!has_key && !has_chord) {
+      state = "Unbound: no default";
+    } else if (!key_lost && !chord_lost) {
+      state = "Bound";
+    } else {
+      // A default another took first; with both named and one lost, the other still fires it.
+      const std::string key_words = one.key == menu ? key + " opens the menu" : key_holder(one) + " took " + key + " first";
+      const std::string chord_words = chord_holder(one) + " took its chord first";
+      if (key_lost && chord_lost) {
+        state = "Unbound: " + key_words + "; " + chord_words;
+      } else if (key_lost) {
+        state = (has_chord ? "Key unbound: " : "Unbound: ") + key_words;
+      } else {
+        state = (has_key ? "Chord unbound: " : "Unbound: ") + chord_words;
+      }
+    }
+    rows.push_back({{"mod", mod_name(one.owner)},
+                    {"action", one.name().empty() ? std::string(one.action()) : std::string(one.name())},
+                    {"key", key},
+                    {"chord", has_chord ? grace::input::chord_text(one.chord) : std::string("No pad chord")},
+                    {"state", std::move(state)}});
+  }
+  return {{"columns",
+           {{{"id", "mod"}, {"label", "Mod"}},
+            {{"id", "action"}, {"label", "Action"}},
+            {{"id", "key"}, {"label", "Key"}},
+            {{"id", "chord"}, {"label", "Pad chord"}},
+            {{"id", "state"}, {"label", "State"}}}},
+          {"rows", std::move(rows)}};
+}
+
 protocol::Json notices_body() {
   protocol::Json rows = protocol::Json::array();
   for (const grace::abi::QuietNotices::Kept& kept : session::quiet().kept()) {
@@ -275,6 +350,7 @@ protocol::Json dashboard_body(const grace::spaces::OwnSpace& own) {
 void refresh_topics(grace::spaces::OwnSpace& own) {
   for (const auto& [topic, body] : {std::pair<const char*, protocol::Json>{"graceui.mods", mods_body()},
                                     std::pair<const char*, protocol::Json>{"graceui.notices", notices_body()},
+                                    std::pair<const char*, protocol::Json>{"graceui.hotkeys", hotkeys_body()},
                                     std::pair<const char*, protocol::Json>{"graceui.about", about_body()},
                                     std::pair<const char*, protocol::Json>{"graceui.dashboard", dashboard_body(own)}}) {
     const protocol::Json* now = own.state_of(topic);

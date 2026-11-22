@@ -4,11 +4,12 @@ fill    ground.0        0,   0  300x1080
 text    gold           30,  30  100x35   glyphs 7 "GraceUI"
 text    ink.hi         30,  95   74x30   glyphs 7 "GraceUI"
 text    ink.mute       50, 143   34x25   glyphs 4 "Menu"
-text    ink.mute       50, 183  101x25   glyphs 11 "Browser view"
-fill    tint.select     0, 215  300x40  
-fill    gold            0, 215    3x40  
-text    gold.hi        50, 223  118x25   glyphs 13 "Installed mods"
-text    ink.mute       50, 263   42x25   glyphs 5 "About"
+text    ink.mute       50, 183   59x25   glyphs 7 "Hotkeys"
+text    ink.mute       50, 223  101x25   glyphs 11 "Browser view"
+fill    tint.select     0, 255  300x40  
+fill    gold            0, 255    3x40  
+text    gold.hi        50, 263  118x25   glyphs 13 "Installed mods"
+text    ink.mute       50, 303   42x25   glyphs 5 "About"
 fill    ground.well   340,  10  350x35   r3
 text    ink.faint     353,  15   51x25   glyphs 6 "Search"
 text    ink.faint    1804,  15   76x25   glyphs 7 "F5  Close"
@@ -42,6 +43,13 @@ text    ink.mute      365, 456  624x25   clip1 glyphs 62 "What the mods with the
 line    rule          365, 491 1490x1    clip1
 text    ink.hi        365, 507   94x28   clip1 glyphs 9 "Quiet Camp"
 text    ink.mute      862, 509  202x25   clip1 glyphs 21 "Firewood is running low."
+fill    ground.2      340, 586 1540x120  r5 clip1
+stroke  rule          340, 586 1540x120  r5 w1 clip1
+text    gold          365, 606   67x20   clip1 glyphs 7 "Related"
+line    rule          365, 636 1490x1    clip1
+text    ink.hi        365, 641   66x28   clip1 glyphs 7 "Hotkeys"
+text    ink.mute      862, 644  515x25   clip1 glyphs 52 "The menu's key, and every mod's hotkeys with their conflicts."
+text    gold         1835, 641    9x28   clip1 glyphs 1 "→"
 line    rule          300,1035 1620x1   
 text    ink.faint     340,1045  202x25   glyphs 16 "Enter  Open    Esc  Back"
 stroke  gold.hi       362, 428 1496x26   r5 w3 clip1

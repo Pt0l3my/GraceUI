@@ -535,7 +535,7 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
   grace::input::Binding binding;
   const grace::input::Added added = input::hotkeys().add(static_cast<std::uint16_t>(owner), action, place,
                                                          static_cast<std::uint8_t>(modifiers), pad_chord,
-                                                         input::menu_key(), added_id, &binding);
+                                                         input::menu_key(), added_id, &binding, name);
   switch (added) {
     case grace::input::Added::bound:
       break;
@@ -562,6 +562,7 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
     return GRACEUI_NOT_CONNECTED;
   }
   id = added_id;
+  hooks::wake();  // the Hotkeys page lists it (D206)
   return added == grace::input::Added::unbound ? GRACEUI_UNBOUND : GRACEUI_OK;  // D164: the mod learns which
 }
 

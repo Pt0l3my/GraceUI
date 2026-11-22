@@ -6110,6 +6110,40 @@ void run_chords(const std::wstring& dll) {
   start_host(game, grace);
   frames(game, 30);
   until_atlas(game, grace);
+
+  // The Hotkeys page's list (D206): the menu's key first, then each hotkey with its key, chord and state; the older
+  // mod's chord was never registered.
+  using grace::protocol::Json;
+  const auto row_of = [](const Json& body, const char* mod) {
+    if (body.is_object() && body.contains("rows") && body["rows"].is_array()) {
+      for (const Json& row : body["rows"]) {
+        if (row.is_object() && row.value("mod", std::string()) == mod) {
+          return row;
+        }
+      }
+    }
+    return Json();
+  };
+  const Json listed = own_topic(game, grace, "graceui.hotkeys", [&](const Json& body) {
+    return !row_of(body, "Chord two").is_null();
+  });
+  const Json menu_row = row_of(listed, "GraceUI");
+  const Json talk_row = row_of(listed, "Chord mod");
+  const Json shout_row = row_of(listed, "Chord two");
+  const auto cell = [](const Json& row, const char* column) {
+    return row.is_object() ? row.value(column, std::string()) : std::string();
+  };
+  check(cell(menu_row, "key") == "F5" && cell(talk_row, "action") == "talk" && cell(talk_row, "key") == "No key" &&
+            cell(talk_row, "chord") == "D-pad Up, then View" && cell(talk_row, "state") == "Bound" &&
+            cell(shout_row, "key") == "F9" &&
+            cell(shout_row, "state") == "Chord unbound: Chord mod took its chord first" &&
+            row_of(listed, "Chord older").is_null() && listed.contains("rows") && listed["rows"].size() == 3,
+        "chords: the Hotkeys page",
+        "graceui.hotkeys lists %zu row(s): the menu's key %s; talk: %s, %s, %s; shout: %s, %s",
+        listed.contains("rows") ? listed["rows"].size() : std::size_t{0}, cell(menu_row, "key").c_str(),
+        cell(talk_row, "key").c_str(), cell(talk_row, "chord").c_str(), cell(talk_row, "state").c_str(),
+        cell(shout_row, "key").c_str(), cell(shout_row, "state").c_str());
+
   struct Seen {
     std::uint32_t buttons = 0;
     std::uint32_t packet = 0;

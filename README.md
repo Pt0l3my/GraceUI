@@ -36,7 +36,9 @@ or "Not needed", and takes a row's changed mark from the mod. **GraceUI 0.2.10**
 sections serve as cards, each with a chip, a live status and buttons of its own (protocol 1.3); **0.2.13**'s browser
 view paces every frame it sends, so a page with many topics loses none. **GraceUI 0.2.14** gives a mod's hotkey a
 pad chord (ABI 1.3): a button held, then another, as EldenNet's D-pad Up then View opens its chat box, with the game
-losing no press of its own; checked with a simulated pad, the timings to be confirmed on testers' pads. Hotkeys and the log are declared for the increments
+losing no press of its own; checked with a simulated pad, the timings to be confirmed on testers' pads. **GraceUI
+0.2.15** lists every mod's hotkeys on its Hotkeys page, with their keys, chords and conflicts, and never loses
+a holder's end when its mod's events pile up. Hotkeys and the log are declared for the increments
 that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the
@@ -87,7 +89,7 @@ see the dashboard.
 | `docs/DESIGN.md` | The design |
 | `docs/research/` | The studies behind it, in our own words |
 | `docs/eldennet-changes.md` | What EldenNet's design needs to change for GraceUI |
-| `docs/proposals/` | Proposals put to the owner: the framework (0001), the map (0002), a holder's events (0003), the display (0004), pad chords (0005), additions for mods' pages (0006), row actions, live pickers, row secrets and forms (0007), and sections as cards (0008) |
+| `docs/proposals/` | Proposals put to the owner: the framework (0001), the map (0002), a holder's events (0003), the display (0004), pad chords (0005), additions for mods' pages (0006), row actions, live pickers, row secrets and forms (0007), sections as cards (0008), and rebinding hotkeys (0009) |
 | `src/grace-protocol` | The bridge protocol's types (C++; they and the web app's TypeScript types are generated from one schema) |
 | `src/grace-input` | The input holder's rules: capture, masking, the player's exit and characters made whole, without Win32 |
 | `src/grace-view` | The menu's structure, focus and input rules, without a renderer |
