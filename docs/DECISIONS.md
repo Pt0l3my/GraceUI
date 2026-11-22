@@ -850,3 +850,56 @@ become the defaults it registers, its Settings › Hotkeys a read-only list from
 Hotkeys, O94's T kept as the default (proposal 0009 §9). Its question on changing bindings off game is answered by
 D211: in game only for now.
 
+
+---
+
+## G38
+
+**Editing a document: what the profile editor needs from GraceUI** · *Put 2026-11-22 with proposal 0010; decided 2026-11-22*
+
+**Question.** EldenNet's O43 puts a profile editor in v1, in both views, and since G20 (a) its pages are EldenNet's
+(its S7.2.b), built from GraceUI's components. None of today's fits: a profile is a document of many fields, checked as
+a whole, saved with a revision and drafted by a model; GraceUI has no text field in game (D57 is designed, not built),
+neither view draws master–detail, a topic is declared one at a time, and a command is answered within 10 s.
+[Proposal 0010](proposals/0010-editing-documents.md) adds, as protocol 1.5: topic families (`profiles/<key>`, also
+EldenNet's `named/<id>`, `journal/<id>` and `conversation/<id>`); master–detail in both views; an editor block (eight
+field kinds, the limits from the space's topic, check, save with `rev` and a new `conflict` code, reset, restore, and
+a model's draft shown beside the fields, unsaved); slow commands, answered within 90 s; and GraceUI's own text field in
+game. It asks (1) what to build and when: (a) all of it now, in 0.2.x, the text field first; (b) all but the text field
+now, in the browser only, the text field with the menu's increment (0.6); (c) wait for EldenNet's pages pass; (2) what
+becomes of unsaved edits when the menu closes in game: (a) kept in memory until the game closes, marked unsaved, or
+(b) dropped with a notice; (3) prose fields as one paragraph each, with no new lines: (a) yes, or (b) new lines
+allowed. Its §6 asks EldenNet's session whether the field kinds, the document's shape, the messages and the draft's
+answer suit its editor (NPC §4.5, §4.7).
+
+**Recommendation.** (1) (a): Named NPCs comes at EldenNet 0.3 and needs families and master–detail first, and the text
+field also makes D194's row secrets, D195's forms and search work in game. (2) (a): invariant 7's close keeps changes,
+danger never waits for an answer (invariant 9), and a save is a write the player asks for. (3) (a).
+
+**What each answer changes.** Proposal 0010 §4: the protocol's minor, the page lint and registration, the registry,
+`grace-view` and `grace-draw`, the web app, the demo space, the tests and a harness scenario; no change of the ABI.
+Under (1) (b), the editor reads "Edited in the browser view" in game until 0.6. EldenNet: its Characters pages and the
+editor in this shape (S7.2.b).
+
+**Follows from.** EldenNet's O43, O46 and O86; G20 (a); D2 (amended by D213), D36, D57, D169, D193, D194, D195; §4.3,
+§5.3, §5.6; invariants 1, 2, 3, 7 and 9; PV3; [profile-editor-needs.md](profile-editor-needs.md).
+
+**Decision (2026-11-22).** As recommended: (1) (a) all of it now, in GraceUI 0.2.x, in the order the proposal gives
+(the text field in game, topic families with master–detail, slow commands, the editor), each tried on the demo space
+with invented content; (2) (a) unsaved edits kept in the menu's memory when it closes in game, never on disk, the page
+reopening with them marked unsaved; (3) (a) prose fields as one paragraph each, with no new lines. Proposal 0010 §6
+waits for EldenNet's session.
+
+**Owner's words.** The owner's choices in the question dialog, 2026-11-22: "All now, in 0.2.x (Recommended)", "Keep in
+memory (Recommended)", "One paragraph (Recommended)".
+
+*Later (2026-11-22):* EldenNet's session answered proposal 0010 §6, yes to all four. It asked for five additions to
+the editor block, recorded in the proposal's §7 and to be built with it:
+- an opaque `key` on a list item;
+- a `locked` list item, with its words;
+- dotted field ids;
+- `null` as "not set here";
+- a message with no field shown at the top of the block.
+
+It needs no cancel command for a draft: it cancels when the member is no longer watched. Its view on the three
+questions was the owner's answers.

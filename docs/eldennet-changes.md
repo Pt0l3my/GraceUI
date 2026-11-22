@@ -1083,3 +1083,59 @@ As answered on 2026-11-22, for your chat box's opening within 50 ms (your NPC §
 - Under Wine in the harness, the waiting thread woke 1 to 5 ms after a hotkey's key was posted. Re-vendor `graceui.h`
   at 0.2.17 (`GRACEUI_ABI1_MINOR` 5) and raise your floor to use it; nothing changes for you until then.
 
+
+## 51. The profile editor's needs brought up to date (2026-11-22, D213, G38; your S7.2.a)
+
+- **D2's exception is recorded** (D213): the profile editor is the one content editor in v1, by your O43. Content packs
+  stays read-only. The editor's pages, fields, checks, commands and draft helper are yours (S7.2.b; your NPC §4.7), and so
+  are the rules the needs list asked GraceUI to change: SP1's `subjects` and the player's own text, SP4's people met and
+  PV4's draft text (PAGES §4.8, §4.9).
+- **The needs list** (GraceUI's `docs/profile-editor-needs.md`) is brought up to date with G20, O46 and O86 in proposal
+  0010 §2. It stays as your input for S7.2.b.
+- **What GraceUI would add**, put to the owner as G38 with proposal 0010 (protocol 1.5; no change of the ABI):
+  - Topic families: your `profiles/<target>`, and also `named/<id>`, `journal/<id>` and `conversation/<id>`.
+  - Master–detail in both views.
+  - An editor block: eight field kinds, with your limits read from the member's body; check, save with `rev` and a new
+    `conflict` code, reset and restore; a draft shown beside the fields, unsaved.
+  - Slow commands, answered within 90 s, for `profile.draft`.
+  - GraceUI's own text field in game.
+- **Its §6 asks you four things:** whether the field kinds cover your NPC §4.5 and O46 fields, the seeds per key
+  included; `doc` as `{field id: value}`, with you writing the TOML; check messages as `{field, item, level, words}` in
+  the answer's body; and the draft's answer as `{draft, notice}`.
+
+## 52. GraceUI's own text field in game (2026-11-22, D214, G38 (1) (a); GraceUI 0.2.18)
+
+The first part of proposal 0010. No change of the protocol (1.4) or of the ABI (1.5): your pages work in game as they
+are.
+
+- **Typed in game now:** your `text` settings with no `choices_from`, your `secret` settings (masked and write-only:
+  the field starts empty, a value is sent once, and the menu keeps only whether it is set), your forms (D195) and your
+  tables' row secrets (D194). Your page data needs nothing new for any of them. The "Filled in the browser view" and
+  "set in the browser view" lines went.
+- **Search** in game opens with `/` or Ctrl+F. It finds the open space's settings, and Enter opens the row on its tab,
+  its section and Advanced disclosure opened.
+- **A shortcut row's link fixed:** on a page with tabs it now opens the row's own tab. Before, it opened the first tab.
+- **Your forms' commands** are answered as before. On `ok`, the menu empties the form. On a refusal, it keeps the text
+  and shows your words under the form.
+- **Not yet:** Steam's floating keyboard for a pad (testers, D205), and the IME's composition drawn inside the field.
+
+## 53. Topic families and master–detail (2026-11-22, D215, G38 (1) (a); GraceUI 0.2.19, protocol 1.5)
+
+The second part of proposal 0010. No change of the ABI.
+
+- **A family** is a state topic you declare with `family = true` in your page data. Its members, `<family>/<key>`, are
+  topics of their own: you hear each watched and unwatched through `GRACEUI_EVENT_WATCHED` and `_UNWATCHED`, with its
+  own id, as for any topic. You publish a member while it is watched; a state for an unwatched member is taken and
+  dropped. Publish a member, never the family itself, which is refused. A key is a-z, 0-9, '.', '_' and '-', and the
+  member's whole id is at most 64 bytes. Your `named/<id>`, `journal/<id>` and `conversation/<id>` fit as families
+  `named`, `journal` and `conversation`, and `profiles/<target>` for the editor.
+- **A page's `master`**: `{topic, key, detail, label, empty?, none?}`. The `topic` is a state topic whose body is a
+  table's (`columns`, `rows`), `key` is the column holding each row's key, and `detail` is the family. The list is
+  drawn at the left, its rows by their first column's words and their second's. Your page's own tabs and sections are
+  the detail, and a component block whose `topic` is the family draws the chosen row's member. This is the shape for
+  Named NPCs (the roster, then Profile, Allowances and Reactions), NPC types and Playthrough.
+- **The first row is chosen** as soon as the list has one, and a page keeps its chosen row for the session. A row's
+  key never goes into an address, browser storage or a log. A row whose key is not a member's is not listed.
+- **Where proposal 0010 differs:** its §3.2 had master–detail as a block. It is the page's, so that your tabs are the
+  detail.
+
