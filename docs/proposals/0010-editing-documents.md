@@ -2,7 +2,9 @@
 
 **Status: proposal, 2026-11-22, put to the owner as G38, and to EldenNet's session for §6 (EldenNet's roadmap
 S7.2.a). The owner approved all three items as recommended the same day, to be built now in 0.2.x (G38); where this
-text and the design differ once it is built, the design holds. EldenNet's session answered §6 the same day (§7).** A bare § is a section of [DESIGN.md](../DESIGN.md); PAGES is EldenNet's `docs/design/pages.md`; NPC is
+text and the design differ once it is built, the design holds. EldenNet's session answered §6 the same day (§7). Built the same day, in four parts: the text field in game (D214,
+0.2.18), topic families and master–detail (D215, 0.2.19), slow commands (D216, 0.2.20) and the editor block (D217,
+0.2.21); where they differ from this text, D215 and D217 say how.** A bare § is a section of [DESIGN.md](../DESIGN.md); PAGES is EldenNet's `docs/design/pages.md`; NPC is
 EldenNet's `docs/design/npcs-and-dialogue.md`.
 
 ## 1. Why
