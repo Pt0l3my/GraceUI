@@ -1083,3 +1083,22 @@ As answered on 2026-11-22, for your chat box's opening within 50 ms (your NPC §
 - Under Wine in the harness, the waiting thread woke 1 to 5 ms after a hotkey's key was posted. Re-vendor `graceui.h`
   at 0.2.17 (`GRACEUI_ABI1_MINOR` 5) and raise your floor to use it; nothing changes for you until then.
 
+
+## 51. The profile editor's needs brought up to date (2026-11-22, D213, G38; your S7.2.a)
+
+- **D2's exception is recorded** (D213): the profile editor is the one content editor in v1, by your O43. Content packs
+  stays read-only. The editor's pages, fields, checks, commands and draft helper are yours (S7.2.b; your NPC §4.7), and so
+  are the rules the needs list asked GraceUI to change: SP1's `subjects` and the player's own text, SP4's people met and
+  PV4's draft text (PAGES §4.8, §4.9).
+- **The needs list** (GraceUI's `docs/profile-editor-needs.md`) is brought up to date with G20, O46 and O86 in proposal
+  0010 §2. It stays as your input for S7.2.b.
+- **What GraceUI would add**, put to the owner as G38 with proposal 0010 (protocol 1.5; no change of the ABI):
+  - Topic families: your `profiles/<target>`, and also `named/<id>`, `journal/<id>` and `conversation/<id>`.
+  - Master–detail in both views.
+  - An editor block: eight field kinds, with your limits read from the member's body; check, save with `rev` and a new
+    `conflict` code, reset and restore; a draft shown beside the fields, unsaved.
+  - Slow commands, answered within 90 s, for `profile.draft`.
+  - GraceUI's own text field in game.
+- **Its §6 asks you four things:** whether the field kinds cover your NPC §4.5 and O46 fields, the seeds per key
+  included; `doc` as `{field id: value}`, with you writing the TOML; check messages as `{field, item, level, words}` in
+  the answer's body; and the draft's answer as `{draft, notice}`.

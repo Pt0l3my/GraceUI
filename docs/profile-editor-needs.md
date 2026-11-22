@@ -4,6 +4,11 @@
 which holds what DESIGN §4 held under the same numbers, SP1–SP9 and PV1, PV2, PV4, PV5 and PV8 included; this input now
 applies there, and its `G:` line numbers point into DESIGN as it was.*
 
+*Later (2026-11-22, EldenNet's S7.2.a):* brought up to date with G20, O46 and O86 in
+[proposal 0010](proposals/0010-editing-documents.md) §2, item by item. D2's exception is recorded as D213. What GraceUI
+still owes is the components (proposal 0010 §3, G38). Everything else here is EldenNet's input for its pages pass
+(S7.2.b), and EldenNet's NPC §4.7 now holds the editor's EldenNet side. The text below is kept as it was written.
+
 Input for the next GraceUI design pass; not yet applied to docs/DESIGN.md. Source: EldenNet DESIGN §7.7 and NPC §4.5–§4.8
 (commit 588f083 on EldenNet's design/v1-proposal). The owner decided EldenNet O43 on 2026-11-07, which puts
 the editor in v1, at EldenNet v0.6 with the other settings pages, in both views. G = docs/DESIGN.md.
