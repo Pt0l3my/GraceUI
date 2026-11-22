@@ -1037,3 +1037,18 @@ Proposal 0005 is built, as decided. For the chat box's gesture (your NPC §5.6, 
   simulated pad, in unit tests and the harness on both toolchains (D205). What only a real pad shows (the 150 ms, 0.4 s
   and tap estimates, that D-pad Up then View is free in the game, that the late View opens the map, Steam's floating
   keyboard on a Deck) is for testers' machines in S4's second round and your matrix, not for the owner.
+
+## 48. The Hotkeys page lists every hotkey; rebinding asked (2026-11-22, D206, G37; GraceUI 0.2.15)
+
+- GraceUI › Hotkeys ships in 0.2 now, its table live: the menu's key, then every mod's hotkeys with its mod, the name
+  you register it with, its key, its pad chord and its state (who took a default first). Nothing to change on your
+  side: the name in `GraceUiHotkeyDesc.name` is what it shows, so give each hotkey a player's name ("Talk").
+- `hotkeys.menu` is shown locked ("Later version") until a rebinding is decided: GraceUI 0.2 reads F5 alone.
+- [Proposal 0009](proposals/0009-rebinding-hotkeys.md) (G37) asks where a hotkey is rebound. Its recommendation moves
+  every binding to GraceUI › Hotkeys, which would retire `hotkeys.talk`, `hotkeys.skip_page` and `hotkeys.debug` as
+  EldenNet settings (they become the defaults you register) and turn your Settings › Hotkeys into a link or a
+  read-only list; its §8 item 5 asks your view. With its §5 (a), an ABI 1.4 `describe_hotkey` gives your call-out
+  the key as the player bound it.
+- A fix you rely on (D207): when your box of a holder's events was full, the holder's end could, rarely, be lost, so
+  your chat box would not hear that it lost input. Since 0.2.15 the end always comes. Nothing to change on your side.
+
