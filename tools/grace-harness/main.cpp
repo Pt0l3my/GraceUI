@@ -6172,6 +6172,152 @@ void run_slow(const std::wstring& dll) {
   frames(game, 5);
 }
 
+// ---- The editor block in game (D217): a document on a family's member drawn on the Lamps page's Your notes tab, a line
+// typed and kept through the menu's close, Save sent with the document's revision and its conflict shown, and a slow
+// draft's proposal beside its field.
+void run_editor(const std::wstring& dll) {
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+  const Connected demo = connect(table, request_for("demo", GRACEUI_VERSION_PACK(0, 1, 0), "The demo space", "notices"));
+  const grace::pages::BuiltinSpace& space = grace::pages::builtin_spaces()[1];
+  const GraceUiSpaceDesc desc = game_space(space.pages, space.settings);
+  const GraceUiConsumer mod = demo.answer.consumer;
+  check(table->register_pages(mod, &desc) == GRACEUI_OK, "editor: register", "the demo space for the game's view");
+  const std::string lamps =
+      R"({"columns":[{"id":"name","label":"Lamp"},{"id":"place","label":"Where"}],"rows":[{"id":"harbour-mouth","name":"Harbour mouth","place":"The north end of the wall"},{"id":"fish-steps","name":"Fish steps","place":"Halfway along"}]})";
+  const std::string note =
+      R"({"target":"harbour-mouth","rev":1,"state":{"word":"Saved","tone":"moss"},"draft_help":"Sent to the demo's own drafter.","fields":[)"
+      R"({"id":"brief","label":"Short name","kind":"line","max_chars":24,"value":"Mouth lamp"},)"
+      R"({"id":"public.summary","label":"How it looks","kind":"prose","max_words":35,"nullable":true,"value":"A tall lamp behind green glass."},)"
+      R"({"id":"sayings","label":"What keepers say of it","kind":"list","max_items":4,"value":["Never let it gutter",{"text":"The old ward line","key":"s3","locked":"Written by hand."}]},)"
+      R"({"id":"oil","label":"Oil it burns","kind":"pick","choices_from":"lantern.oils","value":"rapeseed"},)"
+      R"({"id":"met","label":"Met","kind":"shown","value":"On the first evening"}]})";
+  const std::string oils = R"({"choices":[{"value":"rapeseed","label":"Rapeseed oil"},{"value":"olive","label":"Olive oil"}]})";
+  // Opens the Lamps page's Your notes tab, publishing the list, and the note once it is watched.
+  const auto open_notes = [&] {
+    press(window, VK_F5, kScanF5);
+    menu_after(game, grace, 0);
+    for (int i = 0; i < 5 && std::strcmp(grace.menu().page, "demo.lamps") != 0; ++i) {
+      press(window, VK_NEXT, 0x51);
+      menu_after(game, grace, grace.menu().lists);
+    }
+    const bool list = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.lamps");
+    publish_state(table, mod, "lantern.lamps", 1, lamps);
+    const bool row = until_focused(game, grace, "item:lantern.lamps/harbour-mouth");
+    press(window, VK_RIGHT, 0x4D);
+    const bool detail = until_focused(game, grace, "tab:lamp");
+    for (int i = 0; i < 2; ++i) {
+      press(window, 'E', 0x12);
+      menu_after(game, grace, grace.menu().lists);
+    }
+    const bool tab = until_focused(game, grace, "tab:yours");
+    const bool watched = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.note/harbour-mouth");
+    publish_state(table, mod, "lantern.note/harbour-mouth", 1, note);
+    const bool drawn = until_shows(game, grace, "What keepers say of it");
+    const bool choices = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.oils");
+    publish_state(table, mod, "lantern.oils", 1, oils);
+    return list && row && detail && tab && watched && drawn && choices && until_shows(game, grace, "Rapeseed oil");
+  };
+  // 1. The document drawn: its state, its fields, a locked item's words, a pick's label from its topic.
+  const bool opened = open_notes();
+  const bool parts = grace.menu_shows("Mouth lamp") != 0 && grace.menu_shows("Locked: Written by hand.") != 0 &&
+                     grace.menu_shows("Restore the previous version") != 0 && grace.menu_shows("6 / 35 words") != 0;
+  check(opened && parts, "editor: the document drawn on its tab",
+        "the list, the row, the tab, the note watched and drawn, the oils watched: %s; its fields, a locked item, its "
+        "buttons, a count: %s", opened ? "yes" : "NO", parts ? "yes" : "NO");
+  save_shot(game.frame_and_read(kInputColour, PresentWith::present), "editor-1920x1080.bmp");
+
+  // 2. A line typed, then the menu closed and opened: the edit is still there, unsaved (G38 (2)).
+  const bool on_brief = down_to(game, grace, window, "editor:your_notes/0/f/brief", 20);
+  press(window, VK_RETURN, 0x1C);
+  menu_after(game, grace, grace.menu().lists);
+  post_text(window, L"s!");
+  const bool typed = until_shows(game, grace, "Mouth lamps!");
+  press(window, VK_RETURN, 0x1C);
+  const bool unsaved = until_shows(game, grace, "Unsaved changes");
+  press(window, VK_F5, kScanF5);
+  const bool let_go = heard(game, table, mod, GRACEUI_EVENT_UNWATCHED, "lantern.note/harbour-mouth");
+  frames(game, 5);
+  // Opened again: on the same page and tab; the space publishes its list and its note again as they are watched.
+  press(window, VK_F5, kScanF5);
+  menu_after(game, grace, 0);
+  const bool list_again = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.lamps");
+  publish_state(table, mod, "lantern.lamps", 2, lamps);
+  const bool note_again = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.note/harbour-mouth");
+  publish_state(table, mod, "lantern.note/harbour-mouth", 2, note);
+  const bool reopened = let_go && list_again && note_again;
+  const bool kept = until_shows(game, grace, "Mouth lamps!") && grace.menu_shows("Unsaved changes") != 0;
+  check(on_brief && typed && unsaved && reopened && kept, "editor: a typed edit kept through the menu's close",
+        "on the brief %s; typed %s; Unsaved %s; the close let the note go, the open watched it again: %s; the edit "
+        "still there %s", on_brief ? "yes" : "NO", typed ? "yes" : "NO", unsaved ? "yes" : "NO",
+        reopened ? "yes" : "NO", kept ? "yes" : "NO");
+
+  // 3. Save: the document with its revision; the mod answers conflict, and the view says so and offers Reload.
+  for (int i = 0; i < 12 && std::strcmp(grace.menu().focused, "editor:your_notes/0/save") != 0; ++i) {
+    press(window, VK_UP, 0x48);
+    menu_after(game, grace, grace.menu().lists);
+  }
+  const bool on_save = std::strcmp(grace.menu().focused, "editor:your_notes/0/save") == 0;
+  press(window, VK_RETURN, 0x1C);
+  const SpaceEvent save = wait_kind(game, table, mod, GRACEUI_EVENT_COMMAND);
+  const grace::protocol::Json sent = grace::protocol::Json::parse(save.frame, nullptr, false);
+  const bool args = sent.is_object() && sent.value("name", "") == "note.save" && sent.contains("args") &&
+                    sent["args"].value("rev", 0) == 1 && sent["args"]["doc"].value("brief", "") == "Mouth lamps!" &&
+                    !sent["args"]["doc"].contains("met");
+  const std::string conflict = R"({"v":1,"t":"result","space":"demo","id":0,"error":"conflict"})";
+  const GraceUiStatus answered = save.kind == GRACEUI_EVENT_COMMAND
+                                     ? table->answer(mod, save.reply, conflict.data(), conflict.size())
+                                     : GRACEUI_FAULT;
+  const bool band = until_shows(game, grace, "Changed elsewhere since you opened it.") &&
+                    grace.menu_shows("Reload") != 0;
+  check(on_save && args && answered == GRACEUI_OK && band, "editor: Save sent; a conflict shown with Reload",
+        "on Save %s; sent %s; answered %s; the conflict's band and Reload %s", on_save ? "yes" : "NO",
+        save.kind == GRACEUI_EVENT_COMMAND ? save.frame.c_str() : "NOTHING", status_name(answered),
+        band ? "shown" : "NOT SHOWN");
+  save_shot(game.frame_and_read(kInputColour, PresentWith::present), "editor-conflict-1920x1080.bmp");
+
+  // 4. A draft, slow: Working… while it runs; its proposal beside the field with Use this; Use this takes it.
+  const bool on_notes = down_to(game, grace, window, "editor:your_notes/0/notes", 12);
+  press(window, VK_RETURN, 0x1C);
+  menu_after(game, grace, grace.menu().lists);
+  post_text(window, L"sea");
+  frames(game, 5);
+  press(window, VK_ESCAPE, kScanEscape);
+  menu_after(game, grace, grace.menu().lists);
+  const bool on_draft = down_to(game, grace, window, "editor:your_notes/0/draft", 3);
+  press(window, VK_RETURN, 0x1C);
+  const SpaceEvent asked = wait_kind(game, table, mod, GRACEUI_EVENT_COMMAND);
+  const bool working = until_shows(game, grace, "Working…");
+  const bool notes_sent = asked.frame.find("\"note.draft\"") != std::string::npos &&
+                          asked.frame.find("\"notes\":\"sea\"") != std::string::npos;
+  const std::string proposal =
+      R"({"v":1,"t":"result","space":"demo","id":0,"ok":true,"body":{"draft":{"brief":"Sea lamp"},"notice":""}})";
+  const GraceUiStatus drafted = asked.kind == GRACEUI_EVENT_COMMAND
+                                    ? table->answer(mod, asked.reply, proposal.data(), proposal.size())
+                                    : GRACEUI_FAULT;
+  const bool beside = until_shows(game, grace, "Sea lamp") && grace.menu_shows("Use this") != 0 &&
+                      grace.menu_shows("Working…") == 0;
+  save_shot(game.frame_and_read(kInputColour, PresentWith::present), "editor-draft-1920x1080.bmp");
+  const bool on_use = down_to(game, grace, window, "editor:your_notes/0/use/brief", 12);
+  press(window, VK_RETURN, 0x1C);
+  const bool used = until_shows(game, grace, "Use this", true) && grace.menu_shows("Mouth lamps!") == 0;
+  check(on_notes && on_draft && working && notes_sent && drafted == GRACEUI_OK && beside && on_use && used,
+        "editor: a slow draft's proposal used",
+        "notes %s, Draft %s; sent %s; Working… %s; answered %s; its proposal beside the field %s; Use this %s, taken %s",
+        on_notes ? "yes" : "NO", on_draft ? "yes" : "NO", asked.kind == GRACEUI_EVENT_COMMAND ? asked.frame.c_str() : "NOTHING",
+        working ? "shown" : "NOT SHOWN", status_name(drafted), beside ? "yes" : "NO", on_use ? "yes" : "NO",
+        used ? "yes" : "NO");
+  press(window, VK_F5, kScanF5);
+  frames(game, 5);
+}
+
 void run_menu_mouse(const std::wstring& dll) {
   Game game(false, 1920, 1080);
   const HWND window = game.window();
@@ -7766,6 +7912,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"slow") {
     std::printf("-- scenario: a slow command in game (G38, D216)\n");
     run_slow(dll);
+  } else if (scenario == L"editor") {
+    std::printf("-- scenario: the editor block in game (G38, D217)\n");
+    run_editor(dll);
   } else if (scenario == L"menu-space") {
     std::printf("-- scenario: the in-game menu on mods' spaces, with GraceUI's at the rail's foot (D171)\n");
     run_menu_space(dll);
@@ -7843,7 +7992,7 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"typing", L"master", L"slow", L"spike", L"spike-after",
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
             L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake"}) {
         run(child_scenario, dll, this_program());
       }

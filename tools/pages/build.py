@@ -235,7 +235,7 @@ def lint(space_pages, description, fixtures, known_spaces):
             for words in ("empty", "none"):
                 if words in master and not 1 <= len(master[words]) <= 160:
                     failures.append(f"{where}: its master list's {words} is 1 to 160 characters")
-        detail = master.get("detail") if master is not None else None
+        # (A block may draw any family on a page with a master list: the chosen row's key names its member, D215.)
         unique("tab", [t["id"] for t in p.get("tabs", [])], where)
         unique("section", [s["id"] for s in sections], where)
         unique("action", [a["id"] for a in p.get("actions", [])], where)
@@ -268,6 +268,28 @@ def lint(space_pages, description, fixtures, known_spaces):
                 bwhere = f"{where}, section {section['id']}"
                 if kind != "form" and any(k in block for k in ("command", "fields", "submit")):
                     failures.append(f"{bwhere}: command, fields and submit belong to a form block (D195)")
+                if kind != "editor" and "editor" in block:
+                    failures.append(f"{bwhere}: editor belongs to an editor block (D217)")
+                if kind == "editor":
+                    ed = block.get("editor") or {}
+                    topic = block.get("topic")
+                    if (not ed or any(k in block for k in ("keys", "component", "props", "row_actions", "row_secret"))):
+                        failures.append(f"{bwhere}: an editor block has its topic and its editor, and nothing else (D217)")
+                    if (topic not in topics or topics[topic]["shape"] != "state" or
+                            topic in ("settings", SPACE_STATE)):
+                        failures.append(f"{bwhere}: an editor's topic is a state topic or a family of the space's own")
+                    elif topic in families and master is None:
+                        failures.append(f"{bwhere}: an editor draws family {topic} on a page with no master list (D215)")
+                    for part in ("save", "check", "reset", "restore", "draft"):
+                        if part in ed and ed[part] not in commands:
+                            failures.append(f"{bwhere}: the editor's {part} sends {ed[part]}, not a command of the space")
+                    if "save" not in ed:
+                        failures.append(f"{bwhere}: an editor has a save command")
+                    if "draft" in ed and ed["draft"] not in space_pages.get("slow_commands", []):
+                        failures.append(f"{bwhere}: the editor's draft is a slow command (D216)")
+                    if "notes_max" in ed and not 1 <= ed["notes_max"] <= 400:
+                        failures.append(f"{bwhere}: the editor's notes_max is 1 to 400")
+                    continue
                 if (("row_actions" in block or "row_secret" in block) and
                         (kind != "component" or block.get("component") != "table")):
                     failures.append(f"{bwhere}: row actions and a row secret go on a table (D192, D194)")
@@ -309,9 +331,9 @@ def lint(space_pages, description, fixtures, known_spaces):
                         failures.append(f"{bwhere}: {component} cannot draw {topics[topic]['shape']} topic {topic}")
                     elif topic == SPACE_STATE:
                         failures.append(f"{bwhere}: {SPACE_STATE} is the framework's topic, drawn by no component")
-                    elif topic in families and topic != detail:
-                        failures.append(f"{bwhere}: {component} draws family {topic} on a page whose master list "
-                                        "names it as its detail, and only there (D215)")
+                    elif topic in families and master is None:
+                        failures.append(f"{bwhere}: {component} draws family {topic} on a page with no master list, "
+                                        "whose chosen row names its member (D215)")
                     props = block.get("props") or {}
                     if "field" in props and (component in STREAM_COMPONENTS or topic is None or
                                              not isinstance(props["field"], str) or

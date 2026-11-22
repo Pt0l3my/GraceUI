@@ -11,12 +11,13 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 6 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 7 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
                                      # 1.5 (G38): topic families, and a page's master list (D215)
                                      # 1.6 (G38): slow commands, answered within 90 s (D216)
+                                     # 1.7 (G38): the editor block and the conflict code (D217)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -30,7 +31,7 @@ bad_messages_before_close = 3
 
 [enums.error_code]
 values = ["bad_message", "unknown_topic", "unknown_command", "unknown_key", "invalid_value", "locked", "not_now", "busy",
-          "confirm_required", "unauthorised", "rate_limited", "version", "internal"]
+          "confirm_required", "unauthorised", "rate_limited", "version", "internal", "conflict"]  # conflict: 1.7 (D217), a save against a revision no longer the newest
 
 [enums.bye_reason]
 values = ["shutdown", "superseded", "unauthorised", "version", "fault"]
@@ -60,7 +61,7 @@ values = ["stat_tiles", "filter_bar", "table", "master_detail", "card_grid", "se
           "action_button", "wizard_steps", "key_value_list"]
 
 [enums.block_kind]
-values = ["settings", "shortcuts", "component", "form"]
+values = ["settings", "shortcuts", "component", "form", "editor"]
 
 [enums.action_tone]
 values = ["primary", "secondary", "destructive"]
@@ -195,6 +196,18 @@ fields = [
   { name = "max", type = "u32" },
 ]
 
+[types.editor_block]
+doc = "An editor block (1.7, D217): its document is its topic's body (a state topic, or a family's member on a master page); the commands it sends, each the space's own, and the draft's notes field"
+fields = [
+  { name = "save", type = "id" },
+  { name = "check", type = "id", optional = true },
+  { name = "reset", type = "id", optional = true },    # every field back to the space's own: asks first
+  { name = "restore", type = "id", optional = true },  # the version saved before the last
+  { name = "draft", type = "id", optional = true },    # a slow command (D216): a model's draft, shown beside the fields
+  { name = "notes_label", type = "string", max = 64, optional = true },
+  { name = "notes_max", type = "u32", optional = true },  # the notes' characters, 1 to 400
+]
+
 [types.page_block]
 doc = "A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, a component bound to a topic (a table with its row actions and row secret), or a small form"
 fields = [
@@ -208,6 +221,7 @@ fields = [
   { name = "command", type = "id", optional = true },
   { name = "fields", type = "list.type.form_field", max = 4, optional = true },
   { name = "submit", type = "string", max = 32, optional = true },
+  { name = "editor", type = "type.editor_block", optional = true },  # 1.7 (D217)
 ]
 
 [types.section_status]

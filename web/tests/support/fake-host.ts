@@ -250,9 +250,10 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
             continue;
           }
           const outcome = space.handle(frame.name, (frame.args ?? {}) as JsonObject);
+          const body = outcome.answer.body !== undefined ? { body: outcome.answer.body } : {};  // D169: to the one view
           const result = outcome.answer.ok
-            ? { v: 1, t: "result", space: space.id, id: frame.id, ok: true }
-            : { v: 1, t: "result", space: space.id, id: frame.id, error: outcome.answer.error,
+            ? { v: 1, t: "result", space: space.id, id: frame.id, ok: true, ...body }
+            : { v: 1, t: "result", space: space.id, id: frame.id, error: outcome.answer.error, ...body,
                 ...(outcome.answer.detail !== undefined ? { detail: outcome.answer.detail } : {}) };
           send(result);
           publish(space.id, outcome.publish);

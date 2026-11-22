@@ -853,6 +853,24 @@ std::vector<std::string> PageView::component_topics() const {
           out.push_back(topic);
         }
       }
+      if (block.kind == protocol::BlockKind::editor && block.topic) {
+        // An editor's document (D217), and the topics its fields take their choices from, once it has come.
+        const std::string topic = topic_of(block);
+        if (topic.empty()) {
+          continue;
+        }
+        if (std::find(out.begin(), out.end(), topic) == out.end()) {
+          out.push_back(topic);
+        }
+        EditorDocument doc;
+        if (const auto body = topics_.find(topic); body != topics_.end() && EditorDocument::parse(body->second, doc)) {
+          for (const EditorField& field : doc.fields) {
+            if (!field.choices_from.empty() && std::find(out.begin(), out.end(), field.choices_from) == out.end()) {
+              out.push_back(field.choices_from);
+            }
+          }
+        }
+      }
     }
   };
   for (const protocol::PageSection& section : sections()) {
@@ -1015,6 +1033,61 @@ void PageView::rebuild() {
     const auto add_blocks = [&](const std::vector<protocol::PageBlock>& blocks, bool advanced) {
       for (std::size_t b = 0; b < blocks.size(); ++b) {
         const protocol::PageBlock& block = blocks[b];
+        if (block.kind == protocol::BlockKind::editor && block.editor) {
+          // An editor (D217): its buttons, its draft's notes and button, then its fields, a list's items and its Add, and
+          // a draft's Use this and Keep mine under each field it proposes for.
+          const std::string eid = form_id(section, b, advanced);
+          const std::string topic = topic_of(block);
+          const auto body = topics_.find(topic);
+          EditorDocument doc;
+          if (topic.empty() || body == topics_.end() || !EditorDocument::parse(body->second, doc)) {
+            continue;  // nothing published yet: nothing to focus
+          }
+          const EditorState& st = editors_[topic];
+          const auto stop = [&](EditorPart part, const std::string& rest, std::size_t index = 0, std::size_t sub = 0) {
+            Focus f{FocusKind::editor, eid + "/" + rest, index, &block, sub};
+            f.part = static_cast<std::uint8_t>(part);
+            focus_.push_back(std::move(f));
+          };
+          const protocol::EditorBlock& ed = *block.editor;
+          if (st.conflict) {
+            stop(EditorPart::reload, "reload");
+          }
+          stop(EditorPart::save, "save");
+          if (ed.check) stop(EditorPart::check, "check");
+          if (ed.restore) stop(EditorPart::restore, "restore");
+          if (ed.reset) stop(EditorPart::reset, "reset");
+          if (ed.draft) {
+            stop(EditorPart::notes, "notes");
+            stop(EditorPart::draft, "draft");
+            if (!st.draft.empty()) {
+              stop(EditorPart::use_all, "use_all");
+            }
+          }
+          for (std::size_t k = 0; k < doc.fields.size(); ++k) {
+            const EditorField& field = doc.fields[k];
+            if (field.kind == FieldKind::shown) {
+              continue;
+            }
+            if (field.kind == FieldKind::list) {
+              const Json& items = st.value(field);
+              const std::size_t n = items.is_array() ? items.size() : 0;
+              for (std::size_t i = 0; i < n; ++i) {
+                stop(EditorPart::item, "i/" + field.id + "/" + std::to_string(i), k, i);
+              }
+              if (field.locked.empty() && (field.max_items == 0 || n < field.max_items)) {
+                stop(EditorPart::add, "add/" + field.id, k);
+              }
+            } else {
+              stop(EditorPart::field, "f/" + field.id, k);
+            }
+            if (st.draft.count(field.id) != 0) {
+              stop(EditorPart::use, "use/" + field.id, k);
+              stop(EditorPart::keep, "keep/" + field.id, k);
+            }
+          }
+          continue;
+        }
         if (block.kind == protocol::BlockKind::form) {
           // A form (D195): each of its fields a focus stop, then its button (G38 (a)).
           const std::string form = form_id(section, b, advanced);
@@ -1126,7 +1199,7 @@ std::string PageView::name_of(Scope scope, std::size_t index) const {
     return "";
   }
   static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
-                                          "cell", "row", "section-action", "field", "submit", "secret", "item"};
+                                          "cell", "row", "section-action", "field", "submit", "secret", "item", "editor"};
   const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -1349,9 +1422,19 @@ Action PageView::pointer_body(const Pointer& in) {
   if (editing()) {
     const Rect& box = edit_box_;
     if (box.w > 0 && in.x >= box.x && in.x < box.right() && in.y >= box.y && in.y < box.bottom()) {
-      // In the edited field: the caret to the boundary nearest the pointer.
+      // In the edited field: the caret to the boundary nearest the pointer (in a prose field, on the line under it).
       std::size_t best = edit_.field.caret();
       float nearest = 1e30f;
+      if (edit_.prose) {
+        for (const auto& [at, x, top] : prose_stops_) {
+          if (in.y >= top && in.y < top + prose_line_ && std::fabs(x - in.x) < nearest) {
+            nearest = std::fabs(x - in.x);
+            best = at;
+          }
+        }
+        edit_.field.place(best);
+        return {};
+      }
       for (const auto& [at, x] : edit_stops_) {
         if (std::fabs(x - in.x) < nearest) {
           nearest = std::fabs(x - in.x);
@@ -1364,7 +1447,8 @@ Action PageView::pointer_body(const Pointer& in) {
     if (!(edit_.kind == EditKind::search && hit != nullptr && hit->scope == Scope::top && hit->index > 0)) {
       // A click elsewhere: a text's or a form field's text kept, as leaving a field in the browser keeps it; a
       // secret's edit dropped; search's results closed.
-      const bool keep = (edit_.kind == EditKind::setting && !edit_.masked) || edit_.kind == EditKind::form_field;
+      const bool keep = (edit_.kind == EditKind::setting && !edit_.masked) || edit_.kind == EditKind::form_field ||
+                        edit_.kind == EditKind::editor_text || edit_.kind == EditKind::editor_notes;
       Action left = edit_.kind == EditKind::search ? edit(EditInput{EditKey::tab}) : finish_edit(keep, 0);
       if (left.kind == Action::Kind::command) {
         return left;  // the edit's command; the click did only that
@@ -1403,7 +1487,8 @@ Action PageView::pointer_body(const Pointer& in) {
   const Focus& clicked = focus_[target.index];
   if (!confirming_.empty() && !(clicked.kind == FocusKind::action && clicked.id == confirming_) &&
       !(clicked.kind == FocusKind::row_action && "row:" + clicked.id == confirming_) &&
-      !(clicked.kind == FocusKind::section_action && "section:" + clicked.id == confirming_)) {
+      !(clicked.kind == FocusKind::section_action && "section:" + clicked.id == confirming_) &&
+      !(clicked.kind == FocusKind::editor && "editor:" + clicked.id == confirming_)) {
     confirming_.clear();  // a click elsewhere lets a destructive action's confirmation go, as any other key does
   }
   scope_ = Scope::page;
@@ -1572,9 +1657,15 @@ std::string PageView::topic_of(const protocol::PageBlock& block) const {
   if (!block.topic) {
     return {};
   }
-  if (const protocol::PageMaster* m = master(); m != nullptr && *block.topic == m->detail) {
-    const std::string key = chosen();
-    return key.empty() ? std::string() : m->detail + "/" + key;
+  if (const protocol::PageMaster* m = master(); m != nullptr) {
+    // Any family on a master page draws the chosen row's member: <family>/<the row's key> (D215, D217).
+    const bool family = std::any_of(pages_.topics.begin(), pages_.topics.end(), [&](const protocol::TopicInfo& t) {
+      return t.id == *block.topic && t.family.value_or(false);
+    });
+    if (family) {
+      const std::string key = chosen();
+      return key.empty() ? std::string() : *block.topic + "/" + key;
+    }
   }
   return *block.topic;
 }
@@ -1701,6 +1792,474 @@ void PageView::focus_master_on_open() {
   master_focus_pending_ = !any;
 }
 
+// ---- The editor block (D217).
+
+namespace {
+
+constexpr std::size_t kNoItem = static_cast<std::size_t>(-1);
+
+// A state topic's choices ({"choices": [{value, label}]}), at most 256, as a picker's (D193).
+std::vector<protocol::Choice> choices_in(const std::map<std::string, Json, std::less<>>& topics, std::string_view topic) {
+  std::vector<protocol::Choice> out;
+  const auto found = topics.find(topic);
+  if (found == topics.end() || !found->second.is_object() || !found->second.contains("choices") ||
+      !found->second["choices"].is_array()) {
+    return out;
+  }
+  for (const Json& c : found->second["choices"]) {
+    if (out.size() < 256 && c.is_object() && c.contains("value") && c["value"].is_string() &&
+        !c["value"].get_ref<const std::string&>().empty()) {
+      out.push_back(protocol::Choice{c["value"].get<std::string>(), c.contains("label") && c["label"].is_string()
+                                                                         ? c["label"].get<std::string>()
+                                                                         : c["value"].get<std::string>()});
+    }
+  }
+  return out;
+}
+
+}  // namespace
+
+std::string PageView::editor_part_name(EditorPart part) {
+  switch (part) {
+    case EditorPart::save: return "save";
+    case EditorPart::check: return "check";
+    case EditorPart::reset: return "reset";
+    case EditorPart::restore: return "restore";
+    case EditorPart::reload: return "reload";
+    case EditorPart::notes: return "notes";
+    case EditorPart::draft: return "draft";
+    case EditorPart::use_all: return "use_all";
+    default: return "field";
+  }
+}
+
+std::string PageView::editor_hints(const Focus& f) {
+  EditorAt at;
+  if (!editor_of(f, at)) {
+    return "Esc  Back";
+  }
+  const auto part = static_cast<EditorPart>(f.part);
+  const std::string name = name_of(Scope::page, page_focus_);
+  if (running(name)) {
+    return "Working…    Esc  Back";
+  }
+  if (confirming_ == name) {
+    return "Enter  Confirm    Esc  Back";
+  }
+  if (part == EditorPart::notes) {
+    return "Enter  Type    Esc  Back";
+  }
+  if (part == EditorPart::add) {
+    return "Enter  Add an item    Esc  Back";
+  }
+  if (part != EditorPart::field && part != EditorPart::item) {
+    return part == EditorPart::draft && !at.doc.draft_blocked.empty() ? "Not available now    Esc  Back"
+                                                                      : "Enter  Press    Esc  Back";
+  }
+  if (f.index >= at.doc.fields.size()) {
+    return "Esc  Back";
+  }
+  const EditorField& field = at.doc.fields[f.index];
+  if (!field.locked.empty()) {
+    return "Locked    Esc  Back";
+  }
+  if (part == EditorPart::item) {
+    const Json& items = at.state->value(field);
+    if (items.is_array() && f.sub < items.size() && !list_item(items[f.sub]).locked.empty()) {
+      return "Shift+↑ ↓  Move    Esc  Back";
+    }
+    return !field.choices.empty() || !field.choices_from.empty()
+               ? "Enter  Edit    ← →  Choose    Shift+↑ ↓  Move    R  Remove    Esc  Back"
+               : "Enter  Edit    Shift+↑ ↓  Move    R  Remove    Esc  Back";
+  }
+  const char* undo = field.nullable ? "R  Undo, then not set here" : "R  Undo";
+  switch (field.kind) {
+    case FieldKind::line:
+    case FieldKind::prose:
+      return std::string("Enter  Edit    ") + undo + "    Esc  Back";
+    case FieldKind::number:
+      return std::string("← →  Change    Shift+← →  By ten    ") + undo + "    Esc  Back";
+    case FieldKind::toggle:
+      return std::string("Enter  Toggle    ") + undo + "    Esc  Back";
+    default:
+      return std::string("← →  Choose    ") + undo + "    Esc  Back";
+  }
+}
+
+bool PageView::editor_of(const Focus& f, EditorAt& out) {
+  if (f.kind != FocusKind::editor || f.block == nullptr || !f.block->editor) {
+    return false;
+  }
+  out.block = f.block;
+  out.topic = topic_of(*f.block);
+  const auto body = topics_.find(out.topic);
+  if (out.topic.empty() || body == topics_.end() || !EditorDocument::parse(body->second, out.doc)) {
+    return false;
+  }
+  out.state = &editors_[out.topic];
+  out.eid = f.id.substr(0, f.id.find('/', f.id.find('/') + 1));  // "<section>/<n>"
+  return true;
+}
+
+const EditorState* PageView::editor_state(std::string_view topic) const {
+  const auto found = editors_.find(topic);
+  return found != editors_.end() ? &found->second : nullptr;
+}
+
+void PageView::editor_set(EditorAt& at, const EditorField& field, Json value) {
+  at.state->set(field, std::move(value));
+  if (at.state->dirty() && at.state->base_rev == 0) {
+    at.state->base_rev = at.doc.rev;  // the revision the edits are over (a save against another answers conflict)
+  } else if (!at.state->dirty()) {
+    at.state->base_rev = 0;
+  }
+}
+
+void PageView::start_editor_edit(EditKind kind, std::string id, std::string_view text, std::size_t chars,
+                                 const EditorAt& at, std::string field, std::size_t item, bool prose) {
+  // A field's room: its characters at four bytes each, or 4 KiB with no cap of its own.
+  start_edit(kind, std::move(id), std::string_view{}, 0, false, at.block);
+  edit_.field = TextField(text, chars != 0 ? chars * 4 : 4096, chars);
+  edit_.topic = at.topic;
+  edit_.editor_field = std::move(field);
+  edit_.item = item;
+  edit_.prose = prose;
+}
+
+Action PageView::editor_command(EditorAt& at, EditorPart part, const std::string& sender) {
+  if (!greyed_words(current().id).empty()) {
+    return {};  // a greyed page's editor is inert (D188)
+  }
+  const protocol::EditorBlock& ed = *at.block->editor;
+  EditorState& st = *at.state;
+  Action action;
+  action.kind = Action::Kind::command;
+  action.command.space = pages_.space;
+  const auto rev = [&] { return st.dirty() && st.base_rev != 0 ? st.base_rev : at.doc.rev; };
+  switch (part) {
+    case EditorPart::save:
+      action.command.name = ed.save;
+      action.command.args = Json::object({{"target", at.doc.target}, {"rev", rev()}, {"doc", st.doc(at.doc)}});
+      break;
+    case EditorPart::check:
+      action.command.name = *ed.check;
+      action.command.args = Json::object({{"target", at.doc.target}, {"rev", rev()}, {"doc", st.doc(at.doc)}});
+      break;
+    case EditorPart::reset:
+      if (confirming_ != sender) {
+        confirming_ = sender;  // every field back to the space's own: asks first (§7.3)
+        return {};
+      }
+      confirming_.clear();
+      action.command.name = *ed.reset;
+      action.command.args = Json::object({{"target", at.doc.target}, {"all", true}, {"confirm", true}});
+      break;
+    case EditorPart::restore:
+      action.command.name = *ed.restore;
+      action.command.args = Json::object({{"target", at.doc.target}});
+      break;
+    case EditorPart::draft:
+      if (!at.doc.draft_blocked.empty()) {
+        return {};  // the space says why not, beside the button
+      }
+      action.command.name = *ed.draft;
+      action.command.args = Json::object({{"target", at.doc.target}, {"notes", st.notes}});
+      break;
+    case EditorPart::reload:
+      if (st.dirty() && confirming_ != sender) {
+        confirming_ = sender;  // the player's unsaved edits go: asks first
+        return {};
+      }
+      confirming_.clear();
+      st.clear();
+      rebuild();
+      return {};
+    case EditorPart::use_all:
+      for (const EditorField& field : at.doc.fields) {
+        if (st.draft.count(field.id) != 0) {
+          at.state->use(field);
+        }
+      }
+      if (st.dirty() && st.base_rev == 0) {
+        st.base_rev = at.doc.rev;  // the revision the edits are over
+      }
+      rebuild();
+      return {};
+    default:
+      return {};
+  }
+  editor_sent_[sender] = at.topic;  // where its answer goes, whatever is open when it comes
+  return action;
+}
+
+Action PageView::editor_input(const Focus& f, const Input& in, bool& handled) {
+  handled = false;
+  EditorAt at;
+  if (!editor_of(f, at)) {
+    return {};
+  }
+  const auto part = static_cast<EditorPart>(f.part);
+  const std::string sender = name_of(Scope::page, page_focus_);
+  const bool on_field = part == EditorPart::field || part == EditorPart::item || part == EditorPart::add ||
+                        part == EditorPart::use || part == EditorPart::keep;
+  if (on_field && f.index >= at.doc.fields.size()) {
+    return {};
+  }
+  const EditorField* field = on_field ? &at.doc.fields[f.index] : nullptr;
+  const bool inert = !greyed_words(current().id).empty() || (field != nullptr && !field->locked.empty());
+  const auto refocus = [&](const std::string& name) {
+    rebuild();
+    for (std::size_t i = 0; i < focus_.size(); ++i) {
+      if (name_of(Scope::page, i) == name) {
+        page_focus_ = i;
+      }
+    }
+  };
+  const auto text_of_value = [](const Json& v) { return v.is_string() ? v.get<std::string>() : std::string(); };
+  // A choice, a pick, a number's or a list item's next or previous value.
+  const auto step = [&](int direction, bool shift) -> bool {
+    if (field == nullptr || inert) {
+      return false;
+    }
+    const Json& v = at.state->value(*field);
+    if (field->kind == FieldKind::choice || field->kind == FieldKind::pick) {
+      std::vector<protocol::Choice> choices =
+          field->kind == FieldKind::pick ? choices_in(topics_, field->choices_from) : field->choices;
+      if (field->nullable) {
+        choices.insert(choices.begin(), protocol::Choice{"", "Not set here"});
+      }
+      if (choices.empty()) {
+        return true;
+      }
+      std::size_t at_index = choices.size();
+      for (std::size_t i = 0; i < choices.size(); ++i) {
+        if ((v.is_string() && choices[i].value == v.get_ref<const std::string&>()) ||
+            (v.is_null() && choices[i].value.empty())) {
+          at_index = i;
+        }
+      }
+      const std::size_t n = choices.size();
+      const std::size_t next = at_index == n ? (direction > 0 ? 0 : n - 1) : (at_index + (direction > 0 ? 1 : n - 1)) % n;
+      editor_set(at, *field, choices[next].value.empty() && field->nullable ? Json() : Json(choices[next].value));
+      return true;
+    }
+    if (field->kind == FieldKind::number) {
+      double n = v.is_number() ? v.get<double>() : field->min.value_or(0);
+      n += direction * (shift ? 10 : 1);
+      const double lo = field->min.value_or(n);
+      const double hi = field->max.value_or(n);
+      if (lo <= hi) {
+        n = std::clamp(n, lo, hi);  // a space's min above its max: no bounds of GraceUI's
+      }
+      editor_set(at, *field, Json(static_cast<std::int64_t>(std::llround(n))));
+      return true;
+    }
+    if (field->kind == FieldKind::toggle) {
+      editor_set(at, *field, Json(!(v.is_boolean() && v.get<bool>())));
+      return true;
+    }
+    if (part == EditorPart::item && (!field->choices.empty() || !field->choices_from.empty())) {
+      Json items = v.is_array() ? v : Json::array();
+      if (f.sub >= items.size()) {
+        return true;
+      }
+      ListItem item = list_item(items[f.sub]);
+      if (!item.locked.empty()) {
+        return true;
+      }
+      const std::vector<protocol::Choice> choices =
+          !field->choices.empty() ? field->choices : choices_in(topics_, field->choices_from);
+      if (choices.empty()) {
+        return true;
+      }
+      std::size_t idx = choices.size();
+      for (std::size_t i = 0; i < choices.size(); ++i) {
+        if (choices[i].value == item.choice) {
+          idx = i;
+        }
+      }
+      const std::size_t n = choices.size();
+      item.choice = choices[idx == n ? 0 : (idx + (direction > 0 ? 1 : n - 1)) % n].value;
+      items[f.sub] = list_json(item, true);
+      editor_set(at, *field, items);
+      return true;
+    }
+    return false;
+  };
+  switch (in.key) {
+    case Key::activate:
+      handled = true;
+      switch (part) {
+        case EditorPart::save:
+        case EditorPart::check:
+        case EditorPart::reset:
+        case EditorPart::restore:
+        case EditorPart::reload:
+        case EditorPart::draft:
+        case EditorPart::use_all:
+          return editor_command(at, part, sender);
+        case EditorPart::notes:
+          start_editor_edit(EditKind::editor_notes, f.id, at.state->notes, at.block->editor->notes_max.value_or(400), at,
+                            std::string(), kNoItem, true);
+          return {};
+        case EditorPart::field:
+          if (inert) {
+            return {};
+          }
+          if (field->kind == FieldKind::line || field->kind == FieldKind::prose) {
+            start_editor_edit(EditKind::editor_text, f.id, text_of_value(at.state->value(*field)), field->max_chars, at,
+                              field->id, kNoItem, field->kind == FieldKind::prose);
+            return {};
+          }
+          step(1, false);
+          rebuild();
+          return {};
+        case EditorPart::item: {
+          const Json& items = at.state->value(*field);
+          if (inert || !items.is_array() || f.sub >= items.size() || !list_item(items[f.sub]).locked.empty()) {
+            return {};
+          }
+          start_editor_edit(EditKind::editor_text, f.id, list_item(items[f.sub]).text, field->max_chars, at, field->id,
+                            f.sub, false);
+          return {};
+        }
+        case EditorPart::add: {
+          if (inert) {
+            return {};
+          }
+          Json items = at.state->value(*field).is_array() ? at.state->value(*field) : Json::array();
+          ListItem fresh;
+          const bool with_choice = !field->choices.empty() || !field->choices_from.empty();
+          if (with_choice) {
+            const auto choices = !field->choices.empty() ? field->choices : choices_in(topics_, field->choices_from);
+            fresh.choice = choices.empty() ? std::string() : choices.front().value;
+          }
+          items.push_back(list_json(fresh, with_choice));
+          const std::size_t added = items.size() - 1;
+          editor_set(at, *field, items);
+          const std::string name = "editor:" + at.eid + "/i/" + field->id + "/" + std::to_string(added);
+          refocus(name);
+          start_editor_edit(EditKind::editor_text, name.substr(7), std::string(), field->max_chars, at, field->id, added,
+                            false);
+          return {};
+        }
+        case EditorPart::use:
+        case EditorPart::keep: {
+          if (part == EditorPart::use) {
+            at.state->use(*field);
+            editor_set(at, *field, at.state->value(*field));
+          } else {
+            at.state->keep(field->id);
+          }
+          // Back to the field: its own stop, or a list's first item (or its Add).
+          const Json& items = at.state->value(*field);
+          refocus(field->kind != FieldKind::list ? "editor:" + at.eid + "/f/" + field->id
+                  : items.is_array() && !items.empty() ? "editor:" + at.eid + "/i/" + field->id + "/0"
+                                                       : "editor:" + at.eid + "/add/" + field->id);
+          return {};
+        }
+      }
+      return {};
+    case Key::left:
+    case Key::right:
+      if ((part == EditorPart::field || part == EditorPart::item) && step(in.key == Key::right ? 1 : -1, in.shift)) {
+        handled = true;
+        rebuild();
+      }
+      return {};
+    case Key::up:
+    case Key::down:
+      if (part == EditorPart::item && in.shift && !inert) {
+        // Shift+↑ ↓: the item moves, a locked one too (its place is the player's), focus with it.
+        Json items = at.state->value(*field);
+        const std::size_t to = in.key == Key::up ? f.sub - 1 : f.sub + 1;
+        if (items.is_array() && f.sub < items.size() && to < items.size()) {
+          std::swap(items[f.sub], items[to]);
+          editor_set(at, *field, items);
+          refocus("editor:" + at.eid + "/i/" + field->id + "/" + std::to_string(to));
+        }
+        handled = true;
+      }
+      return {};
+    case Key::reset:
+      handled = true;
+      if (field == nullptr || inert) {
+        return {};
+      }
+      if (part == EditorPart::item) {
+        Json items = at.state->value(*field);
+        if (items.is_array() && f.sub < items.size() && list_item(items[f.sub]).locked.empty()) {
+          items.erase(items.begin() + static_cast<std::ptrdiff_t>(f.sub));
+          editor_set(at, *field, items);
+          refocus(f.sub > 0 ? "editor:" + at.eid + "/i/" + field->id + "/" + std::to_string(f.sub - 1)
+                            : "editor:" + at.eid + "/add/" + field->id);
+        }
+        return {};
+      }
+      if (at.state->edits.count(field->id) != 0) {
+        at.state->edits.erase(field->id);  // R: the edit undone, back to the space's value
+        editor_set(at, *field, at.state->value(*field));
+      } else if (field->nullable && !field->value.is_null()) {
+        editor_set(at, *field, Json());  // R again: left to the space, "not set here"
+      }
+      rebuild();
+      return {};
+    default:
+      return {};
+  }
+}
+
+void PageView::editor_answer(std::string_view where, const protocol::Result& result) {
+  const auto sent = editor_sent_.find(where);
+  if (sent == editor_sent_.end()) {
+    return;
+  }
+  const std::string topic = sent->second;
+  editor_sent_.erase(sent);
+  EditorState& st = editors_[topic];
+  EditorDocument doc;
+  const auto body = topics_.find(topic);
+  const bool have = body != topics_.end() && EditorDocument::parse(body->second, doc);
+  const std::string part = std::string(where.substr(where.rfind('/') + 1));
+  const bool ok = !result.error.has_value();
+  const Json answer = result.body ? Json(*result.body) : Json::object();
+  const std::string words = result.detail ? *result.detail : std::string();
+  if (part == "save") {
+    if (ok) {
+      st.clear();  // saved: the space publishes the document again, with its new revision
+    } else if (*result.error == protocol::ErrorCode::conflict) {
+      st.conflict = true;
+      st.top = words.empty() ? "Changed elsewhere since you opened it." : words;
+    } else {
+      st.take_messages(answer);
+      st.top = words.empty() ? "Not saved: see the messages below." : words;
+    }
+  } else if (part == "check") {
+    st.take_messages(answer);
+    st.top = !ok ? (words.empty() ? "Not checked." : words) : st.messages.empty() ? "No problems found." : "";
+  } else if (part == "reset" || part == "restore") {
+    if (ok) {
+      st.clear();
+    } else {
+      st.top = words.empty() ? "Not done." : words;
+    }
+  } else if (part == "draft") {
+    if (ok && have) {
+      st.take_draft(doc, answer);
+      st.top = st.draft.empty() && st.notice.empty() ? "The draft proposed nothing." : "";
+    } else {
+      st.top = words.empty() ? "No draft came." : words;
+    }
+  }
+  const std::string was = focused();
+  rebuild();
+  for (std::size_t i = 0; scope_ == Scope::page && i < focus_.size(); ++i) {
+    if (name_of(Scope::page, i) == was) {
+      page_focus_ = i;
+    }
+  }
+}
+
 // ---- Text entry (§5.6, D57, G38 (a)).
 
 namespace {
@@ -1750,11 +2309,49 @@ void PageView::end_edit() {
   caret_rect_ = {};
   edit_box_ = {};
   edit_stops_.clear();
+  prose_stops_.clear();
+}
+
+void PageView::editor_store() {
+  EditorState& st = editors_[edit_.topic];
+  if (edit_.kind == EditKind::editor_notes) {
+    st.notes = edit_.field.text();
+    return;
+  }
+  EditorAt at;
+  const auto body = topics_.find(edit_.topic);
+  if (body == topics_.end() || !EditorDocument::parse(body->second, at.doc)) {
+    return;
+  }
+  const EditorField* field = at.doc.field(edit_.editor_field);
+  if (field == nullptr) {
+    return;
+  }
+  at.block = edit_.block;
+  at.topic = edit_.topic;
+  at.state = &st;
+  if (edit_.item == kNoItem) {
+    editor_set(at, *field, Json(edit_.field.text()));
+    return;
+  }
+  Json items = st.value(*field);
+  if (!items.is_array() || edit_.item >= items.size()) {
+    return;
+  }
+  ListItem item = list_item(items[edit_.item]);
+  if (!item.locked.empty()) {
+    return;
+  }
+  item.text = edit_.field.text();
+  items[edit_.item] = list_json(item, !field->choices.empty() || !field->choices_from.empty());
+  editor_set(at, *field, std::move(items));
 }
 
 void PageView::edited() {
   if (edit_.kind == EditKind::form_field) {
     form_values_[edit_.id] = edit_.field.text();  // kept in the view until the space accepts the form (G38 (2))
+  } else if (edit_.kind == EditKind::editor_text || edit_.kind == EditKind::editor_notes) {
+    editor_store();  // kept at each change, so that no close path loses it (G38 (2))
   } else if (edit_.kind == EditKind::search) {
     search_query_ = edit_.field.text();
     search_hits_ = search(search_query_);
@@ -1792,9 +2389,33 @@ Action PageView::finish_edit(bool keep, int move_on) {
         action.command.args = Json::object({{edit_.block->row_secret->key, edit_.row_key}, {"value", text}});
       }
       break;
+    case EditKind::editor_text:
+      if (text.empty() && edit_.item != kNoItem) {
+        // A new item left empty goes again: an item the player added has no key of the space's.
+        const auto body = topics_.find(edit_.topic);
+        EditorAt at;
+        if (body != topics_.end() && EditorDocument::parse(body->second, at.doc)) {
+          if (const EditorField* field = at.doc.field(edit_.editor_field); field != nullptr) {
+            at.block = edit_.block;
+            at.topic = edit_.topic;
+            at.state = &editors_[edit_.topic];
+            Json items = at.state->value(*field);
+            if (items.is_array() && edit_.item < items.size() && list_item(items[edit_.item]).key.is_null() &&
+                list_item(items[edit_.item]).locked.empty()) {
+              items.erase(items.begin() + static_cast<std::ptrdiff_t>(edit_.item));
+              editor_set(at, *field, std::move(items));
+              end_edit();
+              rebuild();
+              return action;
+            }
+          }
+        }
+      }
+      break;
+    case EditKind::editor_notes:
     case EditKind::search:
     case EditKind::none:
-      break;
+      break;  // an editor's text is kept at each change (editor_store)
   }
   if (edit_.masked) {
     wipe(text);
@@ -1909,6 +2530,29 @@ Action PageView::edit(const EditInput& in) {
       return {};
     case EditKey::up:
     case EditKey::down:
+      if (edit_.prose && !prose_stops_.empty()) {
+        // By line, as the last layout wrapped it: the boundary nearest the caret's x on the line above or below, or the
+        // field's start or end from its first or last line.
+        float cx = 0;
+        float top = 0;
+        for (const auto& [at, x, line_top] : prose_stops_) {
+          if (at == f.caret()) {
+            cx = x;
+            top = line_top;
+          }
+        }
+        const float want = top + (in.key == EditKey::up ? -prose_line_ : prose_line_);
+        std::size_t best = in.key == EditKey::up ? 0 : f.text().size();
+        float nearest = 1e30f;
+        for (const auto& [at, x, line_top] : prose_stops_) {
+          if (std::fabs(line_top - want) < 0.5f && std::fabs(x - cx) < nearest) {
+            nearest = std::fabs(x - cx);
+            best = at;
+          }
+        }
+        f.place(best, in.shift);
+        return {};
+      }
       if (edit_.kind == EditKind::search && !search_hits_.empty()) {
         search_pick_ = in.key == EditKey::up ? (search_pick_ > 0 ? search_pick_ - 1 : 0)
                                              : std::min(search_pick_ + 1, search_hits_.size() - 1);
@@ -1925,7 +2569,7 @@ Action PageView::edit(const EditInput& in) {
         end_edit();
         return open_hit(hit);
       }
-      return finish_edit(true, edit_.kind == EditKind::form_field ? 1 : 0);
+      return finish_edit(true, edit_.kind == EditKind::form_field ? 1 : 0);  // an editor's text: one paragraph, done
     case EditKey::tab:
       if (edit_.kind == EditKind::search) {
         end_edit();  // its query stays in the box; its results close
@@ -1943,7 +2587,7 @@ Action PageView::edit(const EditInput& in) {
         end_edit();
         return {};
       }
-      return finish_edit(edit_.kind == EditKind::form_field, 0);  // a form field keeps its text; an edit is dropped
+      return finish_edit(edit_.kind == EditKind::form_field, 0);  // a form's or an editor's text stays; an edit is dropped
   }
   return {};
 }
@@ -2014,6 +2658,10 @@ Action PageView::open_index(std::size_t index, Scope scope) {
   page_focus_ = 0;
   scroll_ = 0;
   confirming_.clear();
+  for (auto& [topic, st] : editors_) {
+    st.draft.clear();  // a draft lives in the view that asked, while its page is open (proposal 0010 §3.3)
+    st.notice.clear();
+  }
   rebuild();
   focus_first_control();
   focus_master_on_open();
@@ -2190,6 +2838,13 @@ Action PageView::input_body(const Input& in) {
   }
   const Focus f = focus_[page_focus_];
   const Setting* s = f.kind == FocusKind::setting ? &settings_[f.index] : nullptr;
+  if (f.kind == FocusKind::editor) {
+    bool handled = false;
+    Action action = editor_input(f, in, handled);  // the editor's own keys (D217); the rest move focus as anywhere
+    if (handled) {
+      return action;
+    }
+  }
   if (const protocol::PageMaster* m = master(); m != nullptr) {
     // Master and detail (D215): ↑ ↓ along the list, → or Enter into the detail; ← or Esc in the detail back to the row.
     std::size_t first = focus_.size();
@@ -2278,7 +2933,8 @@ Action PageView::input_body(const Input& in) {
     case Key::activate:
       switch (f.kind) {
         case FocusKind::master_row:
-          return {};  // handled above, with the master's keys (D215)
+        case FocusKind::editor:
+          return {};  // handled above, with the master's keys (D215) or the editor's (D217)
         case FocusKind::row_action:
           return row_action(f);
         case FocusKind::section_action:
@@ -2425,6 +3081,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     caret_rect_ = {};
     edit_box_ = {};
     edit_stops_.clear();
+    prose_stops_.clear();
     const auto hit = [&](Rect rect, Scope scope, std::size_t index, Rect control = {}, Rect track = {},
                          std::size_t segments = 0) {
       const Rect& clip = out.clips[c.clip];
@@ -2879,6 +3536,426 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const auto draw_blocks = [&](const std::vector<protocol::PageBlock>& blocks, bool advanced) {
         for (std::size_t b = 0; b < blocks.size(); ++b) {
           const protocol::PageBlock& block = blocks[b];
+          if (block.kind == protocol::BlockKind::editor && block.editor) {
+            // An editor (D217): its state and buttons, the last answer's words for the whole file, the draft's notes and
+            // button, then each field: its label, count and help, its control, its reference, its messages, and a
+            // draft's proposal with Use this and Keep mine.
+            const std::string eid = form_id(section, b, advanced);
+            const float ix = x0 + card_pad;
+            const float iw = content_w - 2 * card_pad;
+            const std::uint8_t alpha = greyed_words(page.id).empty() ? 255 : 128;
+            const std::string topic = topic_of(block);
+            const auto body = topics_.find(topic);
+            EditorDocument doc;
+            if (topic.empty() || body == topics_.end() || !EditorDocument::parse(body->second, doc)) {
+              c.text(empty_words(block, body != topics_.end()), TypeRole::ui_sm, ix, y + std::round(12 * s), iw,
+                     Colour::ink_mute);
+              y += row_h;
+              continue;
+            }
+            const EditorState fresh;
+            const EditorState& st = editor_state(topic) != nullptr ? *editor_state(topic) : fresh;
+            const protocol::EditorBlock& ed = *block.editor;
+            const float small = line_height(TypeRole::ui_sm, s);
+            const float body_lh = line_height(TypeRole::ui, s);
+            const float gap = std::round(10 * s);
+            const float button_h = std::round(30 * s);
+            const float rr = std::round(tokens::radius::control * s);
+            const float edge_w = std::round(tokens::kGrace.size.edge_width * s);
+            const auto measure_in = [&c](TypeRole role) { return [&c, role](std::string_view run) { return c.width(run, role); }; };
+            // Words wrapped to a width from y, drawn; the height they took.
+            const auto para = [&](std::string_view words, TypeRole role, float x, float w, Colour ink) {
+              const TextField wrapped(words, words.size() + 4);
+              const float lh = line_height(role, s);
+              float h = 0;
+              for (const TextField::Line& line : wrapped.wrap(w, measure_in(role))) {
+                c.text(std::string_view(wrapped.text()).substr(line.begin, line.end - line.begin), role, x, y + h, w + 1,
+                       ink, alpha);
+                h += lh;
+              }
+              return h;
+            };
+            const auto name_for = [&](const std::string& rest) { return "editor:" + eid + "/" + rest; };
+            const auto words_for = [&](const std::string& rest, const std::string& words) {
+              const std::string name = name_for(rest);
+              return running(name) ? std::string("Working…") : confirming_ == name ? std::string("Press again to confirm")
+                                                                                   : words;
+            };
+            // A button at (bx, by): plain, primary (1) or destructive (2), greyed if off; its width.
+            const auto button = [&](float bx, float by, const std::string& words, int tone, const std::string& rest,
+                                    bool off) {
+              const std::string id = eid + "/" + rest;
+              const float w = c.width(words, TypeRole::ui_sm) + std::round(24 * s);
+              const Rect r{bx, by, w, button_h};
+              const std::uint8_t a = off ? 128 : alpha;
+              Colour ink = Colour::ink_hi;
+              if (tone == 1) {
+                c.fill(r, Colour::gold, rr, a);
+                ink = Colour::on_gold;
+              } else if (tone == 2) {
+                c.fill(r, Colour::rot_fill, rr, a);
+              } else {
+                c.stroke(r, Colour::edge, edge_w, rr, a);
+              }
+              c.text(words, TypeRole::ui_sm, r.x + std::round(12 * s), r.y + std::round((r.h - small) / 2), w, ink, a);
+              hit(r, Scope::page, focus_index(FocusKind::editor, id));
+              if (page_focus(FocusKind::editor, id)) {
+                c.focused(r);
+              }
+              return w;
+            };
+            const auto choice_label = [&](const EditorField& field, const std::string& value) {
+              const std::vector<protocol::Choice> list =
+                  !field.choices.empty() ? field.choices : choices_in(topics_, field.choices_from);
+              for (const protocol::Choice& choice : list) {
+                if (choice.value == value) {
+                  return choice.label.empty() ? choice.value : choice.label;
+                }
+              }
+              return value;
+            };
+            const auto value_words = [&](const EditorField& field, const Json& v) -> std::string {
+              if (v.is_null()) {
+                return "Not set here";
+              }
+              if (v.is_string()) {
+                return field.kind == FieldKind::choice || field.kind == FieldKind::pick
+                           ? choice_label(field, v.get<std::string>())
+                           : v.get<std::string>();
+              }
+              if (v.is_boolean()) {
+                return v.get<bool>() ? "On" : "Off";
+              }
+              if (v.is_number()) {
+                return std::to_string(std::llround(v.get<double>()));
+              }
+              std::string out;
+              for (const Json& item : v.is_array() ? v : Json::array()) {
+                const ListItem li = list_item(item);
+                out += (out.empty() ? "" : "; ") + (li.choice.empty() ? li.text : choice_label(field, li.choice) + ": " + li.text);
+              }
+              return out;
+            };
+            // A prose well from y: its words wrapped, at least two lines tall; the one being edited shows its selection
+            // and its caret, and keeps each boundary's place for ↑ ↓ and the pointer. Its height.
+            const auto prose_box = [&](float bx, float bw, const std::string& text, bool editing_it,
+                                       const std::string& placeholder, std::uint8_t a, const std::string& id) {
+              const float pad = std::round(10 * s);
+              const float inner = bw - 2 * pad;
+              const TextField shown_text = editing_it ? edit_.field : TextField(text, text.size() + 4);
+              const std::vector<TextField::Line> lines = shown_text.wrap(inner, measure_in(TypeRole::ui));
+              const float h = body_lh * static_cast<float>(std::max<std::size_t>(lines.size(), 2)) + 2 * pad;
+              const Rect box{bx, y, bw, h};
+              c.fill(box, Colour::ground_well, rr, a);
+              c.stroke(box, editing_it ? Colour::gold : Colour::edge, edge_w, rr, a);
+              const std::string& t = shown_text.text();
+              const auto run_w = [&](std::size_t from, std::size_t to) {
+                return c.width(std::string_view(t).substr(from, to - from), TypeRole::ui);
+              };
+              if (t.empty() && !editing_it) {
+                c.text(placeholder, TypeRole::ui, bx + pad, y + pad, inner, Colour::ink_faint, a);
+              }
+              for (std::size_t i = 0; i < lines.size(); ++i) {
+                const TextField::Line& line = lines[i];
+                const float ly = y + pad + body_lh * static_cast<float>(i);
+                if (editing_it) {
+                  const std::size_t sa = std::clamp(shown_text.selection_begin(), line.begin, line.end);
+                  const std::size_t sb = std::clamp(shown_text.selection_end(), line.begin, line.end);
+                  if (sb > sa) {
+                    const float xa = bx + pad + run_w(line.begin, sa);
+                    c.fill(Rect{xa, ly, bx + pad + run_w(line.begin, sb) - xa, body_lh}, Colour::tint_select);
+                  }
+                  for (std::size_t at = line.begin; at <= line.end; ++at) {
+                    if (at < t.size() && !at_boundary(t, at)) {
+                      continue;
+                    }
+                    if (at == line.end && i + 1 < lines.size()) {
+                      break;  // a line's end is the next line's start
+                    }
+                    prose_stops_.emplace_back(at, bx + pad + run_w(line.begin, at), ly);
+                  }
+                }
+                c.text(std::string_view(t).substr(line.begin, line.end - line.begin), TypeRole::ui, bx + pad, ly,
+                       inner + 1, Colour::ink_body, a);
+              }
+              if (editing_it) {
+                const std::size_t li = TextField::line_of(lines, shown_text.caret());
+                caret_rect_ = Rect{bx + pad + run_w(lines[li].begin, shown_text.caret()),
+                                   y + pad + body_lh * static_cast<float>(li), std::max(1.0f, std::round(2 * s)), body_lh};
+                c.fill(caret_rect_, Colour::gold_hi);
+                edit_box_ = box;
+                prose_line_ = body_lh;
+              }
+              hit(box, Scope::page, focus_index(FocusKind::editor, id), box);
+              if (page_focus(FocusKind::editor, id)) {
+                c.focused(box);
+              }
+              return h;
+            };
+            const auto message_lines = [&](const std::string& field, std::optional<std::size_t> item, float x, float w) {
+              for (const EditorMessage& m : st.messages) {
+                if (m.field == field && m.item == item) {
+                  y += para((m.error ? "Error: " : "Warning: ") + m.words, TypeRole::ui_sm, x, w,
+                            m.error ? Colour::rot : Colour::ember);
+                }
+              }
+            };
+            // A conflict: the band and its Reload.
+            if (st.conflict) {
+              const std::string words = words_for("reload", "Reload");
+              const float bw = c.width(words, TypeRole::ui_sm) + std::round(24 * s);
+              const Rect band{ix, y, iw, button_h + std::round(14 * s)};
+              c.fill(band, Colour::rot_fill, rr);
+              c.text(st.top.empty() ? std::string("Changed elsewhere since you opened it.") : st.top, TypeRole::ui,
+                     band.x + std::round(12 * s), band.y + std::round((band.h - body_lh) / 2),
+                     band.w - bw - std::round(36 * s), Colour::ink_hi);
+              button(band.right() - bw - std::round(7 * s), band.y + std::round(7 * s), words, 0, "reload", false);
+              y += band.h + gap;
+            }
+            // Its state, and whether it holds unsaved changes.
+            {
+              float sx = ix;
+              if (!doc.state_word.empty()) {
+                const float dot = std::round(8 * s);
+                const Colour ink = doc.state_tone == "moss"    ? Colour::moss
+                                   : doc.state_tone == "ember" ? Colour::ember
+                                   : doc.state_tone == "rot"   ? Colour::rot
+                                                               : Colour::glint;
+                c.circle(Rect{sx, y + std::round((small - dot) / 2), dot, dot}, ink, alpha);
+                sx += dot + std::round(8 * s);
+                sx += c.text(doc.state_word, TypeRole::ui_sm, sx, y, iw / 3, Colour::ink_body, alpha) + std::round(12 * s);
+              }
+              const char* unsaved = "Unsaved changes";
+              const float uw = st.dirty() ? c.width(unsaved, TypeRole::ui_sm) : 0;
+              if (!doc.state_line.empty()) {
+                c.text(doc.state_line, TypeRole::ui_sm, sx, y, std::max(0.0f, ix + iw - sx - uw - std::round(16 * s)),
+                       Colour::ink_mute, alpha);
+              }
+              if (st.dirty()) {
+                c.text(unsaved, TypeRole::ui_sm, ix + iw - uw, y, uw + 1, Colour::ember, alpha);
+              }
+              y += small + gap;
+            }
+            // Its buttons.
+            {
+              float bx = ix;
+              bx += button(bx, y, words_for("save", "Save"), 1, "save", false) + gap;
+              if (ed.check) {
+                bx += button(bx, y, words_for("check", "Check"), 0, "check", false) + gap;
+              }
+              if (ed.restore) {
+                bx += button(bx, y, words_for("restore", "Restore the previous version"), 0, "restore", false) + gap;
+              }
+              if (ed.reset) {
+                button(bx, y, words_for("reset", "Reset all"), 2, "reset", false);
+              }
+              y += button_h + gap;
+            }
+            // The last answer's words, and its messages about the whole file or about a field the document lacks.
+            const bool errors = std::any_of(st.messages.begin(), st.messages.end(), [](const EditorMessage& m) { return m.error; });
+            if (!st.conflict && !st.top.empty()) {
+              y += para(st.top, TypeRole::ui_sm, ix, iw, errors ? Colour::rot : Colour::ink_body);
+            }
+            for (const EditorMessage& m : st.messages) {
+              if (m.field.empty() || doc.field(m.field) == nullptr) {
+                y += para((m.error ? "Error: " : "Warning: ") + m.words, TypeRole::ui_sm, ix, iw,
+                          m.error ? Colour::rot : Colour::ember);
+              }
+            }
+            // The draft: its notes, its button and why it is not available now, Use all, and a notice.
+            if (ed.draft) {
+              y += std::round(4 * s);
+              c.line(ix, y, iw, Colour::rule);
+              y += gap;
+              const std::size_t cap = ed.notes_max.value_or(400);
+              const bool editing_notes = edit_.kind == EditKind::editor_notes && edit_.id == eid + "/notes";
+              const std::string& notes = editing_notes ? edit_.field.text() : st.notes;
+              c.text(ed.notes_label.value_or("Notes for the draft"), TypeRole::ui, ix, y, iw * 2 / 3, Colour::ink_hi, alpha);
+              const std::string count = std::to_string(count_chars(notes)) + " / " + std::to_string(cap);
+              const float cw = c.width(count, TypeRole::ui_sm);
+              c.text(count, TypeRole::ui_sm, ix + iw - cw, y, cw + 1, Colour::ink_faint, alpha);
+              y += body_lh + std::round(6 * s);
+              y += prose_box(ix, iw, notes, editing_notes, "", alpha, eid + "/notes") + gap;
+              const bool blocked = !doc.draft_blocked.empty();
+              const float dw = button(ix, y, words_for("draft", "Draft"), 0, "draft", blocked);
+              const std::string& why = blocked ? doc.draft_blocked : doc.draft_help;
+              float right = ix + iw;
+              if (!st.draft.empty()) {
+                const std::string words = "Use all";
+                const float uw = c.width(words, TypeRole::ui_sm) + std::round(24 * s);
+                right -= uw;
+                button(right, y, words, 0, "use_all", false);
+                right -= gap;
+              }
+              if (!why.empty()) {
+                c.text(why, TypeRole::ui_sm, ix + dw + gap, y + std::round((button_h - small) / 2),
+                       std::max(0.0f, right - ix - dw - 2 * gap), blocked ? Colour::ink_body : Colour::ink_mute, alpha);
+              }
+              y += button_h + gap;
+              if (!st.notice.empty()) {
+                y += para(st.notice, TypeRole::ui_sm, ix, iw, Colour::ember);
+              }
+            }
+            // The fields.
+            const float well_h = std::round(32 * s);
+            for (const EditorField& field : doc.fields) {
+              y += std::round(4 * s);
+              c.line(ix, y, iw, Colour::rule);
+              y += gap;
+              const Json& v = st.value(field);
+              const bool locked = !field.locked.empty();
+              const std::uint8_t a = locked ? 128 : alpha;
+              const std::string fid = eid + "/f/" + field.id;
+              const bool editing_it = edit_.kind == EditKind::editor_text && edit_.id == fid;
+              // Its label, "Unsaved" if the player changed it, and its count at the right.
+              const float lw = c.text(field.label, TypeRole::ui, ix, y, iw * 2 / 3, Colour::ink_hi, alpha);
+              if (st.edits.count(field.id) != 0) {
+                c.text("Unsaved", TypeRole::ui_sm, ix + lw + std::round(10 * s), y + std::round((body_lh - small) / 2),
+                       iw / 4, Colour::ember, alpha);
+              }
+              std::string count;
+              bool over = false;
+              if (field.kind == FieldKind::line || field.kind == FieldKind::prose) {
+                const std::string text = editing_it ? edit_.field.text() : v.is_string() ? v.get<std::string>() : "";
+                if (field.max_words != 0) {
+                  const std::size_t n = count_words(text);
+                  count = std::to_string(n) + " / " + std::to_string(field.max_words) + " words";
+                  over = n > field.max_words;
+                } else if (field.max_chars != 0) {
+                  count = std::to_string(count_chars(text)) + " / " + std::to_string(field.max_chars);
+                }
+              } else if (field.kind == FieldKind::list && field.max_items != 0) {
+                count = std::to_string(v.is_array() ? v.size() : 0) + " / " + std::to_string(field.max_items);
+              }
+              if (!count.empty()) {
+                const float cw = c.width(count, TypeRole::ui_sm);
+                c.text(count, TypeRole::ui_sm, ix + iw - cw, y + std::round((body_lh - small) / 2), cw + 1,
+                       over ? Colour::ember : Colour::ink_faint, alpha);
+              }
+              y += body_lh + std::round(4 * s);
+              if (!field.help.empty()) {
+                y += para(field.help, TypeRole::ui_sm, ix, iw, Colour::ink_mute);
+              }
+              y += std::round(4 * s);
+              // Its control.
+              if (field.kind == FieldKind::shown) {
+                y += para(value_words(field, v), TypeRole::ui, ix, iw, Colour::ink_body);
+              } else if (field.kind == FieldKind::prose) {
+                y += prose_box(ix, iw, v.is_string() ? v.get<std::string>() : std::string(), editing_it,
+                               v.is_null() ? "Not set here" : "", a, eid + "/f/" + field.id);
+              } else if (field.kind == FieldKind::line) {
+                const Rect box{ix, y, iw, well_h};
+                if (v.is_null() && !editing_it) {
+                  draw_field(box, "Not set here", Colour::ink_faint, false, a, TypeRole::ui_sm);
+                } else {
+                  draw_field(box, v.is_string() ? v.get<std::string>() : std::string(), Colour::ink_body, editing_it, a,
+                             TypeRole::ui_sm);
+                }
+                hit(box, Scope::page, focus_index(FocusKind::editor, fid), box);
+                if (page_focus(FocusKind::editor, fid)) {
+                  c.focused(box);
+                }
+                y += well_h;
+              } else if (field.kind == FieldKind::list) {
+                const bool with_choice = !field.choices.empty() || !field.choices_from.empty();
+                const float choice_w = with_choice ? std::round(std::min(iw * 0.3f, 220 * s)) : 0;
+                const std::size_t n = v.is_array() ? v.size() : 0;
+                for (std::size_t i = 0; i < n; ++i) {
+                  const ListItem item = list_item(v[i]);
+                  const std::string id = eid + "/i/" + field.id + "/" + std::to_string(i);
+                  const bool item_locked = locked || !item.locked.empty();
+                  const std::uint8_t ia = item_locked ? 128 : alpha;
+                  const bool editing_item = edit_.kind == EditKind::editor_text && edit_.id == id;
+                  const Rect row{ix, y, iw, well_h};
+                  if (with_choice) {
+                    const Rect cbox{ix, y, choice_w, well_h};
+                    c.fill(cbox, Colour::ground_3, rr, ia);
+                    c.text(choice_label(field, item.choice), TypeRole::ui_sm, cbox.x + std::round(10 * s),
+                           y + std::round((well_h - small) / 2), choice_w - std::round(20 * s), Colour::gold, ia);
+                  }
+                  const Rect box{ix + choice_w + (with_choice ? gap : 0), y, iw - choice_w - (with_choice ? gap : 0), well_h};
+                  draw_field(box, item.text, Colour::ink_body, editing_item, ia, TypeRole::ui_sm);
+                  hit(row, Scope::page, focus_index(FocusKind::editor, id), box);
+                  if (page_focus(FocusKind::editor, id)) {
+                    c.focused(row);
+                  }
+                  y += well_h + std::round(4 * s);
+                  if (!item.locked.empty()) {
+                    y += para("Locked: " + item.locked, TypeRole::ui_sm, ix, iw, Colour::ink_mute);
+                  }
+                  message_lines(field.id, i, ix, iw);
+                }
+                if (!locked && (field.max_items == 0 || n < field.max_items)) {
+                  const std::string id = eid + "/add/" + field.id;
+                  const Rect add{ix, y, std::round(120 * s), button_h};
+                  c.text("+ Add", TypeRole::ui_sm, add.x, add.y + std::round((button_h - small) / 2), add.w, Colour::gold,
+                         alpha);
+                  hit(add, Scope::page, focus_index(FocusKind::editor, id));
+                  if (page_focus(FocusKind::editor, id)) {
+                    c.focused(add);
+                  }
+                  y += button_h;
+                } else if (n == 0) {
+                  y += para("No items.", TypeRole::ui_sm, ix, iw, Colour::ink_mute);
+                }
+              } else {
+                // A choice, a pick, a number or a switch: its value in a well, ‹ › for ← →.
+                const Rect box{ix, y, std::round(std::min(iw, 360 * s)), well_h};
+                c.fill(box, Colour::ground_well, rr, a);
+                c.stroke(box, Colour::edge, edge_w, rr, a);
+                c.text(value_words(field, v), TypeRole::ui_sm, box.x + std::round(10 * s),
+                       y + std::round((well_h - small) / 2), box.w - std::round(50 * s),
+                       v.is_null() ? Colour::ink_faint : Colour::ink_body, a);
+                c.text("‹ ›", TypeRole::ui_sm, box.right() - std::round(30 * s),
+                       y + std::round((well_h - small) / 2), std::round(24 * s), Colour::ink_faint, a);
+                hit(box, Scope::page, focus_index(FocusKind::editor, fid), box);
+                if (page_focus(FocusKind::editor, fid)) {
+                  c.focused(box);
+                }
+                y += well_h;
+              }
+              y += std::round(6 * s);
+              if (locked) {
+                y += para("Locked: " + field.locked, TypeRole::ui_sm, ix, iw, Colour::ink_mute);
+              }
+              // Its reference, read-only and never sent.
+              if (field.reference.is_string() || field.reference.is_array()) {
+                std::string ref;
+                for (const Json& r : field.reference.is_array() ? field.reference : Json::array({field.reference})) {
+                  ref += (ref.empty() ? "" : "; ") + r.get<std::string>();
+                }
+                if (!ref.empty()) {
+                  y += para((field.reference_label.empty() ? std::string("For reference") : field.reference_label) + ": " +
+                                ref,
+                            TypeRole::ui_sm, ix, iw, Colour::ink_mute);
+                }
+              }
+              message_lines(field.id, std::nullopt, ix, iw);
+              // A draft's proposal for it: its words, then Use this and Keep mine.
+              if (const auto proposal = st.draft.find(field.id); proposal != st.draft.end()) {
+                y += std::round(4 * s);
+                const float top = y;
+                const std::size_t ground_at = out.items.size();
+                y += gap;
+                c.text("Draft", TypeRole::eyebrow, ix + gap, y, iw / 3, Colour::gold);
+                y += line_height(TypeRole::eyebrow, s) + std::round(4 * s);
+                y += para(value_words(field, proposal->second), TypeRole::ui, ix + gap, iw - 2 * gap, Colour::ink_body);
+                y += std::round(6 * s);
+                const float uw = button(ix + gap, y, "Use this", 1, "use/" + field.id, false);
+                button(ix + gap + uw + gap, y, "Keep mine", 0, "keep/" + field.id, false);
+                y += button_h + gap;
+                Item ground;
+                ground.shape = Shape::fill;
+                ground.colour = Colour::tint_select;
+                ground.clip = c.clip;
+                ground.rect = Rect{ix, top, iw, y - top};
+                ground.radius = rr;
+                out.items.insert(out.items.begin() + static_cast<std::ptrdiff_t>(ground_at), ground);
+              }
+            }
+            y += std::round(8 * s);
+            continue;
+          }
           if (block.kind == protocol::BlockKind::form) {
             // A form (D195): a row a field, its label at the left and GraceUI's own field at the right (G38 (a)), then
             // its button at the right; the space's refusal under it.
@@ -3502,6 +4579,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         hints = "Enter  Toggle    Esc  Back";  // a table's switch, as a setting's but with no default to reset to
       } else if (f.kind == FocusKind::master_row) {
         hints = "↑ ↓  Choose    →  Open    Esc  Back";
+      } else if (f.kind == FocusKind::editor) {
+        hints = editor_hints(f);
       } else if (f.kind == FocusKind::form_field) {
         hints = "Enter  Type    Esc  Back";
       } else if (f.kind == FocusKind::form_submit) {
@@ -3524,6 +4603,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       // A field's keys (§5.3): every other key types into it.
       hints = edit_.kind == EditKind::search       ? "↑ ↓  Choose    Enter  Open    Esc  Close"
               : edit_.kind == EditKind::form_field ? "Enter  Next    Esc  Done    Ctrl+V  Paste"
+              : edit_.kind == EditKind::editor_notes || (edit_.kind == EditKind::editor_text && edit_.prose)
+                  ? "↑ ↓  Line    Enter  Done    Esc  Done    Ctrl+V  Paste"
+              : edit_.kind == EditKind::editor_text ? "Enter  Done    Esc  Done    Ctrl+V  Paste"
               : edit_.masked                       ? "Enter  Set    Esc  Cancel    Ctrl+V  Paste"
                                                    : "Enter  Save    Esc  Cancel    Ctrl+V  Paste";
     }

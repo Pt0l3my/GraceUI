@@ -197,3 +197,15 @@ TEST_CASE("a click: the boundary nearest the pointer") {
   CHECK(f.offset_at(0, 4, 6, tens) == 1);
   CHECK(f.offset_at(0, 4, 200, tens) == 4);
 }
+
+TEST_CASE("a cap in characters as well as bytes (an editor's field, D217)") {
+  TextField f("lamplight", 1024, 5);
+  CHECK(f.text() == "lampl");
+  CHECK_FALSE(f.type(U'x'));
+  f.select_all();
+  CHECK(f.type(U'\u00E9'));  // over a selection: its characters given back first
+  CHECK(f.text() == "\u00E9");
+  CHECK(f.paste("abcdefgh"));
+  CHECK(f.text() == "\u00E9abcd");
+  CHECK(f.characters() == 5);
+}

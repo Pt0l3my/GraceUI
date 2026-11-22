@@ -1592,3 +1592,327 @@ TEST_CASE("the menu's key captured in game: one key, sent as its setting (D209)"
   CHECK(view.awaiting_key());
   CHECK(view.captured("Backspace").command.args["value"] == "Backspace");  // a setting's capture keeps Backspace
 }
+
+namespace {
+
+// The demo's note on the harbour mouth lamp, and its oils, from the space's fixtures (D217).
+Json demo_topic(std::string_view id) {
+  std::ifstream file(std::string(GRACE_VIEW_GOLDEN) + "/../../../../fixtures/demo/topics.json");
+  const Json all = Json::parse(file);
+  return all.at(std::string(id));
+}
+
+// The Lamps page on its Your notes tab, the harbour mouth chosen and its note published.
+PageView notes_view() {
+  PageView view = loaded("demo", "demo.lamps");
+  view.set_topic("lantern.lamps", kLamps);
+  view.set_topic("lantern.lamp/harbour-mouth", kHarbour);
+  view.set_topic("lantern.oils", demo_topic("lantern.oils"));
+  view.set_topic("lantern.note/harbour-mouth", demo_topic("lantern.note/harbour-mouth"));
+  press(view, Key::right);  // into the detail
+  press(view, Key::next_tab);
+  press(view, Key::next_tab);
+  REQUIRE(view.focused() == "tab:yours");
+  return view;
+}
+
+grace::protocol::Result answer(const char* body) {
+  grace::protocol::Result r;
+  r.ok = true;
+  r.body = Json::parse(body);
+  return r;
+}
+
+const grace::view::EditorState& note_state(const PageView& view) {
+  const grace::view::EditorState* st = view.editor_state("lantern.note/harbour-mouth");
+  REQUIRE(st != nullptr);
+  return *st;
+}
+
+}  // namespace
+
+TEST_CASE("the editor in game: its document drawn, its stops in order, and Save sends it with its revision (D217)") {
+  PageView view = notes_view();
+  CHECK(watches(view, "lantern.note/harbour-mouth"));  // the editor's family, for the chosen row
+  CHECK(watches(view, "lantern.oils"));                // a pick's choices, once the document names them
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  const std::string dump = list.dump();
+  for (const char* words : {"\"Saved\"", "\"Save\"", "\"Check\"", "\"Restore the previous version\"", "\"Reset all\"",
+                            "\"Your rough notes\"", "\"0 / 400\"", "\"Draft\"", "\"Short name\"", "\"10 / 24\"",
+                            "\"Mouth lamp\"", "\"19 / 35 words\"", "\"Never let it gutter\"",
+                            "\"Locked: Written by hand: change it in the file.\"", "\"In a storm\"", "\"Plain\"",
+                            "\"Rapeseed oil\"", "\"12\"", "\"Off\"", "\"Harbour mouth, on the first evening\"",
+                            "\"The demo's own: A green lamp at the end of the wall.\"", "\"+ Add\""}) {
+    CHECK_MESSAGE(dump.find(words) != std::string::npos, words);
+  }
+  CHECK(dump.find("Unsaved") == std::string::npos);
+  golden("editor-1920x1080.txt", dump);
+  // The stops, top to bottom: its buttons, the draft's notes and button, then each field (a list's items and Add).
+  std::vector<std::string> stops;
+  for (int i = 0; i < 40; ++i) {
+    press(view, Key::down);
+    if (view.focused().rfind("editor:", 0) == 0 &&
+        (stops.empty() || stops.back() != view.focused())) {
+      stops.push_back(view.focused());
+    }
+  }
+  const std::vector<std::string> want = {
+      "editor:your_notes/0/save",          "editor:your_notes/0/check",          "editor:your_notes/0/restore",
+      "editor:your_notes/0/reset",         "editor:your_notes/0/notes",          "editor:your_notes/0/draft",
+      "editor:your_notes/0/f/brief",       "editor:your_notes/0/f/public.summary", "editor:your_notes/0/i/sayings/0",
+      "editor:your_notes/0/i/sayings/1",   "editor:your_notes/0/i/sayings/2",    "editor:your_notes/0/add/sayings",
+      "editor:your_notes/0/i/watch/0",     "editor:your_notes/0/add/watch",      "editor:your_notes/0/f/register",
+      "editor:your_notes/0/f/oil",         "editor:your_notes/0/f/words_max",    "editor:your_notes/0/f/lit_at_dawn"};
+  CHECK(stops == want);
+  // Save: the document as published, every field but the shown one, its locked item and its keys sent back.
+  PageView fresh = notes_view();
+  REQUIRE(move_to(fresh, "editor:your_notes/0/save"));
+  const Action save = press(fresh, Key::activate);
+  REQUIRE(save.kind == Action::Kind::command);
+  CHECK(save.command.name == "note.save");
+  CHECK(save.command.args["target"] == "harbour-mouth");
+  CHECK(save.command.args["rev"] == 1);
+  const Json& doc = save.command.args["doc"];
+  CHECK_FALSE(doc.contains("met"));
+  CHECK(doc["brief"] == "Mouth lamp");
+  CHECK(doc["sayings"][1] == Json::parse(R"({"text": "Green for going home", "key": "s2"})"));
+  CHECK(doc["sayings"][2]["locked"] == "Written by hand: change it in the file.");
+  CHECK(doc["watch"][0]["text"] == "Trimmed short");
+  CHECK(doc["watch"][0]["choice"] == "storm");
+  CHECK(doc["watch"][0]["key"] == "w1");
+  CHECK(doc["words_max"] == 12);
+  CHECK(doc["lit_at_dawn"] == false);
+}
+
+TEST_CASE("the editor in game: a line typed is an unsaved edit, kept when the menu closes; R undoes it (D217, G38 (2))") {
+  PageView view = notes_view();
+  REQUIRE(move_to(view, "editor:your_notes/0/f/brief"));
+  press(view, Key::activate);
+  REQUIRE(view.editing());
+  type(view, "s of the wall, and more");  // the room is 24 characters: the rest is not typed
+  view.cancel_confirmation();  // the menu's close routine
+  CHECK_FALSE(view.editing());
+  REQUIRE(note_state(view).edits.count("brief") == 1);
+  CHECK(note_state(view).edits.at("brief") == "Mouth lamps of the wall,");
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(list.dump().find("\"Unsaved changes\"") != std::string::npos);
+  CHECK(list.dump().find("\"Unsaved\"") != std::string::npos);
+  CHECK(list.dump().find("\"24 / 24\"") != std::string::npos);
+  // Save sends the edit, over the revision it was made on.
+  for (int i = 0; i < 12 && view.focused() != "editor:your_notes/0/save"; ++i) {
+    press(view, Key::up);
+  }
+  const Action save = press(view, Key::activate);
+  REQUIRE(save.kind == Action::Kind::command);
+  CHECK(save.command.args["doc"]["brief"] == "Mouth lamps of the wall,");
+  CHECK(save.command.args["rev"] == 1);
+  REQUIRE(move_to(view, "editor:your_notes/0/f/brief"));
+  press(view, Key::reset);
+  CHECK(note_state(view).edits.empty());
+  // A field that may be unset: R leaves it to the space, "not set here", sent as null.
+  REQUIRE(move_to(view, "editor:your_notes/0/f/public.summary"));
+  press(view, Key::reset);
+  CHECK(note_state(view).edits.at("public.summary").is_null());
+  DisplayList unset;
+  view.layout(Viewport{}, test::fonts(), unset);
+  CHECK(unset.dump().find("\"Not set here\"") != std::string::npos);
+  press(view, Key::reset);  // and again: the edit undone, as published
+  CHECK(note_state(view).edits.empty());
+}
+
+TEST_CASE("the editor in game: a list's items added, edited, moved and removed; a locked one stays (D217)") {
+  PageView view = notes_view();
+  REQUIRE(move_to(view, "editor:your_notes/0/add/sayings"));
+  press(view, Key::activate);
+  REQUIRE(view.editing());
+  CHECK(view.focused() == "editor:your_notes/0/i/sayings/3");
+  type(view, "Trim it at dusk");
+  view.edit(EditInput{EditKey::enter});
+  CHECK_FALSE(view.editing());
+  const auto sayings = [&] { return note_state(view).edits.at("sayings"); };
+  REQUIRE(sayings().size() == 4);
+  CHECK(sayings()[3] == "Trim it at dusk");
+  // Four is its most: no Add now.
+  press(view, Key::down);
+  CHECK(view.focused() == "editor:your_notes/0/i/watch/0");
+  press(view, Key::up);
+  // Shift+↑: the item moves up, past the locked one, focus with it.
+  press(view, Key::up, true);
+  CHECK(view.focused() == "editor:your_notes/0/i/sayings/2");
+  CHECK(sayings()[2] == "Trim it at dusk");
+  CHECK(sayings()[3]["key"] == "s3");
+  // R on the locked item does nothing; on another it removes it.
+  press(view, Key::down);
+  press(view, Key::reset);
+  CHECK(sayings().size() == 4);
+  REQUIRE(move_to(view, "editor:your_notes/0/add/sayings") == false);  // none while there are four
+  // An item added and left empty goes again.
+  PageView other = notes_view();
+  REQUIRE(move_to(other, "editor:your_notes/0/i/sayings/0"));
+  press(other, Key::reset);
+  CHECK(note_state(other).edits.at("sayings").size() == 2);
+  REQUIRE(move_to(other, "editor:your_notes/0/add/sayings"));
+  press(other, Key::activate);
+  other.edit(EditInput{EditKey::escape});
+  CHECK(note_state(other).edits.at("sayings").size() == 2);
+  // An item's choice: ← → through the field's choices.
+  REQUIRE(move_to(other, "editor:your_notes/0/i/watch/0"));
+  press(other, Key::right);
+  CHECK(note_state(other).edits.at("watch")[0]["choice"] == "dusk");  // past the last, back to the first
+}
+
+TEST_CASE("the editor in game: a choice, a pick, a number and a switch by ← → and Enter (D217)") {
+  PageView view = notes_view();
+  REQUIRE(move_to(view, "editor:your_notes/0/f/register"));
+  press(view, Key::right);
+  CHECK(note_state(view).edits.at("register") == "warm");
+  press(view, Key::left);
+  press(view, Key::left);  // before Plain: "not set here", for a field that may be unset
+  CHECK(note_state(view).edits.at("register").is_null());
+  press(view, Key::down);
+  press(view, Key::right);
+  CHECK(note_state(view).edits.at("oil") == "olive");  // from the topic's choices
+  press(view, Key::down);
+  press(view, Key::right, true);
+  CHECK(note_state(view).edits.at("words_max") == 20);  // 12 and ten, within its most
+  press(view, Key::down);
+  press(view, Key::activate);
+  CHECK(note_state(view).edits.at("lit_at_dawn") == true);
+}
+
+TEST_CASE("the editor in game: a check's messages, a save's conflict and Reload, a draft's proposals (D217)") {
+  PageView view = notes_view();
+  REQUIRE(move_to(view, "editor:your_notes/0/check"));
+  REQUIRE(press(view, Key::activate).kind == Action::Kind::command);
+  view.editor_answer("editor:your_notes/0/check",
+                     answer(R"({"messages": [{"field": "brief", "level": "error", "words": "At most 24 characters."},
+                                {"field": "sayings", "item": 1, "level": "warning", "words": "A word of the game's."},
+                                {"level": "warning", "words": "The file is long."}]})"));
+  DisplayList checked;
+  view.layout(Viewport{}, test::fonts(), checked);
+  CHECK(checked.dump().find("\"Error: At most 24 characters.\"") != std::string::npos);
+  CHECK(checked.dump().find("\"Warning: A word of the game's.\"") != std::string::npos);
+  CHECK(checked.dump().find("\"Warning: The file is long.\"") != std::string::npos);
+  // A save over a revision the space has moved on from: the conflict, its band and Reload, which asks first.
+  REQUIRE(move_to(view, "editor:your_notes/0/f/brief"));
+  press(view, Key::activate);
+  type(view, "!");
+  view.edit(EditInput{EditKey::enter});
+  for (int i = 0; i < 12 && view.focused() != "editor:your_notes/0/save"; ++i) {
+    press(view, Key::up);
+  }
+  REQUIRE(view.focused() == "editor:your_notes/0/save");
+  REQUIRE(press(view, Key::activate).kind == Action::Kind::command);
+  grace::protocol::Result conflict;
+  conflict.error = grace::protocol::ErrorCode::conflict;
+  view.editor_answer("editor:your_notes/0/save", conflict);
+  CHECK(note_state(view).conflict);
+  DisplayList band;
+  view.layout(Viewport{}, test::fonts(), band);
+  CHECK(band.dump().find("\"Changed elsewhere since you opened it.\"") != std::string::npos);
+  press(view, Key::up);
+  REQUIRE(view.focused() == "editor:your_notes/0/reload");
+  press(view, Key::activate);
+  CHECK(note_state(view).dirty());  // asked first: the edit is still there
+  press(view, Key::activate);
+  CHECK_FALSE(note_state(view).dirty());
+  CHECK_FALSE(note_state(view).conflict);
+  // A draft: the notes typed, sent, Working… while it runs; its proposals beside their fields.
+  REQUIRE(move_to(view, "editor:your_notes/0/notes"));
+  press(view, Key::activate);
+  type(view, "tall and green");
+  view.edit(EditInput{EditKey::escape});
+  CHECK(note_state(view).notes == "tall and green");
+  press(view, Key::down);
+  const Action draft = press(view, Key::activate);
+  REQUIRE(draft.kind == Action::Kind::command);
+  CHECK(draft.command.name == "note.draft");
+  CHECK(draft.command.args == Json::parse(R"({"target": "harbour-mouth", "notes": "tall and green"})"));
+  CHECK(view.running("editor:your_notes/0/draft"));
+  view.finished("note.draft");
+  view.editor_answer("editor:your_notes/0/draft",
+                     answer(R"({"draft": {"brief": "Sea lamp", "public.summary": "A tall green lamp.", "met": "no"},
+                                "notice": ""})"));
+  CHECK(note_state(view).draft.size() == 2);
+  DisplayList drafted;
+  view.layout(Viewport{}, test::fonts(), drafted);
+  CHECK(drafted.dump().find("\"Use all\"") != std::string::npos);
+  CHECK(drafted.dump().find("\"Sea lamp\"") != std::string::npos);
+  REQUIRE(move_to(view, "editor:your_notes/0/use/brief"));
+  press(view, Key::activate);
+  CHECK(note_state(view).edits.at("brief") == "Sea lamp");
+  REQUIRE(move_to(view, "editor:your_notes/0/keep/public.summary"));
+  press(view, Key::activate);
+  CHECK(note_state(view).draft.empty());
+  CHECK(note_state(view).edits.count("public.summary") == 0);
+  // Leaving the page lets a draft go; the edits stay for the session.
+  view.editor_answer("editor:your_notes/0/draft", answer(R"({"draft": {"brief": "Wall lamp"}})"));
+  view.open("demo.log");
+  view.open("demo.lamps");
+  CHECK(note_state(view).draft.empty());
+  CHECK(note_state(view).edits.at("brief") == "Sea lamp");
+}
+
+TEST_CASE("the editor in game: Draft greyed with the space's words while it says why not (D217)") {
+  PageView view = notes_view();
+  view.set_topic("lantern.note/harbour-mouth",
+                 Json::parse(R"({"target": "harbour-mouth", "rev": 2, "draft_blocked": "The drafter is resting.",
+                                 "fields": [{"id": "brief", "label": "Short name", "kind": "line", "value": ""}]})"));
+  REQUIRE(move_to(view, "editor:your_notes/0/draft"));
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(list.dump().find("\"The drafter is resting.\"") != std::string::npos);
+}
+
+TEST_CASE("the editor in game: a prose field wraps, and ↑ ↓ move the caret by line (D217, one paragraph)") {
+  PageView view = notes_view();
+  REQUIRE(move_to(view, "editor:your_notes/0/f/public.summary"));
+  press(view, Key::activate);
+  REQUIRE(view.editing());
+  view.pasted(" Its glass was poured in the old way, thick at the foot and thin at the top, and it hums in a gale.");
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  const Rect first = view.caret();
+  view.edit(EditInput{EditKey::home});
+  view.layout(Viewport{}, test::fonts(), list);
+  const Rect home = view.caret();
+  REQUIRE(home.y < first.y);  // more than one line
+  view.edit(EditInput{EditKey::end});
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(view.caret().y == first.y);  // the caret was at the end
+  view.edit(EditInput{EditKey::up});
+  view.layout(Viewport{}, test::fonts(), list);
+  const Rect up = view.caret();
+  CHECK(up.y < first.y);  // a line up
+  view.edit(EditInput{EditKey::up});
+  view.edit(EditInput{EditKey::up});
+  view.edit(EditInput{EditKey::up});
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(view.caret().y == home.y);
+  CHECK(view.caret().x == home.x);  // from the first line, ↑ goes to the start
+  // Enter ends the edit: a prose field is one paragraph.
+  view.edit(EditInput{EditKey::enter});
+  CHECK_FALSE(view.editing());
+}
+
+TEST_CASE("the editor in game: Reset all asks first, by key and by the pointer alike (D217)") {
+  PageView view = notes_view();
+  REQUIRE(move_to(view, "editor:your_notes/0/reset"));
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);
+  const Action reset = press(view, Key::activate);
+  REQUIRE(reset.kind == Action::Kind::command);
+  CHECK(reset.command.name == "note.reset");
+  CHECK(reset.command.args == Json::parse(R"({"target": "harbour-mouth", "all": true, "confirm": true})"));
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  const PageView::Bounds button = view.bounds_of("editor:your_notes/0/reset");
+  REQUIRE(button.row.w > 0);
+  const Pointer click{Pointer::Kind::press, button.row.x + 5, button.row.y + 5};
+  CHECK(view.pointer(click).kind == Action::Kind::none);
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(list.dump().find("\"Press again to confirm\"") != std::string::npos);
+  CHECK(view.pointer(click).kind == Action::Kind::command);
+}

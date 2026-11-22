@@ -386,6 +386,7 @@ const char* refusal_words(grace::protocol::ErrorCode code) noexcept {
     case ErrorCode::busy: return "Already running.";
     case ErrorCode::confirm_required: return "This needs a confirmation first.";
     case ErrorCode::rate_limited: return "Too many changes at once: try again in a moment.";
+    case ErrorCode::conflict: return "Changed elsewhere since you opened it.";
     case ErrorCode::unauthorised:
     case ErrorCode::version:
     case ErrorCode::bad_message:
@@ -461,6 +462,25 @@ bool take_from_spaces(State& m) {
           view->view.capture_answered(!refused,
                                       refused && *result.result.error == grace::protocol::ErrorCode::confirm_required,
                                       words);
+        }
+      }
+      m.commands.erase(it);
+      changed = true;
+      continue;
+    }
+    if (it->second.second.rfind("editor:", 0) == 0) {
+      // An editor's command (D217): its answer, body and all, goes to the element that sent it, whatever is open.
+      if (result.result.error.has_value()) {
+        g_refusals.fetch_add(1, std::memory_order_relaxed);
+      }
+      for (auto& view : m.spaces) {
+        if (view->id == it->second.first) {
+          grace::protocol::Result answer = result.result;
+          const bool messages = answer.body.has_value() && answer.body->is_object() && answer.body->contains("messages");
+          if (answer.error.has_value() && (!answer.detail.has_value() || answer.detail->empty()) && !messages) {
+            answer.detail = refusal_words(*answer.error);  // the view's own words where the space gave none
+          }
+          view->view.editor_answer(it->second.second, answer);
         }
       }
       m.commands.erase(it);
@@ -554,6 +574,7 @@ void run(State& m, const grace::protocol::Cmd& command) {
                               : focused.rfind("section-action:", 0) == 0 ? focused.substr(15)
                               : focused.rfind("submit:", 0) == 0         ? focused.substr(7)  // a form's (D195)
                               : focused.rfind("secret:", 0) == 0         ? focused.substr(7)  // a row secret's (D194)
+                              : focused.rfind("editor:", 0) == 0         ? focused  // an editor's, whole (D217)
                                                                          : key_of(command);
     std::uint64_t ticket = 0;
     const bool capture = space.view.capture_open();
@@ -569,6 +590,11 @@ void run(State& m, const grace::protocol::Cmd& command) {
       space.view.finished(name);  // never sent: nothing to wait for
       if (capture) {
         space.view.capture_answered(false, false, "Not now: the space has too many commands waiting.");
+      } else if (where.rfind("editor:", 0) == 0) {
+        grace::protocol::Result busy;
+        busy.error = grace::protocol::ErrorCode::busy;
+        busy.detail = "Not now: the space has too many commands waiting.";
+        space.view.editor_answer(where, busy);
       } else {
         space.view.refused(where, "Not now: the space has too many commands waiting.");
       }

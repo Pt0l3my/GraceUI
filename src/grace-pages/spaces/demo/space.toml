@@ -12,8 +12,9 @@ id = "demo"
 name = "Demo space"
 settings_schema = 1
 commands = ["settings.set", "settings.reset", "lantern.trim", "lantern.clear_log", "keepers.dismiss", "keepers.ward",
-            "keepers.hire", "keepers.dismiss_all", "oil.order"]
-slow_commands = ["oil.order"]  # the oil comes from the harbour store: answered within 90 s (D216)
+            "keepers.hire", "keepers.dismiss_all", "oil.order", "note.check", "note.save", "note.reset", "note.restore",
+            "note.draft"]
+slow_commands = ["oil.order", "note.draft"]  # the harbour store's oil and a drafted note: within 90 s (D216)
 
 [[topic]]
 id = "settings"
@@ -37,6 +38,11 @@ shape = "state"
 
 [[topic]]
 id = "lantern.lamp"
+shape = "state"
+family = true
+
+[[topic]]
+id = "lantern.note"
 shape = "state"
 family = true
 
@@ -347,7 +353,7 @@ description = "Every lamp on the harbour wall, and how each one burns."
 increment = "0.2"
 related = ["demo.overview", "demo.log"]
 help.purpose = "Look over the harbour wall's lamps, one at a time."
-help.steps = ["Choose a lamp in the list.", "Read how it burns on the Lamp tab, and its keeper's notes on the Notes tab.", "The list follows the wall from the harbour mouth inwards."]
+help.steps = ["Choose a lamp in the list.", "Read how it burns on the Lamp tab, and its keeper's notes on the Notes tab.", "Write your own notes on a lamp on the Your notes tab: check them, then save."]
 master = { topic = "lantern.lamps", key = "id", detail = "lantern.lamp", label = "Lamps", empty = "No lamp is lit on the wall yet.", none = "Choose a lamp to see how it burns." }
 
 [[page.tabs]]
@@ -359,3 +365,8 @@ sections = [{ id = "burning", title = "Burning", blocks = [{ kind = "component",
 id = "notes"
 name = "Notes"
 sections = [{ id = "notes", title = "Keeper's notes", blocks = [{ kind = "component", component = "computed_sentence", topic = "lantern.lamp", props = { empty = "No note for this lamp yet." } }] }]
+
+[[page.tabs]]
+id = "yours"
+name = "Your notes"
+sections = [{ id = "your_notes", title = "Your notes", blocks = [{ kind = "editor", topic = "lantern.note", editor = { save = "note.save", check = "note.check", reset = "note.reset", restore = "note.restore", draft = "note.draft", notes_label = "Your rough notes", notes_max = 400 } }] }]

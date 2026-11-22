@@ -16,8 +16,9 @@ namespace grace::view {
 class TextField {
  public:
   TextField() = default;
-  // `text` cut to `max_bytes` at a character's boundary; the caret at its end.
-  explicit TextField(std::string_view text, std::size_t max_bytes = 1024);
+  // `text` cut to `max_bytes` at a character's boundary, and to `max_chars` characters if that is not 0 (an editor's
+  // field, D217); the caret at its end.
+  explicit TextField(std::string_view text, std::size_t max_bytes = 1024, std::size_t max_chars = 0);
 
   const std::string& text() const noexcept { return text_; }
   std::size_t max_bytes() const noexcept { return max_; }
@@ -81,6 +82,7 @@ class TextField {
 
   std::string text_;
   std::size_t max_ = 1024;
+  std::size_t max_chars_ = 0;  // 0: no cap in characters
   std::size_t caret_ = 0;
   std::size_t anchor_ = 0;
 };

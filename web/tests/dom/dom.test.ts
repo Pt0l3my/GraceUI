@@ -449,6 +449,76 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("the editor in the browser: fields drawn, an edit Unsaved and kept per row, check's messages under their " +
+       "fields, a save, a draft's Use this, prose one paragraph (D217)", async () => {
+    const { page, close } = await fresh();
+    const cmds = (name: string) => host.received.filter((f) => f.t === "cmd" && f.name === name);
+    try {
+      await openFromRail(page, "records", "demo.lamps");
+      await page.locator(".master__row[aria-selected=true]").waitFor();
+      await page.locator("[role=tab]", { hasText: "Your notes" }).click();
+      const editor = page.locator(".editor[data-editor='lantern.note/harbour-mouth']");
+      await editor.waitFor();
+      const brief = editor.locator(".editor__field[data-field=brief] input");
+      assert.equal(await brief.inputValue(), "Mouth lamp");
+      assert.equal(await editor.locator(".editor__field[data-field='public.summary'] .editor__count").textContent(),
+                   "19 / 35 words");
+      assert.equal(await editor.locator(".editor__field[data-field=sayings] .editor__item").count(), 3);
+      assert.equal(await editor.locator(".editor__field[data-field=sayings] .editor__locked").textContent(),
+                   "Locked: Written by hand: change it in the file.");
+      await editor.locator(".editor__field[data-field=oil] option", { hasText: "Olive oil" }).waitFor({ state: "attached" });
+      assert.equal(await editor.locator(".editor__field[data-field=met] .editor__shown").textContent(),
+                   "Harbour mouth, on the first evening");
+      // An edit: Unsaved, its count live, held to its 24 characters.
+      await brief.fill("Mouth lamp of the harbour wall, the far one");
+      assert.equal(await brief.inputValue(), "Mouth lamp of the harbou");
+      await editor.locator(".editor__head .editor__unsaved", { hasText: "Unsaved changes" }).waitFor();
+      // Prose is one paragraph: Enter types nothing, a pasted line break is a space.
+      const summary = editor.locator(".editor__field[data-field='public.summary'] textarea");
+      await summary.focus();
+      await page.keyboard.press("End");
+      await page.keyboard.press("Enter");
+      await page.keyboard.type(" Green.");
+      assert.equal((await summary.inputValue()).includes("\n"), false);
+      // The edit is kept per row: another lamp, then back.
+      await page.locator(".master__row[data-key='fish-steps']").click();
+      await page.locator(".editor[data-editor='lantern.note/fish-steps']").waitFor();
+      await page.locator(".editor__why", { hasText: "The drafter is resting" }).waitFor();
+      await page.locator(".master__row[data-key='harbour-mouth']").click();
+      await editor.waitFor();
+      assert.equal(await brief.inputValue(), "Mouth lamp of the harbou");
+      // Check: the space's messages under their fields, in its words.
+      await editor.locator("[data-editor-part=check]").click();
+      await editor.locator(".editor__top, .editor__message").first().waitFor();
+      assert.equal(cmds("note.check").length, 1);
+      assert.equal((cmds("note.check")[0]?.args as { rev: number }).rev, 1);
+      // Save: sent with its revision; the space publishes it again, and Unsaved goes.
+      await editor.locator("[data-editor-part=save]").click();
+      await editor.locator(".editor__state", { hasText: "Saved" }).waitFor();
+      for (let i = 0; i < 20 && await editor.locator(".editor__head .editor__unsaved").count() > 0; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.equal(await editor.locator(".editor__head .editor__unsaved").count(), 0);
+      assert.equal(await brief.inputValue(), "Mouth lamp of the harbou");
+      const saved = cmds("note.save")[0]?.args as { rev: number; doc: { [k: string]: unknown } };
+      assert.equal(saved.rev, 1);
+      assert.equal("met" in saved.doc, false);
+      // A draft: the notes sent, its proposal beside the field; Use this makes it an unsaved edit.
+      await editor.locator(".editor__draft textarea").fill("tall and green");
+      await editor.locator("[data-editor-part=draft]").click();
+      await editor.locator("[data-proposal=brief]").waitFor();
+      assert.equal(await editor.locator("[data-proposal=brief] .editor__proposal-words").textContent(), "tall and green");
+      await editor.locator("[data-use=brief]").click();
+      assert.equal(await brief.inputValue(), "tall and green");
+      await editor.locator(".editor__head .editor__unsaved").waitFor();
+      assert.equal(await editor.locator("[data-proposal=brief]").count(), 0);
+      await editor.locator("[data-keep='public.summary']").click();
+      assert.equal(await editor.locator(".editor__proposal").count(), 0);
+    } finally {
+      await close();
+    }
+  });
+
   test("proposal 0007 in the browser: a row's action asks first, a row's secret is sent once and kept nowhere, a " +
        "form sends its fields, a picker offers the space's choices (D192 to D195)", async () => {
     const { page, close } = await fresh();

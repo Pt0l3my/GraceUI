@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 6,
+  "minor": 7,
   "categories": [
     {
       "id": "lanterns",
@@ -373,7 +373,7 @@
         "steps": [
           "Choose a lamp in the list.",
           "Read how it burns on the Lamp tab, and its keeper's notes on the Notes tab.",
-          "The list follows the wall from the harbour mouth inwards."
+          "Write your own notes on a lamp on the Your notes tab: check them, then save."
         ]
       },
       "related": [
@@ -426,6 +426,31 @@
               ]
             }
           ]
+        },
+        {
+          "id": "yours",
+          "name": "Your notes",
+          "sections": [
+            {
+              "id": "your_notes",
+              "title": "Your notes",
+              "blocks": [
+                {
+                  "kind": "editor",
+                  "topic": "lantern.note",
+                  "editor": {
+                    "save": "note.save",
+                    "check": "note.check",
+                    "reset": "note.reset",
+                    "restore": "note.restore",
+                    "draft": "note.draft",
+                    "notes_label": "Your rough notes",
+                    "notes_max": 400
+                  }
+                }
+              ]
+            }
+          ]
         }
       ],
       "master": {
@@ -465,6 +490,11 @@
       "family": true
     },
     {
+      "id": "lantern.note",
+      "shape": "state",
+      "family": true
+    },
+    {
       "id": "lantern.log",
       "shape": "stream",
       "ring": 200
@@ -484,9 +514,15 @@
     "keepers.ward",
     "keepers.hire",
     "keepers.dismiss_all",
-    "oil.order"
+    "oil.order",
+    "note.check",
+    "note.save",
+    "note.reset",
+    "note.restore",
+    "note.draft"
   ],
   "slow_commands": [
-    "oil.order"
+    "oil.order",
+    "note.draft"
   ]
 }

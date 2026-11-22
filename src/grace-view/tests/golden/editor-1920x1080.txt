@@ -1,0 +1,136 @@
+fill    scrim           0,   0 1920x1080
+fill    ground.1        0,   0 1920x1080
+fill    ground.0        0,   0  240x1080
+text    gold           24,  24  114x28   glyphs 9 "Demo space"
+text    ink.mute       24,  76   68x24   glyphs 8 "Lanterns"
+line    rule           24, 108  192x1   
+text    ink.hi         24, 116   60x24   glyphs 7 "Records"
+text    ink.mute       40, 154   20x20   glyphs 3 "Log"
+text    ink.mute       40, 186   54x20   glyphs 8 "Festival"
+fill    tint.select     0, 212  240x32  
+fill    gold            0, 212    2x32  
+text    gold.hi        40, 218   34x20   glyphs 5 "Lamps"
+fill    ground.well   272,   8  280x28   r2
+text    ink.faint     282,  12   40x20   glyphs 6 "Search"
+text    ink.faint    1827,  12   61x20   glyphs 7 "F5  Close"
+line    rule          240,  44 1680x1   
+text    ink.hi        272,  69   79x36   clip1 glyphs 5 "Lamps"
+text    ink.mute      272, 109  371x20   clip1 glyphs 45 "Every lamp on the harbour wall, and how each one burns."
+line    rule.strong   272, 141 1600x1    clip1
+diamond gold.deep     272, 137    9x9    w1 clip1
+fill    ground.2      272, 161  440x220  r4 clip1
+stroke  rule          272, 161  440x220  r4 w1 clip1
+text    gold          292, 177   38x16   clip1 glyphs 5 "Lamps"
+fill    tint.select   280, 201  424x56   clip1
+fill    gold          280, 201    2x56   clip1
+text    gold.hi       292, 208   98x22   clip1 glyphs 12 "Harbour mouth"
+text    ink.mute      292, 230  169x20   clip1 glyphs 20 "The north end of the wall"
+text    ink.hi        292, 264   75x22   clip1 glyphs 9 "Fish steps"
+text    ink.mute      292, 286  202x20   clip1 glyphs 26 "Halfway along, above the steps"
+text    ink.hi        292, 320   68x22   clip1 glyphs 8 "Old crane"
+text    ink.mute      292, 342  182x20   clip1 glyphs 22 "The inner end, by the crane"
+text    ink.mute      736, 161   31x18   clip1 glyphs 4 "Lamp"
+text    ink.mute      790, 161   39x18   clip1 glyphs 5 "Notes"
+text    gold.hi       852, 161   78x18   clip1 glyphs 9 "Your notes"
+fill    gold          852, 185   77x2    clip1
+line    rule          736, 188 1136x1    clip1
+fill    ground.2      736, 208 1136x1250 r4 clip1
+stroke  rule          736, 208 1136x1250 r4 w1 clip1
+text    gold          756, 224   77x16   clip1 glyphs 9 "Your notes"
+text    ink.faint    1842, 224    7x20   clip1 glyphs 1 "-"
+circle  moss          756, 258    8x8    clip1
+text    ink.body      772, 252   34x20   clip1 glyphs 5 "Saved"
+fill    gold          756, 282   51x30   r2 clip1
+text    on.gold       768, 287   27x20   clip1 glyphs 4 "Save"
+stroke  edge          817, 282   58x30   r2 w1 clip1
+text    ink.hi        829, 287   34x20   clip1 glyphs 5 "Check"
+stroke  edge          885, 282  213x30   r2 w1 clip1
+text    ink.hi        897, 287  189x20   clip1 glyphs 25 "Restore the previous version"
+fill    rot.fill     1108, 282   85x30   r2 clip1
+text    ink.hi       1120, 287   61x20   clip1 glyphs 8 "Reset all"
+line    rule          756, 326 1096x1    clip1
+text    ink.hi        756, 336  120x22   clip1 glyphs 14 "Your rough notes"
+text    ink.faint    1805, 336   47x20   clip1 glyphs 5 "0 / 400"
+fill    ground.well   756, 364 1096x64   r2 clip1
+stroke  edge          756, 364 1096x64   r2 w1 clip1
+stroke  edge          756, 438   58x30   r2 w1 clip1
+text    ink.hi        768, 443   34x20   clip1 glyphs 5 "Draft"
+text    ink.mute      824, 443  526x20   clip1 glyphs 64 "Your rough notes, and your text when you revise, go to the demo's own drafter."
+line    rule          756, 482 1096x1    clip1
+text    ink.hi        756, 492   75x22   clip1 glyphs 9 "Short name"
+text    ink.faint    1805, 493   47x20   clip1 glyphs 5 "10 / 24"
+text    ink.mute      756, 518  169x20   clip1 glyphs 21 "What the keepers call it."
+fill    ground.well   756, 542 1096x32   r2 clip1
+stroke  edge          756, 542 1096x32   r2 w1 clip1
+text    ink.body      766, 548   68x20   clip1 glyphs 9 "Mouth lamp"
+line    rule          756, 584 1096x1    clip1
+text    ink.hi        756, 594   90x22   clip1 glyphs 10 "How it looks"
+text    ink.faint    1764, 595   88x20   clip1 glyphs 10 "19 / 35 words"
+fill    ground.well   756, 624 1096x64   r2 clip1
+stroke  edge          756, 624 1096x64   r2 w1 clip1
+text    ink.body      766, 634  660x22   clip1 glyphs 70 "A tall lamp behind green glass at the very end of the wall, the first light a boat sees."
+text    ink.mute      756, 694  351x20   clip1 glyphs 41 "The demo's own: A green lamp at the end of the wall."
+line    rule          756, 718 1096x1    clip1
+text    ink.hi        756, 728  165x22   clip1 glyphs 18 "What keepers say of it"
+text    ink.faint    1818, 729   34x20   clip1 glyphs 3 "3 / 4"
+fill    ground.well   756, 758 1096x32   r2 clip1
+stroke  edge          756, 758 1096x32   r2 w1 clip1
+text    ink.body      766, 764  128x20   clip1 glyphs 16 "Never let it gutter"
+fill    ground.well   756, 794 1096x32   r2 clip1
+stroke  edge          756, 794 1096x32   r2 w1 clip1
+text    ink.body      766, 800  135x20   clip1 glyphs 17 "Green for going home"
+fill    ground.well   756, 830 1096x32   r2 a128 clip1
+stroke  edge          756, 830 1096x32   r2 w1 a128 clip1
+text    ink.body      766, 836  115x20   a128 clip1 glyphs 14 "The old ward line"
+text    ink.mute      756, 866  317x20   clip1 glyphs 39 "Locked: Written by hand: change it in the file."
+text    gold          756, 891   34x20   clip1 glyphs 4 "+ Add"
+line    rule          756, 926 1096x1    clip1
+text    ink.hi        756, 936   52x22   clip1 glyphs 7 "Watched"
+text    ink.faint    1818, 937   34x20   clip1 glyphs 3 "1 / 3"
+fill    ground.3      756, 966  220x32   r2 clip1
+text    gold          766, 972   68x20   clip1 glyphs 8 "In a storm"
+fill    ground.well   986, 966  866x32   r2 clip1
+stroke  edge          986, 966  866x32   r2 w1 clip1
+text    ink.body      996, 972   88x20   clip1 glyphs 12 "Trimmed short"
+text    gold          756,1007   34x20   clip1 glyphs 4 "+ Add"
+line    rule          756,1042 1096x1    clip1
+text    ink.hi        756,1052   30x22   clip1 glyphs 4 "Tone"
+fill    ground.well   756,1082  360x32   r2 clip1
+stroke  edge          756,1082  360x32   r2 w1 clip1
+text    ink.body      766,1088   34x20   clip1 glyphs 5 "Plain"
+text    ink.faint    1086,1088   20x20   clip1 glyphs 2 "‹ ›"
+line    rule          756,1124 1096x1    clip1
+text    ink.hi        756,1134   90x22   clip1 glyphs 10 "Oil it burns"
+fill    ground.well   756,1164  360x32   r2 clip1
+stroke  edge          756,1164  360x32   r2 w1 clip1
+text    ink.body      766,1170   81x20   clip1 glyphs 11 "Rapeseed oil"
+text    ink.faint    1086,1170   20x20   clip1 glyphs 2 "‹ ›"
+line    rule          756,1206 1096x1    clip1
+text    ink.hi        756,1216  165x22   clip1 glyphs 19 "Longest line, in words"
+fill    ground.well   756,1246  360x32   r2 clip1
+stroke  edge          756,1246  360x32   r2 w1 clip1
+text    ink.body      766,1252   14x20   clip1 glyphs 2 "12"
+text    ink.faint    1086,1252   20x20   clip1 glyphs 2 "‹ ›"
+line    rule          756,1288 1096x1    clip1
+text    ink.hi        756,1298  112x22   clip1 glyphs 12 "Lit at dawn too"
+fill    ground.well   756,1328  360x32   r2 clip1
+stroke  edge          756,1328  360x32   r2 w1 clip1
+text    ink.body      766,1334   20x20   clip1 glyphs 3 "Off"
+text    ink.faint    1086,1334   20x20   clip1 glyphs 2 "‹ ›"
+line    rule          756,1370 1096x1    clip1
+text    ink.hi        756,1380   22x22   clip1 glyphs 3 "Met"
+text    ink.body      756,1410  262x22   clip1 glyphs 30 "Harbour mouth, on the first evening"
+fill    ground.2      736,1474 1136x140  r4 clip1
+stroke  rule          736,1474 1136x140  r4 w1 clip1
+text    gold          756,1490   54x16   clip1 glyphs 7 "Related"
+line    rule          756,1514 1096x1    clip1
+text    ink.hi        756,1518   60x22   clip1 glyphs 8 "Overview"
+text    ink.mute     1121,1520  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
+text    gold         1836,1518    8x22   clip1 glyphs 1 "→"
+line    rule          756,1558 1096x1    clip1
+text    ink.hi        756,1562   22x22   clip1 glyphs 3 "Log"
+text    ink.mute     1121,1564  418x20   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
+text    gold         1836,1562    8x22   clip1 glyphs 1 "→"
+line    rule          240,1044 1680x1   
+text    ink.faint     272,1052  162x20   glyphs 16 "Enter  Open    Esc  Back"
+stroke  gold.hi       850, 159   81x30   r4 w2 clip1

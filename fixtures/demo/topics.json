@@ -159,6 +159,175 @@
     },
     "sentence": "The old-crane lamp burns steady amber and lights the crane's arm for the night watch."
   },
+  "lantern.note/harbour-mouth": {
+    "target": "harbour-mouth",
+    "rev": 1,
+    "state": {
+      "word": "Saved",
+      "tone": "moss"
+    },
+    "draft_help": "Your rough notes, and your text when you revise, go to the demo's own drafter.",
+    "fields": [
+      {
+        "id": "brief",
+        "label": "Short name",
+        "kind": "line",
+        "max_chars": 24,
+        "value": "Mouth lamp",
+        "help": "What the keepers call it."
+      },
+      {
+        "id": "public.summary",
+        "label": "How it looks",
+        "kind": "prose",
+        "max_words": 35,
+        "max_chars": 210,
+        "nullable": true,
+        "value": "A tall lamp behind green glass at the very end of the wall, the first light a boat sees.",
+        "reference": "A green lamp at the end of the wall.",
+        "reference_label": "The demo's own"
+      },
+      {
+        "id": "sayings",
+        "label": "What keepers say of it",
+        "kind": "list",
+        "max_items": 4,
+        "max_words": 10,
+        "max_chars": 60,
+        "value": [
+          "Never let it gutter",
+          {
+            "text": "Green for going home",
+            "key": "s2"
+          },
+          {
+            "text": "The old ward line",
+            "key": "s3",
+            "locked": "Written by hand: change it in the file."
+          }
+        ]
+      },
+      {
+        "id": "watch",
+        "label": "Watched",
+        "kind": "list",
+        "max_items": 3,
+        "max_words": 8,
+        "max_chars": 40,
+        "choices": [
+          {
+            "value": "dusk",
+            "label": "At dusk"
+          },
+          {
+            "value": "storm",
+            "label": "In a storm"
+          }
+        ],
+        "value": [
+          {
+            "choice": "storm",
+            "text": "Trimmed short",
+            "key": "w1"
+          }
+        ]
+      },
+      {
+        "id": "register",
+        "label": "Tone",
+        "kind": "choice",
+        "nullable": true,
+        "choices": [
+          {
+            "value": "plain",
+            "label": "Plain"
+          },
+          {
+            "value": "warm",
+            "label": "Warm"
+          },
+          {
+            "value": "terse",
+            "label": "Terse"
+          }
+        ],
+        "value": "plain"
+      },
+      {
+        "id": "oil",
+        "label": "Oil it burns",
+        "kind": "pick",
+        "choices_from": "lantern.oils",
+        "value": "rapeseed"
+      },
+      {
+        "id": "words_max",
+        "label": "Longest line, in words",
+        "kind": "number",
+        "min": 6,
+        "max": 20,
+        "value": 12
+      },
+      {
+        "id": "lit_at_dawn",
+        "label": "Lit at dawn too",
+        "kind": "switch",
+        "value": false
+      },
+      {
+        "id": "met",
+        "label": "Met",
+        "kind": "shown",
+        "value": "Harbour mouth, on the first evening"
+      }
+    ]
+  },
+  "lantern.note/fish-steps": {
+    "target": "fish-steps",
+    "rev": 1,
+    "state": {
+      "word": "Not written yet",
+      "tone": "glint"
+    },
+    "draft_blocked": "The drafter is resting: try again later.",
+    "fields": [
+      {
+        "id": "brief",
+        "label": "Short name",
+        "kind": "line",
+        "max_chars": 24,
+        "value": ""
+      },
+      {
+        "id": "public.summary",
+        "label": "How it looks",
+        "kind": "prose",
+        "max_words": 35,
+        "max_chars": 210,
+        "nullable": true,
+        "value": null,
+        "reference": "A low lamp above the fish steps.",
+        "reference_label": "The demo's own"
+      }
+    ]
+  },
+  "lantern.note/old-crane": {
+    "target": "old-crane",
+    "rev": 1,
+    "state": {
+      "word": "Saved",
+      "tone": "moss"
+    },
+    "fields": [
+      {
+        "id": "brief",
+        "label": "Short name",
+        "kind": "line",
+        "max_chars": 24,
+        "value": "Crane lamp"
+      }
+    ]
+  },
   "lantern.status": {
     "tiles": [
       {

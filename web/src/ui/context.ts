@@ -13,12 +13,24 @@ export interface Greyed {
 }
 export const GreyedContext = createContext<Greyed>({ page: "", words: () => null });
 
-/** A master page's detail (D215): the family its blocks may name, and the chosen row's member (null while none). */
+/** A master page's detail (D215): the family its blocks may name, and the chosen row's member (null while none); and
+ * since D217 every family the space declares, each of which a block on the page draws for the chosen row's key. */
 export interface MasterDetail {
   family: string;
   member: string | null;
+  key: string | null;
+  families: readonly string[];
 }
 export const MasterContext = createContext<MasterDetail | null>(null);
+
+/** The topic a block draws: its own, or on a master page for a block bound to a family the chosen row's member
+ * (undefined while no row is chosen). */
+export function topicFor(master: MasterDetail | null, topic: string | undefined): string | undefined {
+  if (master === null || topic === undefined || !master.families.includes(topic)) {
+    return topic;
+  }
+  return master.key !== null ? `${topic}/${master.key}` : undefined;
+}
 
 export function useSession(): Session {
   const session = useContext(SessionContext);

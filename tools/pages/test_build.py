@@ -237,7 +237,7 @@ class Seeded(unittest.TestCase):
         self.expect("its master list has a key column (a name) and a label", sp, desc, fx)
         sp, desc, fx = demo()
         del page(sp, "demo.lamps")["master"]
-        self.expect("draws family lantern.lamp on a page whose master list names it as its detail", sp, desc, fx)
+        self.expect("draws family lantern.lamp on a page with no master list", sp, desc, fx)
         sp, desc, fx = demo()
         page(sp, "demo.keepers")["sections"][2]["status"] = {"topic": "lantern.lamp"}
         self.expect("its status names a state topic of the space's own", sp, desc, fx)

@@ -32,6 +32,7 @@ text    ink.mute      292, 342  182x20   clip1 glyphs 22 "The inner end, by the 
 text    gold.hi       736, 161   31x18   clip1 glyphs 4 "Lamp"
 fill    gold          736, 185   30x2    clip1
 text    ink.mute      790, 161   39x18   clip1 glyphs 5 "Notes"
+text    ink.mute      852, 161   78x18   clip1 glyphs 9 "Your notes"
 line    rule          736, 188 1136x1    clip1
 fill    ground.2      736, 208 1136x188  r4 clip1
 stroke  rule          736, 208 1136x188  r4 w1 clip1

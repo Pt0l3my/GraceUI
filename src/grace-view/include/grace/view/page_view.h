@@ -10,11 +10,13 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include "grace/protocol/messages.h"
 #include "grace/view/display.h"
+#include "grace/view/editor.h"
 #include "grace/view/text.h"
 #include "grace/view/text_field.h"
 
@@ -203,6 +205,19 @@ class PageView {
   void finished(std::string_view command);
   bool running(std::string_view element) const;  // an element, named as focused() names it, waits for its answer
 
+  // ---- The editor block (D217, proposal 0010 §3.3 and §7). Its document is its topic's body; the player's edits over
+  // it are kept in the view for the session (G38 (2)), whatever page is open and whether the menu is open or not, by the
+  // document's topic. Its focus stops are named "editor:<section>/<n>/<part>": save, check, reset, restore, reload,
+  // notes, draft, use_all; f/<field> a field; i/<field>/<n> a list's item; add/<field>; use/<field> and keep/<field> a
+  // draft's proposal. Enter on a text field or an item edits it in GraceUI's own field (one paragraph; a prose field
+  // wraps, ↑ ↓ moving by line), ← → change a choice, a pick, a number or a switch, and an item's choice; Shift+↑ ↓ move an
+  // item; R undoes a field's edit, or leaves a field that may be unset to the space ("not set here"), or removes an item.
+  // A command's answer comes back through editor_answer(), by the element that sent it: a check's messages, a save's
+  // (or its conflict), a draft's proposals.
+  void editor_answer(std::string_view where, const protocol::Result& result);
+  // An editor's state, by its document's topic (tests).
+  const EditorState* editor_state(std::string_view topic) const;
+
   std::string_view page() const noexcept;
   Scope scope() const noexcept { return scope_; }
   // The focused element, as "rail:<page or category>", "search", "action:<id>", "tab:<id>", "section:<id>",
@@ -226,14 +241,15 @@ class PageView {
 
  private:
   enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related, cell, row_action,
-                                        section_action, form_field, form_submit, row_secret, master_row };
+                                        section_action, form_field, form_submit, row_secret, master_row, editor };
   struct Focus {
     FocusKind kind;
     std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
                         // row action's topic/key/action
     std::size_t index;  // into page().actions, tabs, sections; a setting's index; a cell's or a row action's row
-    const protocol::PageBlock* block = nullptr;  // a row action's table (D192)
-    std::size_t sub = 0;                         // a row action's index in its table's row_actions
+    const protocol::PageBlock* block = nullptr;  // a row action's table (D192), an editor's block (D217)
+    std::size_t sub = 0;                         // a row action's index in its table's row_actions; a list's item
+    std::uint8_t part = 0;                       // an editor's element (EditorPart)
   };
   struct RailEntry {
     enum class Kind : std::uint8_t { category, page, head, foot, switcher };
@@ -298,7 +314,7 @@ class PageView {
   // A table's row secret's id (D194): its cell base and the row's key, or the row's index.
   static std::string secret_id(const protocol::PageBlock& block, const protocol::Json& row, std::size_t r);
 
-  enum class EditKind : std::uint8_t { none, setting, form_field, row_secret, search };
+  enum class EditKind : std::uint8_t { none, setting, form_field, row_secret, search, editor_text, editor_notes };
   struct Edit {
     EditKind kind = EditKind::none;
     std::string id;                              // a setting's key, a form field's or a row secret's focus id
@@ -307,13 +323,18 @@ class PageView {
     std::size_t offset = 0;                      // the first byte drawn, so that the caret stays in view
     const protocol::PageBlock* block = nullptr;  // a form's or a row secret's
     protocol::Json row_key;                      // a row secret's row
+    std::string topic;                           // an editor's document's topic
+    std::string editor_field;                    // an editor's field
+    std::size_t item = static_cast<std::size_t>(-1);  // a list's item, or none
+    bool prose = false;                          // wraps; ↑ ↓ move by line
   };
   Edit edit_;
   void start_edit(EditKind kind, std::string id, std::string_view text, std::size_t max, bool masked,
                   const protocol::PageBlock* block = nullptr, protocol::Json row_key = {});
   Action finish_edit(bool keep, int move_on);  // move_on: +1 Enter or Tab, -1 Shift+Tab, 0 neither
   void end_edit();  // the field gone, a masked one's text overwritten first
-  void edited();    // after a change: a form field's text kept, search's hits found again
+  void edited();    // after a change: a form field's or an editor's text kept, search's hits found again
+  void editor_store();  // the edited editor text into its document's edits (or the draft's notes)
   std::map<std::string, std::string, std::less<>> form_values_;  // a form field's text, by its focus id
   std::string search_query_;
   std::vector<SearchHit> search_hits_;
@@ -338,6 +359,33 @@ class PageView {
   bool master_focus_pending_ = false;  // a master page opened before its list had rows: focus goes to the first one
   std::map<std::string, std::vector<std::string>, std::less<>> running_;  // a slow command's senders, oldest first
   void note_running(const Action& action, const std::string& sender);
+
+  // The editor block (D217).
+  enum class EditorPart : std::uint8_t { save, check, reset, restore, reload, notes, draft, use_all, field, item, add,
+                                         use, keep };
+  std::map<std::string, EditorState, std::less<>> editors_;      // by the document's topic
+  std::map<std::string, std::string, std::less<>> editor_sent_;  // a command's sender: the document's topic it was for
+  struct EditorAt {
+    const protocol::PageBlock* block = nullptr;
+    std::string topic;
+    EditorDocument doc;
+    EditorState* state = nullptr;
+    std::string eid;
+  };
+  // The editor a focus stop belongs to: its block, its document's topic, its document and its state; false if its topic
+  // has published no document.
+  bool editor_of(const Focus& f, EditorAt& out);
+  Action editor_input(const Focus& f, const Input& in, bool& handled);
+  Action editor_command(EditorAt& at, EditorPart part, const std::string& sender);
+  void editor_set(EditorAt& at, const EditorField& field, protocol::Json value);
+  static std::string editor_part_name(EditorPart part);
+  std::string editor_hints(const Focus& f);  // the focused editor element's keys
+  // An edit of an editor's text: a field, a list's item (item) or the draft's notes (an empty field), capped in
+  // characters (0: none) as well as bytes.
+  void start_editor_edit(EditKind kind, std::string id, std::string_view text, std::size_t chars,
+                         const EditorAt& at, std::string field, std::size_t item, bool prose);
+  std::vector<std::tuple<std::size_t, float, float>> prose_stops_;  // the edited prose's boundaries: offset, x, line top
+  float prose_line_ = 0;                                            // its lines' height
   Rect caret_rect_{};
   Rect edit_box_{};                                         // the edited field, as the last layout drew it
   std::vector<std::pair<std::size_t, float>> edit_stops_;   // its drawn boundaries: a byte offset and its x

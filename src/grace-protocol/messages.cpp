@@ -7,13 +7,13 @@
 namespace grace::protocol {
 
 std::string_view to_string(ErrorCode value) noexcept {
-  static constexpr std::array<std::string_view, 13> kNames = {"bad_message", "unknown_topic", "unknown_command", "unknown_key", "invalid_value", "locked", "not_now", "busy", "confirm_required", "unauthorised", "rate_limited", "version", "internal"};
+  static constexpr std::array<std::string_view, 14> kNames = {"bad_message", "unknown_topic", "unknown_command", "unknown_key", "invalid_value", "locked", "not_now", "busy", "confirm_required", "unauthorised", "rate_limited", "version", "internal", "conflict"};
   const auto index = static_cast<std::size_t>(value);
   return index < kNames.size() ? kNames[index] : std::string_view("");
 }
 
 bool from_string(std::string_view text, ErrorCode& out) noexcept {
-  static constexpr std::array<std::string_view, 13> kNames = {"bad_message", "unknown_topic", "unknown_command", "unknown_key", "invalid_value", "locked", "not_now", "busy", "confirm_required", "unauthorised", "rate_limited", "version", "internal"};
+  static constexpr std::array<std::string_view, 14> kNames = {"bad_message", "unknown_topic", "unknown_command", "unknown_key", "invalid_value", "locked", "not_now", "busy", "confirm_required", "unauthorised", "rate_limited", "version", "internal", "conflict"};
   for (std::size_t i = 0; i < kNames.size(); ++i) {
     if (kNames[i] == text) {
       out = static_cast<ErrorCode>(i);
@@ -143,13 +143,13 @@ bool from_string(std::string_view text, Component& out) noexcept {
 }
 
 std::string_view to_string(BlockKind value) noexcept {
-  static constexpr std::array<std::string_view, 4> kNames = {"settings", "shortcuts", "component", "form"};
+  static constexpr std::array<std::string_view, 5> kNames = {"settings", "shortcuts", "component", "form", "editor"};
   const auto index = static_cast<std::size_t>(value);
   return index < kNames.size() ? kNames[index] : std::string_view("");
 }
 
 bool from_string(std::string_view text, BlockKind& out) noexcept {
-  static constexpr std::array<std::string_view, 4> kNames = {"settings", "shortcuts", "component", "form"};
+  static constexpr std::array<std::string_view, 5> kNames = {"settings", "shortcuts", "component", "form", "editor"};
   for (std::size_t i = 0; i < kNames.size(); ++i) {
     if (kNames[i] == text) {
       out = static_cast<BlockKind>(i);
@@ -930,6 +930,99 @@ Json encode(const FormField& in) {
   return out;
 }
 
+bool decode(const Json& in, EditorBlock& out, const std::string& path, DecodeError& e) {
+  if (!in.is_object()) {
+    return fail(e, path, "not an object");
+  }
+  if (const Json* v = field(in, "save", true, path, e)) {
+    const std::string p = path.empty() ? std::string("save") : path + ".save";
+    if (!read_id(*v, out.save, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "check", false, path, e)) {
+    const std::string p = path.empty() ? std::string("check") : path + ".check";
+    out.check.emplace();
+    if (!read_id(*v, *out.check, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "reset", false, path, e)) {
+    const std::string p = path.empty() ? std::string("reset") : path + ".reset";
+    out.reset.emplace();
+    if (!read_id(*v, *out.reset, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "restore", false, path, e)) {
+    const std::string p = path.empty() ? std::string("restore") : path + ".restore";
+    out.restore.emplace();
+    if (!read_id(*v, *out.restore, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "draft", false, path, e)) {
+    const std::string p = path.empty() ? std::string("draft") : path + ".draft";
+    out.draft.emplace();
+    if (!read_id(*v, *out.draft, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "notes_label", false, path, e)) {
+    const std::string p = path.empty() ? std::string("notes_label") : path + ".notes_label";
+    out.notes_label.emplace();
+    if (!read_string(*v, 64, *out.notes_label, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "notes_max", false, path, e)) {
+    const std::string p = path.empty() ? std::string("notes_max") : path + ".notes_max";
+    out.notes_max.emplace();
+    if (!read_u32(*v, *out.notes_max, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  return true;
+}
+
+Json encode(const EditorBlock& in) {
+  Json out = Json::object();
+  out["save"] = Json(in.save);
+  if (in.check) {
+    out["check"] = Json(*in.check);
+  }
+  if (in.reset) {
+    out["reset"] = Json(*in.reset);
+  }
+  if (in.restore) {
+    out["restore"] = Json(*in.restore);
+  }
+  if (in.draft) {
+    out["draft"] = Json(*in.draft);
+  }
+  if (in.notes_label) {
+    out["notes_label"] = Json(*in.notes_label);
+  }
+  if (in.notes_max) {
+    out["notes_max"] = Json(*in.notes_max);
+  }
+  return out;
+}
+
 bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError& e) {
   if (!in.is_object()) {
     return fail(e, path, "not an object");
@@ -1023,6 +1116,15 @@ bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "editor", false, path, e)) {
+    const std::string p = path.empty() ? std::string("editor") : path + ".editor";
+    out.editor.emplace();
+    if (!decode(*v, *out.editor, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -1055,6 +1157,9 @@ Json encode(const PageBlock& in) {
   }
   if (in.submit) {
     out["submit"] = Json(*in.submit);
+  }
+  if (in.editor) {
+    out["editor"] = encode(*in.editor);
   }
   return out;
 }

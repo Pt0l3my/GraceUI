@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 6;
-inline constexpr std::string_view kProtocolVersion = "1.6";
+inline constexpr std::uint32_t kProtocolMinor = 7;
+inline constexpr std::string_view kProtocolVersion = "1.7";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -43,6 +43,7 @@ enum class ErrorCode : std::uint8_t {
   rate_limited,
   version,
   internal,
+  conflict,
 };
 std::string_view to_string(ErrorCode value) noexcept;
 bool from_string(std::string_view text, ErrorCode& out) noexcept;
@@ -129,6 +130,7 @@ enum class BlockKind : std::uint8_t {
   shortcuts,
   component,
   form,
+  editor,
 };
 std::string_view to_string(BlockKind value) noexcept;
 bool from_string(std::string_view text, BlockKind& out) noexcept;
@@ -307,6 +309,20 @@ struct FormField {
 bool decode(const Json& in, FormField& out, const std::string& path, DecodeError& e);
 Json encode(const FormField& in);
 
+// An editor block (1.7, D217): its document is its topic's body (a state topic, or a family's member on a master page); the commands it sends, each the space's own, and the draft's notes field.
+struct EditorBlock {
+  std::string save{};
+  std::optional<std::string> check{};
+  std::optional<std::string> reset{};
+  std::optional<std::string> restore{};
+  std::optional<std::string> draft{};
+  std::optional<std::string> notes_label{};
+  std::optional<std::uint32_t> notes_max{};
+  bool operator==(const EditorBlock&) const = default;
+};
+bool decode(const Json& in, EditorBlock& out, const std::string& path, DecodeError& e);
+Json encode(const EditorBlock& in);
+
 // A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, a component bound to a topic (a table with its row actions and row secret), or a small form.
 struct PageBlock {
   BlockKind kind{};
@@ -319,6 +335,7 @@ struct PageBlock {
   std::optional<std::string> command{};
   std::optional<std::vector<FormField>> fields{};
   std::optional<std::string> submit{};
+  std::optional<EditorBlock> editor{};
   bool operator==(const PageBlock&) const = default;
 };
 bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError& e);

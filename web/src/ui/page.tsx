@@ -17,6 +17,8 @@ import { advancedOpen, choose, chosen, domId, isCollapsed, sectionId, toggleAdva
 import type { PageMaster } from "../protocol.ts";
 import { ConfirmDialog, Modal } from "./modal.tsx";
 import { FormBlock } from "./form.tsx";
+import { EditorBlockView } from "./editor.tsx";
+import { dropDrafts } from "../model/editor.ts";
 
 // The framework topic a space's greyed pages come on (D188): {"greyed": {page: words}, "inactive": words}.
 const SPACE_STATE = "space.state";
@@ -59,6 +61,8 @@ function Blocks({ space, blocks }: { space: string; blocks: PageBlock[] }) {
         ? <div class="block block--component" key={`c${i}`}><ComponentBlock space={space} block={block} /></div>
         : block.kind === "form"
         ? <div class="block block--form" key={`f${i}`}><FormBlock space={space} block={block} /></div>
+        : block.kind === "editor"
+        ? <div class="block block--editor" key={`e${i}`}><EditorBlockView space={space} block={block} /></div>
         : (
           <div class="block block--rows" key={`r${i}`}>
             {(block.keys ?? []).map((key) => (
@@ -343,6 +347,7 @@ export function PageView() {
   const masterKeys = master ? masterRows(master, masterData).map((r) => r.key) : [];
   const held = route && page ? chosen.value.get(`${route.space}/${page.id}`) : undefined;
   const current = held !== undefined && masterKeys.includes(held) ? held : (masterKeys[0] ?? null);
+  useEffect(() => dropDrafts(), [route?.space, page?.id]);  // a draft lives while its page is open (D217)
   useEffect(() => {
     if (route && page && master && current !== null && held !== current) {
       choose(route.space, page.id, current);  // the first row, or the first since the chosen one went (D215)
@@ -407,7 +412,10 @@ export function PageView() {
       {master && current === null && (
         <p class="detail__none" role="status">{master.none ?? "Choose one in the list."}</p>
       )}
-      <MasterContext.Provider value={master ? { family: master.detail, member: current !== null ? `${master.detail}/${current}` : null } : null}>
+      <MasterContext.Provider value={master ? {
+        family: master.detail, member: current !== null ? `${master.detail}/${current}` : null, key: current,
+        families: (pages?.topics ?? []).filter((t) => t.family === true).map((t) => t.id),
+      } : null}>
       {(!master || current !== null) && tabs.length > 0 && (
         <div class="tabs" role="tablist" aria-label={page.name}>
           {tabs.map((tab, i) => (

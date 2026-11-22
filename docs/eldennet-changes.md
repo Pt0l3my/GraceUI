@@ -1150,3 +1150,33 @@ The third part of proposal 0010. No change of the ABI but a constant in `graceui
   button and a row's actions wait as before. The editor's draft button (part d) will show its own words.
 - **Your other commands keep their 10 s.** A slow one still counts in a view's 20 a second and your queue of 32.
 
+## 55. The editor block (2026-11-22, D217, G38 (1) (a); GraceUI 0.2.21, protocol 1.7)
+
+The fourth and last part of proposal 0010, with your five additions (its §7). No change of the ABI.
+
+- **Your Profile tab is an editor block**: `{kind = "editor", topic = "profiles", editor = {save = "profile.save",
+  check = "profile.check", reset = "profile.reset", restore = "profile.restore", draft = "profile.draft",
+  notes_label = ..., notes_max = 400}}`, save alone required, every command one of your own, and `profile.draft` in your
+  `slow_commands` (the lint refuses a draft that is not slow). On a master page a block bound to any family of yours
+  draws that family's member for the chosen row's key, so `profiles` with `key = "id"` on Named NPCs' list draws
+  `profiles/<id>`; if a profile's target is ever not the row's key, tell me and I'll add a column for it.
+- **Publish the document on the member**: `{target, rev, state: {word, tone, line}, draft_blocked, draft_help,
+  fields: [...]}`. A field is `{id, label, kind, help, value, reference, reference_label, max_words, max_chars,
+  max_items, min, max, choices, choices_from, locked, nullable}`; dotted ids (`public.summary`) are fine. Kinds: `line`,
+  `prose` (one paragraph), `list` (items of words, or `{text, choice, key, locked}`), `choice`, `pick` (choices from a
+  topic of yours, as D193), `number`, `switch` and `shown` (never sent back). `null` is "not set here", which is not
+  empty, where `nullable` is true. A field GraceUI can't read (no id or label, an unknown kind, a value of another kind,
+  a second of one id) is left out, never guessed at: check your documents with the lint's fixture and both views.
+- **What you receive**: check and save `{target, rev, doc}`, where `rev` is the revision the player's first unsaved edit
+  was made on and `doc` is every field but the shown ones, locked fields and locked items as you published them and each
+  item's `key` sent back; reset `{target, all: true, confirm: true}`, after the player confirms; restore `{target}`;
+  draft `{target, notes}`. Check everything at your one entry point: GraceUI holds only the caps it shows (`max_chars`,
+  `max_items`, `min`, `max`, the notes' `notes_max`) and counts words.
+- **What you answer**: a body with `messages: [{field, item, level: "error" | "warning", words}]` (no `field` for the
+  whole file), shown under the field or the item in your words, never the offending text; a stale save as the new
+  error code `conflict` (the view offers Reload); a draft as `{draft: {field: value}, notice}`, each proposal shown beside
+  its field with Use this and Keep mine (one for a shown or locked field, or of another kind, is dropped). After a save,
+  reset or restore, publish the document again with its next revision.
+- **Unsaved edits** stay in the view's memory for the session, by the document's topic, through the menu's close and
+  across pages; nothing is written until Save. A draft lives while its page is open.
+

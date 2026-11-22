@@ -76,6 +76,18 @@ std::size_t fitting(std::string_view utf8, std::size_t room) noexcept {
   return at;
 }
 
+// The bytes of the first `count` characters of `utf8`.
+std::size_t first_chars(std::string_view utf8, std::size_t count) noexcept {
+  std::size_t at = 0;
+  for (std::size_t n = 0; at < utf8.size() && n < count; ++n) {
+    ++at;
+    while (at < utf8.size() && continuation(static_cast<unsigned char>(utf8[at]))) {
+      ++at;
+    }
+  }
+  return at;
+}
+
 }  // namespace
 
 std::string utf8_of(char32_t c) {
@@ -102,8 +114,12 @@ bool at_boundary(std::string_view text, std::size_t at) noexcept {
   return at == text.size() || (at < text.size() && !continuation(static_cast<unsigned char>(text[at])));
 }
 
-TextField::TextField(std::string_view text, std::size_t max_bytes) : max_(max_bytes) {
-  const std::string cleaned = clean(text);
+TextField::TextField(std::string_view text, std::size_t max_bytes, std::size_t max_chars)
+    : max_(max_bytes), max_chars_(max_chars) {
+  std::string cleaned = clean(text);
+  if (max_chars_ != 0) {
+    cleaned.resize(first_chars(cleaned, max_chars_));
+  }
   text_ = cleaned.substr(0, fitting(cleaned, max_));
   caret_ = anchor_ = text_.size();
 }
@@ -181,6 +197,13 @@ bool TextField::insert(std::string_view utf8) {
   const std::size_t begin = selection_begin();
   const std::size_t end = selection_end();
   const std::size_t room = max_ - (text_.size() - (end - begin));
+  if (max_chars_ != 0) {
+    // As many characters as the cap leaves, the selection's given back first.
+    const std::size_t kept = characters() - static_cast<std::size_t>(std::count_if(
+        text_.begin() + static_cast<std::ptrdiff_t>(begin), text_.begin() + static_cast<std::ptrdiff_t>(end),
+        [](char b) { return !continuation(static_cast<unsigned char>(b)); }));
+    utf8 = utf8.substr(0, first_chars(utf8, max_chars_ > kept ? max_chars_ - kept : 0));
+  }
   const std::size_t take = fitting(utf8, room);
   if (take == 0 && begin == end) {
     return false;
