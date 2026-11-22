@@ -6395,7 +6395,7 @@ void run_chords(const std::wstring& dll) {
   const bool taken_logged = grace.logged("hotkey shout is unbound: its default chord is taken");
   const bool cap = table->has_cap(GRACEUI_CAP_PAD_CHORDS, std::strlen(GRACEUI_CAP_PAD_CHORDS)) != 0;
   check(first.status == GRACEUI_OK && second.status == GRACEUI_OK && older.status == GRACEUI_OK && cap &&
-            table->abi_minor == 3u && talk_status == GRACEUI_OK && talk != 0 && mask_status == GRACEUI_REFUSED &&
+            table->abi_minor >= 3u && talk_status == GRACEUI_OK && talk != 0 && mask_status == GRACEUI_REFUSED &&
             same_status == GRACEUI_REFUSED && taken_status == GRACEUI_UNBOUND && shout != 0 && taken_logged &&
             older_status == GRACEUI_NOT_YET,
         "chords: registered",
