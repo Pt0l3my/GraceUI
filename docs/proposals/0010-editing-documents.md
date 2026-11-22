@@ -2,7 +2,7 @@
 
 **Status: proposal, 2026-11-22, put to the owner as G38, and to EldenNet's session for §6 (EldenNet's roadmap
 S7.2.a). The owner approved all three items as recommended the same day, to be built now in 0.2.x (G38); where this
-text and the design differ once it is built, the design holds; §6 waits for EldenNet's session.** A bare § is a section of [DESIGN.md](../DESIGN.md); PAGES is EldenNet's `docs/design/pages.md`; NPC is
+text and the design differ once it is built, the design holds. EldenNet's session answered §6 the same day (§7).** A bare § is a section of [DESIGN.md](../DESIGN.md); PAGES is EldenNet's `docs/design/pages.md`; NPC is
 EldenNet's `docs/design/npcs-and-dialogue.md`.
 
 ## 1. Why
@@ -189,3 +189,40 @@ view" lines go.
 3. Do check messages as `{field, item, level, words}` in the answer's body, with `conflict` for a stale `rev`, suit
    `profile.check` and `profile.save`?
 4. Does the draft's answer as `{draft: {field id: value}, notice?}` suit NPC §4.7's helper, as a slow command?
+
+## 7. EldenNet's answers (2026-11-22)
+
+All four §6 questions are answered yes. The answers add five things to the editor block (§3.3), each to be built with
+it (part d):
+
+1. **The kinds cover the fields.** NPC §4.5 and O46's player fields map onto the eight kinds:
+   - `line`: the brief, a display name's fallback.
+   - `prose`: identity, `public.*`, `private.*`, `voice.*`, allegiance, home, instructions, the Tarnished's two
+     fields.
+   - `choice`: register, speech, pronouns.
+   - `pick`: the base card.
+   - `number`: the two word caps.
+   - `switch`: replies, ambient.
+   - `list`: knows, lexicon, subjects (the shipped list as the reference), and one list per seed key, at most 3 items.
+   - `shown`: the "Met" of `[[seen]]`.
+
+   A "knows once…" entry is a list item `{choice, text}`.
+   - **(a) A list item may carry an opaque `key`** of the space's, sent back with it in `doc`. EldenNet keeps an
+     entry's own checks across a reorder by it. An item the player adds has none.
+   - **(b) A list item may be `locked`, with words**: shown, and moved with the others, but not edited, and sent back
+     unchanged. This is for a hand-written "when" that the picker does not offer.
+2. **`doc` as `{field id: value}` suits EldenNet's save path.** EldenNet merges it with what the editor never shows
+   (the schema, `base_hash`, `[[seen]]`, keys only a hand edit sets, locked items) and writes the TOML.
+   - **Field ids may be dotted** (`public.summary`, `seed.greet_player`).
+   - **(c) `null` as a value**, both in a field's `value` and in `doc`, means "not set here", which is not the same as
+     empty: a layer can leave its subjects, its register or a length to the shipped profile.
+3. **The messages suit `profile.check` and `profile.save`.**
+   - **(d) A message with no `field` is about the whole file** (a newer schema, the 8 KB cap), and is shown at the
+     top of the block.
+   - EldenNet answers a save within the 10 s, when its watcher's result returns. A full write queue is answered as
+     `busy`. It then publishes the member's body again, with the new `rev`.
+4. **The draft's answer suits EldenNet's helper.**
+   - **(e) No cancel command is needed.** If the view stops watching the member while a draft runs, EldenNet cancels
+     its call, as it already does for anything nobody watches.
+
+EldenNet's view on the owner's three questions was (a), (a) and (a), the answers the owner gave.
