@@ -226,7 +226,7 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
           }
           clearTimeout(helloTimer);
           welcomed = true;
-          send({ v: 1, t: "welcome", protocol: "1.3", caps: [], graceui: "0.2.0",
+          send({ v: 1, t: "welcome", protocol: "1.4", caps: [], graceui: "0.2.0",
                  spaces: [...spaces.values()].map((s) => s.info()), session: "fake-host" });
           continue;
         }
@@ -252,7 +252,8 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
           const outcome = space.handle(frame.name, (frame.args ?? {}) as JsonObject);
           const result = outcome.answer.ok
             ? { v: 1, t: "result", space: space.id, id: frame.id, ok: true }
-            : { v: 1, t: "result", space: space.id, id: frame.id, error: outcome.answer.error };
+            : { v: 1, t: "result", space: space.id, id: frame.id, error: outcome.answer.error,
+                ...(outcome.answer.detail !== undefined ? { detail: outcome.answer.detail } : {}) };
           send(result);
           publish(space.id, outcome.publish);
         }

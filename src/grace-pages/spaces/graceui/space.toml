@@ -6,7 +6,8 @@
 id = "graceui"
 name = "GraceUI"
 settings_schema = 1
-commands = ["settings.set", "settings.reset", "menu.close", "dashboard.disconnect", "mods.notices"]
+commands = ["settings.set", "settings.reset", "menu.close", "dashboard.disconnect", "mods.notices", "hotkeys.key",
+            "hotkeys.chord", "hotkeys.reset", "hotkeys.reset_all"]
 
 [[topic]]
 id = "settings"
@@ -101,8 +102,7 @@ help = "The key that opens and closes the menu. It never reaches the game."
 synonyms = ["menu key", "open", "shortcut"]
 home = "graceui.hotkeys"
 effect = "now"
-availability = "later"
-locked = true
+availability = "live"
 
 [[setting]]
 key = "dashboard.enabled"
@@ -171,17 +171,28 @@ description = "The menu's key, and every mod's hotkeys with their conflicts."
 increment = "0.2"
 related = ["graceui.menu", "graceui.mods"]
 help.purpose = "See every hotkey GraceUI watches for, and which mod each belongs to."
-help.steps = ["Look down the list: every mod's hotkeys, with their keys and pad chords.", "A hotkey marked unbound fires nothing: another took its key or its chord first, and its state says whose.", "A later version lets you choose another key for it, and for the menu."]
+help.steps = ["Choose the key that opens the menu: no Ctrl, Shift or Alt with it.", "Look down the list: every mod's hotkeys, with their keys, pad chords and states.", "Change a hotkey's key or pad chord on its row; a key another hotkey has is asked about first, then moved.", "Reset puts a hotkey back to its mod's own keys, where they are free."]
 
 [[page.sections]]
 id = "menu-key"
 title = "The menu"
 blocks = [{ kind = "settings", keys = ["hotkeys.menu"] }]
 
+[[page.actions]]
+id = "reset-all"
+label = "Reset every hotkey"
+command = "hotkeys.reset_all"
+tone = "destructive"
+confirm = "Every mod's hotkeys go back to their own keys and pad chords, where they are free. The menu's key stays."
+
 [[page.sections]]
 id = "every-hotkey"
 title = "Every mod's hotkeys"
-blocks = [{ kind = "component", component = "table", topic = "graceui.hotkeys" }]
+blocks = [{ kind = "component", component = "table", topic = "graceui.hotkeys", row_actions = [
+  { id = "key", label = "Change key", command = "hotkeys.key", key = "id", tone = "secondary", capture = "key" },
+  { id = "chord", label = "Change pad chord", command = "hotkeys.chord", key = "id", tone = "secondary", capture = "chord" },
+  { id = "reset", label = "Reset", command = "hotkeys.reset", key = "id", tone = "secondary" },
+] }]
 
 [[page]]
 id = "graceui.browser"

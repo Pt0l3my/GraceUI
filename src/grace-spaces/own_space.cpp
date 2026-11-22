@@ -56,6 +56,11 @@ pages::Outcome OwnSpace::apply(const protocol::Cmd& command) {
     refused.detail = "Not available in this version.";
     return refused;
   }
+  if (command.name == "settings.set" && hooks_.check) {
+    if (std::optional<pages::Outcome> refused = hooks_.check(command); refused.has_value()) {
+      return *refused;
+    }
+  }
   pages::Outcome outcome = store_.apply(command);
   if (outcome.ok && !outcome.changed.empty()) {
     ++revision_;

@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 3;
-inline constexpr std::string_view kProtocolVersion = "1.3";
+inline constexpr std::uint32_t kProtocolMinor = 4;
+inline constexpr std::string_view kProtocolVersion = "1.4";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -140,6 +140,13 @@ enum class ActionTone : std::uint8_t {
 };
 std::string_view to_string(ActionTone value) noexcept;
 bool from_string(std::string_view text, ActionTone& out) noexcept;
+
+enum class RowCapture : std::uint8_t {
+  key,
+  chord,
+};
+std::string_view to_string(RowCapture value) noexcept;
+bool from_string(std::string_view text, RowCapture& out) noexcept;
 
 enum class PageTag : std::uint8_t {
   wip,
@@ -265,7 +272,7 @@ struct PageAction {
 bool decode(const Json& in, PageAction& out, const std::string& path, DecodeError& e);
 Json encode(const PageAction& in);
 
-// A button on each row of a table (D192): its command gets the row's key, a destructive one only after its confirmation.
+// A button on each row of a table (D192): its command gets the row's key, a destructive one only after its confirmation; one that captures (D209) first takes a key or a pad chord from the player, sent as `value`, and a `confirm_required` answer with words is asked and sent again with `confirm`.
 struct RowAction {
   std::string id{};
   std::string label{};
@@ -273,6 +280,7 @@ struct RowAction {
   std::string key{};
   ActionTone tone{};
   std::optional<std::string> confirm{};
+  std::optional<RowCapture> capture{};
   bool operator==(const RowAction&) const = default;
 };
 bool decode(const Json& in, RowAction& out, const std::string& path, DecodeError& e);

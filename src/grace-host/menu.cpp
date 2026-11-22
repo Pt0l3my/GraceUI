@@ -17,6 +17,7 @@
 #include <cstring>
 #include <iterator>
 #include <map>
+#include <set>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -55,7 +56,13 @@ struct MenuInput {
   Key key = Key::down;
   std::uint8_t shift = 0;
   std::uint32_t generation = 0;  // the holder it is for
+  grace::input::Key captured = grace::input::kNoKey;  // while a capture waits (D209): the key pressed, whole
+  std::uint8_t modifiers = 0;                         // and its Ctrl, Shift and Alt (GRACEUI_MOD_*)
 };
+
+// Whether the menu's view waits for a key to capture (D209): set on GraceUI's thread after each input, read by the
+// window procedure's key_down.
+constinit std::atomic<bool> g_awaiting_key{false};
 
 constinit grace::input::SpscRing<MenuInput, 64> g_keys;  // the window procedure's
 constinit grace::input::SpscRing<MenuInput, 64> g_pad;   // the present thread's
@@ -129,6 +136,7 @@ struct State {
   bool ever_opened = false;
   std::uint32_t next_command = 1;
   std::map<std::uint64_t, std::pair<std::string, std::string>> commands;  // a ticket: its space and its key
+  std::set<std::uint64_t> captures;  // the tickets the capture's modal sent: their answers go back to it (D209)
   std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
   std::uint64_t states = 0;    // its other topics', as the menu last took them (D181)
   grace::view::DisplayList list;
@@ -423,6 +431,23 @@ bool take_from_spaces(State& m) {
     if (it == m.commands.end()) {
       continue;
     }
+    if (m.captures.erase(result.ticket) != 0) {
+      for (auto& view : m.spaces) {
+        if (view->id == it->second.first) {
+          const bool refused = result.result.error.has_value();
+          std::string words = refused ? refusal_words(*result.result.error) : std::string();
+          if (refused && result.result.detail.has_value() && !result.result.detail->empty()) {
+            words = *result.result.detail;
+          }
+          view->view.capture_answered(!refused,
+                                      refused && *result.result.error == grace::protocol::ErrorCode::confirm_required,
+                                      words);
+        }
+      }
+      m.commands.erase(it);
+      changed = true;
+      continue;
+    }
     if (result.result.error.has_value()) {
       g_refusals.fetch_add(1, std::memory_order_relaxed);
       std::string detail = refusal_words(*result.result.error);
@@ -503,12 +528,35 @@ void run(State& m, const grace::protocol::Cmd& command) {
                               : focused.rfind("section-action:", 0) == 0 ? focused.substr(15)
                                                                          : key_of(command);
     std::uint64_t ticket = 0;
+    const bool capture = space.view.capture_open();
     if (spaces::registry().game_command(space.id, std::move(sent), ticket)) {
       m.commands[ticket] = {space.id, where};
+      if (capture) {
+        m.captures.insert(ticket);
+      }
     } else {
       g_refusals.fetch_add(1, std::memory_order_relaxed);
-      space.view.refused(where, "Not now: the space has too many commands waiting.");
+      if (capture) {
+        space.view.capture_answered(false, false, "Not now: the space has too many commands waiting.");
+      } else {
+        space.view.refused(where, "Not now: the space has too many commands waiting.");
+      }
     }
+    return;
+  }
+  if (own_view(m).view.capture_open()) {
+    // The capture's command (D209): its answer goes back to the modal, which asks before a move.
+    const grace::pages::Outcome outcome = own_space().apply(command);
+    if (!outcome.ok) {
+      g_refusals.fetch_add(1, std::memory_order_relaxed);
+    }
+    own_view(m).view.capture_answered(
+        outcome.ok, !outcome.ok && outcome.error == grace::protocol::ErrorCode::confirm_required,
+        outcome.ok ? std::string_view() : std::string_view(outcome.detail));
+    if (command.name == "settings.set") {
+      take_effects(m);
+    }
+    take_topics(m);
     return;
   }
   if (command.name == "settings.set" || command.name == "settings.reset") {
@@ -559,10 +607,14 @@ void take(State& m, const MenuInput& in, bool& dirty) {
   if (in.generation != m.generation) {
     return;  // pressed for an earlier holder
   }
-  const grace::view::Action action = active_view(m).input(grace::view::Input{in.key, in.shift != 0});
+  const grace::view::Action action =
+      in.captured != grace::input::kNoKey
+          ? active_view(m).captured(grace::input::key_text(in.captured, in.modifiers))
+          : active_view(m).input(grace::view::Input{in.key, in.shift != 0});
   g_inputs.fetch_add(1, std::memory_order_relaxed);
   dirty = true;
   act(m, action);
+  g_awaiting_key.store(active_view(m).awaiting_key(), std::memory_order_release);
 }
 
 void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
@@ -702,6 +754,8 @@ void serve_menu() {
     m.height = height;
     dirty = true;
   }
+  // A mod's answer may have closed the capture, or the menu closed with it open (D209).
+  g_awaiting_key.store(m.open && active_view(m).awaiting_key(), std::memory_order_release);
   if (dirty && m.open) {
     publish(m);
   }
@@ -825,7 +879,23 @@ void pointer(std::uint8_t kind, float x, float y, float wheel, std::uint32_t gen
   }
 }
 
-bool key_down(std::uint32_t vk, bool shift, bool ctrl) noexcept {
+bool key_down(std::uint32_t vk, grace::input::Key code, bool shift, bool ctrl, bool alt) noexcept {
+  if (g_awaiting_key.load(std::memory_order_acquire) && vk != VK_ESCAPE) {
+    // A capture waits (D209): the key itself, with its modifiers; a modifier alone waits on, and Escape cancels below.
+    if (code == grace::input::kNoKey || vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU || vk == VK_LSHIFT ||
+        vk == VK_RSHIFT || vk == VK_LCONTROL || vk == VK_RCONTROL || vk == VK_LMENU || vk == VK_RMENU ||
+        vk == VK_LWIN || vk == VK_RWIN) {
+      return true;
+    }
+    MenuInput in;
+    in.generation = input::capture().holder().generation;
+    in.captured = code;
+    in.modifiers = static_cast<std::uint8_t>((ctrl ? 1u : 0u) | (shift ? 2u : 0u) | (alt ? 4u : 0u));
+    if (g_keys.push(in)) {
+      hooks::wake();
+    }
+    return true;
+  }
   Key key{};
   switch (vk) {
     case VK_UP: key = Key::up; break;

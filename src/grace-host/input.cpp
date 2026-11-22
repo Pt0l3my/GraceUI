@@ -32,6 +32,7 @@ constinit grace::input::MouseLedger g_mouse;
 constinit grace::input::PadLedger g_pads;
 constinit grace::input::Hotkeys g_hotkeys;
 constinit grace::input::PadChords g_chords;
+constinit grace::input::KeptBindings g_kept_bindings;
 constinit grace::input::MessageRules g_messages{g_capture, g_keyboard, g_mouse, &g_hotkeys};
 constinit grace::input::SpscRing<HolderEvent, 256> g_events;
 
@@ -368,7 +369,11 @@ grace::input::KeyBits hidden_keys() noexcept {
 
 std::int64_t now_ms() noexcept { return static_cast<std::int64_t>(GetTickCount64()); }
 
-grace::input::Key menu_key() noexcept { return grace::input::kF5; }
+grace::input::Key menu_key() noexcept { return g_messages.menu_key(); }
+
+void set_menu_key(grace::input::Key key) noexcept { g_messages.set_menu_key(key); }
+
+grace::input::KeptBindings& kept_bindings() noexcept { return g_kept_bindings; }
 
 namespace {
 

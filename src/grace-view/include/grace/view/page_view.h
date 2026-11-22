@@ -122,6 +122,18 @@ class PageView {
   Action pointer(const Pointer& pointer);
   // A command the space refused: the reason, in words, under its control, focus back on it (§5.7).
   void refused(std::string_view key, std::string_view reason);
+
+  // ---- Capture (G37, D209). A row action that captures (protocol 1.4), or a key's setting (hotkeys.menu), opens a
+  // small modal over the page. A key capture waits for the next key press, which the host gives by its name with its
+  // modifiers ("Ctrl+K"), never as a key of the menu's own; Escape (Key::back) cancels, and on a row's capture
+  // Backspace leaves it with no key. A chord capture has two pickers, the button held first and the one pressed then,
+  // moved with ↑ ↓ and changed with ← →; Enter uses them, R leaves no chord. The command it makes is answered through
+  // capture_answered: done, it closes; `confirm_required` shows the space's words and Enter sends it again with
+  // "confirm"; any other refusal shows its words and waits again.
+  bool capture_open() const noexcept { return capture_.kind != CaptureKind::none; }
+  bool awaiting_key() const noexcept { return capture_.kind == CaptureKind::key && capture_.stage == CaptureStage::waiting; }
+  Action captured(std::string_view key);
+  void capture_answered(bool ok, bool confirm_required, std::string_view words);
   // A setting's value as the space last gave it, after a refusal: `value`, or its default if null (D171).
   void restore(std::string_view key, const protocol::Json& value);
   // The rail's other spaces (D79, D171): the host sets them whenever the spaces or the open one change.
@@ -140,7 +152,10 @@ class PageView {
 
   // The menu's close routine (§5.1): a destructive action waiting for its second press asks again at the next open; the
   // page, tab and focused row stay for the next open in the session.
-  void cancel_confirmation() noexcept { confirming_.clear(); }
+  void cancel_confirmation() noexcept {
+    confirming_.clear();
+    capture_ = Capture{};  // and an open capture: nothing changes (D209)
+  }
 
   // Settings whose label, synonyms or key hold `query`, without case (§4.3's settings part).
   std::vector<SearchHit> search(std::string_view query) const;
@@ -257,6 +272,26 @@ class PageView {
   std::size_t rail_focus_ = 0;
   std::size_t page_focus_ = 0;
   std::string confirming_;  // a destructive action's id, waiting for its second press
+
+  enum class CaptureKind : std::uint8_t { none, key, chord };
+  enum class CaptureStage : std::uint8_t { waiting, sent, asking };
+  struct Capture {
+    CaptureKind kind = CaptureKind::none;
+    CaptureStage stage = CaptureStage::waiting;
+    bool row = false;               // a row action's (Backspace: no key), or a setting's
+    std::string command;            // the row action's command, or settings.set
+    std::string key_field;          // the row action's key column, or "key"
+    protocol::Json key_value;       // the row's key, or the setting's
+    std::string title;              // "Change key: Tide Charts, Show the tide table"
+    std::string words;              // a refusal's, or the question before a move
+    protocol::Json value;           // what it sends: a key's name, or a chord
+    std::size_t anchor = 0;         // the chord's pickers: indexes into the fourteen buttons
+    std::size_t key = 12;
+    std::size_t picker = 0;         // which of the two is focused
+  };
+  Capture capture_;
+  Action capture_command(bool confirm) const;
+  Action capture_input(const Input& in);
   float scroll_ = 0;
   bool follow_ = true;          // keep focus in view; false once the wheel has scrolled, until a key moves focus
   float scale_ = 1;             // the last layout's effective scale

@@ -12,6 +12,7 @@
 #include "grace/input/holder.h"
 #include "grace/input/holder_mail.h"
 #include "grace/input/hotkeys.h"
+#include "grace/input/kept_bindings.h"
 #include "grace/input/chords.h"
 #include "grace/input/messages.h"
 
@@ -28,6 +29,10 @@ std::int64_t now_ms() noexcept;  // the rules' clock: GetTickCount64
 
 // The menu key (§5.1): F5 until GraceUI's own settings can rebind it (D115). Always masked from the game.
 grace::input::Key menu_key() noexcept;
+// The player moved it (hotkeys.menu, D208): the window procedure and DirectInput's view use the new key at once.
+void set_menu_key(grace::input::Key key) noexcept;
+// The player's hotkey bindings, kept between sessions and applied at each registration (G37, D208).
+grace::input::KeptBindings& kept_bindings() noexcept;
 grace::input::Hotkeys& hotkeys() noexcept;  // the mods' hotkeys (D155)
 grace::input::PadChords& chords() noexcept;  // their pad chords, in XInput's reads (D204)
 // Whether chords stand aside now: a holder has input, or request_input would answer not_now (D204).

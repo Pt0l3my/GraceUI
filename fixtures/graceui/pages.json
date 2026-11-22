@@ -1,7 +1,7 @@
 {
   "space": "graceui",
   "name": "GraceUI",
-  "minor": 3,
+  "minor": 4,
   "categories": [
     {
       "id": "graceui",
@@ -72,9 +72,10 @@
       "help": {
         "purpose": "See every hotkey GraceUI watches for, and which mod each belongs to.",
         "steps": [
-          "Look down the list: every mod's hotkeys, with their keys and pad chords.",
-          "A hotkey marked unbound fires nothing: another took its key or its chord first, and its state says whose.",
-          "A later version lets you choose another key for it, and for the menu."
+          "Choose the key that opens the menu: no Ctrl, Shift or Alt with it.",
+          "Look down the list: every mod's hotkeys, with their keys, pad chords and states.",
+          "Change a hotkey's key or pad chord on its row; a key another hotkey has is asked about first, then moved.",
+          "Reset puts a hotkey back to its mod's own keys, where they are free."
         ]
       },
       "related": [
@@ -82,6 +83,15 @@
         "graceui.mods"
       ],
       "increment": "0.2",
+      "actions": [
+        {
+          "id": "reset-all",
+          "label": "Reset every hotkey",
+          "command": "hotkeys.reset_all",
+          "tone": "destructive",
+          "confirm": "Every mod's hotkeys go back to their own keys and pad chords, where they are free. The menu's key stays."
+        }
+      ],
       "sections": [
         {
           "id": "menu-key",
@@ -102,7 +112,32 @@
             {
               "kind": "component",
               "component": "table",
-              "topic": "graceui.hotkeys"
+              "topic": "graceui.hotkeys",
+              "row_actions": [
+                {
+                  "id": "key",
+                  "label": "Change key",
+                  "command": "hotkeys.key",
+                  "key": "id",
+                  "tone": "secondary",
+                  "capture": "key"
+                },
+                {
+                  "id": "chord",
+                  "label": "Change pad chord",
+                  "command": "hotkeys.chord",
+                  "key": "id",
+                  "tone": "secondary",
+                  "capture": "chord"
+                },
+                {
+                  "id": "reset",
+                  "label": "Reset",
+                  "command": "hotkeys.reset",
+                  "key": "id",
+                  "tone": "secondary"
+                }
+              ]
             }
           ]
         }
@@ -313,6 +348,10 @@
     "settings.reset",
     "menu.close",
     "dashboard.disconnect",
-    "mods.notices"
+    "mods.notices",
+    "hotkeys.key",
+    "hotkeys.chord",
+    "hotkeys.reset",
+    "hotkeys.reset_all"
   ]
 }

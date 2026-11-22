@@ -1262,6 +1262,26 @@ ul, ol {
   color: var(--gold-hi);
 }
 
+/* A row action's capture (D209): the key field across the dialog, and a chord's two pickers. */
+.keycap--wide {
+  width: 100%;
+  min-height: 44px;
+  margin: var(--space-8) 0;
+}
+
+.keycap--wide:focus-visible {
+  border-color: var(--gold-hi);
+  color: var(--gold-hi);
+}
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  margin: var(--space-8) 0;
+}
+
 /* Buttons (§3.8): 36 px, Noto Sans 15 600, sentence case. */
 .button {
   display: inline-flex;

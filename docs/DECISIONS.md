@@ -807,7 +807,7 @@ built in GraceUI 0.2.12 (protocol 1.3); built as D202. Home's grid of cards stay
 
 ## G37
 
-**Where and how a hotkey is rebound** · *Open, put 2026-11-22 with proposal 0009*
+**Where and how a hotkey is rebound** · *Put 2026-11-22 with proposal 0009; decided 2026-11-22*
 
 **Question.** Since GraceUI 0.2.15 (D206) the Hotkeys page lists every mod's hotkeys, and nothing can change them: a
 hotkey whose default another took stays unbound, and the menu's key reads F5 alone. The design says two things: §5.2,
@@ -831,4 +831,12 @@ capture.
 
 **Follows from.** §5.2, §5.9, D33, D77, D115, D155, D204, D205, D206; invariants 8, 12 and 17; EldenNet's PAGES (its
 Settings › Hotkeys) and O94.
+
+**Decision (2026-11-22).** As recommended: (1) (a) every binding on GraceUI's Hotkeys page, kept in GraceUI's settings
+under the mod's and the action's ids; (2) (a) a taken key asked, then moved; (3) pad chords chosen with two pickers in
+both views, capture on a pad later; (4) (a) ABI 1.4's `describe_hotkey` and a changed event. The menu's key becomes live
+with it. Built now, in 0.2, rather than in 0.6. Item 5, EldenNet's view of retiring its three key settings, is its
+session's to answer in the proposal.
+
+**Owner's words.** "approved as recommended, build it now" (2026-11-22).
 

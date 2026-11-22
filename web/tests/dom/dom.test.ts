@@ -344,6 +344,69 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("G37 in the browser: a row's key captured, a taken one asked about then moved, a chord from two pickers; the " +
+       "menu's row takes no actions (D208, D209)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "graceui", "graceui.hotkeys");
+      const rows = page.locator("main table.table tbody tr");
+      assert.equal(await rows.nth(0).locator("[data-row-action]").count(), 0, "the menu's own row: no id, no actions");
+      const sent = () => host.received.filter((f) => f.t === "cmd" && f.name === "hotkeys.key");
+      // A free key: sent with the row's id, and nothing asked.
+      await rows.nth(2).locator("[data-row-action='key']").click();
+      const field = page.locator("dialog.modal[open] [data-capture='key']");
+      await field.waitFor();
+      assert.match((await page.locator("dialog.modal[open] .modal__title").textContent()) ?? "",
+                   /Change key: Tide Charts, Show the tide table/);
+      await field.press("F9");
+      for (let i = 0; i < 20 && sent().length === 0; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(sent()[0]?.args, { id: "tide-charts/tide-table", value: "F9" });
+      await page.waitForFunction(() => document.querySelector("dialog.modal[open]") === null);
+      // A key another row has: the space's question, then the same again with its confirmation.
+      await rows.nth(2).locator("[data-row-action='key']").click();
+      await field.waitFor();
+      await field.press("Control+T");  // its own key: nothing to ask
+      await page.waitForFunction(() => document.querySelector("dialog.modal[open]") === null);
+      await rows.nth(2).locator("[data-row-action='key']").click();
+      await field.waitFor();
+      await field.press("T");
+      await page.locator("dialog.modal[open] [data-confirm]").waitFor();
+      assert.match((await page.locator("dialog.modal[open] .prose").textContent()) ?? "",
+                   /T is Demo space's Trim the wick\. Use it here/);
+      await page.locator("dialog.modal[open] [data-confirm]").click();
+      for (let i = 0; i < 20 && sent().length < 4; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(sent()[1]?.args, { id: "tide-charts/tide-table", value: "Ctrl+T" });
+      assert.deepEqual(sent()[2]?.args, { id: "tide-charts/tide-table", value: "T" });
+      assert.deepEqual(sent()[3]?.args, { id: "tide-charts/tide-table", value: "T", confirm: true });
+      // A pad chord from two pickers; the same button twice is refused in words; no pad chord sends 0.
+      const chords = () => host.received.filter((f) => f.t === "cmd" && f.name === "hotkeys.chord");
+      await rows.nth(3).locator("[data-row-action='chord']").click();
+      await page.locator("dialog.modal[open] [data-capture='anchor']").waitFor();
+      await page.locator("dialog.modal[open] [data-capture='anchor']").selectOption("12");
+      await page.locator("dialog.modal[open] [data-capture-use]").click();
+      await page.locator("dialog.modal[open] .row__note[role=status]").waitFor();
+      assert.equal(chords().length, 0);
+      await page.locator("dialog.modal[open] [data-capture='anchor']").selectOption("1");
+      await page.locator("dialog.modal[open] [data-capture-use]").click();
+      for (let i = 0; i < 20 && chords().length === 0; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(chords()[0]?.args, { id: "quiet-camp/pitch-tent", value: 0x0002 * 0x10000 + 0x0020 });
+      await rows.nth(3).locator("[data-row-action='chord']").click();
+      await page.locator("dialog.modal[open] [data-capture-none]").click();
+      for (let i = 0; i < 20 && chords().length < 2; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(chords()[1]?.args, { id: "quiet-camp/pitch-tent", value: 0 });
+    } finally {
+      await close();
+    }
+  });
+
   test("proposal 0007 in the browser: a row's action asks first, a row's secret is sent once and kept nowhere, a " +
        "form sends its fields, a picker offers the space's choices (D192 to D195)", async () => {
     const { page, close } = await fresh();

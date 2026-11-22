@@ -552,6 +552,109 @@ static const char* secret_status_words(const std::string& status) {
   return status == "set" ? "Set" : status == "refused" ? "Refused" : status == "none" ? "Not needed" : "Missing";
 }
 
+// ---- Capture (G37, D209).
+
+namespace {
+
+// XInput's fourteen buttons as a chord's pickers offer them, in the order a player reads the pad.
+struct PadButton {
+  std::uint16_t bit;
+  std::string_view name;
+};
+constexpr PadButton kPadButtons[] = {
+    {0x0001, "D-pad Up"}, {0x0002, "D-pad Down"}, {0x0004, "D-pad Left"}, {0x0008, "D-pad Right"},
+    {0x1000, "A"},        {0x2000, "B"},          {0x4000, "X"},          {0x8000, "Y"},
+    {0x0100, "LB"},       {0x0200, "RB"},         {0x0040, "LS"},         {0x0080, "RS"},
+    {0x0020, "View"},     {0x0010, "Menu"},
+};
+constexpr std::size_t kPadButtonCount = sizeof kPadButtons / sizeof kPadButtons[0];
+
+}  // namespace
+
+Action PageView::capture_command(bool confirm) const {
+  Action action;
+  action.kind = Action::Kind::command;
+  action.command.space = pages_.space;
+  action.command.name = capture_.command;
+  action.command.args = Json::object({{capture_.key_field, capture_.key_value}, {"value", capture_.value}});
+  if (confirm) {
+    action.command.args["confirm"] = true;  // the space asked first: move it (D208)
+  }
+  return action;
+}
+
+Action PageView::captured(std::string_view key) {
+  if (!awaiting_key()) {
+    return {};
+  }
+  capture_.value = capture_.row && key == "Backspace" ? std::string() : std::string(key);
+  capture_.words.clear();
+  capture_.stage = CaptureStage::sent;
+  return capture_command(false);
+}
+
+void PageView::capture_answered(bool ok, bool confirm_required, std::string_view words) {
+  if (!capture_open() || capture_.stage != CaptureStage::sent) {
+    return;
+  }
+  if (ok) {
+    capture_ = Capture{};
+    return;
+  }
+  capture_.words = words.empty() ? std::string("Not possible right now.") : std::string(words);
+  capture_.stage = confirm_required ? CaptureStage::asking : CaptureStage::waiting;
+}
+
+Action PageView::capture_input(const Input& in) {
+  if (in.key == Key::back) {
+    capture_ = Capture{};  // Escape, or B: nothing changes
+    return {};
+  }
+  if (capture_.stage == CaptureStage::asking) {
+    if (in.key != Key::activate) {
+      return {};
+    }
+    capture_.stage = CaptureStage::sent;
+    capture_.words.clear();
+    return capture_command(true);
+  }
+  if (capture_.stage == CaptureStage::sent || capture_.kind == CaptureKind::key) {
+    return {};  // a key capture's key comes through captured(), not as the menu's own keys
+  }
+  switch (in.key) {
+    case Key::up:
+    case Key::previous:
+      capture_.picker = 0;
+      return {};
+    case Key::down:
+    case Key::next:
+      capture_.picker = 1;
+      return {};
+    case Key::left:
+    case Key::right: {
+      std::size_t& index = capture_.picker == 0 ? capture_.anchor : capture_.key;
+      index = (index + (in.key == Key::right ? 1 : kPadButtonCount - 1)) % kPadButtonCount;
+      capture_.words.clear();
+      return {};
+    }
+    case Key::reset:
+      capture_.value = 0;  // no pad chord
+      capture_.stage = CaptureStage::sent;
+      return capture_command(false);
+    case Key::activate:
+      if (capture_.anchor == capture_.key) {
+        capture_.words = "Choose two different buttons.";
+        return {};
+      }
+      capture_.value = (std::uint32_t{kPadButtons[capture_.anchor].bit} << 16) | kPadButtons[capture_.key].bit;
+      capture_.words.clear();
+      capture_.stage = CaptureStage::sent;
+      return capture_command(false);
+    default:
+      return {};
+  }
+}
+
 std::string PageView::row_action_id(const protocol::PageBlock& block, const Json& row, std::size_t r,
                                     const protocol::RowAction& action) {
   const std::string key = row.is_object() ? cell_words(row, action.key) : std::string();
@@ -569,6 +672,30 @@ Action PageView::row_action(const Focus& f) {
     return {};
   }
   const Json& row = (*table)["rows"][f.index];
+  if (a.capture) {
+    // A key or a pad chord first (D209): the modal takes it, then sends the row's key with it as "value".
+    capture_ = Capture{};
+    capture_.kind = *a.capture == protocol::RowCapture::key ? CaptureKind::key : CaptureKind::chord;
+    capture_.row = true;
+    capture_.command = a.command;
+    capture_.key_field = a.key;
+    capture_.key_value = row.is_object() && row.contains(a.key) ? row[a.key] : Json();
+    std::string name;
+    for (const Json& column : (*table)["columns"]) {
+      const std::string words = column.is_object() && column.contains("id") && column["id"].is_string()
+                                    ? cell_words(row, column["id"].get<std::string>()) : std::string();
+      if (!words.empty() && !column.contains("switch") && !(column.contains("numeric") && column["numeric"] == true)) {
+        name += (name.empty() ? "" : ", ") + words;
+        if (name.find(", ") != std::string::npos) {
+          break;  // the first two columns name it
+        }
+      }
+    }
+    capture_.title = a.label + (name.empty() ? "" : ": " + name);
+    confirming_.clear();
+    refusals_.erase(f.id);
+    return {};
+  }
   const std::string asking = "row:" + f.id;
   if ((a.confirm || a.tone == protocol::ActionTone::destructive) && confirming_ != asking) {
     confirming_ = asking;  // its second press, as a header action's (§7.3, D173, D192)
@@ -863,7 +990,10 @@ void PageView::rebuild() {
               focus_.push_back({FocusKind::cell, cell_base(block) + "/" + (id.empty() ? std::to_string(r) : id), r});
             }
             for (std::size_t a = 0; a < actions; ++a) {
-              focus_.push_back({FocusKind::row_action, row_action_id(block, row, r, (*block.row_actions)[a]), r, &block, a});
+              const protocol::RowAction& act = (*block.row_actions)[a];
+              if (row.is_object() && !cell_words(row, act.key).empty()) {  // a row with no key takes no actions (D209)
+                focus_.push_back({FocusKind::row_action, row_action_id(block, row, r, act), r, &block, a});
+              }
             }
           }
           continue;
@@ -1141,6 +1271,9 @@ Action PageView::pointer(const Pointer& in) {
   pointer_x_ = in.x;
   pointer_y_ = in.y;
   pointer_in_ = in.kind != Pointer::Kind::leave;
+  if (capture_open()) {
+    return {};  // the page under the modal does nothing; its keys and the pad answer it (D209)
+  }
   switch (in.kind) {
     case Pointer::Kind::leave:
     case Pointer::Kind::release:
@@ -1309,6 +1442,9 @@ Action PageView::open_index(std::size_t index, Scope scope) {
 }
 
 Action PageView::input(const Input& in) {
+  if (capture_open()) {
+    return capture_input(in);  // the modal has every key until it closes (D209)
+  }
   if (rail_.empty() && focus_.empty()) {
     return {};
   }
@@ -1538,6 +1674,15 @@ Action PageView::input(const Input& in) {
         case FocusKind::setting:
           if (s->type == SettingType::bool_ || s->type == SettingType::choice || s->type == SettingType::tri_state) {
             return change(*s, 1, false);
+          }
+          if (s->type == SettingType::key_name && !s->locked && s->availability != "later") {
+            capture_ = Capture{};  // a key's setting takes the next key press (D209)
+            capture_.kind = CaptureKind::key;
+            capture_.command = "settings.set";
+            capture_.key_field = "key";
+            capture_.key_value = s->key;
+            capture_.title = s->label;
+            return {};
           }
           return {};
         case FocusKind::cell:
@@ -2062,6 +2207,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               std::string row_refusal_id;
               for (std::size_t a = row_actions.size(); a-- > 0;) {
                 const protocol::RowAction& act = row_actions[a];
+                if (!line.is_object() || cell_words(line, act.key).empty()) {
+                  continue;  // a row with no key takes no actions (D209)
+                }
                 const std::string id = row_action_id(block, line, r, act);
                 const bool asking = confirming_ == "row:" + id;
                 const std::string words = asking ? "Press again to confirm" : act.label;
@@ -2434,6 +2582,13 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     } else if (scope_ == Scope::rail) {
       hints = "↑ ↓  Move    Enter  Open    →  Page    Esc  Close";
     }
+    if (capture_open()) {
+      hints = capture_.stage == CaptureStage::asking ? "Enter  Use it here    Esc  Cancel"
+              : capture_.stage == CaptureStage::sent  ? "Esc  Cancel"
+              : capture_.kind == CaptureKind::chord   ? "↑ ↓  Move    ← →  Change    Enter  Use    R  No pad chord    Esc  Cancel"
+              : capture_.row                          ? "Press a key    Backspace  No key    Esc  Cancel"
+                                                      : "Press a key    Esc  Cancel";
+    }
     c.text(hints, TypeRole::ui_sm, page_x + gutter, H - footer_h + std::round((footer_h - line_height(TypeRole::ui_sm, s)) / 2),
            page_w - 2 * gutter, Colour::ink_faint);
     if (c.focus_found) {
@@ -2442,6 +2597,92 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       c.clip = scope_ == Scope::page ? 1 : 0;
       c.stroke(ring, Colour::gold_hi, std::round(tokens::kGrace.size.focus_width * s),
                std::round((tokens::radius::control + tokens::kGrace.size.focus_offset) * s));
+    }
+    // The capture's modal (D209), over everything: the page under it takes no pointer.
+    if (capture_open()) {
+      hits_.clear();
+      c.clip = 0;
+      c.fill(Rect{0, 0, W, H}, Colour::scrim, 0, 160);
+      const float card_w = std::min(std::round(680 * s), page_w - 2 * gutter);
+      const float pad = std::round(28 * s);
+      const float inner = card_w - 2 * pad;
+      // Its words, wrapped to the card.
+      const auto wrap = [&](std::string_view text, TypeRole role) {
+        std::vector<std::string> lines;
+        std::string line;
+        std::size_t at = 0;
+        while (at < text.size()) {
+          const std::size_t end = std::min(text.find(' ', at), text.size());
+          const std::string word(text.substr(at, end - at));
+          const std::string tried = line.empty() ? word : line + " " + word;
+          if (!line.empty() && c.width(tried, role) > inner) {
+            lines.push_back(line);
+            line = word;
+          } else {
+            line = tried;
+          }
+          at = end + 1;
+        }
+        if (!line.empty()) {
+          lines.push_back(line);
+        }
+        return lines;
+      };
+      std::string body = capture_.words;
+      if (body.empty()) {
+        body = capture_.stage == CaptureStage::sent ? "One moment…"
+               : capture_.kind == CaptureKind::chord
+                   ? "Choose the button held first, then the one pressed while it is held."
+                   : capture_.row ? "Press the key to use, with Ctrl, Shift or Alt if you like."
+                                  : "Press the key to use, on its own.";
+      }
+      const std::vector<std::string> title_lines = wrap(capture_.title, TypeRole::display_md);
+      const std::vector<std::string> body_lines = wrap(body, TypeRole::ui);
+      const float title_h = line_height(TypeRole::display_md, s);
+      const float body_h = line_height(TypeRole::ui, s);
+      const float picker_h = std::round(44 * s);
+      const float hints_h = line_height(TypeRole::ui_sm, s);
+      float card_h = pad * 2 + title_h * static_cast<float>(title_lines.size()) + std::round(12 * s) +
+                     body_h * static_cast<float>(body_lines.size()) + std::round(20 * s) + hints_h;
+      if (capture_.kind == CaptureKind::chord && capture_.stage == CaptureStage::waiting) {
+        card_h += std::round(16 * s) + 2 * picker_h;
+      }
+      const Rect card{std::round(page_x + (page_w - card_w) / 2), std::round((H - card_h) / 2), card_w, card_h};
+      const float rr = std::round(tokens::radius::control * 2 * s);
+      c.fill(card, Colour::ground_2, rr);
+      c.stroke(card, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), rr);
+      float cy = card.y + pad;
+      for (const std::string& line : title_lines) {
+        c.text(line, TypeRole::display_md, card.x + pad, cy, inner, Colour::ink_hi);
+        cy += title_h;
+      }
+      cy += std::round(12 * s);
+      const Colour body_ink = capture_.words.empty() ? Colour::ink_mute : Colour::ink_hi;
+      for (const std::string& line : body_lines) {
+        c.text(line, TypeRole::ui, card.x + pad, cy, inner, body_ink);
+        cy += body_h;
+      }
+      if (capture_.kind == CaptureKind::chord && capture_.stage == CaptureStage::waiting) {
+        cy += std::round(16 * s);
+        for (std::size_t row = 0; row < 2; ++row) {
+          const Rect line_rect{card.x + pad, cy, inner, picker_h - std::round(8 * s)};
+          const std::string label = row == 0 ? "Held first" : "Then pressed";
+          const std::string value =
+              "←  " + std::string(kPadButtons[row == 0 ? capture_.anchor : capture_.key].name) + "  →";
+          const float label_y = line_rect.y + std::round((line_rect.h - body_h) / 2);
+          c.text(label, TypeRole::ui, line_rect.x + std::round(12 * s), label_y, inner / 2, Colour::ink_mute);
+          const float value_w = c.width(value, TypeRole::ui);
+          c.text(value, TypeRole::ui, line_rect.right() - value_w - std::round(12 * s), label_y, value_w + 1,
+                 Colour::ink_hi);
+          if (capture_.picker == row) {
+            c.stroke(line_rect, Colour::gold_hi, std::round(tokens::kGrace.size.focus_width * s),
+                     std::round(tokens::radius::control * s));
+          }
+          cy += picker_h;
+        }
+      }
+      // Its keys, in the card where they can be read: the footer's are under its scrim.
+      c.text(hints, TypeRole::ui_sm, card.x + pad, cy + std::round(20 * s), inner, Colour::ink_faint);
     }
     // Keep the focused element in view, unless the wheel has scrolled since a key last moved focus; within the page's
     // length either way. Then lay out once more.

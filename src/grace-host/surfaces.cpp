@@ -533,14 +533,20 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
   }
   std::uint32_t added_id = 0;
   grace::input::Binding binding;
+  // The player's binding of this action, kept from an earlier change, over the mod's defaults (G37, D208).
+  grace::input::Chosen chosen;
+  grace::abi::ConsumerInfo mod;
+  const bool kept = session::consumers().info_of(owner, mod) &&
+                    input::kept_bindings().find(std::string_view(mod.id), action, chosen);
   const grace::input::Added added = input::hotkeys().add(static_cast<std::uint16_t>(owner), action, place,
                                                          static_cast<std::uint8_t>(modifiers), pad_chord,
-                                                         input::menu_key(), added_id, &binding, name);
+                                                         input::menu_key(), added_id, &binding, name,
+                                                         kept ? &chosen : nullptr);
   switch (added) {
     case grace::input::Added::bound:
       break;
     case grace::input::Added::unbound:
-      if ((key != 0 && !binding.key) || (pad_chord != 0 && !binding.chord)) {
+      if (!kept && ((key != 0 && !binding.key) || (pad_chord != 0 && !binding.chord))) {
         char mod_id[GRACEUI_ID_MAX + 1];
         id_of(owner, mod_id);
         const char* what = key != 0 && !binding.key && pad_chord != 0 && !binding.chord ? "its default key and chord are"

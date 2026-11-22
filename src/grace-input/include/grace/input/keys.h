@@ -46,6 +46,8 @@ std::string_view key_name(Key key) noexcept;
 
 // A key with its modifiers (GRACEUI_MOD_*: Ctrl 1, Shift 2, Alt 4) as the settings' key names write it: "Ctrl+Shift+K".
 std::string key_text(Key key, std::uint8_t modifiers);
+// The other way: false for a text that is not a key's name with its modifiers (key_text's form; "" is no key).
+bool key_from_text(std::string_view text, Key& key, std::uint8_t& modifiers) noexcept;
 
 // A set of keys, by their code.
 class KeyBits {

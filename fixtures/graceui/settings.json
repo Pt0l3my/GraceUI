@@ -1,7 +1,7 @@
 {
   "schema": {
     "number": 1,
-    "hash": "b76ae7e28f531e30"
+    "hash": "f9c52fab21a1454a"
   },
   "settings": [
     {
@@ -97,8 +97,8 @@
       ],
       "home": "graceui.hotkeys",
       "effect": "now",
-      "availability": "later",
-      "locked": true
+      "availability": "live",
+      "locked": false
     },
     {
       "key": "dashboard.enabled",

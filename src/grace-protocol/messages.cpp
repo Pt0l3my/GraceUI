@@ -176,6 +176,23 @@ bool from_string(std::string_view text, ActionTone& out) noexcept {
   return false;
 }
 
+std::string_view to_string(RowCapture value) noexcept {
+  static constexpr std::array<std::string_view, 2> kNames = {"key", "chord"};
+  const auto index = static_cast<std::size_t>(value);
+  return index < kNames.size() ? kNames[index] : std::string_view("");
+}
+
+bool from_string(std::string_view text, RowCapture& out) noexcept {
+  static constexpr std::array<std::string_view, 2> kNames = {"key", "chord"};
+  for (std::size_t i = 0; i < kNames.size(); ++i) {
+    if (kNames[i] == text) {
+      out = static_cast<RowCapture>(i);
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string_view to_string(PageTag value) noexcept {
   static constexpr std::array<std::string_view, 2> kNames = {"wip", "later"};
   const auto index = static_cast<std::size_t>(value);
@@ -795,6 +812,15 @@ bool decode(const Json& in, RowAction& out, const std::string& path, DecodeError
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "capture", false, path, e)) {
+    const std::string p = path.empty() ? std::string("capture") : path + ".capture";
+    out.capture.emplace();
+    if (!read_enum(*v, *out.capture, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -807,6 +833,9 @@ Json encode(const RowAction& in) {
   out["tone"] = Json(to_string(in.tone));
   if (in.confirm) {
     out["confirm"] = Json(*in.confirm);
+  }
+  if (in.capture) {
+    out["capture"] = Json(to_string(*in.capture));
   }
   return out;
 }

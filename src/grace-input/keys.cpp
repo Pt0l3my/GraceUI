@@ -2,6 +2,7 @@
 #include "grace/input/keys.h"
 
 #include <array>
+#include <utility>
 
 namespace grace::input {
 namespace {
@@ -58,6 +59,34 @@ std::string_view key_name(Key key) noexcept {
     }
   }
   return {};
+}
+
+bool key_from_text(std::string_view text, Key& key, std::uint8_t& modifiers) noexcept {
+  key = kNoKey;
+  modifiers = 0;
+  if (text.empty()) {
+    return true;
+  }
+  for (const auto& [prefix, bit] : {std::pair<std::string_view, std::uint8_t>{"Ctrl+", 1u}, {"Shift+", 2u}, {"Alt+", 4u}}) {
+    if (text.substr(0, prefix.size()) == prefix) {
+      text.remove_prefix(prefix.size());
+      modifiers = static_cast<std::uint8_t>(modifiers | bit);
+    }
+  }
+  for (const Named& named : kNames) {
+    if (named.key != kNoKey && named.name == text) {
+      key = named.key;
+      return true;
+    }
+  }
+  for (const Named& named : kMore) {
+    if (named.name == text) {
+      key = named.key;
+      return true;
+    }
+  }
+  modifiers = 0;
+  return false;
 }
 
 std::string key_text(Key key, std::uint8_t modifiers) {

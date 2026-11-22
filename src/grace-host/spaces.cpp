@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -38,6 +39,8 @@ constinit grace::serve::Server* g_server = nullptr;
 constinit std::atomic<bool> g_start_failed{false};
 constinit std::uint64_t g_kept_revision = 1;  // the own space's revision last written to user\settings.json (GraceUI's thread)
 constinit std::uint64_t g_kept_quiet = 1;     // the quiet mods' revision last written there (D181)
+constinit std::uint64_t g_kept_bindings = 0;  // the kept hotkey bindings' revision last written there (D208)
+constinit bool g_menu_key_applied = false;    // GraceUI's thread: hotkeys.menu applied once, at the start
 constinit bool g_keep_failed = false;
 constinit std::atomic<bool> g_running{false};
 constinit std::atomic<std::uint32_t> g_port{0};
@@ -166,6 +169,29 @@ void restore_saved(grace::spaces::OwnSpace& own) {
     log_line("GraceUI's settings: %u mods' notices kept quiet", static_cast<unsigned>(taken));
   }
   g_kept_quiet = session::quiet().ids_revision();
+  // The player's hotkey bindings (D208): ids, key names and chords only, each checked as the Hotkeys page would.
+  if (const auto found = file.find("hotkey_bindings"); found != file.end() && found->is_array()) {
+    std::size_t taken = 0;
+    for (const protocol::Json& entry : *found) {
+      if (!entry.is_object() || !entry.contains("mod") || !entry["mod"].is_string() || !entry.contains("action") ||
+          !entry["action"].is_string()) {
+        continue;
+      }
+      grace::input::Chosen chosen;
+      const std::string key = entry.value("key", std::string());
+      const std::uint32_t chord = entry.contains("chord") && entry["chord"].is_number_unsigned()
+                                      ? entry["chord"].get<std::uint32_t>() : 0u;
+      if (!grace::input::key_from_text(key, chosen.key, chosen.modifiers) || grace::input::reserved_key(chosen.key) ||
+          (chord != 0 && !grace::input::valid_chord(chord))) {
+        continue;
+      }
+      chosen.chord = chord;
+      taken += input::kept_bindings().keep(entry["mod"].get_ref<const std::string&>(),
+                                           entry["action"].get_ref<const std::string&>(), chosen) ? 1 : 0;
+    }
+    log_line("GraceUI's settings: %u hotkey bindings kept", static_cast<unsigned>(taken));
+  }
+  g_kept_bindings = input::kept_bindings().revision();
 }
 
 // What a mod's caps say it uses, in the Mods page's words; a name GraceUI does not know is left out.
@@ -266,7 +292,7 @@ protocol::Json hotkeys_body() {
     const bool chord_lost = has_chord && !one.chord_bound;
     std::string state;
     if (!has_key && !has_chord) {
-      state = "Unbound: no default";
+      state = "Unbound: no key or pad chord";
     } else if (!key_lost && !chord_lost) {
       state = "Bound";
     } else {
@@ -281,7 +307,11 @@ protocol::Json hotkeys_body() {
         state = (has_key ? "Chord unbound: " : "Unbound: ") + chord_words;
       }
     }
-    rows.push_back({{"mod", mod_name(one.owner)},
+    grace::abi::ConsumerInfo info;
+    const std::string row_id = session::consumers().info_of(one.owner, info)
+                                   ? std::string(info.id) + "/" + std::string(one.action()) : std::string();
+    rows.push_back({{"id", row_id},
+                    {"mod", mod_name(one.owner)},
                     {"action", one.name().empty() ? std::string(one.action()) : std::string(one.name())},
                     {"key", key},
                     {"chord", has_chord ? grace::input::chord_text(one.chord) : std::string("No pad chord")},
@@ -409,6 +439,211 @@ grace::pages::Outcome mods_notices(const protocol::Cmd& command) {
   return out;
 }
 
+// ---- The Hotkeys page's changes (G37, D208).
+
+// A hotkey by its row's id, "‹mod id›/‹action›": false if no connected mod has it now.
+bool hotkey_of_row(std::string_view row, grace::input::Listed& out, std::string& mod_id) {
+  const std::size_t slash = row.find('/');
+  if (slash == std::string_view::npos || slash == 0 || slash + 1 >= row.size()) {
+    return false;
+  }
+  const std::string_view mod = row.substr(0, slash);
+  const std::string_view action = row.substr(slash + 1);
+  grace::abi::ConsumerInfo info;
+  std::uint32_t owner = 0;
+  for (std::uint32_t i = 0; owner == 0 && session::consumers().info(i, info); ++i) {
+    owner = mod == info.id ? info.owner : 0;
+  }
+  if (owner == 0) {
+    return false;
+  }
+  static grace::input::Listed listed[grace::input::kMaxHotkeys];  // GraceUI's thread alone
+  const std::size_t count = input::hotkeys().list(listed, grace::input::kMaxHotkeys);
+  for (std::size_t i = 0; i < count; ++i) {
+    if (listed[i].owner == owner && listed[i].action() == action) {
+      out = listed[i];
+      mod_id = std::string(mod);
+      return true;
+    }
+  }
+  return false;
+}
+
+// A hotkey's binding as it stands now, kept for the next session under its mod's and action's ids.
+void keep_binding(std::uint32_t id) {
+  grace::input::Listed now;
+  grace::abi::ConsumerInfo info;
+  if (input::hotkeys().find(id, now) && session::consumers().info_of(now.owner, info)) {
+    input::kept_bindings().keep(info.id, now.action(), grace::input::Chosen{now.key, now.modifiers, now.chord});
+  }
+}
+
+// "Tide Charts's Show the tide table": whose a hotkey is, in words.
+std::string whose(std::uint32_t id) {
+  grace::input::Listed one;
+  grace::abi::ConsumerInfo info;
+  if (!input::hotkeys().find(id, one) || !session::consumers().info_of(one.owner, info)) {
+    return "another hotkey";
+  }
+  return std::string(info.name) + "'s " + std::string(one.name().empty() ? one.action() : one.name());
+}
+
+grace::pages::Outcome refusal(protocol::ErrorCode code, std::string words) {
+  grace::pages::Outcome out;
+  out.error = code;
+  out.detail = std::move(words);
+  return out;
+}
+
+// hotkeys.key, hotkeys.chord, hotkeys.reset and hotkeys.reset_all, from either view (D208): {"id": a row's id,
+// "value": a key's name ("" for none) or a chord (0 for none), "confirm": true to move one another hotkey has}.
+grace::pages::Outcome hotkeys_command(const protocol::Cmd& command) {
+  const protocol::Json& args = command.args;
+  if (command.name == "hotkeys.reset_all") {
+    static grace::input::Listed listed[grace::input::kMaxHotkeys];
+    const std::size_t count = input::hotkeys().list(listed, grace::input::kMaxHotkeys);
+    for (std::size_t i = 0; i < count; ++i) {
+      input::hotkeys().reset(listed[i].id, input::menu_key());
+    }
+    input::kept_bindings().forget_all();
+    log_line("every hotkey is back to its mod's own keys");
+    grace::pages::Outcome out;
+    out.ok = true;
+    return out;
+  }
+  if (!args.is_object() || !args.contains("id") || !args["id"].is_string()) {
+    return refusal(protocol::ErrorCode::bad_message, "");
+  }
+  grace::input::Listed hotkey;
+  std::string mod_id;
+  if (!hotkey_of_row(args["id"].get_ref<const std::string&>(), hotkey, mod_id)) {
+    return refusal(protocol::ErrorCode::invalid_value, "That mod is not connected now.");
+  }
+  const bool move = args.contains("confirm") && args["confirm"].is_boolean() && args["confirm"].get<bool>();
+  grace::input::Taken other;
+  grace::input::Rebound done = grace::input::Rebound::gone;
+  if (command.name == "hotkeys.reset") {
+    done = input::hotkeys().reset(hotkey.id, input::menu_key());
+    if (done == grace::input::Rebound::done) {
+      input::kept_bindings().forget(mod_id, hotkey.action());
+    }
+  } else if (command.name == "hotkeys.key") {
+    grace::input::Key key = grace::input::kNoKey;
+    std::uint8_t modifiers = 0;
+    if (!args.contains("value") || !args["value"].is_string() ||
+        !grace::input::key_from_text(args["value"].get_ref<const std::string&>(), key, modifiers)) {
+      return refusal(protocol::ErrorCode::invalid_value, "Not a key GraceUI knows.");
+    }
+    done = input::hotkeys().rebind_key(hotkey.id, key, modifiers, input::menu_key(), move, other);
+    if (done == grace::input::Rebound::taken) {
+      const std::string name = grace::input::key_text(key, modifiers);
+      if (other.menu) {
+        return refusal(protocol::ErrorCode::invalid_value,
+                       name + " opens the menu: give the menu another key first, or choose another here.");
+      }
+      return refusal(protocol::ErrorCode::confirm_required,
+                     name + " is " + whose(other.id) + ". Use it here, and leave that one with no key?");
+    }
+  } else if (command.name == "hotkeys.chord") {
+    if (!args.contains("value") || !args["value"].is_number_unsigned()) {
+      return refusal(protocol::ErrorCode::invalid_value, "Not a pad chord.");
+    }
+    const auto chord = args["value"].get<std::uint64_t>();
+    if (chord > 0xFFFFFFFFull) {
+      return refusal(protocol::ErrorCode::invalid_value, "Not a pad chord.");
+    }
+    done = input::hotkeys().rebind_chord(hotkey.id, static_cast<std::uint32_t>(chord), move, other);
+    if (done == grace::input::Rebound::taken) {
+      return refusal(protocol::ErrorCode::confirm_required,
+                     grace::input::chord_text(static_cast<std::uint32_t>(chord)) + " is " + whose(other.id) +
+                         ". Use it here, and leave that one with no pad chord?");
+    }
+  } else {
+    return refusal(protocol::ErrorCode::unknown_command, "Not available in this version.");
+  }
+  if (done == grace::input::Rebound::invalid) {
+    return refusal(protocol::ErrorCode::invalid_value,
+                   command.name == "hotkeys.chord"
+                       ? "A pad chord is two different buttons: not a trigger or a stick."
+                       : "Escape, Alt+F4, and the Ctrl, Shift, Alt and Windows keys alone cannot be a hotkey.");
+  }
+  if (done == grace::input::Rebound::gone) {
+    return refusal(protocol::ErrorCode::invalid_value, "That hotkey has gone.");
+  }
+  if (command.name != "hotkeys.reset") {
+    keep_binding(hotkey.id);
+  }
+  if (other.id != 0) {
+    keep_binding(other.id);  // the one that lost it stays without it, whichever mod registers first next time
+  }
+  grace::input::Listed now;
+  input::hotkeys().find(hotkey.id, now);
+  log_line("%s's hotkey %.*s: key %s, pad chord %s", mod_id.c_str(), static_cast<int>(now.action().size()),
+           now.action().data(), now.key == grace::input::kNoKey ? "none" : grace::input::key_text(now.key, now.modifiers).c_str(),
+           now.chord == 0 ? "none" : grace::input::chord_text(now.chord).c_str());
+  grace::pages::Outcome out;
+  out.ok = true;
+  return out;
+}
+
+// GraceUI's own commands past its settings (invariant 3): one entry point each.
+grace::pages::Outcome own_command(const protocol::Cmd& command) {
+  grace::pages::Outcome out = command.name.rfind("hotkeys.", 0) == 0 ? hotkeys_command(command) : mods_notices(command);
+  if (out.ok) {
+    if (grace::spaces::OwnSpace* own = g_own.load(std::memory_order_acquire); own != nullptr) {
+      refresh_topics(*own);
+    }
+    keep_own_settings();
+  }
+  return out;
+}
+
+// hotkeys.menu's own rules past a key name's (D208): one key alone, never Escape or a modifier.
+std::optional<grace::pages::Outcome> check_setting(const protocol::Cmd& command) {
+  const protocol::Json& args = command.args;
+  if (!args.is_object() || args.value("key", std::string()) != "hotkeys.menu" || !args.contains("value") ||
+      !args["value"].is_string()) {
+    return std::nullopt;
+  }
+  grace::input::Key key = grace::input::kNoKey;
+  std::uint8_t modifiers = 0;
+  if (!grace::input::key_from_text(args["value"].get_ref<const std::string&>(), key, modifiers)) {
+    return refusal(protocol::ErrorCode::invalid_value, "Not a key GraceUI knows.");
+  }
+  if (modifiers != 0) {
+    return refusal(protocol::ErrorCode::invalid_value, "The menu's key takes no Ctrl, Shift or Alt.");
+  }
+  if (key == grace::input::kNoKey || grace::input::reserved_key(key)) {
+    return refusal(protocol::ErrorCode::invalid_value, "Escape and the Ctrl, Shift, Alt and Windows keys cannot open the menu.");
+  }
+  return std::nullopt;
+}
+
+// hotkeys.menu as the player set it, applied (D208): a mod's hotkey on the new key loses it, kept so once the player
+// moved it; at the start it is only applied.
+void publish_menu_key(const grace::spaces::OwnSpace& own) {
+  const protocol::Json& value = own.store().held("hotkeys.menu");
+  grace::input::Key key = grace::input::kNoKey;
+  std::uint8_t modifiers = 0;
+  if (!value.is_string() || !grace::input::key_from_text(value.get_ref<const std::string&>(), key, modifiers) ||
+      modifiers != 0 || key == grace::input::kNoKey || grace::input::reserved_key(key)) {
+    key = grace::input::kF5;  // a value the check never let through (an edited file): the default
+  }
+  if (key == input::menu_key() && g_menu_key_applied) {
+    return;
+  }
+  input::set_menu_key(key);
+  std::uint32_t lost[grace::input::kMaxHotkeys];
+  const std::size_t count = input::hotkeys().menu_key_moved(key, lost, grace::input::kMaxHotkeys);
+  for (std::size_t i = 0; i < count && g_menu_key_applied; ++i) {
+    keep_binding(lost[i]);
+  }
+  if (g_menu_key_applied || key != grace::input::kF5) {
+    log_line("the menu's key is %s", grace::input::key_text(key, 0).c_str());
+  }
+  g_menu_key_applied = true;
+}
+
 }  // namespace
 
 void publish_ui_scale(const grace::spaces::OwnSpace& own) noexcept {
@@ -421,11 +656,13 @@ void publish_ui_scale(const grace::spaces::OwnSpace& own) noexcept {
 
 void keep_own_settings() noexcept {
   grace::spaces::OwnSpace* own = g_own.load(std::memory_order_acquire);
-  if (own == nullptr || (own->revision() == g_kept_revision && session::quiet().ids_revision() == g_kept_quiet)) {
+  if (own == nullptr || (own->revision() == g_kept_revision && session::quiet().ids_revision() == g_kept_quiet &&
+                         input::kept_bindings().revision() == g_kept_bindings)) {
     return;
   }
   g_kept_revision = own->revision();
   g_kept_quiet = session::quiet().ids_revision();
+  g_kept_bindings = input::kept_bindings().revision();
   try {
     std::filesystem::path path;
     if (!settings_path(path)) {
@@ -440,6 +677,17 @@ void keep_own_settings() noexcept {
       protocol::Json file = {{"graceui_settings", 1}, {"values", own->saved_settings()}};
       if (const std::vector<std::string> quiet = session::quiet().ids(); !quiet.empty()) {
         file["quiet_mods"] = quiet;  // the mods whose notices the player quieted (D181)
+      }
+      static grace::input::KeptBindings::Entry kept[grace::input::kKeptBindings];  // GraceUI's thread alone
+      if (const std::size_t count = input::kept_bindings().all(kept, grace::input::kKeptBindings); count != 0) {
+        protocol::Json bindings = protocol::Json::array();
+        for (std::size_t i = 0; i < count; ++i) {
+          bindings.push_back({{"mod", std::string(kept[i].mod_id())},
+                              {"action", std::string(kept[i].action_id())},
+                              {"key", grace::input::key_text(kept[i].chosen.key, kept[i].chosen.modifiers)},
+                              {"chord", kept[i].chosen.chord}});
+        }
+        file["hotkey_bindings"] = std::move(bindings);  // the player's hotkey bindings (D208): ids and key names only
       }
       out << file.dump(2) << '\n';
       if (!out.flush()) {
@@ -493,7 +741,7 @@ void serve() noexcept {
       g_server = new grace::serve::Server();
       registry().attach(*g_server);
       own_space->attach(*g_server, version_text(),
-                        grace::spaces::OwnSpace::Hooks{[] { disconnect_browsers(); }, &mods_notices},
+                        grace::spaces::OwnSpace::Hooks{[] { disconnect_browsers(); }, &own_command, &check_setting},
                         [] { hooks::wake(); });
     }
     // GraceUI's own module re-check, every 60 s while the server runs (§7.2 item 1): an anti-cheat loaded since the
@@ -518,6 +766,7 @@ void serve() noexcept {
     registry().expire(std::chrono::steady_clock::now());
     // A change from a browser while the menu is closed: the mods hear of it, and the next session keeps it (D179).
     publish_ui_scale(*own_space);
+    publish_menu_key(*own_space);  // hotkeys.menu, live since D208
     keep_own_settings();
   } catch (...) {
     log_line("the spaces' service failed (an exception): the browser view may lag until the next wake");

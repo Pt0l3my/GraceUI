@@ -230,7 +230,7 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
   std::string why;
   REQUIRE_MESSAGE(own.load(why), why);
   int disconnects = 0;
-  own.attach(fixture.server, "0.2.0", spaces::OwnSpace::Hooks{[&] { ++disconnects; }, {}});
+  own.attach(fixture.server, "0.2.0", spaces::OwnSpace::Hooks{[&] { ++disconnects; }, {}, {}});
   REQUIRE(fixture.wait_files());
   auto view = fixture.join();
   REQUIRE(view != nullptr);

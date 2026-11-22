@@ -228,6 +228,22 @@ export class FixtureSpace {
       }
       return { answer: { ok: true }, publish: this.changedState() };
     }
+    if (name === "hotkeys.key" && typeof args.value === "string" && args.value !== "" && args.confirm !== true) {
+      // As GraceUI's host asks before a move (D208): a key another row of the Hotkeys page's list has.
+      const listed = this.data.topics?.["graceui.hotkeys"];
+      const rows = typeof listed === "object" && listed !== null && !Array.isArray(listed) && Array.isArray(listed.rows)
+        ? listed.rows : [];
+      for (const row of rows) {
+        if (typeof row === "object" && row !== null && !Array.isArray(row) && row.key === args.value &&
+            row.id !== args.id && typeof row.id === "string" && row.id !== "") {
+          return {
+            answer: { ok: false, error: "confirm_required",
+                      detail: `${args.value} is ${String(row.mod)}'s ${String(row.action)}. Use it here, and leave that one with no key?` },
+            publish: [],
+          };
+        }
+      }
+    }
     return { answer: { ok: true }, publish: [] };  // the space's own commands: accepted, with nothing to show here
   }
 }

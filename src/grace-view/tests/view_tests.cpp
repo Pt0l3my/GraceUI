@@ -1041,34 +1041,149 @@ TEST_CASE("a section's chip, live status and own actions: drawn in its head, a d
   CHECK(order.command.args == Json::object());
 }
 
-TEST_CASE("the Hotkeys page in game (D206): the menu's key shown for a later version, and every hotkey with its chord") {
+namespace {
+
+Json hotkeys_body() {
+  return {{"columns", Json::array({{{"id", "mod"}, {"label", "Mod"}},
+                                   {{"id", "action"}, {"label", "Action"}},
+                                   {{"id", "key"}, {"label", "Key"}},
+                                   {{"id", "chord"}, {"label", "Pad chord"}},
+                                   {{"id", "state"}, {"label", "State"}}})},
+          {"rows", Json::array({{{"id", ""}, {"mod", "GraceUI"}, {"action", "Open the menu"}, {"key", "F5"},
+                                 {"chord", "No pad chord"}, {"state", "Bound"}},
+                                {{"id", "tide-charts/tide-table"}, {"mod", "Tide Charts"},
+                                 {"action", "Show the tide table"}, {"key", "Ctrl+T"},
+                                 {"chord", "D-pad Down, then A"}, {"state", "Bound"}},
+                                {{"id", "quiet-camp/pitch-tent"}, {"mod", "Quiet Camp"}, {"action", "Pitch the tent"},
+                                 {"key", "No key"}, {"chord", "No pad chord"},
+                                 {"state", "Unbound: no key or pad chord"}}})}};
+}
+
+// Focus moved down the page to `id` (a focus name, "row:…" or "setting:…"); false if never reached.
+bool focus_on(PageView& view, std::string_view id) {
+  for (int i = 0; i < 64 && view.focused() != id; ++i) {
+    press(view, Key::down);
+  }
+  return view.focused() == id;
+}
+
+}  // namespace
+
+TEST_CASE("the Hotkeys page in game (D206): the menu's key, and every hotkey with its chord, the menu's row without "
+          "actions") {
   PageView view = loaded("graceui", "graceui.hotkeys");
   view.set_increment("0.2");
   REQUIRE(view.present("graceui.hotkeys"));
-  const Json hotkeys = {
-      {"columns", Json::array({{{"id", "mod"}, {"label", "Mod"}},
-                               {{"id", "action"}, {"label", "Action"}},
-                               {{"id", "key"}, {"label", "Key"}},
-                               {{"id", "chord"}, {"label", "Pad chord"}},
-                               {{"id", "state"}, {"label", "State"}}})},
-      {"rows", Json::array({{{"mod", "GraceUI"}, {"action", "Open the menu"}, {"key", "F5"}, {"chord", "No pad chord"},
-                             {"state", "Bound"}},
-                            {{"mod", "Tide Charts"}, {"action", "Show the tide table"}, {"key", "Ctrl+T"},
-                             {"chord", "D-pad Down, then A"}, {"state", "Bound"}},
-                            {{"mod", "Quiet Camp"}, {"action", "Pitch the tent"}, {"key", "No key"},
-                             {"chord", "D-pad Down, then A"}, {"state", "Unbound: Tide Charts took its chord first"}}})}};
-  view.set_topic("graceui.hotkeys", hotkeys);
+  view.set_topic("graceui.hotkeys", hotkeys_body());
   DisplayList list;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
   const std::string dump = list.dump();
   CHECK(dump.find("Ctrl+T  ·  D-pad Down, then A  ·  Bound") != std::string::npos);  // a row's cells, in order
   CHECK(dump.find("F5  ·  No pad chord") != std::string::npos);
-  CHECK(dump.find("Unbound: Tide Charts took its chord first") != std::string::npos);
-  CHECK(dump.find("Later version") != std::string::npos);  // the menu's key, until a later version rebinds it
-  // The menu's key is not changed here yet: activating its row changes nothing.
+  CHECK(dump.find("Later version") == std::string::npos);  // the menu's key is live since D208
+  CHECK(dump.find("Change key") != std::string::npos);
   view.open("graceui.hotkeys");
-  CHECK(view.focused() == "setting:hotkeys.menu");
-  const Action a = press(view, Key::activate);
-  CHECK(a.kind != Action::Kind::command);
+  CHECK(view.focused() == "action:reset-all");  // the page's action first
+  REQUIRE(focus_on(view, "setting:hotkeys.menu"));
+  // The menu's own row (no id) takes no row actions: the first row stop after it is Tide Charts'.
+  for (int i = 0; i < 8 && view.focused().rfind("row:", 0) != 0; ++i) {
+    press(view, Key::down);
+  }
+  CHECK(view.focused() == "row:graceui.hotkeys/tide-charts/tide-table/key");
   golden("hotkeys-1920x1080.txt", dump);
+}
+
+TEST_CASE("a row's key captured in game: the next key, sent with the row's key; a taken one asked, then moved (D209)") {
+  PageView view = loaded("graceui", "graceui.hotkeys");
+  view.set_increment("0.2");
+  view.set_topic("graceui.hotkeys", hotkeys_body());
+  view.open("graceui.hotkeys");
+  REQUIRE(focus_on(view, "row:graceui.hotkeys/tide-charts/tide-table/key"));
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);
+  REQUIRE(view.capture_open());
+  CHECK(view.awaiting_key());
+  CHECK(press(view, Key::down).kind == Action::Kind::none);  // the menu's own keys do nothing meanwhile
+  Action sent = view.captured("F9");
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.space == "graceui");
+  CHECK(sent.command.name == "hotkeys.key");
+  CHECK(sent.command.args == Json::object({{"id", "tide-charts/tide-table"}, {"value", "F9"}}));
+  CHECK_FALSE(view.awaiting_key());
+  view.capture_answered(false, true, "F9 is Quiet Camp's Pitch the tent. Use it here, and leave that one with no key?");
+  DisplayList asking;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), asking);
+  CHECK(asking.dump().find("Quiet Camp's Pitch the tent") != std::string::npos);
+  CHECK(asking.dump().find("Enter  Use it here") != std::string::npos);
+  golden("hotkeys-asking-1920x1080.txt", asking.dump());
+  const Action moved = press(view, Key::activate);
+  REQUIRE(moved.kind == Action::Kind::command);
+  CHECK(moved.command.args == Json::object({{"id", "tide-charts/tide-table"}, {"value", "F9"}, {"confirm", true}}));
+  view.capture_answered(true, false, "");
+  CHECK_FALSE(view.capture_open());
+
+  // Backspace leaves a row's hotkey with no key; a refusal's words show and the capture waits again; Escape cancels.
+  REQUIRE(focus_on(view, "row:graceui.hotkeys/tide-charts/tide-table/key"));
+  press(view, Key::activate);
+  const Action cleared = view.captured("Backspace");
+  CHECK(cleared.command.args["value"] == "");
+  view.capture_answered(false, false, "That hotkey has gone.");
+  CHECK(view.awaiting_key());
+  DisplayList refused;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), refused);
+  CHECK(refused.dump().find("That hotkey has gone.") != std::string::npos);
+  press(view, Key::back);
+  CHECK_FALSE(view.capture_open());
+  CHECK(view.captured("F9").kind == Action::Kind::none);  // nothing waits now
+}
+
+TEST_CASE("a pad chord chosen in game with two pickers; R leaves none (D209)") {
+  PageView view = loaded("graceui", "graceui.hotkeys");
+  view.set_increment("0.2");
+  view.set_topic("graceui.hotkeys", hotkeys_body());
+  view.open("graceui.hotkeys");
+  REQUIRE(focus_on(view, "row:graceui.hotkeys/quiet-camp/pitch-tent/chord"));
+  press(view, Key::activate);
+  REQUIRE(view.capture_open());
+  CHECK_FALSE(view.awaiting_key());  // the pickers take the menu's own keys
+  DisplayList open;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), open);
+  CHECK(open.dump().find("←  D-pad Up  →") != std::string::npos);
+  CHECK(open.dump().find("←  View  →") != std::string::npos);
+  golden("hotkeys-chord-1920x1080.txt", open.dump());
+  press(view, Key::right);  // the button held first: D-pad Down
+  press(view, Key::down);
+  press(view, Key::left);  // then pressed: RS, before View
+  const Action used = press(view, Key::activate);
+  REQUIRE(used.kind == Action::Kind::command);
+  CHECK(used.command.name == "hotkeys.chord");
+  CHECK(used.command.args == Json::object({{"id", "quiet-camp/pitch-tent"}, {"value", (0x0002u << 16) | 0x0080u}}));
+  view.capture_answered(true, false, "");
+  REQUIRE(focus_on(view, "row:graceui.hotkeys/quiet-camp/pitch-tent/chord"));
+  press(view, Key::activate);
+  for (int i = 0; i < 12; ++i) {
+    press(view, Key::right);  // the button held first round to View, the same as the second: refused in words
+  }
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);
+  DisplayList same;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), same);
+  CHECK(same.dump().find("Choose two different buttons.") != std::string::npos);
+  const Action none = press(view, Key::reset);
+  REQUIRE(none.kind == Action::Kind::command);
+  CHECK(none.command.args["value"] == 0);
+}
+
+TEST_CASE("the menu's key captured in game: one key, sent as its setting (D209)") {
+  PageView view = loaded("graceui", "graceui.hotkeys");
+  view.set_increment("0.2");
+  view.open("graceui.hotkeys");
+  REQUIRE(focus_on(view, "setting:hotkeys.menu"));
+  press(view, Key::activate);
+  REQUIRE(view.awaiting_key());
+  const Action sent = view.captured("F6");
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.name == "settings.set");
+  CHECK(sent.command.args == Json::object({{"key", "hotkeys.menu"}, {"value", "F6"}}));
+  view.capture_answered(false, false, "The menu's key takes no Ctrl, Shift or Alt.");
+  CHECK(view.awaiting_key());
+  CHECK(view.captured("Backspace").command.args["value"] == "Backspace");  // a setting's capture keeps Backspace
 }

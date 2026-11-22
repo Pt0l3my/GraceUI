@@ -66,6 +66,14 @@ struct Binding {
   bool chord = false;
 };
 
+// The player's binding of a hotkey, over its mod's defaults (G37, D208): its key with modifiers (kNoKey for none) and
+// its chord (0 for none).
+struct Chosen {
+  Key key = kNoKey;
+  std::uint8_t modifiers = 0;
+  std::uint32_t chord = 0;
+};
+
 // One hotkey as the Hotkeys page lists it (D206).
 struct Listed {
   std::uint32_t id = 0;
@@ -75,6 +83,7 @@ struct Listed {
   std::uint32_t chord = 0;
   bool key_bound = false;
   bool chord_bound = false;
+  Chosen defaults{};  // its mod's, which a reset restores
   std::string_view action() const noexcept { return {action_bytes, action_length}; }
   std::string_view name() const noexcept { return {name_bytes, name_length}; }
   std::uint8_t action_length = 0;
@@ -86,6 +95,19 @@ struct Listed {
 struct Press {
   std::uint32_t id = 0;     // the hotkey's id: never 0
   std::uint32_t count = 0;  // presses since its last one was taken
+};
+
+// What a change of binding did (D208).
+enum class Rebound : std::uint8_t {
+  done = 0,
+  taken = 1,    // another bound hotkey has it (`Taken::id`), or it is the menu's key (`Taken::menu`); nothing changed
+  invalid = 2,  // a reserved key, an unknown modifier, Alt+F4, or a chord that is not one
+  gone = 3,     // no hotkey has this id now
+};
+
+struct Taken {
+  std::uint32_t id = 0;  // the hotkey that has it, or that lost it to a move
+  bool menu = false;     // it is the menu's key
 };
 
 class Hotkeys {
@@ -104,13 +126,32 @@ class Hotkeys {
   }
   // The same with a default pad `chord` (0 for none, else valid_chord), and which defaults are bound in `binding`.
   // `name` is what the Hotkeys page calls it (checked by the caller; at most kHotkeyNameMax bytes are kept).
+  // With `chosen`, the hotkey takes the player's binding instead (G37), and keeps its defaults for a reset.
   Added add(std::uint16_t owner, std::string_view action, Key key, std::uint8_t modifiers, std::uint32_t chord,
-            Key menu_key, std::uint32_t& id, Binding* binding, std::string_view name = {}) noexcept;
+            Key menu_key, std::uint32_t& id, Binding* binding, std::string_view name = {},
+            const Chosen* chosen = nullptr) noexcept;
+
+  // The first of `owner`'s hotkeys whose binding the player changed since its mod last asked, its mark cleared; false
+  // if none (GRACEUI_EVENT_HOTKEY_CHANGED, D208).
+  bool take_changed(std::uint16_t owner, std::uint32_t& id) noexcept;
 
   // ---- GraceUI's thread.
 
   // Every hotkey added and not yet removed, in the table's order, at most `capacity`: how many were written.
   std::size_t list(Listed* out, std::size_t capacity) const noexcept;
+  // One hotkey, as list() gives it; false if no hotkey has this id now.
+  bool find(std::uint32_t id, Listed& out) const noexcept;
+
+  // The player's changes (G37, D208). A key or chord another bound hotkey has answers `taken`, naming it, and changes
+  // nothing, unless `move`: then the other loses it (its key, or its chord, becomes none) and `other` names it. The
+  // menu's key is never moved from it (`taken`, `menu`). kNoKey, or chord 0, removes the hotkey's own.
+  Rebound rebind_key(std::uint32_t id, Key key, std::uint8_t modifiers, Key menu_key, bool move, Taken& other) noexcept;
+  Rebound rebind_chord(std::uint32_t id, std::uint32_t chord, bool move, Taken& other) noexcept;
+  // Back to its mod's defaults, each bound unless another hotkey has it, as at registration.
+  Rebound reset(std::uint32_t id, Key menu_key) noexcept;
+  // The menu's key is now `key`: every hotkey bound to it, whatever its modifiers, loses its key. Their ids are written
+  // to `out`, at most `capacity`; answers how many lost it.
+  std::size_t menu_key_moved(Key key, std::uint32_t* out, std::size_t capacity) noexcept;
 
   // The mod has gone: its hotkeys and their presses go with it.
   void remove_owner(std::uint16_t owner) noexcept;
@@ -186,7 +227,17 @@ class Hotkeys {
     char action[kActionMax] = {};       // under the lock
     std::uint8_t name_length = 0;       // under the lock
     char name[kHotkeyNameMax] = {};     // under the lock
+    Chosen defaults{};                  // under the lock: its mod's, for a reset
+    std::atomic<bool> changed{false};   // the player changed it since its mod last asked
   };
+
+  // Under the lock: the slot's key and modifiers, bound or not, its generation and presses kept.
+  void set_key(Slot& slot, Key key, std::uint8_t modifiers, bool bound) noexcept;
+  void set_chord(Slot& slot, std::uint32_t chord, bool bound) noexcept;
+  Slot* slot_of(std::uint32_t id) noexcept;  // under the lock: the slot `id` names now, or null
+  static Listed listed_of(const Slot& slot, std::uint32_t id) noexcept;  // under the lock
+  std::uint32_t key_holder(Key key, std::uint8_t modifiers, const Slot* except) const noexcept;  // under the lock
+  std::uint32_t chord_holder(std::uint32_t chord, const Slot* except) const noexcept;            // under the lock
 
   mutable std::atomic_flag lock_{};
   std::uint32_t generation_ = 0;  // under the lock
