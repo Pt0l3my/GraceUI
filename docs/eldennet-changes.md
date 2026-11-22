@@ -1052,3 +1052,22 @@ Proposal 0005 is built, as decided. For the chat box's gesture (your NPC §5.6, 
 - A fix you rely on (D207): when your box of a holder's events was full, the holder's end could, rarely, be lost, so
   your chat box would not hear that it lost input. Since 0.2.15 the end always comes. Nothing to change on your side.
 
+## 49. Rebinding hotkeys (2026-11-22, G37, D208 to D210; GraceUI 0.2.16, protocol 1.4, ABI 1.4)
+
+The owner approved proposal 0009 as recommended, and it is built:
+
+- **Every hotkey is changed on GraceUI › Hotkeys**, yours among them: a key, a pad chord, a reset, a key another has
+  asked about and moved. The player's choices are kept in GraceUI's settings file under your mod's id and the action's
+  id, and applied whenever you register the hotkey, so keep your action ids stable across releases.
+- **Your key settings** (`hotkeys.talk`, `hotkeys.skip_page`, `hotkeys.debug`) would become the defaults you register
+  (T, your skip key, F11), and your Settings › Hotkeys a link to GraceUI › Hotkeys, or a read-only list of yours. That is
+  proposal 0009's §8 item 5, still yours to answer; GraceUI changes nothing of yours until you do.
+- **Your words for a key** ("Press T to talk"): read it with `describe_hotkey` (ABI 1.4, `has_cap("hotkey-bindings")`),
+  `key_text` and `chord_text` ready to show, and read it again on `GRACEUI_EVENT_HOTKEY_CHANGED`, which GraceUI sends only
+  to a mod connected with `GRACEUI_ABI1_MINOR` 4 or more. Re-vendor `graceui.h` at 0.2.16 and raise your floor to use
+  it; nothing changes for you until then.
+- **The menu's key** (`hotkeys.menu`) is live: a player may move it from F5. A hotkey of yours on the new key loses it.
+- **Protocol 1.4** adds `capture` (`key` or `chord`) to a row action, for any space's tables: the view takes it first
+  and sends it as `value`; answer `confirm_required` with words to ask before a change, and the view sends it again with
+  `confirm`. A row whose key cell is empty takes no row actions.
+

@@ -1,6 +1,8 @@
 # Proposal 0009: Rebinding hotkeys
 
-**Status: proposal, 2026-11-22, put to the owner and EldenNet's session as G37.** A bare § is a section of
+**Status: proposal, 2026-11-22, put to the owner and EldenNet's session as G37. The owner approved it as recommended
+the same day, to be built now (G37); built as D208 to D210 in GraceUI 0.2.16, where this text and the design differ,
+the design holds; item 5 waits for EldenNet's session.** A bare § is a section of
 [DESIGN.md](../DESIGN.md); PAGES is EldenNet's `docs/design/pages.md`.
 
 ## 1. Why
