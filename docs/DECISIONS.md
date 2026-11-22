@@ -771,6 +771,12 @@ second round needs it, after EldenNet's R1, unless there is room before.
 
 **Owner's words.** "I am fine with everything you and grace done so far, so that's approved." (relayed by EldenNet's session, 2026-11-21).
 
+*Later (2026-11-22):* built before S4's second round, there being room, as D204 in GraceUI 0.2.14 (ABI 1.3). The owner,
+asked whether to start it, answered: "alright, but keep in mind I don't have a pad, controller, VR set, or handheld to
+test with, only a PC with keyboard and mouse." So every pad behaviour is checked without one (D205): by unit
+timelines, and in the harness under Wine on both toolchains; the three estimates, the chord's freedom in the game and
+the Deck's checks wait for testers' machines, never for the owner.
+
 ## G36
 
 **Sections as cards: a chip, a live status and their own actions** · *Decided 2026-11-21*

@@ -1,8 +1,9 @@
 # Proposal 0005: Pad chords for hotkeys
 
 **Status: proposal, 2026-11-20, put to the owner and to EldenNet's session for S4's second round (its NPC §5.6, O11);
-EldenNet's session agreed the same day (§7). The owner approved it on 2026-11-21 (G35); not built yet: it is built for
-S4's second round, after EldenNet's R1, unless there is room before.** A bare § is a section of [DESIGN.md](../DESIGN.md). Figures marked EST are estimates for S4 to confirm.
+EldenNet's session agreed the same day (§7). The owner approved it on 2026-11-21 (G35); built on 2026-11-22 as D204
+in GraceUI 0.2.14 (ABI 1.3), where this text and the design differ, the design holds. With no pad of the owner's, its
+pad checks in game are for testers' machines (D205).** A bare § is a section of [DESIGN.md](../DESIGN.md). Figures marked EST are estimates for S4 to confirm.
 
 ## 1. Why
 
