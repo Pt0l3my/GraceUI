@@ -4330,6 +4330,7 @@ std::wstring this_program();
 int run_child(const std::wstring& dll, const wchar_t* scenario, std::wstring program);
 
 void run_heap_guard(const std::wstring& dll) {
+  SetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_GUARD", L"on");  // whatever the run: this scenario is the guard's own
   SetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_CHECK_MS", L"200");
   Game game(false);
   GraceUi grace;
@@ -4345,7 +4346,7 @@ void run_heap_guard(const std::wstring& dll) {
     Sleep(20);
     on = grace.heap_guard();
   }
-  check(on.stats_read == 1 && on.check_period_ms == 200 && on.made > 0 && on.live_blocks > 0 && on.checks >= 2 &&
+  check(on.on == 1 && on.stats_read == 1 && on.check_period_ms == 200 && on.made > 0 && on.live_blocks > 0 && on.checks >= 2 &&
             on.blocks_checked > 0 && on.breaches == 0 && on.breach.breach == 0 && on.last_check_ms != 0,
         "heap guard: GraceUI's own blocks guarded and checked",
         "%llu blocks made, %llu live (%llu bytes), %llu kept after their free; %llu whole checks every %u ms, over "
@@ -4408,6 +4409,27 @@ void run_heap_guard(const std::wstring& dll) {
           : status == 0xC0000602u                  ? " (a fail-fast)"
                                                    : " (NOT A BREACH'S END)");
   }
+}
+
+// GRACEUI_TEST_HEAP_GUARD=off: the test build makes GraceUI's blocks as a release build does, and the guard says so.
+void run_heap_guard_off(const std::wstring& dll) {
+  SetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_GUARD", L"off");
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  frames(game, 5);
+  const GraceUiTestHeapGuard off = grace.heap_guard();
+  const std::uint32_t probe = grace.heap_guard_probe(2, 0);
+  const bool logged = grace.logged("the heap guard is off (GRACEUI_TEST_HEAP_GUARD=off)");
+  check(off.on == 0 && off.made == 0 && off.live_blocks == 0 && off.checks == 0 && probe == 0 && logged,
+        "heap guard: off when GRACEUI_TEST_HEAP_GUARD=off",
+        "on %u, %llu blocks made by it, %llu whole checks; a probe found %u; the log %s", off.on,
+        static_cast<unsigned long long>(off.made), static_cast<unsigned long long>(off.checks), probe,
+        logged ? "says so" : "DOES NOT SAY SO");
 }
 
 // The first handler in the list, as the spike observer's recorder is: it sees the breach and ends the process with its
@@ -8950,12 +8972,21 @@ void run_examples(const std::wstring& dll, bool notice_first) {
 int wmain(int argc, wchar_t** argv) {
   std::wstring dll = folder_of_this_program() + L"graceui.dll";
   std::wstring scenario;
+  bool heap_guard = false;
   for (int i = 1; i + 1 < argc; i += 2) {
     if (std::wcscmp(argv[i], L"--dll") == 0) {
       dll = argv[i + 1];
     } else if (std::wcscmp(argv[i], L"--scenario") == 0) {
       scenario = argv[i + 1];
+    } else if (std::wcscmp(argv[i], L"--heap-guard") == 0) {
+      heap_guard = std::wcscmp(argv[i + 1], L"on") == 0;
     }
+  }
+  // D235: the regression run times GraceUI's warm-up, so it makes GraceUI's blocks as a release build does; with
+  // --heap-guard on (the breach sweep), every scenario runs with the guard. Children inherit what the first process set.
+  wchar_t inherited[8] = {};
+  if (GetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_GUARD", inherited, 8) == 0) {
+    SetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_GUARD", heap_guard ? L"on" : L"off");
   }
   if (scenario == L"two-queues") {
     std::printf("-- scenario: two direct queues\n");
@@ -9068,6 +9099,9 @@ int wmain(int argc, wchar_t** argv) {
     run_heap_guard_observer(dll);
   } else if (scenario == L"heap-guard-spike") {
     run_heap_guard_spike(dll);
+  } else if (scenario == L"heap-guard-off") {
+    std::printf("-- scenario: the test build's heap guard turned off (D235)\n");
+    run_heap_guard_off(dll);
   } else if (scenario == L"heap-guard-seen") {
     run_heap_guard_child(dll, true);
   } else if (scenario == L"heap-guard-end") {
@@ -9135,7 +9169,7 @@ int wmain(int argc, wchar_t** argv) {
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
             L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
-            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake", L"heap-guard"}) {
+            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake", L"heap-guard", L"heap-guard-off"}) {
         run(child_scenario, dll, this_program());
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.

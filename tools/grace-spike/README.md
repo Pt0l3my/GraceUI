@@ -102,4 +102,6 @@ fail-fast's code instead): its `fault` line carries `heap_guard`, the breach (`b
 `after_free`, `freed_twice` or `not_ours`), the block's size and number, and `made_at`, the code that made the block,
 as offsets; the frames above it say where the breach was found. An offset in graceui.dll is placed with the build's
 own `graceui.pdb` (`llvm-symbolizer --obj=graceui.dll --relative-address 0x5161`): keep the PDB of the build you ship.
-A quit's crash with no `heap_guard` line means no block of GraceUI's own was found damaged.
+A quit's crash with no `heap_guard` line means no block of GraceUI's own was found damaged. The guard slows GraceUI's
+warm-up a little (each block costs a few times malloc's time); `GRACEUI_TEST_HEAP_GUARD=off` in the run's environment
+turns it off.

@@ -44,6 +44,27 @@ using grace::host::counters::t_counting;
 
 constinit grace::guard::Guard g_guard;
 
+// 0 not read yet, 1 guarded, 2 plain malloc (GRACEUI_TEST_HEAP_GUARD=off): read at the first allocation, before any
+// block exists, and never changed after it, so that every block is freed the way it was made. Off, the test build makes
+// its blocks as a release build does, for checks that time GraceUI's warm-up (the harness's regression run).
+constexpr int kGuarded = 1;
+constexpr int kPlain = 2;
+constinit std::atomic<int> g_mode{0};
+
+bool guarded() noexcept {
+  int mode = g_mode.load(std::memory_order_acquire);
+  if (mode == 0) {
+    wchar_t text[8] = {};
+    const DWORD length = GetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_GUARD", text, 8);
+    mode = length == 3 && std::wcscmp(text, L"off") == 0 ? kPlain : kGuarded;
+    int unread = 0;
+    if (!g_mode.compare_exchange_strong(unread, mode, std::memory_order_acq_rel)) {
+      mode = unread;  // another thread read it first, from the same environment
+    }
+  }
+  return mode == kGuarded;
+}
+
 constexpr DWORD kCheckDefaultMs = 5000;  // every few seconds, as Engine asked (D235)
 constexpr DWORD kCheckLeastMs = 100;
 constexpr DWORD kCheckMostMs = 600000;
@@ -147,11 +168,14 @@ void on_breach(const Found& found) noexcept {
 // The block's maker: `caller`, the return address of operator new (or of Dear ImGui's allocator), and the two frames
 // above it on the stack. The stack is read from here and `caller` found in it, so that neither an inlined operator new
 // nor a tail call into this function can shift the frames; if it is not found, `caller` alone is kept.
-constexpr DWORD kFramesRead = 8;
+constexpr DWORD kFramesRead = 4;  // operator new's own frame, then `caller` and the two above it
 
 GU_NOINLINE void* guarded_alloc(std::size_t size, const void* caller) noexcept {
   if (t_counting) {
     grace::host::counters::allocations.fetch_add(1, std::memory_order_relaxed);
+  }
+  if (!guarded()) {
+    return std::malloc(size == 0 ? 1 : size);
   }
   void* frames[kFramesRead] = {};
   const USHORT read = RtlCaptureStackBackTrace(1, kFramesRead, frames, nullptr);
@@ -174,6 +198,10 @@ void guarded_free(void* block) noexcept {
   }
   if (t_counting) {
     grace::host::counters::frees.fetch_add(1, std::memory_order_relaxed);
+  }
+  if (!guarded()) {
+    std::free(block);
+    return;
   }
   on_breach(g_guard.release(block));
 }
@@ -212,6 +240,10 @@ void begin_guard() noexcept {
                static_cast<unsigned long>(kCheckDefaultMs));
     }
   }
+  if (!guarded()) {
+    log_line("the heap guard is off (GRACEUI_TEST_HEAP_GUARD=off): GraceUI's blocks are malloc's own");
+    return;
+  }
   read_own_image();
   AddVectoredExceptionHandler(0, &end_on_breach);  // last in the list, made now so that a breach makes nothing
   log_line("the heap guard watches GraceUI's own blocks (a test build), every block checked every %lu ms",
@@ -221,6 +253,9 @@ void begin_guard() noexcept {
 DWORD check_period_ms() noexcept { return g_check_period.load(std::memory_order_relaxed); }
 
 void check_heap_when_due() noexcept {
+  if (!guarded()) {
+    return;
+  }
   const std::uint64_t now = GetTickCount64();
   const std::uint64_t last = g_last_check.load(std::memory_order_relaxed);
   if (last != 0 && now - last < g_check_period.load(std::memory_order_relaxed)) {
@@ -232,6 +267,7 @@ void check_heap_when_due() noexcept {
 
 void fill_heap_guard(GraceUiTestHeapGuard& out) noexcept {
   grace::guard::Stats stats;
+  out.on = guarded() ? 1 : 0;
   out.stats_read = g_guard.try_stats(stats) ? 1 : 0;  // never waits: an exception handler may be asking
   out.check_period_ms = g_check_period.load(std::memory_order_relaxed);
   out.live_blocks = stats.live_blocks;
@@ -257,7 +293,7 @@ void fill_heap_guard(GraceUiTestHeapGuard& out) noexcept {
 GU_NOINLINE void* probe_alloc() noexcept { return guarded_alloc(24, __builtin_return_address(0)); }
 
 std::uint32_t heap_guard_probe(std::uint32_t kind, std::uint32_t raise) noexcept {
-  if (kind < 1 || kind > 5) {
+  if (kind < 1 || kind > 5 || !guarded()) {
     return 0;
   }
   g_probe_breach.store(0, std::memory_order_release);

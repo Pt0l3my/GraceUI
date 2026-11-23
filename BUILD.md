@@ -261,8 +261,12 @@ freed block (filled with another) in a quarantine of 4096 blocks and 64 MiB, and
 when it leaves the quarantine, and every `GRACEUI_TEST_HEAP_CHECK_MS` on GraceUI's thread (100 to 600000; 5000 by
 default). A breach is logged, recorded for `GraceUI_Test_GetHeapGuard`, and raised as `GRACEUI_TEST_HEAP_GUARD_BREACH`
 (`0xE0475548`), which a handler of GraceUI's own, last in the process's list, ends the process with; the spike
-observer's recorder, first in it, writes it down before. A release build has none of it. The harness's heap-guard
-scenario makes each kind of breach on purpose; every other scenario runs with the guard on.
+observer's recorder, first in it, writes it down before. A release build has none of it. `GRACEUI_TEST_HEAP_GUARD=off`,
+read at graceui.dll's first allocation, makes its blocks malloc's own again: the guard costs about four times malloc's
+time per block under Wine, which slows GraceUI's warm-up past checks that count its frames. So the harness's regression
+run sets it off (its children inherit it), and its heap-guard scenario turns the guard on for itself and makes each
+kind of breach on purpose; `grace-harness.exe --heap-guard on` is the breach sweep, every scenario with the guard on,
+where a breach ends its scenario's process and the checks that time a warm-up may fail.
 
 ```sh
 cmake -S . -B build-cl-test -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/clang-cl-xwin.cmake -DCMAKE_BUILD_TYPE=Release \

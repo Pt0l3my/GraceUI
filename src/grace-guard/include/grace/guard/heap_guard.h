@@ -71,7 +71,8 @@ class Guard {
 
   // Frees a block of this guard's (null is allowed). It is checked; a sound block is filled and kept in the quarantine
   // (or given back to malloc at once when larger than kQuarantineLargest), and the oldest kept blocks leave it, each
-  // checked, while it holds more than its limits. The first breach found, in this block or in one leaving, is answered.
+  // checked, while it holds more than its limits (at most 8 at each free). The first breach found, in this block or in
+  // one leaving, is answered. The guard's lock is held only while its lists change, never while a block is checked.
   Found release(void* block) noexcept;
 
   // Checks every live and every kept block; answers the first breach found, whose block is then kept for good and not
@@ -91,7 +92,8 @@ class Guard {
   void lock() const noexcept;
   void unlock() const noexcept;
   void keep_damaged(Header* header) noexcept;
-  Found evict_oldest() noexcept;
+  Header* pop_oldest() noexcept;
+  Found leave(Header* header) noexcept;
 
   mutable std::atomic<bool> busy_{false};
   Header* live_ = nullptr;

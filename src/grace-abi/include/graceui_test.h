@@ -373,7 +373,8 @@ GRACEUI_API uint32_t GraceUI_Test_GetServer(GraceUiTestServer* out);
 /* The heap guard (D235): every block graceui.dll's own code makes, through its operator new and Dear ImGui's
  * allocator, has guards before and after it and is kept a while after its free; each block is checked when freed,
  * when it leaves that quarantine, and every check_period_ms on GraceUI's thread (GRACEUI_TEST_HEAP_CHECK_MS in the
- * process's environment: 100 to 600000, 5000 by default). A breach is logged and raised as this exception, which a
+ * process's environment: 100 to 600000, 5000 by default; GRACEUI_TEST_HEAP_GUARD=off, read at graceui.dll's first
+ * allocation, makes them malloc's own as in a release build). A breach is logged and raised as this exception, which a
  * handler of GraceUI's own, last in the process's list, ends the process with; handlers before it see it first. Its
  * two parameters are the breach's kind and the block's size. */
 #define GRACEUI_TEST_HEAP_GUARD_BREACH 0xE0475548u
@@ -393,7 +394,7 @@ typedef struct GraceUiTestHeapGuard {
   uint32_t size;        /* set by the caller to sizeof(GraceUiTestHeapGuard) */
   uint32_t stats_read;  /* 1 if the counts below were read; 0 when another thread held the guard at that moment */
   uint32_t check_period_ms;
-  uint32_t reserved;
+  uint32_t on;          /* 1 when the guard watches GraceUI's blocks; 0 with GRACEUI_TEST_HEAP_GUARD=off */
   uint64_t live_blocks;
   uint64_t live_bytes;
   uint64_t quarantined_blocks;
