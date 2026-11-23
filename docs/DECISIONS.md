@@ -551,6 +551,12 @@ a one-use ticket; refused from any paired device; GraceUI keeps nothing after ha
 
 **Owner's words.** "Narrow upload route (Recommended)".
 
+**Later changes.** 2026-11-23: built in GraceUI 0.2.26 (protocol 1.9, ABI 1.6), as decided (DESIGN D226–D229): a space
+names its file commands, each sensitive; an upload block on its page is a drop zone with a button in the browser on this
+PC, and a line saying where to add the file in game and on a paired device; the page asks for a one-use ticket over its
+connection, then sends the bytes to `POST /upload` on the loopback listener, where GraceUI checks their size and SHA-256
+before handing them to the space, which gets them through ABI 1.6 and answers as for any command.
+
 ## G29
 
 **GraceUI's server for hosts outside the game?** · *2026-11-15 · Decided by the owner 2026-11-16, as recommended*
