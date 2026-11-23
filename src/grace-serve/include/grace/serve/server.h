@@ -21,6 +21,7 @@
 // every SpacePort method may be called from any thread.
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -32,6 +33,7 @@
 #include <vector>
 
 #include "grace/serve/files.h"
+#include "grace/serve/pairing.h"
 #include "grace/serve/space.h"
 
 namespace grace::serve {
@@ -49,6 +51,18 @@ inline constexpr std::size_t kMaxWebSockets = 2;
 inline constexpr std::size_t kMaxHttpConnections = 16;
 // A ticket's POST body: at most this, and its content is not read (item 9).
 inline constexpr std::size_t kMaxTicketBody = 256;
+// The network listener (G9, item 16): at most this many of the PC's private addresses, and at most this many of the
+// plain HTTP connections from them, so that this PC keeps room whatever its home network sends.
+inline constexpr std::size_t kMaxNetworkAddresses = 4;
+inline constexpr std::size_t kMaxNetworkHttp = 8;
+
+// A device paired on the network listener (G9): its id, the name the player gave it and the hash of its cookie, for
+// the host to keep and list; never the cookie.
+struct PairedDevice {
+  std::string id;
+  std::string name;
+  std::array<std::uint8_t, 32> hash{};
+};
 // Tickets fetched and not yet used: a newer one replaces the oldest (EST).
 inline constexpr std::size_t kMaxTickets = 8;
 
@@ -84,6 +98,10 @@ struct ServerConfig {
   // the largest state frames).
   std::size_t send_queue = 512 * 1024;
   LogSink log;
+  // Tests only: the addresses the network listener binds when it is on, in place of this PC's private ones.
+  std::vector<std::array<std::uint8_t, 4>> network_addresses;
+  // Called on the I/O thread when a device has paired; the host then takes it with take_paired(), on its own thread.
+  std::function<void()> paired_wake;
 };
 
 enum class StartResult : std::uint8_t {
@@ -110,6 +128,9 @@ struct ServerStats {
   bool files_ready = false;    // the worker has read and checked the web files
   bool files_ok = false;       // and every one passed
   std::size_t faults = 0;
+  std::size_t network = 0;             // the network listener's sockets open (G9)
+  std::size_t devices = 0;             // devices paired
+  std::size_t device_connections = 0;  // connections from paired devices (HTTP and WebSocket)
 };
 
 namespace detail {
@@ -138,6 +159,26 @@ class Server {
   // dashboard.disconnect (§6.6, §7.2 item 17): a new session cookie, every ticket void, every connection closed (a
   // WebSocket with bye unauthorised, so that its page reloads once for the new cookie). From any thread.
   void renew_session() noexcept;
+
+  // ---- Other devices at home (G9, §7.2 item 16). From any thread; the I/O thread applies them.
+  // On, the server also listens on this PC's private IPv4 addresses (at most kMaxNetworkAddresses), at the same port,
+  // for paired devices: an unpaired one sees only the pairing page and the code's request. Off, it closes those sockets
+  // and every connection from them. A host turns it on only while its player has switched it on.
+  void set_network(bool on) noexcept;
+  // The addresses it listens on now, dotted, for the game to show; empty while it is off or found none.
+  std::vector<std::string> network_addresses() const;
+  // A new pairing code, for kCodeLife, replacing any shown: for the game to show, never a view (it is not published);
+  // empty if the system gave no random bytes.
+  std::string start_pairing();
+  void cancel_pairing() noexcept;
+  // The code showing now, or empty.
+  std::string pairing_code() const;
+  // The paired devices the host keeps (from its file, after a Forget), replacing the server's: a device no longer
+  // listed is disconnected at once, and its cookie is good for nothing. A device paired since the host last took it is
+  // kept whatever the list says.
+  void set_devices(std::vector<DeviceKey> devices) noexcept;
+  // The devices paired since the last call, oldest first.
+  std::vector<PairedDevice> take_paired();
 
   ServerStats stats() const noexcept;
 

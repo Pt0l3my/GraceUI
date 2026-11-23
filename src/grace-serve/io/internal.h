@@ -107,6 +107,15 @@ struct Hub {
   bool renew = false;
   bool spaces_removed = false;
   const io::Wake* wake = nullptr;
+  // Other devices (G9): what the host asked of the network listener, the devices it keeps, the code, the devices paired
+  // since it last took them, and the addresses the listener holds, for the host to show.
+  bool network_on = false;
+  bool network_changed = false;
+  std::vector<DeviceKey> devices;
+  bool devices_changed = false;
+  PairingCode pairing;
+  std::vector<PairedDevice> paired;
+  std::vector<std::string> network_addresses;
 
   // Wakes the I/O thread; `mutex` must be held.
   void signal_locked() const noexcept {

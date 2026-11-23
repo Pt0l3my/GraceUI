@@ -68,7 +68,8 @@ if(GRACEUI_UNIT_TESTS OR (WIN32 AND GRACEUI_TEST_EXPORTS))
     io/tests/client.cpp
     io/tests/harness.cpp
     io/tests/http_tests.cpp
-    io/tests/lifecycle_tests.cpp)
+    io/tests/lifecycle_tests.cpp
+    io/tests/network_tests.cpp)
   target_link_libraries(grace_serve_io_tests PRIVATE grace_serve grace_pages gu_doctest)
   if(WIN32)
     target_link_libraries(grace_serve_io_tests PRIVATE ws2_32)

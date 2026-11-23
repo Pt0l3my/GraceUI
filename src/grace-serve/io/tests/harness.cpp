@@ -272,6 +272,8 @@ Fixture::Fixture(Options options) {
       config.memory_files.push_back(
           MemoryFile{"assets/app.js", std::make_shared<const std::string>(folder->script)});
     }
+    config.network_addresses = options.network;
+    config.paired_wake = options.paired_wake;
     config.log = [this](LogLevel, std::string_view line) {
       std::lock_guard lock(log_mutex_);
       logs_.emplace_back(line);

@@ -3,6 +3,7 @@
 // server includes a system header for sockets, threads' names or random bytes.
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -51,6 +52,15 @@ enum class BindError : std::uint8_t {
 // A listening socket on 127.0.0.1 or ::1 (IPv6 only) at `port`: bound by name, SO_EXCLUSIVEADDRUSE on Windows and
 // never SO_REUSEADDR, non-inheritable and non-blocking (item 24).
 Socket listen_loopback(bool ipv6, std::uint16_t port, BindError& error) noexcept;
+
+// A listening socket on one IPv4 address of this PC at `port` (the network listener, G9, §7.2 item 16): bound by that
+// address, never the wildcard, with the same options as the loopback's.
+Socket listen_ipv4(std::array<std::uint8_t, 4> address, std::uint16_t port, BindError& error) noexcept;
+
+// The IPv4 addresses of this PC's interfaces that are up, in the order the system lists them, at most out.size(), never
+// 0.0.0.0 (an adapter with none yet, as Wine lists them); the
+// caller keeps the private ones (pairing.h). Through Winsock on Windows (no import of its own), getifaddrs elsewhere.
+std::size_t local_ipv4_addresses(std::span<std::array<std::uint8_t, 4>> out) noexcept;
 
 struct Accepted {
   Socket socket;

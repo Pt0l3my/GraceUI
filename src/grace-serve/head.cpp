@@ -166,6 +166,11 @@ bool RequestHead::has_token(std::string_view name, std::string_view token) const
 
 HeadParser::HeadParser(const HeadRules& rules) noexcept : rules_(rules) {}
 
+void HeadParser::reset(const HeadRules& rules) noexcept {
+  rules_ = rules;
+  reset();
+}
+
 void HeadParser::reset() noexcept {
   state_ = State::need_more;
   refusal_ = Refusal::none;

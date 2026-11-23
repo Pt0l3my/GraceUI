@@ -7,6 +7,7 @@
 #include "ascii.h"
 #include "grace/serve/checks.h"
 #include "grace/serve/codec.h"
+#include "grace/serve/pairing.h"
 
 namespace grace::serve {
 namespace {
@@ -123,7 +124,8 @@ std::size_t write_response_head(const Response& response, std::span<char> out) n
   if (!media_type_ok(response.content_type) || (response.content_length != 0 && response.content_type.empty())) {
     return 0;
   }
-  if (!response.session_cookie.empty() && !valid_token(response.session_cookie)) {
+  if ((!response.session_cookie.empty() && !valid_token(response.session_cookie)) ||
+      (!response.device_cookie.empty() && !valid_token(response.device_cookie))) {
     return 0;
   }
   Writer writer(out);
@@ -158,6 +160,15 @@ std::size_t write_response_head(const Response& response, std::span<char> out) n
     writer.put("=");
     writer.put(response.session_cookie);
     writer.put("; Path=/; HttpOnly; SameSite=Strict\r\n");
+  }
+  if (!response.device_cookie.empty()) {
+    writer.put("Set-Cookie: ");
+    writer.put(kDeviceCookie);
+    writer.put("=");
+    writer.put(response.device_cookie);
+    writer.put("; Path=/; Max-Age=");
+    writer.number(kDeviceCookieSeconds);
+    writer.put("; HttpOnly; SameSite=Strict\r\n");
   }
   writer.put(kSecurityHeaders);
   writer.put("\r\n");

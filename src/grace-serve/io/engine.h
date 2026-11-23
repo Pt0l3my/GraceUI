@@ -68,6 +68,11 @@ struct Connection {
   bool exact_peer = false;   // the peer is exactly 127.0.0.1 or ::1 (item 3)
   bool http = false;         // counted against kMaxHttpConnections
   bool websocket = false;    // counted against kMaxWebSockets (hello or open)
+  bool network = false;      // accepted by the network listener (G9): another device at home
+  bool paired = false;       // and a paired device's, by its cookie (for a WebSocket, its upgrade's)
+  std::array<char, kDeviceIdChars> device{};  // that device's id
+  enum class BodyFor : std::uint8_t { ticket, pair };
+  BodyFor body_for = BodyFor::ticket;
   Clock::time_point accepted{};
   Clock::time_point upgraded{};
   Clock::time_point deadline{};
@@ -123,7 +128,7 @@ class Engine {
   void fault(Connection& c) noexcept;
 
   // Connections and HTTP (server.cpp).
-  void accept_from(const io::Socket& listener, Clock::time_point now);
+  void accept_from(const io::Socket& listener, bool network, Clock::time_point now);
   void readable(Connection& c, Clock::time_point now);
   void writable(Connection& c, Clock::time_point now);
   void timers(Connection& c, Clock::time_point now);
@@ -132,6 +137,17 @@ class Engine {
   void serve_get(Connection& c, Clock::time_point now);
   void ticket(Connection& c, std::string_view after, Clock::time_point now);
   void issue_ticket(Connection& c, Clock::time_point now);
+  // Other devices (G9): a network connection's routes, the code's request and its body, the pairing page's three files,
+  // the credential check for a device's ticket and upgrade, and the host's changes applied.
+  void route_network(Connection& c, std::string_view after, Clock::time_point now);
+  void pair(Connection& c, std::string_view after, Clock::time_point now);
+  void finish_pair(Connection& c, Clock::time_point now);
+  void serve_pairing(Connection& c, Clock::time_point now) noexcept;
+  Refusal check_device(const Connection& c) const noexcept;
+  void take_body(Connection& c, std::string_view after, Clock::time_point now);
+  void body_done(Connection& c, Clock::time_point now);
+  void apply_network(bool on, Clock::time_point now);
+  void apply_devices(std::vector<DeviceKey> devices, Clock::time_point now);
   void upgrade(Connection& c, std::size_t after, Clock::time_point now);
   void respond(Connection& c, std::size_t head_size, std::string_view body,
                std::shared_ptr<const std::string> owner, Clock::time_point now) noexcept;
@@ -162,7 +178,8 @@ class Engine {
   void send_replay(Connection& c, Subscription& sub, std::optional<std::uint64_t> since);
   void forward_rows(Connection& c, Subscription& sub, const Outgoing& item);
   void send_error(Connection& c, const PortState* space, protocol::ErrorCode code, std::string detail);
-  void send_result_error(Connection& c, const PortState& space, std::uint32_t id, protocol::ErrorCode code);
+  void send_result_error(Connection& c, const PortState& space, std::uint32_t id, protocol::ErrorCode code,
+                         std::string detail = {});
   bool send_message(Connection& c, const protocol::Message& message);
   bool enqueue(Connection& c, std::shared_ptr<const std::string> bytes) noexcept;
   void close_socket(Connection& c, std::optional<protocol::ByeReason> bye, std::uint16_t code,
@@ -181,6 +198,14 @@ class Engine {
 
   io::Wake wake_;
   std::array<io::Socket, 2> listeners_;
+  // The network listener's (G9): its sockets and their addresses as a Host names them, and each kind's head rules.
+  std::array<io::Socket, kMaxNetworkAddresses> network_;
+  std::array<std::string, kMaxNetworkAddresses> network_names_;
+  std::array<std::string_view, kMaxNetworkAddresses> network_views_;
+  Listener network_listener_;
+  HeadRules loopback_rules_;
+  HeadRules network_rules_;
+  std::vector<DeviceKey> devices_;  // the I/O thread's copy
   bool network_started_ = false;
   std::thread io_thread_;
   std::thread worker_thread_;
@@ -200,6 +225,8 @@ class Engine {
     std::array<char, kTokenChars> token{};
     Clock::time_point issued{};
     bool live = false;
+    bool network = false;                       // fetched on the network listener, by a paired device (G9)
+    std::array<char, kDeviceIdChars> device{};  // which: its WebSocket must be that device's
   };
   std::array<Ticket, kMaxTickets> tickets_{};
   std::uint64_t next_serial_ = 1;
@@ -219,6 +246,9 @@ class Engine {
   std::atomic<bool> files_ready_{false};
   std::atomic<bool> files_ok_{false};
   std::atomic<std::size_t> stat_faults_{0};
+  std::atomic<std::size_t> stat_network_{0};
+  std::atomic<std::size_t> stat_devices_{0};
+  std::atomic<std::size_t> stat_device_connections_{0};
 };
 
 // The pool: every plain HTTP connection, the welcomed views and as many waiting for their hello, and room for

@@ -31,6 +31,9 @@ struct Response {
   // A session cookie to set (item 3), a token (valid_token): written as
   // en_session=…; Path=/; HttpOnly; SameSite=Strict, with no Domain and no expiry. Empty for none.
   std::string_view session_cookie;
+  // A paired device's cookie (G9, §7.2 item 16), a token: en_device=…; Path=/; Max-Age=kDeviceCookieSeconds; HttpOnly;
+  // SameSite=Strict, with no Domain, so host-only. Set at pairing and renewed at each page load. Empty for none.
+  std::string_view device_cookie;
 };
 
 // Writes the head (status line, fields, the empty line) into `out`; returns its size, or 0 when the status is not one

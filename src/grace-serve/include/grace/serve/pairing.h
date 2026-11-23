@@ -48,7 +48,8 @@ std::array<std::uint8_t, 32> device_hash(std::string_view token) noexcept;
 // Which device the Cookie field's en_device cookies name: each that is a token is hashed and compared with every
 // device's hash in full, so the time does not say which matched; none, or a field past kMaxCookie, is nullopt.
 std::optional<std::size_t> match_device(std::optional<std::string_view> cookie_field,
-                                        std::span<const DeviceKey> devices) noexcept;
+                                        std::span<const DeviceKey> devices, std::string_view* token = nullptr) noexcept;
+// With `token`, the matched cookie's value is set there too (to renew it), else left empty.
 // A name the player gives a device: 1 to kMaxDeviceName characters of UTF-8, no control character, not only spaces.
 bool valid_device_name(std::string_view name) noexcept;
 // A device's id: kDeviceIdChars of lowercase hex.

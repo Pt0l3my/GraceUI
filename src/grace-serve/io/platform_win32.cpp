@@ -166,6 +166,59 @@ Socket listen_loopback(bool ipv6, std::uint16_t port, BindError& error) noexcept
   return socket;
 }
 
+Socket listen_ipv4(std::array<std::uint8_t, 4> ip, std::uint16_t port, BindError& error) noexcept {
+  error = BindError::none;
+  Socket socket(make_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+  if (!socket.open()) {
+    error = bind_error(::WSAGetLastError());
+    return {};
+  }
+  if (!set_int_option(socket.handle(), SOL_SOCKET, SO_EXCLUSIVEADDRUSE, 1)) {
+    error = BindError::other;
+    return {};
+  }
+  Address address{};
+  address.v4.sin_family = AF_INET;
+  address.v4.sin_port = ::htons(port);
+  std::memcpy(&address.v4.sin_addr.s_addr, ip.data(), 4);  // already in network order
+  if (::bind(socket.handle(), &address.any, sizeof address.v4) != 0 || ::listen(socket.handle(), 64) != 0) {
+    error = bind_error(::WSAGetLastError());
+    return {};
+  }
+  return socket;
+}
+
+std::size_t local_ipv4_addresses(std::span<std::array<std::uint8_t, 4>> out) noexcept {
+  // SIO_ADDRESS_LIST_QUERY on a socket of the family: Winsock's own list, so graceui.dll imports nothing new.
+  Socket probe(make_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+  if (!probe.open()) {
+    return 0;
+  }
+  alignas(SOCKET_ADDRESS_LIST) std::array<char, 4096> buffer{};
+  DWORD returned = 0;
+  if (::WSAIoctl(probe.handle(), SIO_ADDRESS_LIST_QUERY, nullptr, 0, buffer.data(), static_cast<DWORD>(buffer.size()),
+                 &returned, nullptr, nullptr) != 0) {
+    return 0;
+  }
+  // SAFETY: on success Winsock wrote a SOCKET_ADDRESS_LIST at the start of the buffer, its addresses within it.
+  const auto* list = reinterpret_cast<const SOCKET_ADDRESS_LIST*>(buffer.data());
+  std::size_t count = 0;
+  for (INT i = 0; i < list->iAddressCount && count < out.size(); ++i) {
+    const SOCKET_ADDRESS& entry = list->Address[i];
+    if (entry.lpSockaddr == nullptr || entry.lpSockaddr->sa_family != AF_INET ||
+        entry.iSockaddrLength < static_cast<INT>(sizeof(sockaddr_in))) {
+      continue;
+    }
+    sockaddr_in v4{};
+    std::memcpy(&v4, entry.lpSockaddr, sizeof v4);
+    if (v4.sin_addr.s_addr == 0) {
+      continue;  // an adapter with no address yet (0.0.0.0) is no address of the PC's
+    }
+    std::memcpy(out[count++].data(), &v4.sin_addr.s_addr, 4);
+  }
+  return count;
+}
+
 Io accept_one(const Socket& listener, Accepted& out) noexcept {
   Address address{};
   int size = sizeof address;

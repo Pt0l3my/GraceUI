@@ -45,6 +45,10 @@ void Connection::clear() noexcept {
   exact_peer = false;
   http = false;
   websocket = false;
+  network = false;
+  paired = false;
+  device.fill('\0');
+  body_for = BodyFor::ticket;
   parser.reset();
   body_size = 0;
   body_need = 0;
@@ -141,12 +145,19 @@ StartResult Engine::start() {
                                " is held by another program: the browser view is served on 127.0.0.1 alone.");
   }
 
-  HeadRules rules;
-  rules.listener = listener_;
-  rules.max_content_length = kMaxTicketBody;  // the one body a route takes (item 9)
+  loopback_rules_ = HeadRules{};
+  loopback_rules_.listener = listener_;
+  loopback_rules_.max_content_length = kMaxTicketBody;  // the one body a route takes (item 9)
+  network_listener_ = Listener{};
+  network_listener_.network = true;
+  network_listener_.port = config_.port;
+  network_rules_ = HeadRules{};
+  network_rules_.listener = network_listener_;
+  network_rules_.max_content_length = std::max(kMaxTicketBody, kMaxPairBody);  // a ticket's, or the code's (G9)
+  devices_.clear();
   pool_.clear();
   for (std::size_t i = 0; i < kPoolSize; ++i) {
-    pool_.push_back(std::make_unique<Connection>(rules));
+    pool_.push_back(std::make_unique<Connection>(loopback_rules_));
   }
   ping_frame_ = encode_to_page(protocol::Message{protocol::Ping{}});
   files_.reset();
@@ -164,6 +175,9 @@ StartResult Engine::start() {
     hub_->renew = false;
     hub_->spaces_removed = false;
     hub_->inbox.clear();
+    hub_->network_changed = hub_->network_on;  // a host that turned it on before the start: applied by the loop (G9)
+    hub_->devices_changed = true;
+    hub_->network_addresses.clear();
     for (const auto& port : hub_->spaces) {
       port->topics.assign(port->declared + kMemberSlots, TopicCache{});
     }
@@ -225,6 +239,13 @@ void Engine::stop() noexcept {
   }
   listeners_[0].close();
   listeners_[1].close();
+  for (io::Socket& socket : network_) {
+    socket.close();
+  }
+  {
+    std::lock_guard lock(hub_->mutex);
+    hub_->network_addresses.clear();
+  }
   wake_.close();
   pool_.clear();
   if (network_started_) {
@@ -238,6 +259,9 @@ void Engine::stop() noexcept {
   stat_http_ = 0;
   stat_websockets_ = 0;
   stat_sockets_ = 0;
+  stat_network_ = 0;
+  stat_devices_ = 0;
+  stat_device_connections_ = 0;
 }
 
 ServerStats Engine::stats() const noexcept {
@@ -251,6 +275,9 @@ ServerStats Engine::stats() const noexcept {
   stats.files_ready = files_ready_.load();
   stats.files_ok = files_ok_.load();
   stats.faults = stat_faults_.load();
+  stats.network = stat_network_.load();
+  stats.devices = stat_devices_.load();
+  stats.device_connections = stat_device_connections_.load();
   return stats;
 }
 
@@ -312,6 +339,7 @@ void Engine::loop() {
     take_files(now);
     Clock::time_point next = now + std::chrono::seconds(1);
     std::size_t http = 0;
+    std::size_t network_http = 0;
     bool free_slot = false;
     for (const auto& slot : pool_) {
       Connection& c = *slot;
@@ -328,6 +356,7 @@ void Engine::loop() {
       }
       next = std::min(next, next_timer(c, now));
       http += c.http ? 1 : 0;
+      network_http += c.http && c.network ? 1 : 0;
     }
     if (faulted_ || stopping_.load()) {
       break;
@@ -339,6 +368,14 @@ void Engine::loop() {
     const bool accepting = http < kMaxHttpConnections && free_slot;  // a 17th waits in the backlog (D111)
     for (const io::Socket& listener : listeners_) {
       if (listener.open() && accepting) {
+        items[count] = io::PollItem{listener.handle(), true, false};
+        owners[count++] = nullptr;
+      }
+    }
+    const std::size_t first_network = count;
+    for (const io::Socket& listener : network_) {
+      // The network listener's share of the connections is capped, so this PC keeps room whatever it sends (G9).
+      if (listener.open() && accepting && network_http < kMaxNetworkHttp) {
         items[count] = io::PollItem{listener.handle(), true, false};
         owners[count++] = nullptr;
       }
@@ -368,8 +405,16 @@ void Engine::loop() {
     }
     for (std::size_t i = first_listener; i < first_connection; ++i) {
       if (items[i].readable || items[i].failed) {
+        if (i >= first_network) {
+          for (const io::Socket& listener : network_) {
+            if (listener.open() && listener.handle() == items[i].handle) {
+              accept_from(listener, true, now);
+            }
+          }
+          continue;
+        }
         const io::Socket& listener = items[i].handle == listeners_[0].handle() ? listeners_[0] : listeners_[1];
-        accept_from(listener, now);
+        accept_from(listener, false, now);
       }
     }
     for (std::size_t i = first_connection; i < count; ++i) {
@@ -391,13 +436,23 @@ void Engine::loop() {
     std::size_t open_http = 0;
     std::size_t open_websockets = 0;
     std::size_t sockets = 1 + (listeners_[0].open() ? 1 : 0) + (listeners_[1].open() ? 1 : 0);
+    std::size_t network_sockets = 0;
+    for (const io::Socket& listener : network_) {
+      network_sockets += listener.open() ? 1 : 0;
+    }
+    sockets += network_sockets;
+    std::size_t device_connections = 0;
     for (const auto& slot : pool_) {
       if (slot->phase != Connection::Phase::idle) {
         ++sockets;
         open_http += slot->http ? 1 : 0;
         open_websockets += slot->websocket ? 1 : 0;
+        device_connections += slot->network && slot->paired ? 1 : 0;
       }
     }
+    stat_network_ = network_sockets;
+    stat_devices_ = devices_.size();
+    stat_device_connections_ = device_connections;
     stat_http_ = open_http;
     stat_websockets_ = open_websockets;
     stat_sockets_ = sockets;
@@ -495,29 +550,33 @@ void Engine::take_files(Clock::time_point now) {
   }
 }
 
-void Engine::accept_from(const io::Socket& listener, Clock::time_point now) {
+void Engine::accept_from(const io::Socket& listener, bool network, Clock::time_point now) {
   while (true) {
     std::size_t http = 0;
+    std::size_t network_http = 0;
     Connection* free = nullptr;
     for (const auto& slot : pool_) {
       if (slot->phase == Connection::Phase::idle) {
         free = free != nullptr ? free : slot.get();
       } else if (slot->http) {
         ++http;
+        network_http += slot->network ? 1 : 0;
       }
     }
-    if (free == nullptr || http >= kMaxHttpConnections) {
+    if (free == nullptr || http >= kMaxHttpConnections || (network && network_http >= kMaxNetworkHttp)) {
       return;
     }
     io::Accepted accepted;
     if (io::accept_one(listener, accepted) != io::Io::done) {
       return;
     }
-    if (!accepted.loopback) {
+    if (!network && !accepted.loopback) {
       continue;  // a loopback listener takes loopback peers alone; the socket closes here
     }
     Connection& c = *free;
     c.clear();
+    c.network = network;  // another device at home (G9): its own head rules, and a device's cookie for credential
+    c.parser.reset(network ? network_rules_ : loopback_rules_);
     c.socket = std::move(accepted.socket);
     c.exact_peer = accepted.exact;
     c.serial = next_serial_++;
@@ -618,7 +677,7 @@ void Engine::readable(Connection& c, Clock::time_point now) {
       std::copy_n(data.data(), take, c.body.data() + c.body_size);
       c.body_size += take;
       if (c.body_size == c.body_need) {
-        issue_ticket(c, now);
+        body_done(c, now);
       }
       return;
     }
@@ -738,6 +797,10 @@ void Engine::refuse(Connection& c, Refusal refusal, Clock::time_point now) noexc
 }
 
 void Engine::route(Connection& c, std::string_view after, Clock::time_point now) {
+  if (c.network) {
+    route_network(c, after, now);  // another device at home (G9)
+    return;
+  }
   const RequestHead& head = c.parser.head();
   if (head.path == kSocketRoute || head.path == kTicketRoute) {
     if (head.has_query) {
@@ -803,29 +866,51 @@ void Engine::serve_get(Connection& c, Clock::time_point now) {
   response.content_length = file->bytes->size();
   response.no_store = file->html;  // the HTML is no-store; hashed scripts, styles and fonts are cached (§6.4)
   response.session_cookie = page && cookie_for(c) ? std::string_view(cookie_.data(), cookie_.size()) : std::string_view();
+  if (c.network && page) {
+    // A paired device's page load renews its cookie's life in the browser, with the value it brought (G9).
+    std::string_view token;
+    if (match_device(head.cookie, devices_, &token)) {
+      response.device_cookie = token;
+    }
+  }
   respond(c, write_response_head(response, c.head), *file->bytes, file->bytes, now);
 }
 
 void Engine::ticket(Connection& c, std::string_view after, Clock::time_point now) {
   const RequestHead& head = c.parser.head();
-  // Items 4, 6 and 7: Origin, Fetch Metadata and the cookie, then a JSON body within its cap (item 9).
+  // Items 4, 6 and 7: Origin, Fetch Metadata and the cookie (a paired device's on the network listener, G9), then a
+  // JSON body within its cap (item 9).
   const Refusal refusal =
-      check_api_request(head, listener_, kSessionCookie, std::string_view(cookie_.data(), cookie_.size()));
+      c.network ? check_device(c)
+                : check_api_request(head, listener_, kSessionCookie, std::string_view(cookie_.data(), cookie_.size()));
   if (refusal != Refusal::none) {
     refuse(c, refusal, now);
     return;
   }
-  if (!content_type_is_json(head)) {
-    refuse(c, Refusal::not_json, now);
+  if (!content_type_is_json(head) || head.content_length > kMaxTicketBody) {
+    refuse(c, content_type_is_json(head) ? Refusal::body_too_large : Refusal::not_json, now);
     return;
   }
-  c.body_need = static_cast<std::size_t>(head.content_length);  // at most kMaxTicketBody: the parser's cap
+  c.body_for = Connection::BodyFor::ticket;
+  take_body(c, after, now);
+}
+
+void Engine::take_body(Connection& c, std::string_view after, Clock::time_point now) {
+  c.body_need = static_cast<std::size_t>(c.parser.head().content_length);  // within the body's cap: the parser's
   c.body_size = std::min(after.size(), c.body_need);
   std::copy_n(after.data(), c.body_size, c.body.data());
   if (c.body_size == c.body_need) {
-    issue_ticket(c, now);
+    body_done(c, now);
   } else {
     c.phase = Connection::Phase::body;
+  }
+}
+
+void Engine::body_done(Connection& c, Clock::time_point now) {
+  if (c.body_for == Connection::BodyFor::pair) {
+    finish_pair(c, now);
+  } else {
+    issue_ticket(c, now);
   }
 }
 
@@ -849,6 +934,8 @@ void Engine::issue_ticket(Connection& c, Clock::time_point now) {
   slot->token = token;
   slot->issued = now;
   slot->live = true;
+  slot->network = c.network;  // a device's ticket opens that device's WebSocket alone (G9)
+  slot->device = c.device;
   constexpr std::string_view kOpen = "{\"ticket\":\"";
   constexpr std::string_view kClose = "\"}";
   std::size_t size = 0;
@@ -866,9 +953,11 @@ void Engine::issue_ticket(Connection& c, Clock::time_point now) {
 
 void Engine::upgrade(Connection& c, std::size_t after, Clock::time_point now) {
   const RequestHead& head = c.parser.head();
-  // Items 6 and 7 on every upgrade (an upgrade without Origin is refused), the cookie, then RFC 6455's own rules.
+  // Items 6 and 7 on every upgrade (an upgrade without Origin is refused), the cookie (a paired device's on the network
+  // listener, G9), then RFC 6455's own rules.
   Refusal refusal =
-      check_api_request(head, listener_, kSessionCookie, std::string_view(cookie_.data(), cookie_.size()));
+      c.network ? check_device(c)
+                : check_api_request(head, listener_, kSessionCookie, std::string_view(cookie_.data(), cookie_.size()));
   std::array<char, kAcceptChars> accept{};
   if (refusal == Refusal::none) {
     refusal = check_upgrade(head, after, accept);
@@ -910,6 +999,325 @@ Connection* Engine::oldest_websocket(Connection::Phase phase, const Connection* 
     }
   }
   return oldest;
+}
+
+// ---- Other devices at home (G9, §7.2 item 16).
+
+namespace {
+
+constexpr std::string_view kPairedWords = "Paired.";
+constexpr std::string_view kWrongCode = "That code is not right: check the one shown in game, and try again.";
+constexpr std::string_view kNoCode =
+    "No code is showing in game: open GraceUI's Browser view page there and choose Pair a device.";
+constexpr std::string_view kTooMany = "Sixteen devices are paired already: forget one in game first.";
+constexpr std::string_view kBadName = "Give this device a name of 1 to 32 characters.";
+constexpr std::string_view kBadPair = "Send the code and a name.";
+
+}  // namespace
+
+Refusal Engine::check_device(const Connection& c) const noexcept {
+  // As check_api_request's order: Origin (this listener's own address), Fetch Metadata, then the credential, here a
+  // paired device's cookie and never the session's.
+  const RequestHead& head = c.parser.head();
+  switch (check_origin(head, network_listener_)) {
+    case OriginCheck::missing:
+      return Refusal::origin_missing;
+    case OriginCheck::mismatch:
+      return Refusal::origin_mismatch;
+    case OriginCheck::ok:
+      break;
+  }
+  if (!fetch_site_allowed(head)) {
+    return Refusal::cross_site;
+  }
+  if (head.cookie && head.cookie->size() > kMaxCookie) {
+    return Refusal::cookie_too_large;
+  }
+  return c.paired ? Refusal::none : Refusal::cookie_missing;
+}
+
+void Engine::route_network(Connection& c, std::string_view after, Clock::time_point now) {
+  const RequestHead& head = c.parser.head();
+  const std::optional<std::size_t> device = match_device(head.cookie, devices_);
+  c.paired = device.has_value();
+  if (device) {
+    c.device = devices_[*device].id;
+  }
+  if (head.has_query) {
+    respond_status(c, 404, kNotFound, false, now);  // nothing goes in a query string (items 4 and 21)
+    return;
+  }
+  if (head.path == kPairRoute) {
+    if (head.method == Method::post) {
+      pair(c, after, now);
+    } else {
+      respond_status(c, 404, kNotFound, false, now);
+    }
+    return;
+  }
+  if (head.method == Method::get && (head.path == kPairScriptRoute || head.path == kPairStyleRoute)) {
+    serve_pairing(c, now);
+    return;
+  }
+  if (!c.paired) {
+    // An unpaired device sees the pairing page and nothing else: no file, no ticket, no WebSocket.
+    if (head.path == kTicketRoute || head.path == kSocketRoute) {
+      refuse(c, Refusal::cookie_missing, now);
+    } else if (is_page_load(head)) {
+      serve_pairing(c, now);
+    } else {
+      respond_status(c, 404, kNotFound, false, now);
+    }
+    return;
+  }
+  // A paired device: this PC's routes, its cookie for credential; never the session cookie, never an upload.
+  if (head.path == kSocketRoute) {
+    upgrade(c, after.size(), now);
+  } else if (head.path == kTicketRoute) {
+    if (head.method == Method::post) {
+      ticket(c, after, now);
+    } else {
+      respond_status(c, 404, kNotFound, false, now);
+    }
+  } else if (head.method == Method::post) {
+    respond_status(c, 404, kNotFound, false, now);
+  } else if (files_ == nullptr) {
+    c.phase = Connection::Phase::files;
+  } else {
+    serve_get(c, now);
+  }
+}
+
+void Engine::serve_pairing(Connection& c, Clock::time_point now) noexcept {
+  const RequestHead& head = c.parser.head();
+  std::string_view body = pairing_page();
+  std::string_view type = "text/html; charset=utf-8";
+  if (head.path == kPairScriptRoute) {
+    body = pairing_script();
+    type = "text/javascript; charset=utf-8";
+  } else if (head.path == kPairStyleRoute) {
+    body = pairing_style();
+    type = "text/css; charset=utf-8";
+  }
+  Response response;
+  response.status = 200;
+  response.content_type = type;
+  response.content_length = body.size();
+  respond(c, write_response_head(response, c.head), body, nullptr, now);
+}
+
+void Engine::pair(Connection& c, std::string_view after, Clock::time_point now) {
+  const RequestHead& head = c.parser.head();
+  // Items 6, 7 and 9: Origin, Fetch Metadata, and a JSON body within its cap; no cookie, since none is held yet.
+  switch (check_origin(head, network_listener_)) {
+    case OriginCheck::missing:
+      refuse(c, Refusal::origin_missing, now);
+      return;
+    case OriginCheck::mismatch:
+      refuse(c, Refusal::origin_mismatch, now);
+      return;
+    case OriginCheck::ok:
+      break;
+  }
+  if (!fetch_site_allowed(head)) {
+    refuse(c, Refusal::cross_site, now);
+    return;
+  }
+  if (!content_type_is_json(head)) {
+    refuse(c, Refusal::not_json, now);
+    return;
+  }
+  if (head.content_length > kMaxPairBody) {
+    refuse(c, Refusal::body_too_large, now);
+    return;
+  }
+  c.body_for = Connection::BodyFor::pair;
+  take_body(c, after, now);
+}
+
+void Engine::finish_pair(Connection& c, Clock::time_point now) {
+  const protocol::Json body = protocol::Json::parse(std::string_view(c.body.data(), c.body_size), nullptr, false);
+  const auto text = [&](const char* name) -> std::string {
+    const auto it = body.is_object() ? body.find(name) : body.end();
+    return body.is_object() && it != body.end() && it->is_string() ? it->get<std::string>() : std::string();
+  };
+  const std::string code = text("code");
+  const std::string name = text("name");
+  if (!body.is_object() || code.empty()) {
+    respond_status(c, 400, kBadPair, false, now);
+    return;
+  }
+  if (!valid_device_name(name)) {
+    respond_status(c, 400, kBadName, false, now);
+    return;
+  }
+  std::array<std::uint8_t, kTokenBytes> secret{};
+  std::array<std::uint8_t, kDeviceIdChars / 2> id_bytes{};
+  if (!io::random_bytes(secret) || !io::random_bytes(id_bytes)) {
+    respond_status(c, 503, kUnavailable, false, now);
+    return;
+  }
+  std::array<char, kTokenChars> token{};
+  encode_token(secret, token);
+  secret.fill(0);
+  DeviceKey key;
+  constexpr std::string_view kHex = "0123456789abcdef";
+  for (std::size_t i = 0; i < id_bytes.size(); ++i) {
+    key.id[2 * i] = kHex[id_bytes[i] >> 4];
+    key.id[2 * i + 1] = kHex[id_bytes[i] & 0xFu];
+  }
+  key.hash = device_hash(std::string_view(token.data(), token.size()));
+  PairingCode::Try tried = PairingCode::Try::none;
+  bool full = false;
+  {
+    std::lock_guard lock(hub_->mutex);
+    full = devices_.size() >= kMaxDevices;
+    if (!full) {
+      tried = hub_->pairing.attempt(code, now);  // a full list never spends the code
+    }
+    if (tried == PairingCode::Try::paired) {
+      hub_->paired.push_back(PairedDevice{std::string(key.id.data(), key.id.size()), name, key.hash});
+      hub_->devices.push_back(key);
+    }
+  }
+  if (full) {
+    token.fill(0);
+    respond_status(c, 403, kTooMany, false, now);
+    return;
+  }
+  if (tried != PairingCode::Try::paired) {
+    token.fill(0);
+    log(LogLevel::info, tried == PairingCode::Try::wrong ? "A device tried a pairing code that was not right."
+                                                         : "A device asked to pair while no code was showing.");
+    respond_status(c, 403, tried == PairingCode::Try::wrong ? kWrongCode : kNoCode, false, now);
+    return;
+  }
+  devices_.push_back(key);
+  c.paired = true;
+  c.device = key.id;
+  Response response;
+  response.status = 200;
+  response.content_type = kPlainText;
+  response.content_length = kPairedWords.size();
+  response.device_cookie = std::string_view(token.data(), token.size());
+  respond(c, write_response_head(response, c.head), kPairedWords, nullptr, now);
+  token.fill(0);  // its only copy is in the response's head now, and the browser's
+  log(LogLevel::info, "A device was paired with the browser view.");
+  if (config_.paired_wake) {
+    try {
+      config_.paired_wake();
+    } catch (...) {
+    }
+  }
+}
+
+void Engine::apply_network(bool on, Clock::time_point now) {
+  // Whatever it was: every socket and connection of the network listener closes first.
+  for (io::Socket& socket : network_) {
+    socket.close();
+  }
+  for (const auto& slot : pool_) {
+    Connection& c = *slot;
+    if (!c.network || c.phase == Connection::Phase::idle) {
+      continue;
+    }
+    if (c.phase == Connection::Phase::hello || c.phase == Connection::Phase::open) {
+      close_socket(c, protocol::ByeReason::shutdown, 1001, now);
+    } else if (c.phase != Connection::Phase::closing) {
+      drop(c);
+    }
+  }
+  for (Ticket& ticket : tickets_) {
+    if (ticket.network) {
+      ticket = Ticket{};
+    }
+  }
+  std::size_t count = 0;
+  std::vector<std::string> names;
+  if (on) {
+    std::array<std::array<std::uint8_t, 4>, 16> found{};
+    std::size_t candidates = 0;
+    if (!config_.network_addresses.empty()) {
+      for (const auto& address : config_.network_addresses) {
+        if (candidates < found.size()) {
+          found[candidates++] = address;  // a test's own, taken as they are
+        }
+      }
+    } else {
+      const std::size_t listed = io::local_ipv4_addresses(found);
+      for (std::size_t i = 0; i < listed; ++i) {
+        if (private_ipv4(found[i])) {
+          found[candidates++] = found[i];  // the PC's private addresses alone, never a public one (item 16)
+        }
+      }
+    }
+    for (std::size_t i = 0; i < candidates && count < kMaxNetworkAddresses; ++i) {
+      if (found[i][0] == 0 || found[i][0] >= 224) {
+        continue;  // never 0.0.0.0 (every interface), a multicast or a reserved address, whatever the source
+      }
+      bool again = false;
+      for (std::size_t j = 0; j < i; ++j) {
+        again = again || found[j] == found[i];
+      }
+      if (again) {
+        continue;
+      }
+      io::BindError error = io::BindError::none;
+      io::Socket socket = io::listen_ipv4(found[i], config_.port, error);
+      if (!socket.open()) {
+        continue;
+      }
+      std::array<char, 16> dotted{};
+      network_[count] = std::move(socket);
+      network_names_[count] = std::string(dotted.data(), format_ipv4(found[i], dotted));
+      ++count;
+    }
+    for (std::size_t i = 0; i < count; ++i) {
+      network_views_[i] = network_names_[i];
+      names.push_back(network_names_[i]);
+    }
+  }
+  network_listener_.addresses = std::span<const std::string_view>(network_views_.data(), count);
+  network_rules_.listener = network_listener_;
+  {
+    std::lock_guard lock(hub_->mutex);
+    hub_->network_addresses = std::move(names);
+  }
+  // Fixed words and a count only: never the address itself (PV3, PV5).
+  if (!on) {
+    log(LogLevel::info, "Other devices: the browser view no longer listens on the home network.");
+  } else if (count == 0) {
+    log(LogLevel::warning, "Other devices: no private network address of this PC could be listened on.");
+  } else {
+    log(LogLevel::info, "Other devices: the browser view listens on " + std::to_string(count) +
+                            " of this PC's home network addresses too.");
+  }
+}
+
+void Engine::apply_devices(std::vector<DeviceKey> devices, Clock::time_point now) {
+  devices_ = std::move(devices);
+  // A device no longer listed is disconnected at once: its page reloads and finds the pairing page (item 16).
+  for (const auto& slot : pool_) {
+    Connection& c = *slot;
+    if (!c.network || !c.paired || c.phase == Connection::Phase::idle) {
+      continue;
+    }
+    const bool kept = std::any_of(devices_.begin(), devices_.end(), [&](const DeviceKey& d) { return d.id == c.device; });
+    if (kept) {
+      continue;
+    }
+    if (c.phase == Connection::Phase::hello || c.phase == Connection::Phase::open) {
+      close_socket(c, protocol::ByeReason::unauthorised, 1000, now);
+    } else if (c.phase != Connection::Phase::closing) {
+      drop(c);
+    }
+  }
+  for (Ticket& ticket : tickets_) {
+    if (ticket.network && std::none_of(devices_.begin(), devices_.end(),
+                                       [&](const DeviceKey& d) { return d.id == ticket.device; })) {
+      ticket = Ticket{};
+    }
+  }
 }
 
 void Engine::renew(Clock::time_point now) {
@@ -1008,6 +1416,69 @@ void Server::remove_space(std::string_view id) noexcept {
       return;
     }
   }
+}
+
+void Server::set_network(bool on) noexcept {
+  std::lock_guard lock(hub_->mutex);
+  hub_->network_on = on;
+  hub_->network_changed = true;
+  hub_->signal_locked();
+}
+
+std::vector<std::string> Server::network_addresses() const {
+  std::lock_guard lock(hub_->mutex);
+  return hub_->network_addresses;
+}
+
+std::string Server::start_pairing() {
+  std::array<std::uint8_t, 64> random{};
+  if (!io::random_bytes(random)) {
+    return {};
+  }
+  const auto now = PairingCode::Clock::now();
+  std::lock_guard lock(hub_->mutex);
+  const bool started = hub_->pairing.start(random, now);
+  random.fill(0);
+  return started ? std::string(hub_->pairing.code(now)) : std::string();
+}
+
+void Server::cancel_pairing() noexcept {
+  std::lock_guard lock(hub_->mutex);
+  hub_->pairing.cancel();
+}
+
+std::string Server::pairing_code() const {
+  std::lock_guard lock(hub_->mutex);
+  return std::string(hub_->pairing.code(PairingCode::Clock::now()));
+}
+
+void Server::set_devices(std::vector<DeviceKey> devices) noexcept {
+  std::lock_guard lock(hub_->mutex);
+  // A device paired since the host last took it stays, whatever the host's list says.
+  for (const PairedDevice& fresh : hub_->paired) {
+    const bool listed = std::any_of(devices.begin(), devices.end(), [&](const DeviceKey& d) {
+      return std::string_view(d.id.data(), d.id.size()) == fresh.id;
+    });
+    if (!listed) {
+      DeviceKey key;
+      std::copy_n(fresh.id.begin(), std::min(fresh.id.size(), key.id.size()), key.id.begin());
+      key.hash = fresh.hash;
+      devices.push_back(key);
+    }
+  }
+  if (devices.size() > kMaxDevices) {
+    devices.resize(kMaxDevices);
+  }
+  hub_->devices = std::move(devices);
+  hub_->devices_changed = true;
+  hub_->signal_locked();
+}
+
+std::vector<PairedDevice> Server::take_paired() {
+  std::lock_guard lock(hub_->mutex);
+  std::vector<PairedDevice> out;
+  out.swap(hub_->paired);
+  return out;
 }
 
 void Server::renew_session() noexcept {

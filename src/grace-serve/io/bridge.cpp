@@ -32,11 +32,25 @@ void Engine::take_hub(Clock::time_point now) {
   std::deque<Outgoing> items;
   bool renewing = false;
   bool removed = false;
+  std::optional<bool> network;
+  std::optional<std::vector<DeviceKey>> devices;
   {
     std::lock_guard lock(hub_->mutex);
     items.swap(hub_->inbox);
     renewing = std::exchange(hub_->renew, false);
     removed = std::exchange(hub_->spaces_removed, false);
+    if (std::exchange(hub_->network_changed, false)) {
+      network = hub_->network_on;
+    }
+    if (std::exchange(hub_->devices_changed, false)) {
+      devices = hub_->devices;
+    }
+  }
+  if (devices) {
+    apply_devices(std::move(*devices), now);  // a device forgotten in game is disconnected at once (G9)
+  }
+  if (network) {
+    apply_network(*network, now);  // dashboard.lan switched: its listeners open, or close with every connection
   }
   if (removed) {
     // A space withdrawn: every subscription to it ends; its topics and commands are unknown from now on (D81).
@@ -229,11 +243,15 @@ void Engine::send_error(Connection& c, const PortState* space, protocol::ErrorCo
   send_message(c, protocol::Message{std::move(error)});
 }
 
-void Engine::send_result_error(Connection& c, const PortState& space, std::uint32_t id, protocol::ErrorCode code) {
+void Engine::send_result_error(Connection& c, const PortState& space, std::uint32_t id, protocol::ErrorCode code,
+                               std::string detail) {
   protocol::Result result;
   result.space = space.description.info.id;
   result.id = id;
   result.error = code;
+  if (!detail.empty()) {
+    result.detail = std::move(detail);
+  }
   send_message(c, protocol::Message{std::move(result)});
 }
 
@@ -471,7 +489,9 @@ void Engine::hello(Connection& c, const protocol::Hello& hello, Clock::time_poin
       const bool same =
           ticket.live && constant_time_equal(std::string_view(ticket.token.data(), ticket.token.size()), *hello.ticket);
       if (same) {
-        valid = now - ticket.issued < config_.timings.ticket;
+        // A ticket opens a WebSocket on the listener that issued it, and a device's only that device's (G9).
+        const bool here = ticket.network == c.network && (!c.network || ticket.device == c.device);
+        valid = here && now - ticket.issued < config_.timings.ticket;
         ticket = Ticket{};
       }
     }
@@ -630,6 +650,11 @@ void Engine::command(Connection& c, protocol::Cmd& cmd) {
   }
   if (!confirmed(port->description, cmd.name, cmd.args)) {
     send_result_error(c, *port, cmd.id, protocol::ErrorCode::confirm_required);  // §7.3, D173
+    return;
+  }
+  if (c.network && sensitive_command(port->description, cmd.name, cmd.args)) {
+    // A paired device never sets a secret or a provider, nor what its space marks sensitive (§7.2 item 16, D81).
+    send_result_error(c, *port, cmd.id, protocol::ErrorCode::not_now, "Only on the PC the game runs on.");
     return;
   }
   bool full = false;

@@ -43,7 +43,10 @@ std::array<std::uint8_t, 32> device_hash(std::string_view token) noexcept {
 }
 
 std::optional<std::size_t> match_device(std::optional<std::string_view> cookie_field,
-                                        std::span<const DeviceKey> devices) noexcept {
+                                        std::span<const DeviceKey> devices, std::string_view* token) noexcept {
+  if (token != nullptr) {
+    *token = {};
+  }
   if (!cookie_field || cookie_field->size() > kMaxCookie || devices.empty()) {
     return std::nullopt;
   }
@@ -65,6 +68,9 @@ std::optional<std::size_t> match_device(std::optional<std::string_view> cookie_f
           }
           if (difference == 0 && found == devices.size()) {
             found = i;
+            if (token != nullptr) {
+              *token = value;
+            }
           }
         }
       }

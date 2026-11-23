@@ -181,6 +181,25 @@ bool Client::connect(std::uint16_t port, bool ipv6, int receive_buffer) {
   return true;
 }
 
+bool Client::connect_ipv4(std::array<std::uint8_t, 4> to, std::uint16_t port) {
+  start_client_network();
+  close();
+  const Native s = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (s == kInvalid) {
+    return false;
+  }
+  Address address{};
+  address.v4.sin_family = AF_INET;
+  address.v4.sin_port = htons(port);
+  std::memcpy(&address.v4.sin_addr, to.data(), to.size());
+  if (::connect(s, &address.any, static_cast<int>(sizeof address.v4)) != 0) {
+    close_native(s);
+    return false;
+  }
+  handle_ = static_cast<std::intptr_t>(s);
+  return true;
+}
+
 bool Client::send(std::string_view bytes) {
   std::size_t sent = 0;
   while (sent < bytes.size()) {
@@ -285,6 +304,18 @@ Reply request(std::uint16_t port, std::string_view raw, Millis limit, bool ipv6)
   return reply;
 }
 
+Reply request_ipv4(std::array<std::uint8_t, 4> address, std::uint16_t port, std::string_view raw, Millis limit) {
+  Client client;
+  if (!client.connect_ipv4(address, port) || !client.send(raw)) {
+    return {};
+  }
+  std::string bytes;
+  const bool closed = client.read_to_close(bytes, limit);
+  Reply reply = parse_reply(bytes);
+  reply.closed = closed;
+  return reply;
+}
+
 std::string host_of(std::uint16_t port) { return "127.0.0.1:" + std::to_string(port); }
 std::string origin_of(std::uint16_t port) { return "http://127.0.0.1:" + std::to_string(port); }
 
@@ -372,6 +403,48 @@ int WsClient::open(std::uint16_t port, std::string_view cookie, std::string_view
     client_.close();
   }
   return status;
+}
+
+int WsClient::open_head(std::array<std::uint8_t, 4> address, std::uint16_t port, std::string_view head) {
+  buffer_.clear();
+  response_.clear();
+  if (!client_.connect_ipv4(address, port) || !client_.send(head)) {
+    return 0;
+  }
+  const auto end = std::chrono::steady_clock::now() + 3s;
+  while (buffer_.find("\r\n\r\n") == std::string::npos && std::chrono::steady_clock::now() < end) {
+    if (!client_.receive(buffer_, 100ms)) {
+      break;
+    }
+  }
+  const std::size_t head_end = buffer_.find("\r\n\r\n");
+  if (head_end == std::string::npos) {
+    return 0;
+  }
+  response_ = buffer_.substr(0, head_end + 4);
+  buffer_.erase(0, head_end + 4);
+  const int status = parse_reply(response_).status;
+  if (status != 101) {
+    client_.close();
+  }
+  return status;
+}
+
+bool WsClient::hello(std::string_view ticket, protocol::Json* welcome) {
+  protocol::Json message = {{"v", 1}, {"t", "hello"}, {"protocol", "1.0"}, {"bundle", "test"},
+                            {"caps", protocol::Json::array()}};
+  message["ticket"] = std::string(ticket);
+  if (!send_json(message)) {
+    return false;
+  }
+  const std::optional<protocol::Json> answer = next_json();
+  if (!answer || (*answer)["t"] != "welcome") {
+    return false;
+  }
+  if (welcome != nullptr) {
+    *welcome = *answer;
+  }
+  return true;
 }
 
 bool WsClient::join(std::uint16_t port, std::string_view cookie, std::string_view ticket, protocol::Json* welcome) {

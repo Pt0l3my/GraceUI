@@ -2,6 +2,7 @@
 // a WebSocket client that masks its frames as a browser does. Blocking sockets with deadlines, POSIX or Winsock.
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -45,6 +46,8 @@ class Client {
   Client& operator=(const Client&) = delete;
 
   bool connect(std::uint16_t port, bool ipv6 = false, int receive_buffer = 0);
+  // To another IPv4 address of this machine, such as 127.0.0.2, standing for the PC's home network address (G9).
+  bool connect_ipv4(std::array<std::uint8_t, 4> address, std::uint16_t port);
   bool send(std::string_view bytes);
   // Appends the first bytes to arrive within `limit` (or, with `want`, up to that many): false once the peer has
   // closed or failed.
@@ -74,6 +77,7 @@ struct Reply {
 Reply parse_reply(std::string_view raw);
 // Sends `raw` on a new connection and reads until the server closes it.
 Reply request(std::uint16_t port, std::string_view raw, Millis limit = 3s, bool ipv6 = false);
+Reply request_ipv4(std::array<std::uint8_t, 4> address, std::uint16_t port, std::string_view raw, Millis limit = 3s);
 
 // Request heads, as a browser sends them. `host` defaults to 127.0.0.1:PORT.
 std::string host_of(std::uint16_t port);
@@ -103,6 +107,10 @@ class WsClient {
   int open(std::uint16_t port, std::string_view cookie, std::string_view extra = "", int receive_buffer = 0);
   // Upgrade, hello with the ticket, and welcome: true with `welcome` set.
   bool join(std::uint16_t port, std::string_view cookie, std::string_view ticket, protocol::Json* welcome = nullptr);
+  // The upgrade with a head of the caller's own, to an IPv4 address of this machine (G9): the status, as open's.
+  int open_head(std::array<std::uint8_t, 4> address, std::uint16_t port, std::string_view head);
+  // Hello with the ticket on an open socket, and its answer: true with `welcome` set on a welcome.
+  bool hello(std::string_view ticket, protocol::Json* welcome = nullptr);
 
   bool send_frame(std::uint8_t opcode, std::string_view payload, bool fin = true);
   bool send_text(std::string_view text) { return send_frame(1, text); }
