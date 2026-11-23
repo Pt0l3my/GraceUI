@@ -1003,13 +1003,17 @@ TEST_CASE("a table's row actions: a focus stop each, a destructive one sent afte
   view.layout(Viewport{}, test::fonts(), refused);
   CHECK(refused.dump().find("rot          ") != std::string::npos);
   // A row secret's status in words (D194, D197), and a Set on each row that takes one; a form's fields in game, its
-  // labels and its button (G38 (a)): nothing is left to the browser view.
+  // labels and its button (G38 (a)): nothing is left to the browser view but the roster file's upload, which the game has
+  // no picker for (D226).
   const std::string dump = refused.dump();
   CHECK(dump.find("Ward word: Set") != std::string::npos);
   CHECK(dump.find("Ward word: Missing") != std::string::npos);
   CHECK(dump.find("Ward word: Refused") != std::string::npos);  // D197
   CHECK(dump.find("Ward word: Not needed") != std::string::npos);
-  CHECK(dump.find("in the browser view") == std::string::npos);
+  const std::size_t upload = dump.find("Add a roster file: in the browser view on this PC.");
+  CHECK(upload != std::string::npos);
+  CHECK(dump.find("Shown in the browser view") == std::string::npos);
+  CHECK(dump.find("Filled in the browser view") == std::string::npos);
   CHECK(dump.find("\"Name\"") != std::string::npos);
   CHECK(dump.find("\"Post\"") != std::string::npos);
   CHECK(dump.find("\"Hire\"") != std::string::npos);

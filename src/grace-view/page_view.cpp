@@ -128,6 +128,17 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
   const auto declared = [&](const std::string& command) {
     return std::find(pages.commands.begin(), pages.commands.end(), command) != pages.commands.end();
   };
+  // A file command (D226): the space's own, not a settings command, sensitive (never from a paired device), not slow.
+  const std::vector<std::string>& sensitive = pages.sensitive_commands.value_or(std::vector<std::string>{});
+  const std::vector<std::string>& slow = pages.slow_commands.value_or(std::vector<std::string>{});
+  for (const std::string& name : pages.file_commands.value_or(std::vector<std::string>{})) {
+    if (!declared(name) || name == "settings.set" || name == "settings.reset" ||
+        std::find(sensitive.begin(), sensitive.end(), name) == sensitive.end() ||
+        std::find(slow.begin(), slow.end(), name) != slow.end()) {
+      why = "file command " + name + " is a declared command of the space's own, marked sensitive and not slow";
+      return false;
+    }
+  }
   const auto block_ok = [&](const protocol::Page& page, const protocol::PageBlock& block) {
     const std::string where = page.id + ": ";
     const bool table = block.kind == protocol::BlockKind::component && block.component == protocol::Component::table;
@@ -153,6 +164,22 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       return false;
     }
     const bool form = block.kind == protocol::BlockKind::form;
+    const bool upload = block.kind == protocol::BlockKind::upload;
+    if (upload) {
+      // An upload block (D226): one file command of the space's, sensitive, with its button's label; nothing else.
+      const std::vector<std::string>& files = pages.file_commands.value_or(std::vector<std::string>{});
+      if (!block.command || std::find(files.begin(), files.end(), *block.command) == files.end() || !block.submit ||
+          block.submit->empty() || block.fields || block.keys || block.component || block.topic || block.props ||
+          block.editor) {
+        why = where + "an upload block has a file command of the space's and a submit label, and nothing else";
+        return false;
+      }
+      return true;
+    }
+    if (block.accept) {
+      why = where + "accept belongs to an upload block";
+      return false;
+    }
     if (form != (block.command.has_value() || block.fields.has_value() || block.submit.has_value())) {
       why = where + "a form block, and only a form block, has a command, fields and a submit label";
       return false;
@@ -4110,6 +4137,15 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               }
             }
             y += std::round(8 * s);
+            continue;
+          }
+          if (block.kind == protocol::BlockKind::upload) {
+            // An upload (D226): a file is chosen and sent from the browser view on this PC alone (§7.2 item 18); the
+            // game has no file picker, so the menu says where, by the block's own label.
+            const std::string label = block.submit.value_or("Add a file");
+            c.text(label + ": in the browser view on this PC.", TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
+                   content_w - 2 * card_pad, Colour::ink_mute);
+            y += row_h;
             continue;
           }
           if (block.kind == protocol::BlockKind::form) {

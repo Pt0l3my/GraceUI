@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 8;
-inline constexpr std::string_view kProtocolVersion = "1.8";
+inline constexpr std::uint32_t kProtocolMinor = 9;
+inline constexpr std::string_view kProtocolVersion = "1.9";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -26,6 +26,8 @@ inline constexpr std::size_t kCommandsPerSecond = 20;
 inline constexpr std::size_t kSubscriptions = 32;
 inline constexpr std::size_t kRowsPerBatch = 100;
 inline constexpr std::size_t kCommandQueue = 32;
+inline constexpr std::size_t kUploadMax = 33554432;
+inline constexpr std::size_t kUploadTicketSeconds = 60;
 inline constexpr std::size_t kPingSeconds = 15;
 inline constexpr std::size_t kBadMessagesBeforeClose = 3;
 
@@ -139,6 +141,7 @@ enum class BlockKind : std::uint8_t {
   component,
   form,
   editor,
+  upload,
 };
 std::string_view to_string(BlockKind value) noexcept;
 bool from_string(std::string_view text, BlockKind& out) noexcept;
@@ -345,6 +348,7 @@ struct PageBlock {
   std::optional<std::vector<FormField>> fields{};
   std::optional<std::string> submit{};
   std::optional<EditorBlock> editor{};
+  std::optional<std::string> accept{};
   bool operator==(const PageBlock&) const = default;
 };
 bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError& e);
@@ -447,6 +451,7 @@ struct SpacePages {
   std::vector<std::string> commands{};
   std::optional<std::vector<std::string>> slow_commands{};
   std::optional<std::vector<std::string>> sensitive_commands{};
+  std::optional<std::vector<std::string>> file_commands{};
   bool operator==(const SpacePages&) const = default;
 };
 bool decode(const Json& in, SpacePages& out, const std::string& path, DecodeError& e);
@@ -462,6 +467,8 @@ enum class Kind : std::uint8_t {
   state,
   rows,
   cmd,
+  upload,
+  upload_ticket,
   result,
   error,
   bye,
@@ -492,6 +499,7 @@ struct Welcome {
   std::string graceui{};
   std::vector<SpaceInfo> spaces{};
   std::string session{};
+  std::optional<CommandView> view{};
   bool operator==(const Welcome&) const = default;
 };
 // Watch a topic; for a stream, from a sequence number.
@@ -535,6 +543,23 @@ struct Cmd {
   std::optional<CommandView> view{};
   bool operator==(const Cmd&) const = default;
 };
+// Ask for an upload's one-use ticket (1.9, D226, §7.2 item 18): for a file command of the space's, its args, and the file's size in bytes and SHA-256 (64 lowercase hex); the command's result comes back as for a cmd with the same id.
+struct Upload {
+  std::string space{};
+  std::uint32_t id{};
+  std::string name{};
+  Json args{};
+  std::uint64_t size{};
+  std::string sha256{};
+  bool operator==(const Upload&) const = default;
+};
+// An upload's ticket (1.9, D226): sent with the file's bytes to POST /upload within 60 s, once, from this session alone.
+struct UploadTicket {
+  std::string space{};
+  std::uint32_t id{};
+  std::string ticket{};
+  bool operator==(const UploadTicket&) const = default;
+};
 // The answer to one command: ok, or an error with its reason in words a player reads (detail, 1.1).
 struct Result {
   std::string space{};
@@ -566,7 +591,7 @@ struct Pong {
   bool operator==(const Pong&) const = default;
 };
 
-using Message = std::variant<Hello, Welcome, Sub, Unsub, State, Rows, Cmd, Result, Error, Bye, Ping, Pong>;
+using Message = std::variant<Hello, Welcome, Sub, Unsub, State, Rows, Cmd, Upload, UploadTicket, Result, Error, Bye, Ping, Pong>;
 
 // A message's fields from a frame's object (its v and t already read): false, with the error set, for a field
 // that is missing, of the wrong type or past its bound. Fields the schema does not name are ignored (§6.4).

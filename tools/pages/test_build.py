@@ -260,6 +260,32 @@ class Seeded(unittest.TestCase):
         sp["slow_commands"] = ["oil.order", "oil.order"]
         self.expect("slow command oil.order twice", sp, desc, fx)
 
+    def test_file_commands_and_upload_blocks(self):  # D226
+        def roster_block(sp):
+            section = next(s for s in page(sp, "demo.keepers")["sections"] if s["id"] == "roster_file")
+            return section["blocks"][0]
+        sp, desc, fx = demo()
+        sp["sensitive_commands"] = []
+        self.expect("file command keepers.import is marked sensitive too", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["file_commands"] = ["keepers.import", "settings.set"]
+        self.expect("file command settings.set is a command of the space's own, not a settings command", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["slow_commands"].append("keepers.import")
+        self.expect("file command keepers.import is not a slow command", sp, desc, fx)
+        sp, desc, fx = demo()
+        roster_block(sp)["command"] = "keepers.hire"
+        self.expect("an upload block has a file command of the space's", sp, desc, fx)
+        sp, desc, fx = demo()
+        del roster_block(sp)["submit"]
+        self.expect("an upload block has a file command of the space's", sp, desc, fx)
+        sp, desc, fx = demo()
+        roster_block(sp)["accept"] = "zip"
+        self.expect("an upload block's accept lists extensions", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.keepers")["sections"][1]["blocks"][0]["accept"] = ".zip"
+        self.expect("accept belongs to an upload block", sp, desc, fx)
+
     def test_setting_descriptions(self):
         cases = [
             ("lantern.oil_token", "default", "hunter2", "a secret's default is empty"),

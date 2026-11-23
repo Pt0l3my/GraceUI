@@ -52,6 +52,9 @@ struct SpaceDescription {
     std::string home;
   };
   std::vector<SensitiveKey> sensitive_keys;
+  // The commands that take one file by the upload route (D226, §7.2 item 18), each declared and sensitive: never sent
+  // as a plain cmd, and never from a paired device.
+  std::vector<std::string> files;
   // The space's page data (space_pages), which the framework's own topic "pages" carries to a view that subscribes to
   // it: the server answers that sub itself, from this, and the space never sees it (D166, D169). Null: no such topic.
   protocol::Json pages;
@@ -63,6 +66,9 @@ inline constexpr std::string_view kPagesTopic = "pages";
 // Whether `topic` is a member of a family `description` declares (D215): "<family>/<key>", the family a state topic
 // marked as one, the key not empty and with no '/'. A view watches a member, and a space publishes it, as a state.
 bool family_member(const SpaceDescription& description, std::string_view topic) noexcept;
+
+// Whether `command` takes a file by the upload route (D226).
+bool file_command(const SpaceDescription& description, std::string_view command) noexcept;
 
 // A description from a space's page data and settings description, as grace-pages and a mod's register_pages give them.
 SpaceDescription describe_space(const protocol::SpacePages& pages, const protocol::SettingsDescription& settings,

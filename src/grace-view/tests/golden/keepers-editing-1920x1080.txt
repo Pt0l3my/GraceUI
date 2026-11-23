@@ -80,17 +80,23 @@ fill    ground.well  1572, 727  280x28   r2 clip1
 stroke  edge         1572, 727  280x28   r2 w1 clip1
 text    ink.body     1582, 731   54x20   clip1 glyphs 8 "rapeseed"
 text    ink.faint     326, 732  176x20   clip1 glyphs 22 "Nothing to choose from yet"
-fill    ground.2      272, 793 1600x140  r4 clip1
-stroke  rule          272, 793 1600x140  r4 w1 clip1
-text    gold          292, 809   54x16   clip1 glyphs 7 "Related"
-line    rule          292, 833 1560x1    clip1
-text    ink.hi        292, 837   68x22   clip1 glyphs 9 "Behaviour"
-text    ink.mute      812, 839  425x20   clip1 glyphs 52 "How the lantern burns, how often it flickers, and who keeps it."
-text    gold         1836, 837    8x22   clip1 glyphs 1 "→"
-line    rule          292, 877 1560x1    clip1
-text    ink.hi        292, 881   60x22   clip1 glyphs 8 "Overview"
-text    ink.mute      812, 883  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
-text    gold         1836, 881    8x22   clip1 glyphs 1 "→"
+fill    ground.2      272, 793 1600x124  r4 clip1
+stroke  rule          272, 793 1600x124  r4 w1 clip1
+text    gold          292, 809  138x16   clip1 glyphs 15 "From a roster file"
+text    ink.faint    1842, 809    7x20   clip1 glyphs 1 "-"
+text    ink.mute      292, 829  763x20   clip1 glyphs 92 "A harbour roster lists several keepers at once. Drop the file here, or choose it, in the browser view on this PC."
+text    ink.mute      292, 869  338x20   clip1 glyphs 40 "Add a roster file: in the browser view on this PC."
+fill    ground.2      272, 933 1600x140  r4 clip1
+stroke  rule          272, 933 1600x140  r4 w1 clip1
+text    gold          292, 949   54x16   clip1 glyphs 7 "Related"
+line    rule          292, 973 1560x1    clip1
+text    ink.hi        292, 977   68x22   clip1 glyphs 9 "Behaviour"
+text    ink.mute      812, 979  425x20   clip1 glyphs 52 "How the lantern burns, how often it flickers, and who keeps it."
+text    gold         1836, 977    8x22   clip1 glyphs 1 "→"
+line    rule          292,1017 1560x1    clip1
+text    ink.hi        292,1021   60x22   clip1 glyphs 8 "Overview"
+text    ink.mute      812,1023  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
+text    gold         1836,1021    8x22   clip1 glyphs 1 "→"
 line    rule          240,1044 1680x1   
 text    ink.faint     272,1052  277x20   glyphs 27 "Enter  Next    Esc  Done    Ctrl+V  Paste"
 stroke  gold.hi      1290, 491  564x32   r4 w2 clip1

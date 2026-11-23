@@ -91,6 +91,8 @@ def documents(path, schema):
         space_pages["slow_commands"] = space["slow_commands"]  # D216
     if "sensitive_commands" in space:
         space_pages["sensitive_commands"] = space["sensitive_commands"]  # D221
+    if "file_commands" in space:
+        space_pages["file_commands"] = space["file_commands"]  # D226
     settings = []
     for entry in source.get("setting", []):
         unknown = set(entry) - set(SETTING_FIELDS)
@@ -186,6 +188,14 @@ def lint(space_pages, description, fixtures, known_spaces):
             failures.append(f"{space}: sensitive command {name} is a command of the space's own, not a settings "
                             "command: a setting is marked sensitive itself (D221)")
     unique("sensitive command", space_pages.get("sensitive_commands", []), space)
+    for name in space_pages.get("file_commands", []):
+        if name not in commands or name in ("settings.set", "settings.reset"):
+            failures.append(f"{space}: file command {name} is a command of the space's own, not a settings command (D226)")
+        if name not in space_pages.get("sensitive_commands", []):
+            failures.append(f"{space}: file command {name} is marked sensitive too: never from a paired device (D226)")
+        if name in space_pages.get("slow_commands", []):
+            failures.append(f"{space}: file command {name} is not a slow command: its bytes are not held 90 s (D226)")
+    unique("file command", space_pages.get("file_commands", []), space)
     for t in space_pages["topics"]:
         if (t["shape"] == "stream") != ("ring" in t):
             failures.append(f"{space}: topic {t['id']}: a stream names its ring, a state does not")
@@ -273,8 +283,20 @@ def lint(space_pages, description, fixtures, known_spaces):
             for block in section["blocks"] + section.get("advanced", []):
                 kind = block["kind"]
                 bwhere = f"{where}, section {section['id']}"
-                if kind != "form" and any(k in block for k in ("command", "fields", "submit")):
+                if kind not in ("form", "upload") and any(k in block for k in ("command", "fields", "submit")):
                     failures.append(f"{bwhere}: command, fields and submit belong to a form block (D195)")
+                if kind != "upload" and "accept" in block:
+                    failures.append(f"{bwhere}: accept belongs to an upload block (D226)")
+                if kind == "upload":
+                    accept = block.get("accept", "")
+                    if (block.get("command") not in space_pages.get("file_commands", []) or not block.get("submit") or
+                            any(k in block for k in ("keys", "component", "topic", "props", "fields", "row_actions",
+                                                     "row_secret", "editor"))):
+                        failures.append(f"{bwhere}: an upload block has a file command of the space's, a submit label "
+                                        "and an optional accept, and nothing else (D226)")
+                    if accept and not all(re.fullmatch(r"\.[a-z0-9]{1,8}", part.strip()) for part in accept.split(",")):
+                        failures.append(f"{bwhere}: an upload block's accept lists extensions such as \".zip, .toml\"")
+                    continue
                 if kind != "editor" and "editor" in block:
                     failures.append(f"{bwhere}: editor belongs to an editor block (D217)")
                 if kind == "editor":

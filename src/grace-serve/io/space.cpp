@@ -80,6 +80,10 @@ bool family_member(const SpaceDescription& description, std::string_view topic) 
   return false;
 }
 
+bool file_command(const SpaceDescription& description, std::string_view command) noexcept {
+  return std::find(description.files.begin(), description.files.end(), command) != description.files.end();
+}
+
 SpaceDescription describe_space(const protocol::SpacePages& pages, const protocol::SettingsDescription& settings,
                                 std::string version, std::string increment) {
   SpaceDescription description;
@@ -138,6 +142,13 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
   for (const std::string& name : pages.sensitive_commands.value_or(std::vector<std::string>{})) {
     if (std::find(pages.commands.begin(), pages.commands.end(), name) != pages.commands.end()) {
       add(description.sensitive, name);  // a declared command's alone (D221)
+    }
+  }
+  for (const std::string& name : pages.file_commands.value_or(std::vector<std::string>{})) {
+    // A declared command's alone, and one also marked sensitive (D226): the page lint and registration check both.
+    if (std::find(pages.commands.begin(), pages.commands.end(), name) != pages.commands.end() &&
+        std::find(description.sensitive.begin(), description.sensitive.end(), name) != description.sensitive.end()) {
+      add(description.files, name);
     }
   }
   for (const protocol::Setting& setting : settings.settings) {
