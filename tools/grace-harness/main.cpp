@@ -43,6 +43,7 @@
 
 #include "client.h"  // the server suite's test client: the "pages" scenario is a browser too
 #include "grace/pages/builtin.h"
+#include "grace/serve/codec.h"
 #include "graceui_sys.hpp"
 #include "graceui_test.h"
 #include "hello_debug_view.h"
@@ -4402,6 +4403,74 @@ void run_pages(const std::wstring& dll) {
   check(set && (*set)["ok"] == true && scale == "1.1", "spaces: one store for both views",
         "settings.set ui.scale 1.1 from the browser: %s; the menu's store holds %s", set ? set->dump().c_str() : "NONE",
         scale.c_str());
+
+  // 5b. An upload (G28, D226): the view's ticket and POST; the mod's poll with no room for the file is full, naming its
+  // size; with room, the frame and the file, once; its answer reaches the view.
+  std::string roster;
+  while (roster.size() < 100000) {
+    roster += "[[keeper]]\nname = \"Invented keeper\"\npost = \"North wall\"\n";
+  }
+  grace::serve::Sha256 sha;
+  sha.update(roster);
+  std::string hash;
+  for (const std::uint8_t b : sha.finish()) {
+    constexpr std::string_view kHex = "0123456789abcdef";
+    hash += kHex[b >> 4];
+    hash += kHex[b & 0xF];
+  }
+  view.send_json({{"v", 1}, {"t", "upload"}, {"space", "demo"}, {"id", 9}, {"name", "keepers.import"},
+                  {"args", Json::object()}, {"size", roster.size()}, {"sha256", hash}});
+  const std::optional<Json> upload_ticket = view.next_of("upload_ticket", std::chrono::milliseconds(3000));
+  const std::string upload_head =
+      "POST /upload HTTP/1.1\r\nHost: " + io::host_of(port) + "\r\nOrigin: " + io::origin_of(port) +
+      "\r\nSec-Fetch-Site: same-origin\r\nContent-Type: application/octet-stream\r\nCookie: en_session=" + cookie +
+      "\r\nGrace-Upload-Ticket: " + (upload_ticket ? (*upload_ticket)["ticket"].get<std::string>() : std::string()) +
+      "\r\nContent-Length: " + std::to_string(roster.size()) + "\r\n\r\n";
+  const io::Reply uploaded = io::request(port, upload_head + roster, std::chrono::milliseconds(10000));
+  GraceUiEvent no_room{};
+  std::vector<char> frame_buffer(16384);
+  GraceUiStatus first = GRACEUI_OK;
+  for (int i = 0; i < 150; ++i) {
+    no_room = GraceUiEvent{};
+    no_room.size = sizeof no_room;
+    no_room.frame = frame_buffer.data();
+    no_room.frame_capacity = frame_buffer.size();
+    first = table->poll(demo.answer.consumer, &no_room);
+    if (first != GRACEUI_OK || (no_room.kind != GRACEUI_EVENT_NONE && no_room.kind != GRACEUI_EVENT_DISPLAY)) {
+      break;
+    }
+    frames(game, 1);
+    Sleep(20);
+  }
+  std::vector<std::uint8_t> file_buffer(GRACEUI_UPLOAD_MAX);
+  GraceUiEvent with_room{};
+  with_room.size = sizeof with_room;
+  with_room.frame = frame_buffer.data();
+  with_room.frame_capacity = frame_buffer.size();
+  with_room.file = file_buffer.data();
+  with_room.file_capacity = file_buffer.size();
+  const GraceUiStatus second = table->poll(demo.answer.consumer, &with_room);
+  const std::string upload_frame(frame_buffer.data(), static_cast<std::size_t>(with_room.frame_length));
+  const bool same = with_room.file_length == roster.size() &&
+                    std::equal(roster.begin(), roster.end(), file_buffer.begin(),
+                               [](char a, std::uint8_t b) { return static_cast<std::uint8_t>(a) == b; });
+  const std::string done_frame = R"({"v":1,"t":"result","space":"demo","id":0,"ok":true})";
+  const GraceUiStatus done = table->answer(demo.answer.consumer, with_room.reply, done_frame.data(), done_frame.size());
+  std::optional<Json> upload_result;
+  for (int i = 0; i < 30 && !upload_result; ++i) {
+    frames(game, 1);
+    upload_result = view.next_of("result", std::chrono::milliseconds(100));
+  }
+  check(upload_ticket.has_value() && uploaded.status == 202 && first == GRACEUI_FULL &&
+            no_room.kind == GRACEUI_EVENT_COMMAND && no_room.file_length == roster.size() && second == GRACEUI_OK &&
+            with_room.kind == GRACEUI_EVENT_COMMAND && upload_frame.find("\"keepers.import\"") != std::string::npos &&
+            same && done == GRACEUI_OK && upload_result && (*upload_result)["id"] == 9 && (*upload_result)["ok"] == true,
+        "spaces: an upload to the mod (D226)",
+        "a ticket %s; the POST %d; no room: %s, %llu bytes named; with room: %s, the file %s; answered %s; the view's "
+        "result %s",
+        upload_ticket ? "given" : "NOT GIVEN", uploaded.status, status_name(first),
+        static_cast<unsigned long long>(no_room.file_length), status_name(second), same ? "whole" : "NOT WHOLE",
+        status_name(done), upload_result ? upload_result->dump().c_str() : "NONE");
 
   // With GRACE_HOLD_S set, the mod stays for that many seconds and answers as the demo space would, so that a real
   // browser can be pointed at the server meanwhile (BUILD.md): fixture states on watched, ok to every command.

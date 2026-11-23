@@ -89,8 +89,11 @@ GraceUiStatus wake_event(GraceUiConsumer consumer, void*& event) noexcept;
 // The mod's next event (D155, D169, D176): with `holder` (the mod's event is ABI 1.1's), its holder's events first;
 // then hotkey presses; then, with `protocol` (the mod's event is large enough), its space's events, written into
 // out.frame (the mod's buffer, out.frame_capacity bytes); `out` is GraceUI's own, zeroed by the caller but for those
-// two. GRACEUI_FULL with out.frame_length the size needed when the buffer is too small.
-GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder, bool display) noexcept;
+// two. GRACEUI_FULL with out.frame_length the size needed when the buffer is too small. With `files` (the mod's event is
+// ABI 1.6's, D226), a file command's file goes into out.file (out.file_capacity bytes) beside its frame, and FULL sets
+// out.file_length to its size too; without it, GraceUI answers a file command not_now and the mod never sees it.
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder, bool display,
+                   bool files) noexcept;
 // connect's display fields (ABI 1.2, D180): ui.scale, its default and the back buffer's size as they stand.
 void display_at_connect(GraceUiConnectAnswer& out) noexcept;
 // The caret of the mod's field in its panel (D176), for the IME.

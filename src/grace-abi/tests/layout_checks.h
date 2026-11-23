@@ -177,7 +177,8 @@ GU_AT(GraceUiHotkeyDesc, action_length, 24);
 GU_AT(GraceUiHotkeyDesc, name, 32);
 GU_AT(GraceUiHotkeyDesc, name_length, 40);
 
-GU_SIZE(GraceUiEvent, 136); /* 48 in GraceUI 0.2 (ABI 1.0); a holder's fields in 1.1 (D176); the display's in 1.2 */
+GU_SIZE(GraceUiEvent, 160); /* 48 in GraceUI 0.2 (ABI 1.0); a holder's fields in 1.1 (D176); the display's in 1.2; a
+                               file in 1.6 (D226) */
 GU_AT(GraceUiEvent, size, 0);
 GU_AT(GraceUiEvent, kind, 4);
 GU_AT(GraceUiEvent, hotkey_id, 8);
@@ -208,6 +209,9 @@ GU_AT(GraceUiEvent, scale, 120);
 GU_AT(GraceUiEvent, content_scale, 124);
 GU_AT(GraceUiEvent, faces_scale, 128);
 GU_AT(GraceUiEvent, reserved3, 132);
+GU_AT(GraceUiEvent, file, 136);
+GU_AT(GraceUiEvent, file_capacity, 144);
+GU_AT(GraceUiEvent, file_length, 152);
 
 GU_SIZE(GraceUiSpaceDesc, 64);
 GU_AT(GraceUiSpaceDesc, size, 0);
@@ -256,7 +260,8 @@ GU_AT(GraceUiApi1, describe_hotkey, 184);
 GU_AT(GraceUiApi1, wake_event, 192);
 
 /* The numbers a mod compiles in. */
-GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 5u, "ABI 1.5");
+GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 6u, "ABI 1.6");
+GU_ASSERT(GRACEUI_UPLOAD_MAX == 32u * 1024u * 1024u, "an upload's 32 MiB (D226)");
 GU_SIZE(GraceUiHotkeyBinding, 104); /* ABI 1.4 (D210) */
 GU_AT(GraceUiHotkeyBinding, key_text, 24);
 GU_AT(GraceUiHotkeyBinding, chord_text, 56);

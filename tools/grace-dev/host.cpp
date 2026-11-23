@@ -507,6 +507,10 @@ struct DevHost::Live {
     } else {
       result.ok = true;  // a space's own command with no reaction: ok, and nothing changes
     }
+    if (event.file != nullptr) {
+      // A file command's file (D226): its size alone is said, never a byte of it; it is let go with the event.
+      done += ", a file of " + std::to_string(event.file->bytes().size()) + " bytes";
+    }
     const std::string answer = result.error.has_value() ? std::string(protocol::to_string(*result.error)) : "ok";
     if (!port->answer(event.reply, std::move(result))) {
       host.say(Out::warning, data.id + ": " + label + ": its answer could not be sent");

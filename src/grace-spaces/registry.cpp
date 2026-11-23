@@ -39,6 +39,7 @@ struct Registry::Space {
   std::string held_frame;                  // an event the mod's buffer was too small for, kept for its next poll
   EventKind held_kind = EventKind::none;
   std::uint64_t held_reply = 0;
+  std::shared_ptr<const serve::FileBytes> held_file;  // a file command's file, with its held frame (D226)
   protocol::Json described;                // its settings description as it registered it, encoded once
   bool secret_masked = false;              // a secret's value was masked once already (logged once)
 };
@@ -120,6 +121,10 @@ Status Registry::add(std::uint64_t owner, std::string_view mod_id, const Registr
   }
   if (mod_id == "graceui") {
     why = "graceui is GraceUI's own space's id";  // one space an id, in both views (invariant 3, D81)
+    return Status::refused;
+  }
+  if (!in.takes_files && pages.file_commands && !pages.file_commands->empty()) {
+    why = "its file commands need ABI 1.6, which hands a file to the mod (D226)";
     return Status::refused;
   }
   for (const protocol::TopicInfo& topic : pages.topics) {
@@ -343,9 +348,16 @@ Status Registry::publish(std::uint64_t owner, std::string_view frame, std::strin
 
 Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity, EventKind& kind,
                       std::uint64_t& reply, std::uint64_t& length) {
+  FileOut none;
+  return poll(owner, buffer, capacity, kind, reply, length, none);
+}
+
+Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity, EventKind& kind,
+                      std::uint64_t& reply, std::uint64_t& length, FileOut& file) {
   kind = EventKind::none;
   reply = 0;
   length = 0;
+  file.length = 0;
   std::lock_guard<std::mutex> lock(mutex_);
   Space* space = find(owner);
   if (space == nullptr) {
@@ -392,6 +404,17 @@ Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity,
           space->port->answer(event.reply, std::move(busy));
           continue;
         }
+        if (event.file != nullptr && !file.takes) {
+          // A mod whose event has no room for a file never gets its command: GraceUI answers it (D226).
+          protocol::Result refused;
+          refused.space = space->id;
+          refused.id = event.reply.id;
+          refused.error = protocol::ErrorCode::not_now;
+          refused.detail = "This mod takes no file through GraceUI yet: it needs ABI 1.6.";
+          space->port->answer(event.reply, std::move(refused));
+          continue;
+        }
+        space->held_file = std::move(event.file);
         message = protocol::Cmd{space->id, event.reply.id, event.command, std::move(event.args), event.view};  // D224
         space->held_kind = EventKind::command;
         space->held_reply = next_reply_++;
@@ -414,13 +437,19 @@ Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity,
   length = space->held_frame.size();
   kind = space->held_kind;
   reply = space->held_reply;
-  if (buffer == nullptr || capacity < length) {
+  const std::uint64_t file_size = space->held_file != nullptr ? space->held_file->bytes().size() : 0;
+  file.length = file_size;
+  if (buffer == nullptr || capacity < length || (file_size != 0 && (file.buffer == nullptr || file.capacity < file_size))) {
     return Status::full;
   }
   std::memcpy(buffer, space->held_frame.data(), space->held_frame.size());
+  if (file_size != 0) {
+    std::memcpy(file.buffer, space->held_file->bytes().data(), file_size);
+  }
   space->held_kind = EventKind::none;
   space->held_reply = 0;
   space->held_frame.clear();
+  space->held_file.reset();  // GraceUI's copy is let go: zeroed with its last holder (D226)
   return Status::ok;
 }
 

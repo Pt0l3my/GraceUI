@@ -48,6 +48,15 @@ struct Registration {
   std::string increment;        // "0.2", named in welcome
   std::string_view pages;       // space_pages JSON (D160): its "space" must be the mod's id
   std::string_view settings;    // settings_description JSON
+  bool takes_files = true;      // built for ABI 1.6 or later (D226): a space with file commands needs it
+};
+
+// A file command's file, for poll (ABI 1.6, D226): the mod's buffer, and the file's length written back (0: none).
+struct FileOut {
+  std::uint8_t* buffer = nullptr;
+  std::uint64_t capacity = 0;
+  std::uint64_t length = 0;
+  bool takes = false;  // the mod's event has the file's fields: a file command reaches it; else GraceUI answers it
 };
 
 class Registry {
@@ -78,6 +87,11 @@ class Registry {
   // `length` the size needed and the event kept for the next call, when `capacity` is too small.
   Status poll(std::uint64_t owner, char* buffer, std::uint64_t capacity, EventKind& kind, std::uint64_t& reply,
               std::uint64_t& length);
+  // As poll, with a file command's file (D226) written into `file`'s buffer beside the frame: full when either does
+  // not fit, both lengths set and the event kept. A mod that takes no files is never given a file command: GraceUI
+  // answers it not_now. The registry lets go of the file once written (FileBytes zeroes it with its last holder).
+  Status poll(std::uint64_t owner, char* buffer, std::uint64_t capacity, EventKind& kind, std::uint64_t& reply,
+              std::uint64_t& length, FileOut& file);
   // The result frame of the command `reply` names: ok, or refused (not a result, not the mod's command, answered
   // already, or past its deadline). Its space and id are set by the registry, whatever the frame held.
   Status answer(std::uint64_t owner, std::uint64_t reply, std::string_view frame, std::string& why);

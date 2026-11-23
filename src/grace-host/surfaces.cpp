@@ -637,7 +637,8 @@ void display_at_connect(GraceUiConnectAnswer& out) noexcept {
   out.display_height = now.height;
 }
 
-GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder, bool display_ok) noexcept {
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder, bool display_ok,
+                   bool files) noexcept {
   GraceUiStatus status = GRACEUI_OK;
   const std::uint32_t owner = admitted(consumer, status);
   if (owner == 0) {
@@ -691,11 +692,16 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, b
     grace::spaces::EventKind kind = grace::spaces::EventKind::none;
     std::uint64_t reply = 0;
     std::uint64_t length = 0;
+    grace::spaces::FileOut file;
+    file.buffer = out.file;
+    file.capacity = out.file_capacity;
+    file.takes = files;
     const grace::spaces::Status polled =
-        spaces::registry().poll(consumer, out.frame, out.frame_capacity, kind, reply, length);
+        spaces::registry().poll(consumer, out.frame, out.frame_capacity, kind, reply, length, file);
     out.kind = static_cast<std::uint32_t>(kind);
     out.reply = reply;
     out.frame_length = length;
+    out.file_length = file.length;
     return polled == grace::spaces::Status::full ? GRACEUI_FULL : GRACEUI_OK;
   } catch (...) {
     fault("poll");
@@ -738,6 +744,8 @@ GraceUiStatus register_pages(GraceUiConsumer consumer, std::uint32_t views, std:
     registration.increment = std::string(increment);
     registration.pages = pages;
     registration.settings = settings;
+    grace::abi::ConsumerInfo info;
+    registration.takes_files = session::consumers().info_of(owner, info) && info.abi_minor >= 6;  // D226
     std::string why;
     const grace::spaces::Status added = spaces::registry().add(consumer, mod_id, registration, why);
     if (added != grace::spaces::Status::ok) {
