@@ -8,6 +8,7 @@
 // 1100 px; the space switcher and the status lamp appear only when there is something to show (invariant 2).
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { FakeHost } from "../support/fake-host.ts";
@@ -598,6 +599,85 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     } finally {
       host.refuse.delete("keepers.hire");
       await close();
+    }
+  });
+
+  test("an upload in the browser: a roster file chosen or dropped is sent once with its ticket, its bytes and hash " +
+       "checked, its name never sent; a wrong kind, the space's refusal and a paired device in words (G28)", async () => {
+    const { page, problems, close } = await fresh();
+    const frames = () => host.received.filter((f) => f.t === "upload");
+    const posts = () => host.requests.filter((r) => r === "POST /upload");
+    const settle = async (got: () => unknown[], n: number) => {
+      for (let i = 0; i < 60 && got().length < n; ++i) {
+        await page.waitForTimeout(50);
+      }
+    };
+    const shows = (selector: string, words: string) => page.waitForFunction(
+      (a: { selector: string; words: string }) => (document.querySelector(a.selector)?.textContent ?? "").includes(a.words),
+      { selector, words }, { timeout: 5000 });
+    const zoneOf = "[data-upload='keepers.import']";
+    const roster = Buffer.from("[[keeper]]\nname = \"Maren Holt\"\n\n[[keeper]]\nname = \"Tobin Reed\"\n", "utf8");
+    try {
+      await openFromRail(page, "demo", "demo.keepers");
+      const zone = page.locator(zoneOf);
+      await zone.waitFor();
+      assert.match((await zone.locator(".upload__hint").textContent()) ?? "", /Drop a \.toml or \.txt file here/);
+      assert.equal(await zone.locator("button").textContent(), "Add a roster file");
+      // Chosen with its button's input: one upload frame, its ticket, one POST, the space's answer in words.
+      await zone.locator("input[type=file]").setInputFiles({ name: "harbour-roster.toml", mimeType: "text/plain",
+                                                              buffer: roster });
+      await shows(`${zoneOf} .upload__status`, "Accepted");
+      assert.equal(await zone.locator(".upload__status").textContent(), "Accepted: harbour-roster.toml.");
+      assert.equal(frames().length, 1);
+      const sent = frames()[0];
+      assert.equal(sent?.size, roster.length);
+      assert.equal(sent?.sha256, createHash("sha256").update(roster).digest("hex"));
+      assert.deepEqual(sent?.args, {});
+      assert.deepEqual(host.uploads.map((u) => [u.name, u.bytes.equals(roster)]), [["keepers.import", true]]);
+      assert.equal(posts().length, 1);
+      assert.ok(!JSON.stringify(host.received).includes("harbour-roster"), "the file's name stays in the page");
+      // A wrong kind is refused here, before anything is sent.
+      await zone.locator("input[type=file]").setInputFiles({ name: "harbour.png", mimeType: "image/png",
+                                                              buffer: Buffer.from([1, 2, 3]) });
+      await shows(`${zoneOf} .row__refusal`, "Choose a .toml or .txt file.");
+      assert.equal(frames().length, 1);
+      // Dropped on the zone: the space's own refusal in its words (no keeper in it).
+      await page.evaluate((selector: string) => {
+        const target = document.querySelector(selector);
+        const data = new DataTransfer();
+        data.items.add(new File(["# nothing here\n"], "empty-roster.txt", { type: "text/plain" }));
+        target?.dispatchEvent(new DragEvent("dragover", { dataTransfer: data, bubbles: true, cancelable: true }));
+        target?.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
+      }, zoneOf);
+      await shows(`${zoneOf} .row__refusal`, "No keeper in that file.");
+      assert.equal(frames().length, 2);
+      assert.equal(host.uploads.length, 2);
+      // Refused by the space before its ticket: nothing is posted.
+      host.refuse.set("keepers.import", "not_now");
+      await zone.locator("input[type=file]").setInputFiles({ name: "harbour-roster.toml", mimeType: "text/plain",
+                                                              buffer: roster });
+      await settle(frames, 3);
+      await shows(`${zoneOf} .row__refusal`, "Not possible right now.");
+      assert.equal(posts().length, 2);
+      assert.equal(host.uploads.length, 2);
+      assert.deepEqual(problems, []);
+      assert.deepEqual(await violations(page), []);
+    } finally {
+      await close();
+    }
+    // A paired device is told where to add the file, and offered nothing to send.
+    host = await startHost(DIST, builtinSpaces());
+    host.setView("device");
+    const device = await openPage(browser, host);
+    try {
+      await openFromRail(device.page, "demo", "demo.keepers");
+      const zone = device.page.locator(zoneOf);
+      await zone.waitFor();
+      assert.match((await zone.textContent()) ?? "", /only on the PC the game runs on/);
+      assert.equal(await zone.locator("input, button").count(), 0);
+    } finally {
+      await device.close();
+      await host.close();
     }
   });
 

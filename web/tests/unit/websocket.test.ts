@@ -4,7 +4,9 @@
 // ends (bye, a version mismatch, a refused ticket, a lost socket), liveness, the rate and the frame limit.
 import { afterEach, mock, test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import type { Welcome } from "../../src/protocol.ts";
+import { LIMITS } from "../../src/protocol.ts";
 import type { Ended, TransportEvents } from "../../src/transport/transport.ts";
 import { WebSocketTransport, samePath } from "../../src/transport/websocket.ts";
 import type { SocketLike, TicketResponse } from "../../src/transport/websocket.ts";
@@ -55,7 +57,8 @@ afterEach(() => {
   }
 });
 
-function harness(options: { status?: number; ticket?: unknown; protocol?: string } = {}) {
+function harness(options: { status?: number; ticket?: unknown; protocol?: string;
+                          upload?: { status: number; text?: string } } = {}) {
   const sockets: FakeSocket[] = [];
   const fetches: { path: string; init: RequestInit }[] = [];
   const ended: Ended[] = [];
@@ -65,6 +68,11 @@ function harness(options: { status?: number; ticket?: unknown; protocol?: string
     location: { protocol: options.protocol ?? "http:", host: "127.0.0.1:8642" },
     fetch: async (path: string, init: RequestInit): Promise<TicketResponse> => {
       fetches.push({ path, init });
+      if (path === "/upload") {
+        const upload = options.upload ?? { status: 202 };
+        return { ok: upload.status === 202, status: upload.status, json: async () => ({}),
+                 text: async () => upload.text ?? "" };
+      }
       const status = options.status ?? 200;
       return { ok: status === 200, status, json: async () => options.ticket ?? { ticket: TICKET } };
     },
@@ -91,8 +99,8 @@ const settle = async () => {
   }
 };
 
-async function connected(protocol?: string) {
-  const h = harness(protocol ? { protocol } : {});
+async function connected(protocol?: string, upload?: { status: number; text?: string }) {
+  const h = harness({ ...(protocol ? { protocol } : {}), ...(upload ? { upload } : {}) });
   const done = h.transport.connect(h.events);
   await settle();
   const socket = h.sockets[0];
@@ -296,4 +304,77 @@ test("subs and unsubs keep to the same pace, so a page opening many topics loses
   } finally {
     mock.timers.reset();
   }
+});
+
+// ---- Uploads (G28, D226, §7.2 item 18)
+
+/** Waits, a macrotask at a time, until a condition holds: the digest and the POST settle on other turns. */
+async function until(check: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !check(); ++i) {
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+  assert.ok(check(), "the condition held in time");
+}
+
+const UPLOAD_TICKET = "u".repeat(43);
+
+test("an upload: its size and SHA-256 in an upload frame, its bytes POSTed with the ticket to /upload on this origin; " +
+     "the result answers it; the file's name is never sent", async () => {
+  const { transport, socket, fetches } = await connected();
+  const text = "[[keeper]]\nname = \"Maren Holt\"\n";
+  const file = new File([text], "private-roster-name.toml", { type: "text/plain" });
+  const answer = transport.upload("demo", "keepers.import", {}, file);
+  await until(() => socket.frames().some((f) => f.t === "upload"));
+  const frame = socket.frames().find((f) => f.t === "upload");
+  assert.deepEqual(frame, { v: 1, t: "upload", space: "demo", id: 1, name: "keepers.import", args: {},
+                            size: Buffer.byteLength(text), sha256: createHash("sha256").update(text).digest("hex") });
+  assert.equal(fetches.filter((f) => f.path === "/upload").length, 0, "nothing is posted before the ticket");
+  socket.receive({ v: 1, t: "upload_ticket", space: "demo", id: 1, ticket: UPLOAD_TICKET });
+  await until(() => fetches.some((f) => f.path === "/upload"));
+  const post = fetches.find((f) => f.path === "/upload");
+  assert.equal(post?.init.method, "POST");
+  assert.equal(post?.init.credentials, "same-origin");
+  assert.equal(post?.init.redirect, "error");
+  assert.equal(post?.init.cache, "no-store");
+  assert.equal(post?.init.referrerPolicy, "no-referrer");
+  assert.deepEqual(post?.init.headers, { "Content-Type": "application/octet-stream", "Grace-Upload-Ticket": UPLOAD_TICKET });
+  assert.equal(Buffer.from(post?.init.body as ArrayBuffer).toString("utf8"), text);
+  socket.receive({ v: 1, t: "result", space: "demo", id: 1, ok: true, body: { added: 1 } });
+  assert.deepEqual(await answer, { ok: true, body: { added: 1 } });
+  assert.ok(!socket.sent.join("").includes("private-roster-name"));
+  assert.ok(!JSON.stringify(fetches.map((f) => f.init.headers)).includes("private-roster-name"));
+});
+
+test("an upload refused: empty, over 32 MiB or before welcome at once; a refused POST in the server's words; a result " +
+     "before the ticket sends nothing; a stray or overlong ticket is ignored; a lost socket answers it", async () => {
+  const before = harness();
+  assert.deepEqual(await before.transport.upload("demo", "keepers.import", {}, new Blob(["x"])),
+                   { ok: false, error: "not_now", local: "Not connected to the game." });
+  const { transport, socket, fetches } = await connected(undefined, { status: 403, text: "The file was refused.\n" });
+  assert.deepEqual(await transport.upload("demo", "keepers.import", {}, new Blob([])),
+                   { ok: false, error: "invalid_value", local: "The file is empty." });
+  assert.deepEqual(await transport.upload("demo", "keepers.import", {}, new Blob([new Uint8Array(LIMITS.uploadMax + 1)])),
+                   { ok: false, error: "invalid_value", local: "The file is larger than 32 MiB." });
+  assert.equal(socket.frames().filter((f) => f.t === "upload").length, 0);
+  // The server's words for a refused POST, when no result came first.
+  const refused = transport.upload("demo", "keepers.import", {}, new Blob(["a"]));
+  await until(() => socket.frames().filter((f) => f.t === "upload").length === 1);
+  socket.receive({ v: 1, t: "upload_ticket", space: "demo", id: 1, ticket: UPLOAD_TICKET });
+  assert.deepEqual(await refused, { ok: false, error: "invalid_value", local: "The file was refused." });
+  // Refused by the space before its ticket: its result answers, and a late ticket posts nothing.
+  const early = transport.upload("demo", "keepers.import", {}, new Blob(["b"]));
+  await until(() => socket.frames().filter((f) => f.t === "upload").length === 2);
+  socket.receive({ v: 1, t: "result", space: "demo", id: 2, error: "not_now" });
+  assert.deepEqual(await early, { ok: false, error: "not_now" });
+  socket.receive({ v: 1, t: "upload_ticket", space: "demo", id: 2, ticket: UPLOAD_TICKET });
+  socket.receive({ v: 1, t: "upload_ticket", space: "demo", id: 99, ticket: UPLOAD_TICKET });
+  // An overlong ticket is not taken; the upload waits for a proper one, then the socket is lost.
+  const waiting = transport.upload("demo", "keepers.import", {}, new Blob(["c"]));
+  await until(() => socket.frames().filter((f) => f.t === "upload").length === 3);
+  socket.receive({ v: 1, t: "upload_ticket", space: "demo", id: 3, ticket: "t".repeat(129) });
+  await settle();
+  assert.equal(fetches.filter((f) => f.path === "/upload").length, 1);
+  socket.close();
+  const lost = await waiting;
+  assert.equal(lost.ok, false);
 });

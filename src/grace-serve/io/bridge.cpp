@@ -523,6 +523,8 @@ void Engine::hello(Connection& c, const protocol::Hello& hello, Clock::time_poin
   welcome.caps = config_.caps;
   welcome.graceui = config_.graceui_version;
   welcome.session = std::string(session.data(), session.size());
+  // Which view this is (1.9, D226): this PC's browser, or a paired device, for what the page offers (a file's upload).
+  welcome.view = c.network ? protocol::CommandView::device : protocol::CommandView::browser;
   {
     // The spaces this view may show: those registered now (D81).
     std::lock_guard lock(hub_->mutex);

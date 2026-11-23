@@ -1504,6 +1504,43 @@ ul, ol {
   padding-top: var(--space-12);
 }
 
+/* An upload block (G28, D226): a drop zone with its button; its status and a refusal's words under it. */
+.upload {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-8);
+  padding: var(--space-16);
+  border: var(--size-edge-width) dashed var(--rule-strong);
+  border-radius: var(--radius-card);
+  background: var(--ground-well);
+  transition: border-color var(--dur-state) ease-out, background-color var(--dur-state) ease-out;
+}
+
+.upload--over {
+  border-color: var(--gold-hi);
+  background: var(--tint-select);
+}
+
+.upload[aria-disabled="true"] {
+  opacity: 0.6;
+}
+
+.upload--off {
+  border-style: solid;
+  border-color: var(--rule);
+}
+
+.upload__hint, .upload__off, .upload__status {
+  margin: 0;
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+  color: var(--ink-body);
+}
+
+.upload__status:empty {
+  display: none;
+}
+
 /* A picker (D193): a list of the space's choices; while it has none, the value and a faint line. */
 .picker {
   cursor: pointer;

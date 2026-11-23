@@ -378,13 +378,17 @@ TEST_CASE("a space learns which view sent a command from its channel, never from
   const std::string cookie = pair(f);
   WsClient device;
   REQUIRE(device.open_head(kHome, f.port, home_upgrade(f.port, cookie)) == 101);
-  REQUIRE(device.hello(ticket_for(f.port, cookie)));
+  Json welcome;
+  REQUIRE(device.hello(ticket_for(f.port, cookie), &welcome));
+  CHECK(welcome["view"] == "device");  // what the page offers follows it (1.9: no upload on a device, D226)
   Json claimed = cmd("demo", "lantern.trim", 1);
   claimed["view"] = "game";  // a view's own word is never kept
   REQUIRE(device.send_json(claimed));
   REQUIRE(device.next_of("result").has_value());
-  const std::unique_ptr<WsClient> pc = f.join();
+  Json pc_welcome;
+  const std::unique_ptr<WsClient> pc = f.join(&pc_welcome);
   REQUIRE(pc != nullptr);
+  CHECK(pc_welcome["view"] == "browser");
   Json pretending = cmd("demo", "lantern.trim", 2);
   pretending["view"] = "device";
   REQUIRE(pc->send_json(pretending));

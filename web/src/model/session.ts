@@ -569,6 +569,14 @@ export class Session {
     return this.transport.command(space, name, args, this.slow(space, name));
   }
 
+  /** Sends a file with one of a space's file commands (G28): its answer, as for a command. */
+  async upload(space: string, name: string, args: JsonObject, file: Blob): Promise<Answer> {
+    if (!this.transport) {
+      return { ok: false, error: "not_now", local: "Not connected to the game." };
+    }
+    return this.transport.upload(space, name, args, file);
+  }
+
   /** Whether a space names a command slow (D216): its answer is waited for up to 95 s. */
   slow(space: string, name: string): boolean {
     return (this.space(space)?.pages.value?.slow_commands ?? []).includes(name);

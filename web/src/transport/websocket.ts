@@ -5,7 +5,7 @@
 // object of the kinds protocol.ts defines; anything else is dropped. Liveness by ping every 15 s, two missed pongs
 // closing the socket; at most 16 frames a second (the server's 20, less a margin) and 16 KiB a frame from the page.
 import type {
-  ByeReason, Cmd, ErrorCode, FrameFromPage, Hello, Json, JsonObject, Rows, State, Sub, Unsub, Welcome,
+  ByeReason, Cmd, ErrorCode, FrameFromPage, Hello, Json, JsonObject, Rows, State, Sub, Unsub, Upload, Welcome,
 } from "../protocol.ts";
 import { BYE_REASONS, ERROR_CODES, LIMITS, PROTOCOL } from "../protocol.ts";
 import type { Answer, Ended, Transport, TransportEvents } from "./transport.ts";
@@ -25,6 +25,8 @@ export interface TicketResponse {
   ok: boolean;
   status: number;
   json(): Promise<unknown>;
+  /** An upload's answer in words, when it was refused (G28). */
+  text?(): Promise<string>;
 }
 
 export interface WebSocketOptions {
@@ -34,6 +36,7 @@ export interface WebSocketOptions {
   location?: { protocol: string; host: string };
   ticketPath?: string;
   socketPath?: string;
+  uploadPath?: string;
   fetch?: (path: string, init: RequestInit) => Promise<TicketResponse>;
   socket?: (url: string) => SocketLike;
   /** The answer a command waits for before the view gives up on it, in ms. */
@@ -41,11 +44,18 @@ export interface WebSocketOptions {
   /** A slow command's (D216): the space's 90 s and a margin. */
   slowAnswerTimeout?: number;
   welcomeTimeout?: number;
+  /** An upload's whole wait: its ticket, its bytes and the space's answer (G28). */
+  uploadTimeout?: number;
 }
 
 const OPEN = 1;
 export const DEFAULT_TICKET_PATH = "/api/ticket";
 export const DEFAULT_SOCKET_PATH = "/api/ws";  // grace-serve's route (D161)
+export const DEFAULT_UPLOAD_PATH = "/upload";  // the upload route, on this PC's loopback listener alone (G28)
+
+function hex(digest: ArrayBuffer): string {
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 /** A path on this origin: starts with one "/", and names no other host or scheme. */
 export function samePath(path: string): boolean {
@@ -77,6 +87,7 @@ export class WebSocketTransport implements Transport {
   private nextCmd = 1;
   private readonly subs = new Set<number>();
   private readonly pending = new Map<number, { resolve: (answer: Answer) => void; timer: ReturnType<typeof setTimeout> }>();
+  private readonly tickets = new Map<number, (ticket: string | null) => void>();  // an upload's, by its command's id
   private readonly sentAt: number[] = [];
   private readonly queue: { text: string; sub?: number }[] = [];
   private queueTimer: ReturnType<typeof setTimeout> | null = null;
@@ -88,10 +99,11 @@ export class WebSocketTransport implements Transport {
   constructor(options: WebSocketOptions) {
     const ticket = options.ticketPath ?? DEFAULT_TICKET_PATH;
     const socket = options.socketPath ?? DEFAULT_SOCKET_PATH;
-    if (!samePath(ticket) || !samePath(socket)) {
+    const upload = options.uploadPath ?? DEFAULT_UPLOAD_PATH;
+    if (!samePath(ticket) || !samePath(socket) || !samePath(upload)) {
       throw new Error("the transport reaches only paths on its own origin");  // invariant 6
     }
-    this.options = { ...options, ticketPath: ticket, socketPath: socket };
+    this.options = { ...options, ticketPath: ticket, socketPath: socket, uploadPath: upload };
   }
 
   private origin(): { protocol: string; host: string } {
@@ -184,6 +196,7 @@ export class WebSocketTransport implements Transport {
       waiting.resolve({ ok: false, error: "internal", local: "The connection was lost before an answer came." });
     }
     this.pending.clear();
+    this.tickets.clear();
     this.queue.length = 0;
     this.resolveConnect?.(false);
     this.resolveConnect = null;
@@ -248,12 +261,21 @@ export class WebSocketTransport implements Transport {
           Array.isArray(frame.rows) && frame.rows.every(isObject) && typeof frame.dropped === "number") {
         this.events?.rows(frame as unknown as Rows);
       }
+    } else if (frame.t === "upload_ticket") {
+      const id = frame.id;
+      const take = typeof id === "number" ? this.tickets.get(id) : undefined;
+      if (take !== undefined && typeof id === "number" && typeof frame.ticket === "string" && frame.ticket.length > 0 &&
+          frame.ticket.length <= 128) {
+        this.tickets.delete(id);
+        take(frame.ticket);
+      }
     } else if (frame.t === "result") {
       const id = frame.id;
       const waiting = typeof id === "number" ? this.pending.get(id) : undefined;
       if (waiting === undefined || typeof id !== "number") {
         return;
       }
+      this.tickets.delete(id);  // an upload refused before its ticket: nothing to send
       this.pending.delete(id);
       clearTimeout(waiting.timer);
       const body = isObject(frame.body) ? frame.body : undefined;
@@ -397,6 +419,88 @@ export class WebSocketTransport implements Transport {
       this.pending.set(id, { resolve, timer });
       this.sendPaced(text);
     });
+  }
+
+  async upload(space: string, name: string, args: JsonObject, file: Blob): Promise<Answer> {
+    if (this.ended || !this.welcomed) {
+      return { ok: false, error: "not_now", local: "Not connected to the game." };
+    }
+    if (file.size === 0) {
+      return { ok: false, error: "invalid_value", local: "The file is empty." };
+    }
+    if (file.size > LIMITS.uploadMax) {
+      return { ok: false, error: "invalid_value", local: "The file is larger than 32 MiB." };
+    }
+    // Its SHA-256, by the browser's own: a secure context alone has it, as this PC's 127.0.0.1 is and a device's home
+    // address over plain HTTP is not (D114), and only this PC may send a file (§7.2 item 18).
+    const subtle = globalThis.crypto?.subtle;
+    if (subtle === undefined) {
+      return { ok: false, error: "not_now", local: "Only on the PC the game runs on." };
+    }
+    let bytes: ArrayBuffer;
+    let sha256: string;
+    try {
+      bytes = await file.arrayBuffer();
+      sha256 = hex(await subtle.digest("SHA-256", bytes));
+    } catch {
+      return { ok: false, error: "internal", local: "The file could not be read." };
+    }
+    if (this.ended || !this.welcomed) {
+      return { ok: false, error: "not_now", local: "Not connected to the game." };
+    }
+    const id = this.nextCmd++;
+    const request: Upload = {
+      v: PROTOCOL.major, t: "upload", space, id, name, args: args as { [key: string]: Json }, size: bytes.byteLength,
+      sha256,
+    };
+    const text = this.frame(request);
+    if (text === null) {
+      return { ok: false, error: "invalid_value", local: "Too long to send." };
+    }
+    return new Promise<Answer>((resolve) => {
+      const timer = setTimeout(() => {
+        this.tickets.delete(id);
+        if (this.pending.delete(id)) {
+          resolve({ ok: false, error: "internal", local: "No answer came." });
+        }
+      }, this.options.uploadTimeout ?? 60000);
+      this.pending.set(id, { resolve, timer });
+      this.tickets.set(id, (ticket) => {
+        if (ticket === null) {
+          return;
+        }
+        void this.post(ticket, bytes).then((refused) => {
+          // A refused POST answers the command unless the space's result came first (the server sends one for a
+          // size or hash that differs, by the command's id).
+          const waiting = refused !== null ? this.pending.get(id) : undefined;
+          if (waiting !== undefined && refused !== null) {
+            this.pending.delete(id);
+            clearTimeout(waiting.timer);
+            waiting.resolve({ ok: false, error: "invalid_value", local: refused });
+          }
+        });
+      });
+      this.sendPaced(text);
+    });
+  }
+
+  // The bytes, with the ticket, to this origin's upload route: null once the server has handed them to the space (202),
+  // else its words.
+  private async post(ticket: string, bytes: ArrayBuffer): Promise<string | null> {
+    try {
+      const fetcher = this.options.fetch ?? ((path: string, init: RequestInit) => fetch(path, init));
+      const response = await fetcher(this.options.uploadPath ?? DEFAULT_UPLOAD_PATH, {
+        method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error", referrerPolicy: "no-referrer",
+        headers: { "Content-Type": "application/octet-stream", "Grace-Upload-Ticket": ticket }, body: bytes,
+      });
+      if (response.status === 202) {
+        return null;
+      }
+      const words = response.text !== undefined ? (await response.text()).trim().slice(0, 200) : "";
+      return words !== "" ? words : "The file did not reach the game.";
+    } catch {
+      return "The file did not reach the game.";
+    }
   }
 
   close(): void {

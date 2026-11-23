@@ -184,6 +184,11 @@ export class FixtureSpace {
     if (!this.data.pages.commands.includes(name)) {
       return refuse("unknown_command");
     }
+    if ((this.data.pages.file_commands ?? []).includes(name)) {
+      // As the server answers a file command sent without its file (G28, D226).
+      return { answer: { ok: false, error: "invalid_value", detail: "This takes a file: add it with its button." },
+               publish: [] };
+    }
     if (IN_GAME_ONLY.has(name)) {
       return refuse("not_now");
     }
@@ -262,6 +267,19 @@ export class FixtureSpace {
       return this.editorCommand(editor.block, editor.part, args);
     }
     return { answer: { ok: true }, publish: [] };  // the space's own commands: accepted, with nothing to show here
+  }
+
+  /** A file command with its file (G28), as the demo space answers it: a roster file's entries counted, one for each
+   * line that starts `name =`; nothing is kept. */
+  handleFile(name: string, _args: JsonObject, text: string): Outcome {
+    if (!this.data.pages.commands.includes(name) || !(this.data.pages.file_commands ?? []).includes(name)) {
+      return refuse("unknown_command");
+    }
+    const added = text.split("\n").filter((line) => /^\s*name\s*=/.test(line)).length;
+    if (added === 0) {
+      return { answer: { ok: false, error: "invalid_value", detail: "No keeper in that file." }, publish: [] };
+    }
+    return { answer: { ok: true, body: { added } }, publish: [] };
   }
 
   // ---- The editor blocks' commands, as a space would answer them (D217): its own checks, a save over a stale revision

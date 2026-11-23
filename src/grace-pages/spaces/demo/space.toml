@@ -351,7 +351,7 @@ actions = [{ id = "order", label = "Order oil", command = "oil.order", tone = "s
 [[page.sections]]
 id = "roster_file"
 title = "From a roster file"
-description = "A harbour roster lists several keepers at once. Drop the file here, or choose it, in the browser view on this PC."
+description = "A harbour roster lists several keepers at once; each keeper it names joins the roster."
 blocks = [{ kind = "upload", command = "keepers.import", submit = "Add a roster file", accept = ".toml, .txt" }]
 
 [[page]]

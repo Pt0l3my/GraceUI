@@ -84,7 +84,7 @@ fill    ground.2      272, 793 1600x124  r4 clip1
 stroke  rule          272, 793 1600x124  r4 w1 clip1
 text    gold          292, 809  138x16   clip1 glyphs 15 "From a roster file"
 text    ink.faint    1842, 809    7x20   clip1 glyphs 1 "-"
-text    ink.mute      292, 829  763x20   clip1 glyphs 92 "A harbour roster lists several keepers at once. Drop the file here, or choose it, in the browser view on this PC."
+text    ink.mute      292, 829  580x20   clip1 glyphs 72 "A harbour roster lists several keepers at once; each keeper it names joins the roster."
 text    ink.mute      292, 869  338x20   clip1 glyphs 40 "Add a roster file: in the browser view on this PC."
 fill    ground.2      272, 933 1600x140  r4 clip1
 stroke  rule          272, 933 1600x140  r4 w1 clip1

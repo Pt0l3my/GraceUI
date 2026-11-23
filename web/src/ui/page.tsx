@@ -21,6 +21,7 @@ import type { PageMaster } from "../protocol.ts";
 import { ConfirmDialog, Modal } from "./modal.tsx";
 import { FormBlock } from "./form.tsx";
 import { EditorBlockView } from "./editor.tsx";
+import { UploadBlock } from "./upload.tsx";
 import { dropDrafts } from "../model/editor.ts";
 
 // The framework topic a space's greyed pages come on (D188): {"greyed": {page: words}, "inactive": words}.
@@ -66,6 +67,8 @@ function Blocks({ space, blocks }: { space: string; blocks: PageBlock[] }) {
         ? <div class="block block--form" key={`f${i}`}><FormBlock space={space} block={block} /></div>
         : block.kind === "editor"
         ? <div class="block block--editor" key={`e${i}`}><EditorBlockView space={space} block={block} /></div>
+        : block.kind === "upload"
+        ? <div class="block block--upload" key={`u${i}`}><UploadBlock space={space} block={block} /></div>
         : (
           <div class="block block--rows" key={`r${i}`}>
             {(block.keys ?? []).map((key) => (
