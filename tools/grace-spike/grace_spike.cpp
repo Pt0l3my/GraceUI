@@ -305,6 +305,8 @@ HANDLE g_fault_report = INVALID_HANDLE_VALUE;  // the report's handle, for the h
 HANDLE g_fault_text = INVALID_HANDLE_VALUE;    // graceui-faults.txt
 using FrameStepFn = std::uint32_t (*)();
 std::atomic<FrameStepFn> g_fault_frame_step{nullptr};
+using HeapGuardFn = std::uint32_t (*)(GraceUiTestHeapGuard*);
+std::atomic<HeapGuardFn> g_fault_heap_guard{nullptr};  // since 0.2.32 (D235); it never waits, so the handler may call it
 std::atomic<bool> g_fault_busy{false};
 std::atomic<std::uint32_t> g_fault_lines{0};
 constexpr std::uint32_t kFaultLines = 64;
@@ -359,11 +361,56 @@ int frames_of(const CONTEXT& faulting, std::uintptr_t (&frames)[kFrames]) {
 // free or allocation that found it. ntstatus.h, which names it, is not included beside windows.h.
 constexpr DWORD kHeapCorruption = 0xC0000374;
 
+// An address as the report names it (the module's kind and an offset) and as graceui-faults.txt does (its file name).
+void put_site(Text& line, Text& text, std::uintptr_t address) {
+  const ModuleSpan* span = module_at(address);
+  if (address < 0x10000) {
+    line.put("null+");
+    line.hex(address);
+    text.put("the null page+");
+    text.hex(address);
+  } else if (span == nullptr) {
+    line.put("unknown");
+    text.put("no module (");
+    text.hex(address);
+    text.put(")");
+  } else {
+    line.put(module_word(span->kind));
+    line.put("+");
+    line.hex(address - span->base);
+    text.put(span->name);
+    text.put("+");
+    text.hex(address - span->base);
+  }
+}
+
+const char* breach_word(std::uint32_t breach) {
+  switch (breach) {
+    case 1: return "before_start";
+    case 2: return "past_end";
+    case 3: return "after_free";
+    case 4: return "freed_twice";
+    case 5: return "not_ours";
+    default: return "none";
+  }
+}
+
+const char* breach_text(std::uint32_t breach) {
+  switch (breach) {
+    case 1: return "written before its start";
+    case 2: return "written past its end";
+    case 3: return "written after its free";
+    case 4: return "freed twice";
+    case 5: return "not a block of the guard's";
+    default: return "none";
+  }
+}
+
 LONG CALLBACK on_fault(EXCEPTION_POINTERS* pointers) {
   const DWORD code = pointers->ExceptionRecord->ExceptionCode;
   if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION &&
       code != EXCEPTION_PRIV_INSTRUCTION && code != EXCEPTION_IN_PAGE_ERROR && code != EXCEPTION_INT_DIVIDE_BY_ZERO &&
-      code != kHeapCorruption) {
+      code != kHeapCorruption && code != GRACEUI_TEST_HEAP_GUARD_BREACH) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
   if (g_fault_lines.load(std::memory_order_relaxed) >= kFaultLines || g_fault_busy.exchange(true)) {
@@ -419,31 +466,48 @@ LONG CALLBACK on_fault(EXCEPTION_POINTERS* pointers) {
     text.number(GetCurrentThreadId());
     text.put("\n");
     for (int i = 0; i < count; ++i) {
-      const ModuleSpan* span = module_at(frames[i]);
       line.put(i == 0 ? "\"" : ",\"");
       text.put("  at ");
-      if (frames[i] < 0x10000) {
-        line.put("null+");
-        line.hex(frames[i]);
-        text.put("the null page+");
-        text.hex(frames[i]);
-      } else if (span == nullptr) {
-        line.put("unknown");
-        text.put("no module (");
-        text.hex(frames[i]);
-        text.put(")");
-      } else {
-        line.put(module_word(span->kind));
-        line.put("+");
-        line.hex(frames[i] - span->base);
-        text.put(span->name);
-        text.put("+");
-        text.hex(frames[i] - span->base);
-      }
+      put_site(line, text, frames[i]);
       line.put("\"");
       text.put("\n");
     }
-    line.put("]}\n");
+    line.put("]");
+    // D235: the heap guard's breach, its block and the code that made it (the frames above found it).
+    const HeapGuardFn guard_of = g_fault_heap_guard.load(std::memory_order_acquire);
+    GraceUiTestHeapGuard guard{};
+    guard.size = sizeof guard;
+    if (code == GRACEUI_TEST_HEAP_GUARD_BREACH && guard_of != nullptr && guard_of(&guard) != 0 &&
+        guard.breach.breach != 0) {
+      line.put(",\"heap_guard\":{\"breach\":\"");
+      line.put(breach_word(guard.breach.breach));
+      line.put("\",\"size\":");
+      line.number(guard.breach.size);
+      line.put(",\"block\":");
+      line.number(guard.breach.serial);
+      line.put(",\"made_at\":[");
+      text.put("  heap guard: a block ");
+      text.put(breach_text(guard.breach.breach));
+      text.put(", ");
+      text.number(guard.breach.size);
+      text.put(" bytes (block ");
+      text.number(guard.breach.serial);
+      text.put(")\n");
+      bool first = true;
+      for (const std::uint64_t maker : guard.breach.maker) {
+        if (maker == 0) {
+          continue;
+        }
+        line.put(first ? "\"" : ",\"");
+        text.put("  made at ");
+        put_site(line, text, static_cast<std::uintptr_t>(maker));
+        line.put("\"");
+        text.put("\n");
+        first = false;
+      }
+      line.put("]}");
+    }
+    line.put("}\n");
     write_text(g_fault_report, line);
     write_text(g_fault_text, text);
   }
@@ -578,6 +642,8 @@ struct Counters {
   GetStep frame_step = nullptr;      // since 0.2.27 (D230), as init_step
   GetCount log_count = nullptr;      // since 0.2.27 (D230): GraceUI's log, copied beside the report
   GetNumbered log_number = nullptr;
+  using GetHeapGuard = std::uint32_t (*)(GraceUiTestHeapGuard*);
+  GetHeapGuard heap_guard = nullptr;  // since 0.2.32 (D235): the heap guard's counts and breach, as init_step
   GetInput input = nullptr;
   GetMenu menu = nullptr;
   GetCosts costs = nullptr;
@@ -593,6 +659,7 @@ struct Counters {
     frame_step = export_of<GetStep>(module, "GraceUI_Test_FrameStep");
     log_count = export_of<GetCount>(module, "GraceUI_Test_LogCount");
     log_number = export_of<GetNumbered>(module, "GraceUI_Test_GetLogNumber");
+    heap_guard = export_of<GetHeapGuard>(module, "GraceUI_Test_GetHeapGuard");
     return state != nullptr && input != nullptr && menu != nullptr && costs != nullptr && setting != nullptr;
   }
   GraceUiTestState read_state() const {
@@ -783,6 +850,17 @@ void write_state(const Report& report, const Counters& counters) {
       .num("own_p50_us", cost.own_p50_us)
       .num("own_p99_us", cost.own_p99_us)
       .num("detour_p99_us", cost.detour_p99_us);
+  if (counters.heap_guard != nullptr) {
+    GraceUiTestHeapGuard guard{};
+    guard.size = sizeof guard;
+    if (counters.heap_guard(&guard) != 0) {
+      // D235: live blocks and bytes, kept after their free, damaged, whole checks and breaches (0s when not read).
+      line.nums("heap", {guard.live_blocks, guard.live_bytes, guard.quarantined_blocks, guard.damaged_blocks,
+                         guard.checks, guard.breaches})
+          .num("heap_read", guard.stats_read)
+          .word("heap_breach", breach_word(guard.breach.breach));
+    }
+  }
   report.write(line);
 }
 
@@ -918,6 +996,7 @@ DWORD WINAPI spike_worker(LPVOID) {
   const bool test_build = api && counters.bind(found.module);
   if (test_build) {
     g_fault_frame_step.store(counters.frame_step, std::memory_order_release);  // D231
+    g_fault_heap_guard.store(counters.heap_guard, std::memory_order_release);  // D235
   }
   std::uint64_t standin_presents = 0;
   Line header("header");

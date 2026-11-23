@@ -229,9 +229,28 @@ def judge(path, hand):
     verdict = FAILED if FAILED in results else "incomplete" if NOT_MEASURED in needed else PASSED
     # The faults the observer recorded (D231): listed, never judged, since a game's own first-chance faults are no
     # failure of a run; a run that fell has its last one among them. The modules' names are in graceui-faults.txt.
-    faults = [{"code": f.get("code"), "access": f.get("access"), "null_target": f.get("null_target"),
-               "frame_step": f.get("frame_step"), "at": f.get("at", [])} for f in of(lines, "fault")]
-    return {"run": path.parent.name, "spike": spike, "verdict": verdict, "rules": rules, "faults": faults}
+    faults = []
+    for f in of(lines, "fault"):
+        fault = {"code": f.get("code"), "access": f.get("access"), "null_target": f.get("null_target"),
+                 "frame_step": f.get("frame_step"), "at": f.get("at", [])}
+        if isinstance(f.get("heap_guard"), dict):  # D235: the guard's breach, its block and the code that made it
+            guard = f["heap_guard"]
+            fault["heap_guard"] = {"breach": guard.get("breach"), "size": guard.get("size"),
+                                   "block": guard.get("block"), "made_at": guard.get("made_at", [])}
+        faults.append(fault)
+    return {"run": path.parent.name, "spike": spike, "verdict": verdict, "rules": rules, "faults": faults,
+            "heap_guard": heap_guard_of(states)}
+
+
+def heap_guard_of(states):
+    """The heap guard's counts at the run's last state line that read them (D235), or None from a build without it.
+    Listed, never judged: a breach ends the run, and its fault line says where."""
+    for s in reversed(states):
+        heap = s.get("heap")
+        if isinstance(heap, list) and len(heap) == 6 and s.get("heap_read", 1) == 1:
+            return {"live_blocks": heap[0], "live_bytes": heap[1], "kept": heap[2], "damaged": heap[3],
+                    "checks": heap[4], "breaches": heap[5], "breach": s.get("heap_breach", "none")}
+    return None
 
 
 def reports_in(paths):
@@ -278,11 +297,20 @@ def run(argv):
             for r in verdict["rules"]:
                 tag = " (if you have one)" if r["optional"] else ""
                 print(f"  {r['rule']}: {r['result']}{tag}: {r['detail']}")
+            guard = verdict["heap_guard"]
+            if guard is not None:
+                print(f"  heap guard (recorded, not judged): {guard['checks']} whole checks; at the last state line "
+                      f"{guard['live_blocks']} live blocks ({guard['live_bytes']} bytes), {guard['kept']} kept after "
+                      f"their free, {guard['damaged']} damaged; breach: {guard['breach']}")
             for f in verdict["faults"]:
                 code = f["code"] if isinstance(f["code"], int) else 0
                 print(f"  fault (recorded, not judged): {code:#x}, {f['access']}"
                       f"{' of the null page' if f['null_target'] else ''}, frame_step {f['frame_step']}, "
                       f"at {', '.join(str(a) for a in f['at'][:6])}")
+                if "heap_guard" in f:
+                    g = f["heap_guard"]
+                    print(f"    heap guard: {g['breach']}, a block of {g['size']} bytes (block {g['block']}), "
+                          f"made at {', '.join(str(a) for a in g['made_at'])}")
     return 1 if any(v["verdict"] == FAILED for v in runs) else 0
 
 

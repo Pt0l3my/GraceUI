@@ -255,6 +255,15 @@ that port; unset, on the port in GraceUI's settings, as a release build does. Gr
 by it, and `GraceUI_Test_GetServer` gives the port in use, so that two trees running GraceUI's cases at once need not
 share 8642. The harness's free-port scenario checks it.
 
+A test build guards every heap block of graceui.dll's own (D235, `src/grace-guard`): its operator new and delete and
+Dear ImGui's allocator go through the guard, which puts 16 bytes of a known value before and after each block, keeps a
+freed block (filled with another) in a quarantine of 4096 blocks and 64 MiB, and checks each block when it is freed,
+when it leaves the quarantine, and every `GRACEUI_TEST_HEAP_CHECK_MS` on GraceUI's thread (100 to 600000; 5000 by
+default). A breach is logged, recorded for `GraceUI_Test_GetHeapGuard`, and raised as `GRACEUI_TEST_HEAP_GUARD_BREACH`
+(`0xE0475548`), which a handler of GraceUI's own, last in the process's list, ends the process with; the spike
+observer's recorder, first in it, writes it down before. A release build has none of it. The harness's heap-guard
+scenario makes each kind of breach on purpose; every other scenario runs with the guard on.
+
 ```sh
 cmake -S . -B build-cl-test -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/clang-cl-xwin.cmake -DCMAKE_BUILD_TYPE=Release \
   -DGRACEUI_TEST_EXPORTS=ON

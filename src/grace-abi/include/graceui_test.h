@@ -370,6 +370,53 @@ typedef struct GraceUiTestServer {
 /* Fills *out (out->size set by the caller); answers 1, or 0 if the size is too small. */
 GRACEUI_API uint32_t GraceUI_Test_GetServer(GraceUiTestServer* out);
 
+/* The heap guard (D235): every block graceui.dll's own code makes, through its operator new and Dear ImGui's
+ * allocator, has guards before and after it and is kept a while after its free; each block is checked when freed,
+ * when it leaves that quarantine, and every check_period_ms on GraceUI's thread (GRACEUI_TEST_HEAP_CHECK_MS in the
+ * process's environment: 100 to 600000, 5000 by default). A breach is logged and raised as this exception, which a
+ * handler of GraceUI's own, last in the process's list, ends the process with; handlers before it see it first. Its
+ * two parameters are the breach's kind and the block's size. */
+#define GRACEUI_TEST_HEAP_GUARD_BREACH 0xE0475548u
+
+/* A breach: 1 written before its start, 2 written past its end, 3 written after its free, 4 freed twice, 5 not a
+ * block of the guard's (then nothing of the block is known); 0 none. */
+typedef struct GraceUiTestHeapFound {
+  uint32_t breach;
+  uint32_t reserved;
+  uint64_t size;      /* the block's size, as asked */
+  uint64_t serial;    /* its number among the guard's blocks, from 1 */
+  uint64_t maker[3];  /* the code that made it: the caller of operator new (or of Dear ImGui's allocator), and the two
+                       * frames above it, as addresses (0 where not read) */
+} GraceUiTestHeapFound;
+
+typedef struct GraceUiTestHeapGuard {
+  uint32_t size;        /* set by the caller to sizeof(GraceUiTestHeapGuard) */
+  uint32_t stats_read;  /* 1 if the counts below were read; 0 when another thread held the guard at that moment */
+  uint32_t check_period_ms;
+  uint32_t reserved;
+  uint64_t live_blocks;
+  uint64_t live_bytes;
+  uint64_t quarantined_blocks;
+  uint64_t quarantined_bytes;
+  uint64_t damaged_blocks; /* kept for good after a breach, never freed */
+  uint64_t made;           /* blocks made since graceui.dll was loaded */
+  uint64_t checks;         /* whole checks finished */
+  uint64_t blocks_checked;
+  uint64_t breaches;
+  uint64_t last_check_ms;     /* GetTickCount64 at the last whole check on GraceUI's thread, 0 before the first */
+  GraceUiTestHeapFound breach; /* the session's first breach, the one raised */
+  GraceUiTestHeapFound probe;  /* the last probe's (GraceUI_Test_HeapGuardProbe) */
+} GraceUiTestHeapGuard;
+
+/* Fills *out (out->size set by the caller); answers 1, or 0 if the size is too small. It never waits, so an exception
+ * handler may call it. */
+GRACEUI_API uint32_t GraceUI_Test_GetHeapGuard(GraceUiTestHeapGuard* out);
+
+/* Makes a breach of the kind given (1 to 5) with a block of 24 bytes of the guard's own and answers the breach the
+ * guard found (0 if none): recorded as the probe's and not raised, unless raise is 1, when it ends the process as a real
+ * breach does. */
+GRACEUI_API uint32_t GraceUI_Test_HeapGuardProbe(uint32_t kind, uint32_t raise);
+
 #ifdef __cplusplus
 }
 #endif

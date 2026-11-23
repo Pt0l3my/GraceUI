@@ -161,6 +161,21 @@ GRACEUI_API uint32_t GraceUI_Test_GetServer(GraceUiTestServer* out) {
   }
 }
 
+GRACEUI_API uint32_t GraceUI_Test_GetHeapGuard(GraceUiTestHeapGuard* out) {
+  if (out == nullptr || out->size < sizeof(GraceUiTestHeapGuard)) {
+    return 0;
+  }
+  const uint32_t size = out->size;
+  *out = GraceUiTestHeapGuard{};
+  out->size = size;
+  grace::host::test_fill_heap_guard(*out);  // noexcept, and waits for nothing
+  return 1;
+}
+
+GRACEUI_API uint32_t GraceUI_Test_HeapGuardProbe(uint32_t kind, uint32_t raise) {
+  return grace::host::test_heap_guard_probe(kind, raise);
+}
+
 GRACEUI_API uint32_t GraceUI_Test_GetSetting(const char* key, char* out, uint32_t capacity) {
   try {
     return grace::host::test_copy_setting(key, out, capacity);

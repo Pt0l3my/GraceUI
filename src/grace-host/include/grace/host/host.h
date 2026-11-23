@@ -152,6 +152,8 @@ void test_set_network_addresses(const std::uint8_t* addresses, std::uint32_t cou
 std::uint32_t test_init_step() noexcept;
 std::uint32_t test_frame_step() noexcept;  // D230
 void test_fill_server(GraceUiTestServer& out) noexcept;
+void test_fill_heap_guard(GraceUiTestHeapGuard& out) noexcept;                // D235
+std::uint32_t test_heap_guard_probe(std::uint32_t kind, std::uint32_t raise) noexcept;
 #endif
 
 }  // namespace grace::host

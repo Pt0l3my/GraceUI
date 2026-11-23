@@ -60,7 +60,9 @@ code that met them. **GraceUI 0.2.29** moves the menu's pointer by the mouse's o
 cursor at the centre for its camera no longer pulls the pointer back. **GraceUI 0.2.30** keeps the menu open across an
 Alt+Tab, letting go of the mouse and keys while the player is away and taking them again on return, and Tab no longer
 moves between elements in game. **GraceUI 0.2.31**'s test build can serve the browser view on a free port of the system's
-(`GRACEUI_TEST_PORT=free`), and grace-dev's dump draws a master list's chosen row. Hotkeys and the log are declared for the increments
+(`GRACEUI_TEST_PORT=free`), and grace-dev's dump draws a master list's chosen row. **GraceUI 0.2.32**'s test build
+guards its own heap blocks and names the code that made a damaged one, for the crashes seen at a game's quit. Hotkeys
+and the log are declared for the increments
 that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the

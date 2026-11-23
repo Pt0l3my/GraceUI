@@ -27,6 +27,7 @@
 #include "anticheat.h"
 #include "counters.h"
 #include "draw.h"
+#include "draw_alloc.h"
 #include "draw_atlas.h"
 #include "grace/abi/spin.h"
 #include "grace/abi/text.h"
@@ -101,6 +102,9 @@ Copy first_request() noexcept {
   // The mutex's handle stays open for the life of the process: it is never closed.
   log_line("GraceUI %u.%u.%u starting (ABI 1.%u, a preview)", GRACEUI_BUILD_MAJOR, GRACEUI_BUILD_MINOR,
            GRACEUI_BUILD_PATCH, GRACEUI_ABI1_MINOR);
+#if defined(GRACEUI_TEST_EXPORTS)
+  draw_alloc::begin_guard();  // D235: its period read, and the handler that ends a run on a breach added
+#endif
   // The panels, the textures and faces, and the providers' claims, made here before any table is returned, so that the
   // present thread never makes them (invariant 10).
   try {
@@ -347,6 +351,12 @@ void test_fill_server(GraceUiTestServer& out) noexcept {
   out.spaces = view.spaces;
   out.pending = view.pending;
   out.failed = view.failed;
+}
+
+void test_fill_heap_guard(GraceUiTestHeapGuard& out) noexcept { draw_alloc::fill_heap_guard(out); }
+
+std::uint32_t test_heap_guard_probe(std::uint32_t kind, std::uint32_t raise) noexcept {
+  return draw_alloc::heap_guard_probe(kind, raise);
 }
 
 std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capacity) noexcept {

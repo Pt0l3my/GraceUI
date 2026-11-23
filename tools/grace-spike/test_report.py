@@ -146,6 +146,22 @@ class Reader(unittest.TestCase):
                                               "at": ["null+0x0", "other+0x1a2b", "graceui+0x40"]}])
         self.assertEqual(clean["faults"], [])
 
+    def test_a_heap_guard_breach_is_listed_with_its_maker(self):  # D235
+        breach = {"report": "graceui_spike", "schema": 1, "t": 9, "k": "fault", "code": 0xE0475548, "access": "none",
+                  "null_target": 0, "frame_step": 11, "thread": 7, "at": ["kernel+0x13f07", "graceui+0x4f5e"],
+                  "heap_guard": {"breach": "past_end", "size": 24, "block": 4163,
+                                 "made_at": ["graceui+0x5161", "eldennet+0x68dc"]}}
+        lines = [header("s0e"), state(heap=[1200, 9900000, 4096, 0, 40, 0], heap_read=1, heap_breach="none"),
+                 state(heap=[0, 0, 0, 0, 0, 0], heap_read=0, heap_breach="none"), breach]
+        verdict = report.judge(self.write("s0e-h", lines), {})
+        self.assertEqual(verdict["faults"][0]["heap_guard"],
+                         {"breach": "past_end", "size": 24, "block": 4163, "made_at": ["graceui+0x5161", "eldennet+0x68dc"]})
+        # The last state line that read the counts; one that could not (the guard held at that moment) is passed over.
+        self.assertEqual(verdict["heap_guard"], {"live_blocks": 1200, "live_bytes": 9900000, "kept": 4096, "damaged": 0,
+                                                 "checks": 40, "breaches": 0, "breach": "none"})
+        older = report.judge(self.write("s0e-i", [header("s0e"), state()]), {})
+        self.assertIsNone(older["heap_guard"])
+
     def test_the_atlas_at_150_is_judged_against_its_limit(self):
         lines = [header("s4"), state(ui_scale_x100=150, atlas=[4096, 8192]), typing(), state()]
         self.assertEqual(self.results(report.judge(self.write("s4-1", lines), {}))["atlas_150"], "failed")

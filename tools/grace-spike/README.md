@@ -92,3 +92,14 @@ records faults, never handling one: a `fault` line in the report for each access
 heap's corruption or the like, with the faulting thread's frames as fixed words and offsets, and `graceui-faults.txt` beside it with the
 modules' file names; a run that fell has its last fault there. The game's own routine faults show up too, once each:
 `report.py` lists them and judges none.
+
+Since GraceUI 0.2.32 (D235) a test build guards its own heap blocks: every block graceui.dll's own code makes has
+guard bytes before and after it and is kept a while after its free, and each is checked when freed, when it leaves
+that quarantine, and every 5 s on GraceUI's thread (`GRACEUI_TEST_HEAP_CHECK_MS`, 100 to 600000, changes it). Each
+state line carries the guard's counts (`heap`: live blocks, their bytes, blocks kept after their free, damaged blocks,
+whole checks, breaches; `heap_breach`). A breach ends the run with `0xE0475548`, the guard's own code (Wine shows a
+fail-fast's code instead): its `fault` line carries `heap_guard`, the breach (`before_start`, `past_end`,
+`after_free`, `freed_twice` or `not_ours`), the block's size and number, and `made_at`, the code that made the block,
+as offsets; the frames above it say where the breach was found. An offset in graceui.dll is placed with the build's
+own `graceui.pdb` (`llvm-symbolizer --obj=graceui.dll --relative-address 0x5161`): keep the PDB of the build you ship.
+A quit's crash with no `heap_guard` line means no block of GraceUI's own was found damaged.

@@ -785,6 +785,8 @@ struct GraceUi {
   decltype(&GraceUI_Test_MenuShows) menu_shows = nullptr;
   decltype(&GraceUI_Test_InitStep) init_step = nullptr;
   decltype(&GraceUI_Test_GetServer) get_server = nullptr;
+  decltype(&GraceUI_Test_GetHeapGuard) get_heap_guard = nullptr;      // D235
+  decltype(&GraceUI_Test_HeapGuardProbe) heap_guard_probe = nullptr;
   decltype(&GraceUI_Test_GetPairingCode) get_pairing_code = nullptr;
   decltype(&GraceUI_Test_SetNetworkAddresses) set_network_addresses = nullptr;
 
@@ -838,9 +840,11 @@ struct GraceUi {
     menu_shows = function_of<decltype(menu_shows)>(module, "GraceUI_Test_MenuShows");
     init_step = function_of<decltype(init_step)>(module, "GraceUI_Test_InitStep");
     get_server = function_of<decltype(get_server)>(module, "GraceUI_Test_GetServer");
+    get_heap_guard = function_of<decltype(get_heap_guard)>(module, "GraceUI_Test_GetHeapGuard");
+    heap_guard_probe = function_of<decltype(heap_guard_probe)>(module, "GraceUI_Test_HeapGuardProbe");
     get_pairing_code = function_of<decltype(get_pairing_code)>(module, "GraceUI_Test_GetPairingCode");
     set_network_addresses = function_of<decltype(set_network_addresses)>(module, "GraceUI_Test_SetNetworkAddresses");
-    return get_server != nullptr && get_pairing_code != nullptr && set_network_addresses != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
+    return get_server != nullptr && get_heap_guard != nullptr && heap_guard_probe != nullptr && get_pairing_code != nullptr && set_network_addresses != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
            get_menu_bounds != nullptr && set_anti_cheat_recheck != nullptr && menu_shows != nullptr && init_step != nullptr &&
            panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
@@ -903,6 +907,15 @@ struct GraceUi {
     out.size = sizeof out;
     if (get_server(&out) == 0) {
       fatal("GraceUI_Test_GetServer refused");
+    }
+    return out;
+  }
+
+  GraceUiTestHeapGuard heap_guard() const {
+    GraceUiTestHeapGuard out{};
+    out.size = sizeof out;
+    if (get_heap_guard(&out) == 0) {
+      fatal("GraceUI_Test_GetHeapGuard refused");
     }
     return out;
   }
@@ -4300,6 +4313,129 @@ SpaceEvent wait_space(Game& game, const GraceUiApi1* table, GraceUiConsumer mod,
 
 // A test build's free port (D234): with GRACEUI_TEST_PORT=free the browser view is served on a port the system gave,
 // not the settings' 8642, and the page loads there; GraceUI's settings file is not changed.
+// ---- D235: the test build's heap guard. GraceUI's own blocks are guarded from the DLL's load and checked on GraceUI's
+// thread; each kind of breach a probe makes is found and recorded (not raised), with its block's size and a maker in
+// graceui.dll, and GraceUI goes on drawing. A breach that is not a probe's ends its process: a handler first in the
+// process's list (as the spike observer's recorder is) sees it first, and without one GraceUI's own ends the run.
+bool in_module(std::uint64_t address, HMODULE module) {
+  HMODULE found = nullptr;
+  // SAFETY: an address given as a number, read by GetModuleHandleExW only to find the module it lies in.
+  return address != 0 &&
+         GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(static_cast<std::uintptr_t>(address)), &found) &&
+         found == module;
+}
+
+std::wstring this_program();
+int run_child(const std::wstring& dll, const wchar_t* scenario, std::wstring program);
+
+void run_heap_guard(const std::wstring& dll) {
+  SetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_CHECK_MS", L"200");
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  frames(game, 5);
+  GraceUiTestHeapGuard on = grace.heap_guard();
+  for (int i = 0; i < 150 && (on.checks < 2 || on.stats_read == 0); ++i) {
+    frames(game, 1);
+    Sleep(20);
+    on = grace.heap_guard();
+  }
+  check(on.stats_read == 1 && on.check_period_ms == 200 && on.made > 0 && on.live_blocks > 0 && on.checks >= 2 &&
+            on.blocks_checked > 0 && on.breaches == 0 && on.breach.breach == 0 && on.last_check_ms != 0,
+        "heap guard: GraceUI's own blocks guarded and checked",
+        "%llu blocks made, %llu live (%llu bytes), %llu kept after their free; %llu whole checks every %u ms, over "
+        "%llu blocks; %llu breaches",
+        static_cast<unsigned long long>(on.made), static_cast<unsigned long long>(on.live_blocks),
+        static_cast<unsigned long long>(on.live_bytes), static_cast<unsigned long long>(on.quarantined_blocks),
+        static_cast<unsigned long long>(on.checks), on.check_period_ms,
+        static_cast<unsigned long long>(on.blocks_checked), static_cast<unsigned long long>(on.breaches));
+
+  struct Kind {
+    std::uint32_t kind;
+    const char* name;
+    std::uint64_t size;
+  };
+  const Kind kinds[] = {{1, "written before its start", 24}, {2, "written past its end", 24},
+                        {3, "written after its free", 24},   {4, "freed twice", 24},
+                        {5, "not a block of the guard's", 0}};
+  const std::uint64_t presents = grace.state().presents;
+  bool found_each = true;
+  std::string detail;
+  for (const Kind& k : kinds) {
+    const std::uint32_t found = grace.heap_guard_probe(k.kind, 0);
+    const GraceUiTestHeapGuard after = grace.heap_guard();
+    const bool maker = k.kind == 5 ? after.probe.maker[0] == 0 : in_module(after.probe.maker[0], grace.module);
+    const bool sound = found == k.kind && after.probe.breach == k.kind && after.probe.size == k.size && maker &&
+                       after.breach.breach == 0;
+    found_each = found_each && sound;
+    char line[160];
+    std::snprintf(line, sizeof line, "%s%s: %s (%llu bytes, made %s)", detail.empty() ? "" : "; ", k.name,
+                  sound ? "found" : "NOT FOUND AS IT SHOULD BE", static_cast<unsigned long long>(after.probe.size),
+                  k.kind == 5 ? "by none" : maker ? "in graceui.dll" : "ELSEWHERE");
+    detail += line;
+  }
+  // GraceUI goes on: the game presents through its detour, and its thread checks every block again.
+  const std::uint64_t checks = grace.heap_guard().checks;
+  GraceUiTestHeapGuard later = grace.heap_guard();
+  for (int i = 0; i < 150 && later.checks < checks + 2; ++i) {
+    frames(game, 1);
+    Sleep(20);
+    later = grace.heap_guard();
+  }
+  const std::uint64_t presents_after = grace.state().presents;
+  check(found_each && presents_after > presents && later.checks >= checks + 2 && later.breach.breach == 0,
+        "heap guard: each kind of breach found, with its block",
+        "%s; then %llu presents through GraceUI's detour and %llu more whole checks, the session's breach none",
+        detail.c_str(), static_cast<unsigned long long>(presents_after - presents),
+        static_cast<unsigned long long>(later.checks - checks));
+  SetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_CHECK_MS", nullptr);
+
+  for (const wchar_t* child : {L"heap-guard-seen", L"heap-guard-end"}) {
+    std::fflush(stdout);
+    const auto status = static_cast<DWORD>(run_child(dll, child, this_program()));
+    const bool seen = std::wcscmp(child, L"heap-guard-seen") == 0;
+    // GraceUI's own handler fails fast; Wine's RaiseFailFastException ends a process with STATUS_FAIL_FAST_EXCEPTION.
+    const bool ended = status == GRACEUI_TEST_HEAP_GUARD_BREACH || (!seen && status == 0xC0000602u);
+    check(ended, seen ? "heap guard: a breach seen first by a handler before GraceUI's"
+                      : "heap guard: a breach ends its process, by GraceUI's own handler",
+          "its process ended with %#lx%s", static_cast<unsigned long>(status),
+          status == GRACEUI_TEST_HEAP_GUARD_BREACH ? " (the guard's code)"
+          : status == 0xC0000602u                  ? " (a fail-fast)"
+                                                   : " (NOT A BREACH'S END)");
+  }
+}
+
+// The first handler in the list, as the spike observer's recorder is: it sees the breach and ends the process with its
+// code, so that the harness knows it was seen before GraceUI's own handler.
+LONG CALLBACK harness_sees_breach(EXCEPTION_POINTERS* pointers) {
+  if (pointers->ExceptionRecord->ExceptionCode == GRACEUI_TEST_HEAP_GUARD_BREACH) {
+    TerminateProcess(GetCurrentProcess(), GRACEUI_TEST_HEAP_GUARD_BREACH);
+  }
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void run_heap_guard_child(const std::wstring& dll, bool seen) {
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  if (grace.request_api(1) == nullptr) {  // the first request: the guard's own handler is added, last
+    fatal("GraceUI_RequestApi(1) answered null");
+  }
+  if (seen) {
+    AddVectoredExceptionHandler(1, &harness_sees_breach);
+  }
+  grace.heap_guard_probe(2, 1);  // a breach raised as a real one: it never returns
+  std::printf("FAIL heap guard: a raised breach returned\n");
+  std::fflush(stdout);
+  ExitProcess(3);
+}
+
 void run_free_port(const std::wstring& dll) {
   namespace io = grace::serve::iotest;
   SetEnvironmentVariableW(L"GRACEUI_TEST_PORT", L"free");
@@ -4908,6 +5044,75 @@ std::string lower_text(std::string text) {
     c = c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
   }
   return text;
+}
+
+// ---- D235's breach in the spike observer's report: a child process with GraceUI and the observer raises a probe's
+// breach for real; the observer's recorder, first in the list, writes the fault with the guard's record, and GraceUI's
+// own handler ends the process. The parent reads what the child left.
+std::wstring heap_guard_spike_folder() { return folder_of_this_program() + L"spike-guard\\s4-1"; }
+
+void run_heap_guard_spike(const std::wstring& dll) {
+  using grace::protocol::Json;
+  const std::wstring folder = heap_guard_spike_folder();
+  const std::wstring path = folder + L"\\" + GRACE_SPIKE_FILE;
+  SetEnvironmentVariableW(GRACE_SPIKE_DIR_VARIABLE, folder.c_str());
+  SetEnvironmentVariableW(L"GRACE_SPIKE_STATE_MS", L"300");
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  if (!load_spike_tools(game)) {
+    fatal("grace-spike.dll or the stand-in did not load");
+  }
+  for (int i = 0; i < 600 && lines_of(read_report(path), "state").size() < 2; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  grace.heap_guard_probe(2, 1);  // never returns
+  std::printf("FAIL heap guard: a raised breach returned\n");
+  std::fflush(stdout);
+  ExitProcess(3);
+}
+
+void run_heap_guard_observer(const std::wstring& dll) {
+  using grace::protocol::Json;
+  const std::wstring parent = folder_of_this_program() + L"spike-guard";
+  const std::wstring folder = heap_guard_spike_folder();
+  CreateDirectoryW(parent.c_str(), nullptr);
+  DeleteFileW((folder + L"\\" + GRACE_SPIKE_FILE).c_str());
+  DeleteFileW((folder + L"\\" + GRACE_SPIKE_LOG_FILE).c_str());
+  DeleteFileW((folder + L"\\" + GRACE_SPIKE_FAULT_FILE).c_str());
+  std::fflush(stdout);
+  const auto status = static_cast<DWORD>(run_child(dll, L"heap-guard-spike", this_program()));
+  const std::vector<Json> report = read_report(folder + L"\\" + GRACE_SPIKE_FILE);
+  const std::vector<Json> faults = lines_of(report, "fault");
+  const std::vector<Json> states = lines_of(report, "state");
+  const Json fault = faults.empty() ? Json::object() : faults.back();
+  const Json guard = fault.contains("heap_guard") ? fault["heap_guard"] : Json::object();
+  bool made_ours = false;
+  if (guard.contains("made_at") && guard["made_at"].is_array() && !guard["made_at"].empty() &&
+      guard["made_at"][0].is_string()) {
+    made_ours = guard["made_at"][0].get<std::string>().rfind("graceui+", 0) == 0;
+  }
+  bool counted = false;
+  if (!states.empty() && states.back().contains("heap") && states.back()["heap"].is_array() &&
+      states.back()["heap"].size() == 6) {
+    counted = states.back()["heap"][0].get<std::uint64_t>() > 0 && states.back().value("heap_breach", "") == "none";
+  }
+  const std::string text = lower_text(read_text(folder + L"\\" + GRACE_SPIKE_FAULT_FILE));
+  const bool ended = status == GRACEUI_TEST_HEAP_GUARD_BREACH || status == 0xC0000602u;  // Wine's fail-fast
+  check(ended && fault.value("code", std::uint64_t{0}) == GRACEUI_TEST_HEAP_GUARD_BREACH &&
+            guard.value("breach", std::string()) == "past_end" && guard.value("size", std::uint64_t{0}) == 24 &&
+            made_ours && counted && text.find("heap guard: a block written past its end, 24 bytes") != std::string::npos &&
+            text.find("made at graceui.dll+0x") != std::string::npos,
+        "heap guard: a breach in the spike observer's report",
+        "the process ended with %#lx; its fault line: %s; the state lines %s the guard's counts; the text file %s",
+        static_cast<unsigned long>(status), fault.dump().c_str(), counted ? "carry" : "DO NOT CARRY",
+        text.find("made at graceui.dll+0x") != std::string::npos ? "names the maker in graceui.dll"
+                                                                  : "DOES NOT NAME THE MAKER");
 }
 
 void run_spike(const std::wstring& dll, bool tools_first) {
@@ -8857,6 +9062,16 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"free-port") {
     std::printf("-- scenario: a test build's free port for the browser view (D234)\n");
     run_free_port(dll);
+  } else if (scenario == L"heap-guard") {
+    std::printf("-- scenario: the test build's heap guard (D235)\n");
+    run_heap_guard(dll);
+    run_heap_guard_observer(dll);
+  } else if (scenario == L"heap-guard-spike") {
+    run_heap_guard_spike(dll);
+  } else if (scenario == L"heap-guard-seen") {
+    run_heap_guard_child(dll, true);
+  } else if (scenario == L"heap-guard-end") {
+    run_heap_guard_child(dll, false);
   } else if (scenario == L"pairing") {
     std::printf("-- scenario: another device at home, paired with a code shown in game (G9)\n");
     run_pairing(dll);
@@ -8920,7 +9135,7 @@ int wmain(int argc, wchar_t** argv) {
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
             L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
-            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake"}) {
+            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake", L"heap-guard"}) {
         run(child_scenario, dll, this_program());
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.
