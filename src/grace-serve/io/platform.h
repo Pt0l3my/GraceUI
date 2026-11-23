@@ -66,6 +66,7 @@ struct Accepted {
   Socket socket;
   bool loopback = false;  // the peer is a loopback address (127.0.0.0/8 or ::1)
   bool exact = false;     // the peer is exactly 127.0.0.1 or ::1 (item 3)
+  bool home = false;      // a private (RFC 1918) or link-local (169.254/16) IPv4 peer: another device at home (item 25)
 };
 
 enum class Io : std::uint8_t { done, would_block, closed, failed };

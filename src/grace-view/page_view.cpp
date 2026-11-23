@@ -1405,6 +1405,17 @@ Action PageView::pointer_body(const Pointer& in) {
   pointer_x_ = in.x;
   pointer_y_ = in.y;
   pointer_in_ = in.kind != Pointer::Kind::leave;
+  if (sheet_open_) {
+    // Only its Close answers the pointer (G9): a press elsewhere does nothing, so a stray click keeps the code.
+    const Rect& r = sheet_close_;
+    if (in.kind == Pointer::Kind::press && in.x >= r.x && in.x < r.right() && in.y >= r.y && in.y < r.bottom()) {
+      close_sheet();
+      Action closed;
+      closed.kind = Action::Kind::sheet_closed;
+      return closed;
+    }
+    return {};
+  }
   if (capture_open()) {
     return {};  // the page under the modal does nothing; its keys and the pad answer it (D209)
   }
@@ -2714,7 +2725,7 @@ Action PageView::edit(const EditInput& in) {
 }
 
 Action PageView::typed(char32_t code_point) {
-  if (capture_open()) {
+  if (capture_open() || sheet_open_) {
     return {};
   }
   if (!editing()) {
@@ -2727,7 +2738,7 @@ Action PageView::typed(char32_t code_point) {
 }
 
 Action PageView::pasted(std::string_view utf8) {
-  if (editing() && edit_.field.paste(utf8)) {
+  if (editing() && !sheet_open_ && edit_.field.paste(utf8)) {
     edited();
   }
   return {};
@@ -2754,6 +2765,19 @@ void PageView::accepted(std::string_view where) {
 std::string PageView::form_value(std::string_view field) const {
   const auto found = form_values_.find(field);
   return found != form_values_.end() ? found->second : std::string();
+}
+
+void PageView::show_sheet(Sheet sheet) {
+  if (editing()) {
+    end_edit();  // nothing types under a sheet
+  }
+  sheet_ = std::move(sheet);
+  sheet_open_ = true;
+}
+
+void PageView::close_sheet() noexcept {
+  sheet_open_ = false;
+  sheet_close_ = Rect{};
 }
 
 void PageView::cancel_confirmation() noexcept {
@@ -2796,6 +2820,16 @@ Action PageView::open_index(std::size_t index, Scope scope) {
 }
 
 Action PageView::input_body(const Input& in) {
+  if (sheet_open_) {
+    // The sheet has every key until it closes (G9): Enter, Escape, A or B close it; nothing else does anything.
+    if (in.key == Key::activate || in.key == Key::back) {
+      close_sheet();
+      Action closed;
+      closed.kind = Action::Kind::sheet_closed;
+      return closed;
+    }
+    return {};
+  }
   if (capture_open()) {
     return capture_input(in);  // the modal has every key until it closes (D209)
   }
@@ -4868,6 +4902,89 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       }
       // Its keys, in the card where they can be read: the footer's are under its scrim.
       c.text(hints, TypeRole::ui_sm, card.x + pad, cy + std::round(20 * s), inner, Colour::ink_faint);
+    }
+    // The sheet (G9), over everything, as the capture's modal is: its title, its figure, its lines and its Close.
+    if (sheet_open_) {
+      hits_.clear();
+      c.clip = 0;
+      c.fill(Rect{0, 0, W, H}, Colour::scrim, 0, 160);
+      const float card_w = std::min(std::round(680 * s), page_w - 2 * gutter);
+      const float pad = std::round(28 * s);
+      const float inner = card_w - 2 * pad;
+      const auto wrap = [&](std::string_view text, TypeRole role) {
+        std::vector<std::string> lines;
+        std::string line;
+        std::size_t at = 0;
+        while (at < text.size()) {
+          const std::size_t end = std::min(text.find(' ', at), text.size());
+          const std::string word(text.substr(at, end - at));
+          const std::string tried = line.empty() ? word : line + " " + word;
+          if (!line.empty() && c.width(tried, role) > inner) {
+            lines.push_back(line);
+            line = word;
+          } else {
+            line = tried;
+          }
+          at = end + 1;
+        }
+        if (!line.empty()) {
+          lines.push_back(line);
+        }
+        return lines;
+      };
+      const std::vector<std::string> title_lines = wrap(sheet_.title, TypeRole::display_md);
+      std::vector<std::vector<std::string>> body;
+      std::size_t body_count = 0;
+      for (const std::string& line : sheet_.lines) {
+        body.push_back(wrap(line, TypeRole::ui));
+        body_count += body.back().size();
+      }
+      const float title_h = line_height(TypeRole::display_md, s);
+      const float figure_h = sheet_.figure.empty() ? 0.0f : line_height(TypeRole::display_xl, s) + std::round(24 * s);
+      const float body_h = line_height(TypeRole::ui, s);
+      const float gap = std::round(8 * s);
+      const float button_h = std::round(44 * s);
+      const float hints_h = line_height(TypeRole::ui_sm, s);
+      const float card_h = pad * 2 + title_h * static_cast<float>(title_lines.size()) + std::round(12 * s) + figure_h +
+                           body_h * static_cast<float>(body_count) +
+                           gap * static_cast<float>(body.empty() ? 0 : body.size() - 1) + std::round(24 * s) +
+                           button_h + std::round(14 * s) + hints_h;
+      const Rect card{std::round(page_x + (page_w - card_w) / 2), std::round(std::max(0.0f, (H - card_h) / 2)), card_w,
+                      card_h};
+      const float rr = std::round(tokens::radius::control * 2 * s);
+      c.fill(card, Colour::ground_2, rr);
+      c.stroke(card, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), rr);
+      float cy = card.y + pad;
+      for (const std::string& line : title_lines) {
+        c.text(line, TypeRole::display_md, card.x + pad, cy, inner, Colour::ink_hi);
+        cy += title_h;
+      }
+      cy += std::round(12 * s);
+      if (!sheet_.figure.empty()) {
+        const float figure_w = c.width(sheet_.figure, TypeRole::display_xl);
+        c.text(sheet_.figure, TypeRole::display_xl, std::round(card.x + (card.w - figure_w) / 2), cy, figure_w + 1,
+               Colour::gold_hi);
+        cy += figure_h;
+      }
+      for (std::size_t i = 0; i < body.size(); ++i) {
+        for (const std::string& line : body[i]) {
+          c.text(line, TypeRole::ui, card.x + pad, cy, inner, Colour::ink_hi);
+          cy += body_h;
+        }
+        cy += i + 1 < body.size() ? gap : 0.0f;
+      }
+      cy += std::round(24 * s);
+      const std::string close_label = "Close";
+      const float button_w = c.width(close_label, TypeRole::ui) + std::round(48 * s);
+      const Rect button{card.x + pad, cy, button_w, button_h};
+      const float br = std::round(tokens::radius::control * s);
+      c.fill(button, hovered(button) ? Colour::tint_hover : Colour::ground_3, br);
+      c.stroke(button, Colour::gold_hi, std::round(tokens::kGrace.size.focus_width * s), br);
+      c.text(close_label, TypeRole::ui, button.x + std::round(24 * s),
+             button.y + std::round((button.h - line_height(TypeRole::ui, s)) / 2), button_w, Colour::ink_hi);
+      sheet_close_ = button;
+      c.text("Enter or Esc  Close", TypeRole::ui_sm, card.x + pad, button.bottom() + std::round(14 * s), inner,
+             Colour::ink_faint);
     }
     // Keep the focused element in view, unless the wheel has scrolled since a key last moved focus; within the page's
     // length either way. Then lay out once more.

@@ -87,7 +87,8 @@ test("the space refuses what its description refuses", () => {
     return answer.ok ? "ok" : answer.error;
   };
   assert.equal(refusal(demo, "settings.set", { key: "lantern.festival", value: true }), "locked");
-  assert.equal(refusal(graceui, "settings.set", { key: "dashboard.lan", value: true }), "locked");
+  assert.equal(refusal(graceui, "settings.set", { key: "dashboard.lan", value: true }), "ok");  // live since G9
+  assert.equal(refusal(graceui, "settings.set", { key: "ui.scale", value: 9 }), "invalid_value");
   assert.equal(refusal(demo, "settings.set", { key: "lantern.nope", value: 1 }), "unknown_key");
   assert.equal(refusal(demo, "settings.set", { key: "lantern.gap_s", value: 11 }), "invalid_value");
   assert.equal(refusal(demo, "settings.set", { key: "lantern.gap_s", value: "3" }), "invalid_value");

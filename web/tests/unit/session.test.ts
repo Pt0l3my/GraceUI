@@ -99,7 +99,6 @@ test("a refusal: the reason in words, the value as the space holds it, focus ask
 test("a locked setting sends nothing (grace-view's set)", async () => {
   const { session, transport } = await started();
   session.set("demo", "lantern.festival", true);
-  session.set("graceui", "dashboard.lan", true);
   session.reset("demo", "lantern.festival");
   await tick(30);
   assert.deepEqual(transport.sent, []);

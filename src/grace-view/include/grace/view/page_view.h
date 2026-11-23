@@ -58,6 +58,7 @@ struct Action {
     opened_page,  // the view moved to `page`
     close,        // back from the rail: the menu closes (the host runs its close routine)
     switch_space, // a link on the rail to another space's page: the host opens `page` of `space` (D79, D171)
+    sheet_closed, // the sheet's Close (G9): the host ends what it showed (a pairing code)
   };
   Kind kind = Kind::none;
   protocol::Cmd command{};
@@ -139,6 +140,20 @@ class PageView {
   // capture_answered: done, it closes; `confirm_required` shows the space's words and Enter sends it again with
   // "confirm"; any other refusal shows its words and waits again.
   bool capture_open() const noexcept { return capture_.kind != CaptureKind::none; }
+
+  // ---- A sheet (G9): a modal of the host's own words over the page, such as Pair a device's code. The host sets it,
+  // and sets it again whenever its words change (a countdown). Enter, Escape, A, B or a press on its Close closes it and
+  // answers sheet_closed, which the host takes as the end of what it showed; close_sheet, the host's own close (the
+  // menu's close routine), answers nothing. While it is open the page under it takes no key, character or pointer.
+  struct Sheet {
+    std::string title;
+    std::string figure;              // drawn large and centred, such as a code; empty for none
+    std::vector<std::string> lines;  // each wrapped to the card
+    bool operator==(const Sheet&) const = default;
+  };
+  void show_sheet(Sheet sheet);
+  void close_sheet() noexcept;
+  bool sheet_open() const noexcept { return sheet_open_; }
   bool awaiting_key() const noexcept { return capture_.kind == CaptureKind::key && capture_.stage == CaptureStage::waiting; }
   Action captured(std::string_view key);
   void capture_answered(bool ok, bool confirm_required, std::string_view words);
@@ -464,6 +479,9 @@ class PageView {
     std::size_t picker = 0;         // which of the two is focused
   };
   Capture capture_;
+  Sheet sheet_;
+  bool sheet_open_ = false;
+  Rect sheet_close_{};  // its Close, as the last layout drew it
   Action capture_command(bool confirm) const;
   Action capture_input(const Input& in);
   float scroll_ = 0;

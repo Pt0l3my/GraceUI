@@ -69,7 +69,6 @@ TEST_CASE("each refusal has its code, and its words never quote the value") {
       {"ui.scale", Json(1.013), ErrorCode::invalid_value},   // off its step
       {"ui.menu.theme", Json("neon"), ErrorCode::invalid_value},
       {"ui.menu.reduce_motion", Json(1), ErrorCode::invalid_value},
-      {"dashboard.lan", Json(true), ErrorCode::locked},      // later, and locked
       {"dashboard.port", Json(8080.5), ErrorCode::invalid_value},
   };
   for (const Case& c : cases) {
@@ -80,6 +79,10 @@ TEST_CASE("each refusal has its code, and its words never quote the value") {
     CHECK(out.detail.find(c.value.dump()) == std::string::npos);
   }
   CHECK(store.changed().empty());
+  SettingsStore demo = store_of("demo");
+  const Outcome locked = demo.set("lantern.festival", Json(true));  // later, and locked
+  CHECK(locked.error == ErrorCode::locked);
+  CHECK(locked.detail.find("true") == std::string::npos);
 }
 
 TEST_CASE("the demo's kinds: whole numbers, steps, the inherit tri-state, a key's name") {
@@ -124,8 +127,9 @@ TEST_CASE("reset: a key at once; a page or everything only when confirmed; locke
   CHECK(store.held("dashboard.port") == 9000);  // another page's
   CHECK(store.reset(ResetScopeKind::all, nullptr, false).error == ErrorCode::confirm_required);
   CHECK(store.reset(ResetScopeKind::all, nullptr, true).changed == std::vector<std::string>{"dashboard.port"});
-  const std::string lan = "dashboard.lan";
-  CHECK(store.reset(ResetScopeKind::key, &lan, false).error == ErrorCode::locked);
+  SettingsStore demo = store_of("demo");
+  const std::string festival = "lantern.festival";
+  CHECK(demo.reset(ResetScopeKind::key, &festival, false).error == ErrorCode::locked);
   const std::string nowhere = "ui.nowhere";
   CHECK(store.reset(ResetScopeKind::key, &nowhere, false).error == ErrorCode::unknown_key);
 }
@@ -156,11 +160,15 @@ TEST_CASE("kept between sessions: only what differs from its default, never a se
   CHECK(next.held("ui.menu.theme") == "clear");
   // A file from another version, or edited by hand: what does not fit is left out, the rest taken.
   const Json odd = Json::object({{"ui.scale", 9.0}, {"no.such.key", true}, {"ui.menu.theme", 3}, {"ui.menu.reduce_motion", true},
-                                 {"dashboard.lan", true}});
+                                 {"dashboard.port", "8642"}});
   SettingsStore third = store_of("graceui");
   const SettingsStore::Restored mixed = third.restore(odd);
   CHECK(mixed.taken == 1);
   CHECK(mixed.left_out == 4);
+  // A locked setting is never taken back from a file.
+  SettingsStore festival = store_of("demo");
+  CHECK(festival.restore(Json::object({{"lantern.festival", true}})).left_out == 1);
+  CHECK(festival.held("lantern.festival") == false);
   CHECK(third.held("ui.scale") == 1.25);
   CHECK(third.held("ui.menu.reduce_motion") == true);
   CHECK(third.restore(Json("not an object")).taken == 0);

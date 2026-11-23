@@ -116,6 +116,7 @@ struct Hub {
   PairingCode pairing;
   std::vector<PairedDevice> paired;
   std::vector<std::string> network_addresses;
+  std::vector<std::string> connected_devices;  // the server's, sorted; the host reads it
 
   // Wakes the I/O thread; `mutex` must be held.
   void signal_locked() const noexcept {

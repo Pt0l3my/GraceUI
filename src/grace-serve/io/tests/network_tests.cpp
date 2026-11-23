@@ -6,6 +6,7 @@
 // names an address, a code or a cookie (invariant 4, PV3, PV5).
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -369,6 +370,10 @@ TEST_CASE("Forget disconnects a device at once, and keeps the others (G9)") {
   REQUIRE(b.open_head(kHome, f.port, home_upgrade(f.port, tablet)) == 101);
   REQUIRE(b.hello(ticket_for(f.port, tablet)));
 
+  // Which devices are connected, by id (the Browser view page's "Now" column).
+  std::vector<std::string> both = {devices[0].id, devices[1].id};
+  std::sort(both.begin(), both.end());
+  CHECK(wait_until([&] { return f.server.connected_devices() == both; }));
   // The phone forgotten: its WebSocket ends with unauthorised, so its page reloads to the pairing page.
   f.server.set_devices(keys_of({devices[1]}));
   const std::optional<Json> bye = a.next_of("bye");
@@ -376,6 +381,7 @@ TEST_CASE("Forget disconnects a device at once, and keeps the others (G9)") {
   CHECK((*bye)["reason"] == "unauthorised");
   CHECK(a.gone(2s));
   CHECK(b.quiet(300ms));
+  CHECK(wait_until([&] { return f.server.connected_devices() == std::vector<std::string>{devices[1].id}; }));
   CHECK(request_ipv4(kHome, f.port, home_page(f.port, "/", phone)).body == pairing_page());
   CHECK(request_ipv4(kHome, f.port, home_post(f.port, "/api/ticket", "{}", phone)).status == 403);
   CHECK_FALSE(ticket_for(f.port, tablet).empty());

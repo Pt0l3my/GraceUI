@@ -147,6 +147,11 @@ class Engine {
   void take_body(Connection& c, std::string_view after, Clock::time_point now);
   void body_done(Connection& c, Clock::time_point now);
   void apply_network(bool on, Clock::time_point now);
+  // The PC's addresses the network listener may take: the test's own, else its private ones; deduplicated, at most
+  // kMaxNetworkAddresses, never 0.0.0.0, multicast or reserved.
+  std::vector<std::array<std::uint8_t, 4>> network_candidates() const;
+  // While the network listener is wanted, the PC's addresses again every 10 s; changed, it listens on the new ones.
+  void follow_addresses(Clock::time_point now);
   void apply_devices(std::vector<DeviceKey> devices, Clock::time_point now);
   void upgrade(Connection& c, std::size_t after, Clock::time_point now);
   void respond(Connection& c, std::size_t head_size, std::string_view body,
@@ -202,6 +207,11 @@ class Engine {
   std::array<io::Socket, kMaxNetworkAddresses> network_;
   std::array<std::string, kMaxNetworkAddresses> network_names_;
   std::array<std::string_view, kMaxNetworkAddresses> network_views_;
+  bool network_wanted_ = false;
+  Clock::time_point next_address_check_{};
+  // The addresses the PC had at the last apply, sorted: a bind that failed is not tried again until they change.
+  std::vector<std::string> network_seen_;
+  std::vector<std::array<char, kDeviceIdChars>> connected_seen_;  // the devices with an open WebSocket, last published
   Listener network_listener_;
   HeadRules loopback_rules_;
   HeadRules network_rules_;

@@ -18,7 +18,19 @@
     "items": [
       {"label": "Address", "value": "http://127.0.0.1:8642/"},
       {"label": "Browsers connected", "value": "1"},
-      {"label": "Other devices", "value": "Off: a later version pairs them"}
+      {"label": "Other devices", "value": "On: served on this PC's home network too"},
+      {"label": "Devices connected", "value": "1 of 2 paired"}
+    ]
+  },
+  "graceui.devices": {
+    "columns": [
+      {"id": "name", "label": "Device"},
+      {"id": "paired", "label": "Paired"},
+      {"id": "state", "label": "Now"}
+    ],
+    "rows": [
+      {"id": "3f9a0c51d27e8b46", "name": "Hallway tablet", "paired": "2026-11-20", "state": "Connected"},
+      {"id": "a61be4d0937c25f8", "name": "Spare laptop", "paired": "2026-11-22", "state": "Not connected"}
     ]
   },
   "graceui.mods": {

@@ -91,6 +91,7 @@ void peer_of(const Address& address, Accepted& out) noexcept {
     const std::uint32_t host = ntohl(v4.sin_addr.s_addr);
     out.loopback = (host >> 24) == 127;
     out.exact = host == 0x7F000001u;
+    out.home = (host >> 24) == 10 || (host >> 20) == 0xAC1u || (host >> 16) == 0xC0A8u || (host >> 16) == 0xA9FEu;
   } else if (family == AF_INET6) {
     sockaddr_in6 v6{};
     std::memcpy(&v6, &address, sizeof v6);

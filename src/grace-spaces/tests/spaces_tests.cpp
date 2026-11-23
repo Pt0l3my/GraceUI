@@ -281,11 +281,17 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
 
   // A refusal carries the store's code and words; menu.close has no menu in the browser; disconnect renews.
   REQUIRE(view->send_json(frame("cmd", {{"space", "graceui"}, {"id", 10}, {"name", "settings.set"},
-                                        {"args", {{"key", "dashboard.lan"}, {"value", true}}}})));
+                                        {"args", {{"key", "ui.scale"}, {"value", 9.0}}}})));
   result = serve_until("result");
   REQUIRE(result);
-  CHECK((*result)["error"] == "locked");
-  CHECK((*result)["detail"] == "Only in a later version.");
+  CHECK((*result)["error"] == "invalid_value");
+  CHECK((*result).contains("detail"));
+  // dashboard.pair has no code to show in a browser (D66); Forget needs a paired device's id.
+  REQUIRE(view->send_json(frame("cmd", {{"space", "graceui"}, {"id", 13}, {"name", "dashboard.pair"},
+                                        {"args", Json::object()}})));
+  result = serve_until("result");
+  REQUIRE(result);
+  CHECK((*result)["error"] != nullptr);
   REQUIRE(view->send_json(frame("cmd", {{"space", "graceui"}, {"id", 11}, {"name", "menu.close"},
                                         {"args", Json::object()}})));
   result = serve_until("result");

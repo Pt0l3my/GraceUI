@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace grace::spaces {
 class OwnSpace;
@@ -47,6 +48,30 @@ void close_for_anti_cheat(const char* source) noexcept;
 
 // dashboard.disconnect, from the menu: a new session cookie, every browser connection closed (§7.2 item 17).
 void disconnect_browsers() noexcept;
+
+// ---- Other devices at home (G9, §7.2 item 16). GraceUI's own thread only.
+
+// Pair a device, from the menu: a six-digit code the server takes for two minutes, once, and only while the sheet that
+// shows it stays open (D113). Refused, with the reason in words, while Other devices is off, the browser view is not
+// served, the PC has no home network address, or sixteen devices are paired.
+struct PairingStart {
+  bool ok = false;
+  std::string words;
+};
+PairingStart start_pairing() noexcept;
+// The sheet closed, or the menu with it: the code is void at once.
+void cancel_pairing() noexcept;
+// What the sheet shows now: the code with its time and the addresses to open, then the device paired, or why it ended.
+struct PairingView {
+  enum class State : std::uint8_t { none, showing, paired, ended };
+  State state = State::none;
+  std::string code;                    // six digits, while showing
+  std::uint32_t seconds = 0;           // left, while showing
+  std::vector<std::string> addresses;  // "http://ADDRESS:PORT/" for each the server listens on, while showing
+  std::string paired_name;             // the name the device gave, once paired
+  std::string why;                     // in words, once ended
+};
+PairingView pairing_view() noexcept;
 
 #if defined(GRACEUI_TEST_EXPORTS)
 struct TestView {

@@ -148,6 +148,8 @@ struct State {
   std::map<std::uint64_t, std::pair<std::string, std::string>> commands;  // a ticket: its space and its key
   std::map<std::uint64_t, std::string> command_names;  // a ticket: its command's name, for a slow one's sender (D216)
   std::set<std::uint64_t> captures;  // the tickets the capture's modal sent: their answers go back to it (D209)
+  bool pairing = false;                 // Pair a device's sheet is open (G9)
+  grace::view::PageView::Sheet sheet;   // as last shown
   std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
   std::uint64_t states = 0;    // its other topics', as the menu last took them (D181)
   grace::view::DisplayList list;
@@ -572,6 +574,70 @@ std::string key_of(const grace::protocol::Cmd& command) {
   return {};
 }
 
+// Pair a device's sheet (G9, §7.2 item 16): the code and where to enter it, then the device paired, or why it ended.
+// The code and the address are shown here alone, in game: never on a page, in a topic or in the log (D66, PV3).
+grace::view::PageView::Sheet pairing_sheet(const spaces::PairingView& view) {
+  grace::view::PageView::Sheet sheet;
+  switch (view.state) {
+    case spaces::PairingView::State::showing: {
+      sheet.title = "Pair a device";
+      sheet.figure = view.code.size() == 6 ? view.code.substr(0, 3) + " " + view.code.substr(3) : view.code;
+      sheet.lines.push_back(view.addresses.size() == 1
+                                ? "On the phone or computer, open this address in its browser:"
+                                : "On the phone or computer, open one of these addresses in its browser:");
+      for (const std::string& address : view.addresses) {
+        sheet.lines.push_back(address);
+      }
+      char left[16] = {};
+      std::snprintf(left, sizeof left, "%u:%02u", view.seconds / 60, view.seconds % 60);
+      sheet.lines.push_back("Enter this code there, with a name for the device. It works once, for " + std::string(left) +
+                            " more, while this stays open.");
+      break;
+    }
+    case spaces::PairingView::State::paired:
+      sheet.title = "Paired";
+      sheet.lines.push_back(view.paired_name + " is paired, and opens the browser view from now on.");
+      sheet.lines.push_back("It is listed under Other devices, where Forget revokes it.");
+      break;
+    case spaces::PairingView::State::ended:
+      sheet.title = "The code has ended";
+      sheet.lines.push_back(view.why);
+      sheet.lines.push_back("Close this, and choose Pair a device again for a new code.");
+      break;
+    case spaces::PairingView::State::none:
+      break;
+  }
+  return sheet;
+}
+
+// The sheet as it should be now: shown again when its words changed (each second, while the code shows). True if so.
+bool refresh_pairing(State& m) {
+  if (!m.pairing) {
+    return false;
+  }
+  if (!own_view(m).view.sheet_open()) {
+    m.pairing = false;  // closed by the view itself: the code goes with it
+    spaces::cancel_pairing();
+    return true;
+  }
+  grace::view::PageView::Sheet sheet = pairing_sheet(spaces::pairing_view());
+  if (sheet == m.sheet) {
+    return false;
+  }
+  m.sheet = sheet;
+  own_view(m).view.show_sheet(std::move(sheet));
+  return true;
+}
+
+void end_pairing(State& m) {
+  if (m.pairing) {
+    spaces::cancel_pairing();  // void at once (D113)
+    own_view(m).view.close_sheet();
+    m.pairing = false;
+    m.sheet = {};
+  }
+}
+
 // A command from the page view: GraceUI's own space answers it here, at its one entry point (invariant 3); a mod's
 // space's goes to the mod, as a view's command does, and its result comes back to the menu (D171).
 void run(State& m, const grace::protocol::Cmd& command) {
@@ -648,6 +714,20 @@ void run(State& m, const grace::protocol::Cmd& command) {
     log_line("the menu's Disconnect: every browser's session ended");
     return;
   }
+  if (command.name == "dashboard.pair") {
+    // Pair a device (G9): its code on a sheet over the menu, valid while the sheet stays open (D113).
+    const spaces::PairingStart start = spaces::start_pairing();
+    if (!start.ok) {
+      g_refusals.fetch_add(1, std::memory_order_relaxed);
+      const std::string focused = own_view(m).view.focused();
+      own_view(m).view.refused(focused.rfind("section-action:", 0) == 0 ? focused.substr(15) : focused, start.words);
+      return;
+    }
+    m.pairing = true;
+    m.sheet = {};
+    refresh_pairing(m);
+    return;
+  }
   // Its other commands (a Mods page switch, D181) go to the one entry point the browser's views use too.
   const grace::pages::Outcome outcome = own_space().apply(command);
   if (!outcome.ok) {
@@ -668,6 +748,9 @@ void act(State& m, const grace::view::Action& action) {
       break;
     case grace::view::Action::Kind::close:
       input::close_holder(grace::input::Closed::released, m.generation);  // back from the rail (§5.3)
+      break;
+    case grace::view::Action::Kind::sheet_closed:
+      end_pairing(m);  // its Close: the code is void (G9)
       break;
     case grace::view::Action::Kind::switch_space:
       activate(m, action.space, action.page, on_switcher ? From::switcher : From::link);  // another space (D79, D171)
@@ -829,6 +912,7 @@ void serve_menu() {
   if (!ours(holder)) {
     if (m.open) {
       m.open = false;
+      end_pairing(m);  // whatever closed the menu (danger included), the code is void with it (G9, D113, invariant 7)
       active_view(m).cancel_confirmation();  // the close routine's part (§5.1): changes stay, the page is kept
       g_editing.store(false, std::memory_order_release);  // an edit ends as Escape ends it (G38 (2))
       input::set_caret(0, 0, 0);
@@ -864,6 +948,9 @@ void serve_menu() {
   }
   if (take_from_spaces(m)) {
     dirty = true;
+  }
+  if (refresh_pairing(m)) {
+    dirty = true;  // the code's time, or a device paired (G9)
   }
   MenuInput in;
   for (int i = 0; i < 64 && g_keys.pop(in); ++i) {

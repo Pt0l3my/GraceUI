@@ -155,6 +155,9 @@ StartResult Engine::start() {
   network_rules_.listener = network_listener_;
   network_rules_.max_content_length = std::max(kMaxTicketBody, kMaxPairBody);  // a ticket's, or the code's (G9)
   devices_.clear();
+  network_wanted_ = false;
+  network_seen_.clear();
+  connected_seen_.clear();
   pool_.clear();
   for (std::size_t i = 0; i < kPoolSize; ++i) {
     pool_.push_back(std::make_unique<Connection>(loopback_rules_));
@@ -178,6 +181,7 @@ StartResult Engine::start() {
     hub_->network_changed = hub_->network_on;  // a host that turned it on before the start: applied by the loop (G9)
     hub_->devices_changed = true;
     hub_->network_addresses.clear();
+    hub_->connected_devices.clear();
     for (const auto& port : hub_->spaces) {
       port->topics.assign(port->declared + kMemberSlots, TopicCache{});
     }
@@ -245,6 +249,7 @@ void Engine::stop() noexcept {
   {
     std::lock_guard lock(hub_->mutex);
     hub_->network_addresses.clear();
+    hub_->connected_devices.clear();
   }
   wake_.close();
   pool_.clear();
@@ -337,6 +342,7 @@ void Engine::loop() {
     Clock::time_point now = Clock::now();
     take_hub(now);
     take_files(now);
+    follow_addresses(now);
     Clock::time_point next = now + std::chrono::seconds(1);
     std::size_t http = 0;
     std::size_t network_http = 0;
@@ -442,13 +448,31 @@ void Engine::loop() {
     }
     sockets += network_sockets;
     std::size_t device_connections = 0;
+    std::array<std::array<char, kDeviceIdChars>, kPoolSize> connected{};
+    std::size_t connected_count = 0;
     for (const auto& slot : pool_) {
       if (slot->phase != Connection::Phase::idle) {
         ++sockets;
         open_http += slot->http ? 1 : 0;
         open_websockets += slot->websocket ? 1 : 0;
         device_connections += slot->network && slot->paired ? 1 : 0;
+        if (slot->network && slot->paired && slot->phase == Connection::Phase::open && connected_count < connected.size()) {
+          connected[connected_count++] = slot->device;
+        }
       }
+    }
+    std::sort(connected.begin(), connected.begin() + static_cast<std::ptrdiff_t>(connected_count));
+    if (!std::equal(connected.begin(), connected.begin() + static_cast<std::ptrdiff_t>(connected_count),
+                    connected_seen_.begin(), connected_seen_.end())) {
+      connected_seen_.assign(connected.begin(), connected.begin() + static_cast<std::ptrdiff_t>(connected_count));
+      std::vector<std::string> ids;
+      for (const auto& id : connected_seen_) {
+        if (ids.empty() || ids.back() != std::string_view(id.data(), id.size())) {
+          ids.emplace_back(id.data(), id.size());
+        }
+      }
+      std::lock_guard lock(hub_->mutex);
+      hub_->connected_devices = std::move(ids);
     }
     stat_network_ = network_sockets;
     stat_devices_ = devices_.size();
@@ -572,6 +596,9 @@ void Engine::accept_from(const io::Socket& listener, bool network, Clock::time_p
     }
     if (!network && !accepted.loopback) {
       continue;  // a loopback listener takes loopback peers alone; the socket closes here
+    }
+    if (network && !accepted.home && !accepted.loopback) {
+      continue;  // the network listener takes a device at home alone: a private or link-local peer (item 25)
     }
     Connection& c = *free;
     c.clear();
@@ -1234,42 +1261,25 @@ void Engine::apply_network(bool on, Clock::time_point now) {
   }
   std::size_t count = 0;
   std::vector<std::string> names;
+  network_wanted_ = on;
+  next_address_check_ = now + std::chrono::seconds(10);
+  network_seen_.clear();
   if (on) {
-    std::array<std::array<std::uint8_t, 4>, 16> found{};
-    std::size_t candidates = 0;
-    if (!config_.network_addresses.empty()) {
-      for (const auto& address : config_.network_addresses) {
-        if (candidates < found.size()) {
-          found[candidates++] = address;  // a test's own, taken as they are
-        }
-      }
-    } else {
-      const std::size_t listed = io::local_ipv4_addresses(found);
-      for (std::size_t i = 0; i < listed; ++i) {
-        if (private_ipv4(found[i])) {
-          found[candidates++] = found[i];  // the PC's private addresses alone, never a public one (item 16)
-        }
-      }
+    const std::vector<std::array<std::uint8_t, 4>> candidates = network_candidates();
+    for (const std::array<std::uint8_t, 4>& address : candidates) {
+      std::array<char, 16> dotted{};
+      network_seen_.emplace_back(dotted.data(), format_ipv4(address, dotted));
     }
-    for (std::size_t i = 0; i < candidates && count < kMaxNetworkAddresses; ++i) {
-      if (found[i][0] == 0 || found[i][0] >= 224) {
-        continue;  // never 0.0.0.0 (every interface), a multicast or a reserved address, whatever the source
-      }
-      bool again = false;
-      for (std::size_t j = 0; j < i; ++j) {
-        again = again || found[j] == found[i];
-      }
-      if (again) {
-        continue;
-      }
+    std::sort(network_seen_.begin(), network_seen_.end());
+    for (const std::array<std::uint8_t, 4>& address : candidates) {
       io::BindError error = io::BindError::none;
-      io::Socket socket = io::listen_ipv4(found[i], config_.port, error);
+      io::Socket socket = io::listen_ipv4(address, config_.port, error);
       if (!socket.open()) {
         continue;
       }
       std::array<char, 16> dotted{};
       network_[count] = std::move(socket);
-      network_names_[count] = std::string(dotted.data(), format_ipv4(found[i], dotted));
+      network_names_[count] = std::string(dotted.data(), format_ipv4(address, dotted));
       ++count;
     }
     for (std::size_t i = 0; i < count; ++i) {
@@ -1292,6 +1302,54 @@ void Engine::apply_network(bool on, Clock::time_point now) {
     log(LogLevel::info, "Other devices: the browser view listens on " + std::to_string(count) +
                             " of this PC's home network addresses too.");
   }
+}
+
+std::vector<std::array<std::uint8_t, 4>> Engine::network_candidates() const {
+  std::array<std::array<std::uint8_t, 4>, 16> found{};
+  std::size_t listed = 0;
+  if (!config_.network_addresses.empty()) {
+    for (const auto& address : config_.network_addresses) {
+      if (listed < found.size()) {
+        found[listed++] = address;  // a test's own, taken as they are
+      }
+    }
+  } else {
+    listed = io::local_ipv4_addresses(found);
+  }
+  std::vector<std::array<std::uint8_t, 4>> out;
+  for (std::size_t i = 0; i < listed && out.size() < kMaxNetworkAddresses; ++i) {
+    const std::array<std::uint8_t, 4>& address = found[i];
+    if (address[0] == 0 || address[0] >= 224) {
+      continue;  // never 0.0.0.0 (every interface), a multicast or a reserved address, whatever the source
+    }
+    if (config_.network_addresses.empty() && !private_ipv4(address)) {
+      continue;  // the PC's private addresses alone, never a public one (item 16)
+    }
+    if (std::find(out.begin(), out.end(), address) == out.end()) {
+      out.push_back(address);
+    }
+  }
+  return out;
+}
+
+void Engine::follow_addresses(Clock::time_point now) {
+  if (!network_wanted_ || now < next_address_check_) {
+    return;
+  }
+  next_address_check_ = now + std::chrono::seconds(10);
+  std::vector<std::string> wanted;
+  for (const std::array<std::uint8_t, 4>& address : network_candidates()) {
+    std::array<char, 16> dotted{};
+    wanted.emplace_back(dotted.data(), format_ipv4(address, dotted));
+  }
+  std::sort(wanted.begin(), wanted.end());
+  if (wanted == network_seen_) {
+    return;
+  }
+  // The PC's addresses changed (another network, a new lease): its listeners follow them (item 25). Every device
+  // connection closes, as on any change of the listeners, and each device's page reconnects at its new address.
+  log(LogLevel::info, "Other devices: this PC's home network addresses changed; the browser view follows them.");
+  apply_network(true, now);
 }
 
 void Engine::apply_devices(std::vector<DeviceKey> devices, Clock::time_point now) {
@@ -1472,6 +1530,11 @@ void Server::set_devices(std::vector<DeviceKey> devices) noexcept {
   hub_->devices = std::move(devices);
   hub_->devices_changed = true;
   hub_->signal_locked();
+}
+
+std::vector<std::string> Server::connected_devices() const {
+  std::lock_guard lock(hub_->mutex);
+  return hub_->connected_devices;
 }
 
 std::vector<PairedDevice> Server::take_paired() {

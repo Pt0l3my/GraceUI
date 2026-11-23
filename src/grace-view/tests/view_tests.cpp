@@ -118,18 +118,100 @@ TEST_CASE("a destructive action asks for its second press; any other key lets it
 }
 
 TEST_CASE("a locked setting does not change; a refusal returns focus with its reason") {
-  PageView view = loaded("graceui", "graceui.browser");
-  while (view.focused() != "setting:dashboard.lan") {
+  PageView view = loaded("demo", "demo.festival");
+  for (int i = 0; i < 40 && view.focused() != "setting:lantern.festival"; ++i) {
     press(view, Key::down);
   }
+  REQUIRE(view.focused() == "setting:lantern.festival");
+  const Json before = view.value("lantern.festival");
   CHECK(press(view, Key::right).kind == Action::Kind::none);
-  CHECK(view.value("dashboard.lan") == false);
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);
+  CHECK(view.value("lantern.festival") == before);
   press(view, Key::up);
-  view.refused("dashboard.lan", "Only in a later version.");
-  CHECK(view.focused() == "setting:dashboard.lan");
+  view.refused("lantern.festival", "Only in a later version.");
+  CHECK(view.focused() == "setting:lantern.festival");
   DisplayList list;
   view.layout(Viewport{}, test::fonts(), list);
   CHECK(list.dump().find("rot          ") != std::string::npos);
+}
+
+TEST_CASE("Other devices: Pair a device is a section action, and each device's Forget asks first (G9)") {
+  PageView view = loaded("graceui", "graceui.browser");
+  for (int i = 0; i < 40 && view.focused() != "section-action:other-devices/pair"; ++i) {
+    press(view, Key::down);
+  }
+  REQUIRE(view.focused() == "section-action:other-devices/pair");
+  Action a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.name == "dashboard.pair");
+  CHECK(a.command.args == Json::object());
+  press(view, Key::down);
+  REQUIRE(view.focused() == "setting:dashboard.lan");
+  a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.args == Json::object({{"key", "dashboard.lan"}, {"value", true}}));
+  // The device list, as the host publishes it: each row's Forget is destructive, so it asks first.
+  view.set_topic("graceui.devices",
+                 Json::parse(R"({"columns": [{"id": "name", "label": "Device"}, {"id": "paired", "label": "Paired"}],
+                                 "rows": [{"id": "3f9a0c51d27e8b46", "name": "Hallway tablet", "paired": "2026-11-20"}]})"));
+  for (int i = 0; i < 10 && view.focused().rfind("row:", 0) != 0; ++i) {
+    press(view, Key::down);
+  }
+  REQUIRE(view.focused().rfind("row:", 0) == 0);
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);
+  a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.name == "dashboard.forget_device");
+  CHECK(a.command.args["id"] == "3f9a0c51d27e8b46");
+}
+
+TEST_CASE("a sheet holds every key until Enter, Escape or its Close ends it, and answers sheet_closed (G9)") {
+  PageView view = loaded("graceui", "graceui.browser");
+  const std::string before = view.focused();
+  view.show_sheet(PageView::Sheet{"Pair a device", "482 913", {"On the phone, open this address:", "Then the code."}});
+  CHECK(view.sheet_open());
+  // Nothing under it moves or sends.
+  for (const Key key : {Key::down, Key::up, Key::left, Key::right, Key::next, Key::reset, Key::search}) {
+    CHECK(press(view, key).kind == Action::Kind::none);
+  }
+  CHECK(view.typed(U'a').kind == Action::Kind::none);
+  CHECK(view.focused() == before);
+  CHECK(view.sheet_open());
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  const std::string dump = list.dump();
+  CHECK(dump.find("\"482 913\"") != std::string::npos);
+  CHECK(dump.find("\"Close\"") != std::string::npos);
+  // A press away from its Close keeps it; Escape closes it.
+  CHECK(view.pointer(Pointer{Pointer::Kind::press, 5, 5}).kind == Action::Kind::none);
+  CHECK(view.sheet_open());
+  CHECK(press(view, Key::back).kind == Action::Kind::sheet_closed);
+  CHECK_FALSE(view.sheet_open());
+  CHECK(view.focused() == before);
+  // Enter closes it too, and so does a press on its Close (found by its words in the dump).
+  view.show_sheet(PageView::Sheet{"Paired", "", {"Hallway tablet is paired."}});
+  CHECK(press(view, Key::activate).kind == Action::Kind::sheet_closed);
+  view.show_sheet(PageView::Sheet{"Pair a device", "123 456", {"Words."}});
+  DisplayList again;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), again);
+  float x = 0;
+  float y = 0;
+  std::istringstream lines(again.dump());
+  for (std::string line; std::getline(lines, line);) {
+    if (line.find("\"Close\"") != std::string::npos) {
+      std::istringstream fields(line.substr(line.find_first_of("0123456789")));
+      char comma = 0;
+      fields >> x >> comma >> y;
+    }
+  }
+  REQUIRE(x > 0);
+  CHECK(view.pointer(Pointer{Pointer::Kind::press, x + 2, y + 2}).kind == Action::Kind::sheet_closed);
+  CHECK_FALSE(view.sheet_open());
+  // The host's own close answers nothing.
+  view.show_sheet(PageView::Sheet{"Pair a device", "123 456", {}});
+  view.close_sheet();
+  CHECK_FALSE(view.sheet_open());
+  CHECK(press(view, Key::down).kind != Action::Kind::sheet_closed);
 }
 
 TEST_CASE("Page Up and Page Down cross categories in rail order") {

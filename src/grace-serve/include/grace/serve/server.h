@@ -179,6 +179,8 @@ class Server {
   void set_devices(std::vector<DeviceKey> devices) noexcept;
   // The devices paired since the last call, oldest first.
   std::vector<PairedDevice> take_paired();
+  // The ids of the paired devices with a WebSocket open now (the Browser view page's "Now" column), sorted.
+  std::vector<std::string> connected_devices() const;
 
   ServerStats stats() const noexcept;
 

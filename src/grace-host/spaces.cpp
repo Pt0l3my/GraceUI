@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -22,6 +23,7 @@
 #include "draw_atlas.h"
 #include "grace/abi/spin.h"
 #include "grace/serve/server.h"
+#include "grace/spaces/devices.h"
 #include "grace/spaces/own_space.h"
 #include "grace/spaces/registry.h"
 #include "hooks.h"
@@ -50,6 +52,36 @@ constinit std::atomic<bool> g_closed{false};
 constinit std::int64_t g_next_recheck_ms = 0;  // GraceUI's thread: the next module re-check, while the server runs
 constexpr std::int64_t kRecheckMs = 60'000;
 constinit std::atomic<std::uint32_t> g_test_recheck_ms{0};
+
+// Other devices at home (G9, §7.2 item 16): GraceUI's thread alone; made at first use, never destroyed.
+struct Pairing {
+  bool active = false;  // the sheet is open
+  bool paired = false;
+  bool ended = false;
+  std::string why;
+  std::string code;
+  std::chrono::steady_clock::time_point expires{};
+  std::vector<std::string> addresses;
+  std::string paired_name;
+};
+constinit Pairing* g_pairing = nullptr;
+constinit std::vector<grace::spaces::PairedDeviceRecord>* g_devices = nullptr;
+constinit int g_lan_applied = -1;  // dashboard.lan as last given to the server; -1 before the first
+constinit bool g_devices_keep_failed = false;
+
+Pairing& pairing() {
+  if (g_pairing == nullptr) {
+    g_pairing = new Pairing();
+  }
+  return *g_pairing;
+}
+
+std::vector<grace::spaces::PairedDeviceRecord>& devices() {
+  if (g_devices == nullptr) {
+    g_devices = new std::vector<grace::spaces::PairedDeviceRecord>();
+  }
+  return *g_devices;
+}
 
 std::int64_t steady_ms() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
@@ -84,6 +116,7 @@ void start(const grace::spaces::OwnSpace& own) {
   config.graceui_version = version_text();
   config.folder = std::filesystem::path(folder);
   config.log = &server_log;
+  config.paired_wake = [] { hooks::wake(); };  // the sheet shows the device paired, and the file keeps it (G9)
   const grace::serve::StartResult result = g_server->start(config);
   if (result != grace::serve::StartResult::ok) {
     g_start_failed.store(true, std::memory_order_relaxed);  // not tried again this session: the port's setting takes effect at the next launch
@@ -221,6 +254,115 @@ void restore_saved(grace::spaces::OwnSpace& own) {
     apply_kept_to_registered();
   }
   g_kept_bindings = input::kept_bindings().revision();
+}
+
+// The paired devices (G9, §7.2 item 16): Game\GraceUI\user\devices.toml, a file of their own, never a settings file, so
+// that Copy settings, the bug report and recordings never carry it. Its hashes, names and dates only; never logged.
+bool devices_path(std::filesystem::path& out) {
+  std::wstring folder;
+  if (!atlas::own_folder(folder)) {
+    return false;
+  }
+  out = std::filesystem::path(folder) / L"user" / L"devices.toml";
+  return true;
+}
+
+void restore_devices() {
+  std::filesystem::path path;
+  std::error_code error;
+  if (!devices_path(path) || !std::filesystem::is_regular_file(path, error)) {
+    return;  // none paired yet
+  }
+  const std::uintmax_t size = std::filesystem::file_size(path, error);
+  if (error || size > kSettingsFileMax) {
+    log_line("the paired devices were not read: the file is %s; no device is paired", error ? "unreadable" : "too large");
+    return;
+  }
+  std::ifstream in(path, std::ios::binary);
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  grace::spaces::DevicesRead read = grace::spaces::read_devices(text);
+  if (!read.ok) {
+    log_line("the paired devices were not read: the file is not GraceUI's; no device is paired");
+    return;
+  }
+  devices() = std::move(read.devices);
+  log_line("paired devices: %u kept from an earlier session, %u left out", static_cast<unsigned>(devices().size()),
+           static_cast<unsigned>(read.left_out));
+}
+
+void keep_devices() noexcept {
+  try {
+    std::filesystem::path path;
+    if (!devices_path(path)) {
+      throw std::runtime_error("no folder");
+    }
+    std::error_code error;
+    std::filesystem::create_directories(path.parent_path(), error);
+    std::filesystem::path partial = path;
+    partial += L".partial";
+    {
+      std::ofstream out(partial, std::ios::binary | std::ios::trunc);
+      out << grace::spaces::write_devices(devices());
+      if (!out.flush()) {
+        throw std::runtime_error("not written");
+      }
+    }
+    // Whole or not at all, as the settings file (D179).
+    if (MoveFileExW(partial.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == FALSE) {
+      throw std::runtime_error("not replaced");
+    }
+    g_devices_keep_failed = false;
+  } catch (...) {
+    if (!g_devices_keep_failed) {
+      log_line("the paired devices could not be kept for the next session (GraceUI's user folder is not writable)");
+    }
+    g_devices_keep_failed = true;
+  }
+}
+
+bool lan_on(const grace::spaces::OwnSpace& own) {
+  const protocol::Json& lan = own.store().held("dashboard.lan");
+  return lan.is_boolean() && lan.get<bool>();
+}
+
+// The PC's local date, as a device's "paired" (YYYY-MM-DD).
+std::string today() {
+  SYSTEMTIME now{};
+  GetLocalTime(&now);
+  char text[16] = {};
+  std::snprintf(text, sizeof text, "%04u-%02u-%02u", static_cast<unsigned>(now.wYear), static_cast<unsigned>(now.wMonth),
+                static_cast<unsigned>(now.wDay));
+  return text;
+}
+
+// The devices the server paired since GraceUI's thread last looked: kept, and shown on the sheet that paired them.
+void take_paired_devices() {
+  if (g_server == nullptr) {
+    return;
+  }
+  bool any = false;
+  for (grace::serve::PairedDevice& fresh : g_server->take_paired()) {
+    grace::spaces::PairedDeviceRecord device;
+    device.id = fresh.id;
+    device.name = fresh.name;
+    device.paired = today();
+    device.hash = fresh.hash;
+    if (devices().size() >= grace::serve::kMaxDevices || !grace::serve::valid_device_id(device.id) ||
+        !grace::serve::valid_device_name(device.name)) {
+      continue;  // never: the server refuses a seventeenth, and names and ids it did not check
+    }
+    devices().push_back(std::move(device));
+    any = true;
+    log_line("a device was paired with the browser view (%u paired)", static_cast<unsigned>(devices().size()));
+    if (g_pairing != nullptr && g_pairing->active) {
+      g_pairing->paired = true;
+      g_pairing->paired_name = fresh.name;
+    }
+  }
+  if (any) {
+    keep_devices();
+    g_server->set_devices(grace::spaces::device_keys(devices()));
+  }
 }
 
 // What a mod's caps say it uses, in the Mods page's words; a name GraceUI does not know is left out.
@@ -401,10 +543,47 @@ protocol::Json dashboard_body(const grace::spaces::OwnSpace& own) {
   } else {
     address = "Not served: no mod's pages ask for the browser view";
   }
-  const std::size_t open = g_server != nullptr && g_running.load(std::memory_order_acquire) ? g_server->stats().websockets : 0;
-  return {{"items",
-           {item("Address", std::move(address)), item("Browsers connected", std::to_string(open)),
-            item("Other devices", "Off: a later version pairs them")}}};
+  const bool running = g_server != nullptr && g_running.load(std::memory_order_acquire);
+  const std::size_t open = running ? g_server->stats().websockets : 0;
+  // Other devices (G9): never the PC's own network address, which only the pairing sheet shows, in game (PV3).
+  std::string other;
+  if (!lan_on(own)) {
+    other = "Off";
+  } else if (!running) {
+    other = "On, once the browser view is served";
+  } else if (g_server->network_addresses().empty()) {
+    other = "On, but this PC has no home network address to listen on";
+  } else {
+    other = "On: served on this PC's home network too";
+  }
+  protocol::Json items = {item("Address", std::move(address)), item("Browsers connected", std::to_string(open)),
+                          item("Other devices", std::move(other))};
+  if (lan_on(own) || !devices().empty()) {
+    const std::size_t connected = running ? g_server->connected_devices().size() : 0;
+    items.push_back(item("Devices connected", std::to_string(connected) + " of " + std::to_string(devices().size()) +
+                                                   " paired"));
+  }
+  return {{"items", std::move(items)}};
+}
+
+// The devices paired (G9): each listed, whether Other devices is on or off, with its Forget (the table's row action).
+protocol::Json devices_body() {
+  const std::vector<std::string> connected = g_server != nullptr && g_running.load(std::memory_order_acquire)
+                                                 ? g_server->connected_devices()
+                                                 : std::vector<std::string>();
+  protocol::Json rows = protocol::Json::array();
+  for (const grace::spaces::PairedDeviceRecord& device : devices()) {
+    const bool now = std::find(connected.begin(), connected.end(), device.id) != connected.end();
+    rows.push_back({{"id", device.id},
+                    {"name", device.name},
+                    {"paired", device.paired},
+                    {"state", now ? "Connected" : "Not connected"}});
+  }
+  return {{"columns",
+           {{{"id", "name"}, {"label", "Device"}},
+            {{"id", "paired"}, {"label", "Paired"}},
+            {{"id", "state"}, {"label", "Now"}}}},
+          {"rows", std::move(rows)}};
 }
 
 void refresh_topics(grace::spaces::OwnSpace& own) {
@@ -412,7 +591,8 @@ void refresh_topics(grace::spaces::OwnSpace& own) {
                                     std::pair<const char*, protocol::Json>{"graceui.notices", notices_body()},
                                     std::pair<const char*, protocol::Json>{"graceui.hotkeys", hotkeys_body()},
                                     std::pair<const char*, protocol::Json>{"graceui.about", about_body()},
-                                    std::pair<const char*, protocol::Json>{"graceui.dashboard", dashboard_body(own)}}) {
+                                    std::pair<const char*, protocol::Json>{"graceui.dashboard", dashboard_body(own)},
+                                    std::pair<const char*, protocol::Json>{"graceui.devices", devices_body()}}) {
     const protocol::Json* now = own.state_of(topic);
     if (now == nullptr || *now != body) {
 #if defined(GRACEUI_TEST_EXPORTS)
@@ -616,9 +796,41 @@ grace::pages::Outcome hotkeys_command(const protocol::Cmd& command) {
   return out;
 }
 
+// dashboard.forget_device, in game or from this PC's browser (never a device's: sensitive, §7.2 item 16): {"id": a
+// paired device's id}. Revoked at once: the server closes its connections, and the file forgets it.
+grace::pages::Outcome forget_device(const protocol::Cmd& command) {
+  const protocol::Json& args = command.args;
+  if (!args.is_object() || !args.contains("id") || !args["id"].is_string() ||
+      !grace::serve::valid_device_id(args["id"].get_ref<const std::string&>())) {
+    return refusal(protocol::ErrorCode::invalid_value, "Not a device GraceUI knows.");
+  }
+  const std::string& id = args["id"].get_ref<const std::string&>();
+  std::vector<grace::spaces::PairedDeviceRecord>& list = devices();
+  const auto found = std::find_if(list.begin(), list.end(), [&](const auto& d) { return d.id == id; });
+  if (found == list.end()) {
+    return refusal(protocol::ErrorCode::invalid_value, "That device is not paired: it may have been forgotten already.");
+  }
+  list.erase(found);
+  keep_devices();
+  if (g_server != nullptr) {
+    g_server->set_devices(grace::spaces::device_keys(list));
+  }
+  log_line("a device was forgotten (%u paired)", static_cast<unsigned>(list.size()));
+  grace::pages::Outcome out;
+  out.ok = true;
+  return out;
+}
+
 // GraceUI's own commands past its settings (invariant 3): one entry point each.
 grace::pages::Outcome own_command(const protocol::Cmd& command) {
-  grace::pages::Outcome out = command.name.rfind("hotkeys.", 0) == 0 ? hotkeys_command(command) : mods_notices(command);
+  grace::pages::Outcome out =
+      command.name.rfind("hotkeys.", 0) == 0   ? hotkeys_command(command)
+      : command.name == "dashboard.forget_device" ? forget_device(command)
+      : command.name == "dashboard.pair"
+          // The menu answers it in game; a browser never shows a code (D66).
+          ? refusal(protocol::ErrorCode::not_now,
+                    "Only in game: choose Pair a device on GraceUI's Browser view page there, where the code is shown.")
+          : mods_notices(command);
   if (out.ok) {
     wake::signal_owners(input::hotkeys().changed_owners());  // their mods' polls have the change (D210, D212)
     if (grace::spaces::OwnSpace* own = g_own.load(std::memory_order_acquire); own != nullptr) {
@@ -765,6 +977,7 @@ grace::spaces::OwnSpace* own() noexcept {
         return nullptr;
       }
       restore_saved(*own);  // before any view or bake reads the store
+      restore_devices();
       publish_ui_scale(*own);
       g_own.store(own, std::memory_order_release);
     } catch (...) {
@@ -789,6 +1002,7 @@ void serve() noexcept {
       own_space->attach(*g_server, version_text(),
                         grace::spaces::OwnSpace::Hooks{[] { disconnect_browsers(); }, &own_command, &check_setting},
                         [] { hooks::wake(); });
+      g_server->set_devices(grace::spaces::device_keys(devices()));  // kept by the server across starts and stops
     }
     // GraceUI's own module re-check, every 60 s while the server runs (§7.2 item 1): an anti-cheat loaded since the
     // first request closes it for the session.
@@ -807,6 +1021,15 @@ void serve() noexcept {
       g_port.store(0, std::memory_order_relaxed);
       log_line("the browser view is stopped: no socket is open");
     }
+    // Other devices (G9): dashboard.lan to the server, which listens on the home network while it runs; and the devices
+    // it paired since the last wake, kept.
+    const bool lan = lan_on(*own_space);
+    if (lan != (g_lan_applied == 1)) {
+      g_server->set_network(lan);
+      log_line("other devices at home: %s", lan ? "on" : "off");
+    }
+    g_lan_applied = lan ? 1 : 0;
+    take_paired_devices();
     refresh_topics(*own_space);  // the Mods page: a mod came or went, or a quiet one posted (D181)
     own_space->serve();
     registry().expire(std::chrono::steady_clock::now());
@@ -832,6 +1055,109 @@ void disconnect_browsers() noexcept {
   if (g_server != nullptr && g_running.load(std::memory_order_acquire)) {
     g_server->renew_session();
   }
+}
+
+PairingStart start_pairing() noexcept {
+  PairingStart out;
+  try {
+    grace::spaces::OwnSpace* own = g_own.load(std::memory_order_acquire);
+    if (own == nullptr || !lan_on(*own)) {
+      out.words = "Turn on Other devices on your home network first.";
+      return out;
+    }
+    if (g_server == nullptr || !g_running.load(std::memory_order_acquire)) {
+      out.words = "The browser view is not served now: its address above says why.";
+      return out;
+    }
+    const std::vector<std::string> addresses = g_server->network_addresses();
+    if (addresses.empty()) {
+      out.words = "This PC has no home network address to listen on: is it connected to your router?";
+      return out;
+    }
+    if (devices().size() >= grace::serve::kMaxDevices) {
+      out.words = "Sixteen devices are paired already: forget one first.";
+      return out;
+    }
+    const std::string code = g_server->start_pairing();
+    if (code.size() != grace::serve::kCodeDigits) {
+      out.words = "No code could be made just now: try again.";
+      return out;
+    }
+    Pairing& p = pairing();
+    p = Pairing{};
+    p.active = true;
+    p.code = code;
+    p.expires = std::chrono::steady_clock::now() + grace::serve::kCodeLife;
+    const std::string port = std::to_string(g_port.load(std::memory_order_relaxed));
+    for (const std::string& address : addresses) {
+      p.addresses.push_back("http://" + address + ":" + port + "/");
+    }
+    log_line("Pair a device: a code is shown in game");  // never the code, nor the address (PV3, PV5)
+    out.ok = true;
+  } catch (...) {
+    out.words = "Not possible right now.";
+  }
+  return out;
+}
+
+void cancel_pairing() noexcept {
+  if (g_pairing == nullptr || !g_pairing->active) {
+    return;
+  }
+  if (!g_pairing->paired && g_server != nullptr) {
+    g_server->cancel_pairing();  // the code is void at once (D113)
+  }
+  try {
+    *g_pairing = Pairing{};
+  } catch (...) {
+    g_pairing->active = false;
+  }
+}
+
+PairingView pairing_view() noexcept {
+  PairingView view;
+  try {
+    if (g_pairing == nullptr || !g_pairing->active) {
+      return view;
+    }
+    Pairing& p = *g_pairing;
+    if (!p.paired && !p.ended) {
+      const grace::spaces::OwnSpace* own = g_own.load(std::memory_order_acquire);
+      const bool running = g_server != nullptr && g_running.load(std::memory_order_acquire);
+      if (own == nullptr || !lan_on(*own)) {
+        p.ended = true;
+        p.why = "Other devices was switched off, so the code is void.";
+      } else if (!running) {
+        p.ended = true;
+        p.why = "The browser view stopped, so the code is void.";
+      } else if (g_server->pairing_code() != p.code) {
+        take_paired_devices();  // used: by a device that just paired, or worn out
+        if (!p.paired) {
+          p.ended = true;
+          p.why = "The code ran out, or was entered wrongly five times.";
+        }
+      }
+      if (p.ended && g_server != nullptr) {
+        g_server->cancel_pairing();
+      }
+    }
+    if (p.paired) {
+      view.state = PairingView::State::paired;
+      view.paired_name = p.paired_name;
+    } else if (p.ended) {
+      view.state = PairingView::State::ended;
+      view.why = p.why;
+    } else {
+      view.state = PairingView::State::showing;
+      view.code = p.code;
+      const auto left = std::chrono::ceil<std::chrono::seconds>(p.expires - std::chrono::steady_clock::now()).count();
+      view.seconds = static_cast<std::uint32_t>(std::max<long long>(0, left));
+      view.addresses = p.addresses;
+    }
+  } catch (...) {
+    view = PairingView{};
+  }
+  return view;
 }
 
 #if defined(GRACEUI_TEST_EXPORTS)
