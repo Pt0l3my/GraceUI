@@ -365,7 +365,7 @@ class PageView {
   Edit edit_;
   void start_edit(EditKind kind, std::string id, std::string_view text, std::size_t max, bool masked,
                   const protocol::PageBlock* block = nullptr, protocol::Json row_key = {});
-  Action finish_edit(bool keep, int move_on);  // move_on: +1 Enter or Tab, -1 Shift+Tab, 0 neither
+  Action finish_edit(bool keep, int move_on);  // move_on: +1 Enter (a form's next field), 0 Tab (G41) or neither
   void end_edit();  // the field gone, a masked one's text overwritten first
   void edited();    // after a change: a form field's or an editor's text kept, search's hits found again
   void editor_store();  // the edited editor text into its document's edits (or the draft's notes)

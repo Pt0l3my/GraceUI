@@ -1219,7 +1219,10 @@ TEST_CASE("a form in game: its fields typed in turn, sent together, kept until t
   CHECK_FALSE(view.editing());
   press(view, Key::activate);
   type(view, "North light");
-  view.edit(EditInput{EditKey::tab});
+  view.edit(EditInput{EditKey::tab});  // Tab finishes the entry and moves no focus (G41)
+  CHECK(view.focused() == "field:hire/0/post");
+  CHECK_FALSE(view.editing());
+  move_to(view, "submit:hire/0");
   CHECK(view.focused() == "submit:hire/0");
   // The menu closes, and opens again: the fields keep their text (G38 (2)).
   view.cancel_confirmation();

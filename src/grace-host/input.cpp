@@ -70,6 +70,10 @@ constinit std::atomic<std::int32_t> g_motion_dinput_y{0};
 constinit std::atomic<std::int64_t> g_motion_raw_at{-1000000};
 constinit std::atomic<std::int64_t> g_motion_dinput_at{-1000000};
 constexpr std::int64_t kMotionLiveMs = 1000;
+
+constinit std::atomic<bool> g_menu_away{false};        // G40: let go at the focus's loss, kept for its return
+constinit std::atomic<std::int64_t> g_menu_return{0};  // when the focus came back while away; 0 while it has not
+constexpr std::int64_t kMenuReturnMs = 5000;           // the frames the menu waits for to take input again (EST)
 float g_motion_x = -1.0f;
 float g_motion_y = -1.0f;
 
@@ -647,7 +651,64 @@ void closed(const Holder& holder) noexcept {
   }
 }
 
-void tick() noexcept { closed(g_capture.tick(now_ms())); }
+namespace {
+
+// The menu is away no longer: it closes as any close would (G40), its thread woken to do its part.
+void menu_back_closed(const char* why) noexcept {
+  g_menu_return.store(0, std::memory_order_relaxed);
+  if (g_menu_away.exchange(false, std::memory_order_acq_rel)) {
+    log_line("the menu closes while away: %s", why);
+    hooks::wake();
+  }
+}
+
+}  // namespace
+
+void tick() noexcept {
+  const std::int64_t now = now_ms();
+  closed(g_capture.tick(now));
+  if (!g_menu_away.load(std::memory_order_acquire)) {
+    return;
+  }
+  // Danger or loading while the menu is away closes it as it would have closed it there (invariant 9, G40).
+  if ((world_flags() & (GRACEUI_WORLD_DANGER | GRACEUI_WORLD_LOADING)) != 0) {
+    menu_back_closed("danger or loading");
+    return;
+  }
+  // The focus is back: the menu takes input again once GraceUI draws, as any holder is granted it (a game may draw
+  // nothing while in the background, so the return waits for its frames, at most kMenuReturnMs).
+  const std::int64_t back = g_menu_return.load(std::memory_order_relaxed);
+  if (back == 0) {
+    return;
+  }
+  const grace::input::Request again = request(0, Kind::menu, grace::input::want_all);
+  if (again.answer == grace::input::Answer::granted) {
+    g_menu_return.store(0, std::memory_order_relaxed);
+    if (g_menu_away.exchange(false, std::memory_order_acq_rel)) {
+      log_line("the game has the focus again: the menu takes input again where it was");
+      hooks::wake();  // the menu's thread goes on where it was
+    }
+  } else if (again.answer == grace::input::Answer::refused) {
+    menu_back_closed("another holder has input");
+  } else if (again.why != grace::input::NotNow::not_ready || now - back >= kMenuReturnMs) {
+    menu_back_closed(again.why == grace::input::NotNow::game_menu ? "a game menu is open" : "GraceUI is not drawing");
+  }
+}
+
+void set_menu_away() noexcept {
+  g_menu_return.store(0, std::memory_order_relaxed);
+  g_menu_away.store(true, std::memory_order_release);
+}
+
+bool menu_away() noexcept { return g_menu_away.load(std::memory_order_acquire); }
+
+void focus_back() noexcept {
+  if (g_menu_away.load(std::memory_order_acquire)) {
+    g_menu_return.store(std::max<std::int64_t>(now_ms(), 1), std::memory_order_relaxed);  // the next frames ask
+  }
+}
+
+void focus_gone() noexcept { g_menu_return.store(0, std::memory_order_relaxed); }  // gone again before the return
 
 void fault(const char* why) noexcept {
   if (!g_off.exchange(true, std::memory_order_acq_rel)) {

@@ -6583,6 +6583,87 @@ void run_editor(const std::wstring& dll) {
 // The menu's pointer in a game that recentres its cursor every frame and reads the mouse as raw input, as the owner met
 // it in the real game (D232): the pointer moves by the mouse's own motion, keeps where it was moved, and is not pulled
 // back to the centre by the game's cursor.
+// The menu across an Alt+Tab (G40), and Tab in it (G41): Tab moves no focus; the focus's loss lets go of input but
+// keeps the menu, which takes input again on the focus's return on the same page and row; danger while it is away
+// closes it, and the return finds it closed.
+void run_menu_away(const std::wstring& dll) {
+  Game game(false, 1280, 720);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  press(window, VK_RIGHT, 0x4D);  // into the page
+  menu = menu_after(game, grace, menu.lists);
+  press(window, VK_DOWN, 0x50);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string page = menu.page;
+  const std::string row = menu.focused;
+
+  // 1. Tab, and Shift+Tab, move no focus (G41).
+  press(window, VK_TAB, 0x0F);
+  frames(game, 4);
+  menu = grace.menu();
+  const bool tab_still = menu.open == 1 && page == menu.page && row == menu.focused;
+  check(tab_still && !row.empty(), "menu away: Tab moves no focus",
+        "on %s at %s; after Tab: %s at %s, %s", page.c_str(), row.c_str(), menu.page, menu.focused,
+        menu.open == 1 ? "open" : "CLOSED");
+
+  // 2. Away: another window takes the activation and the focus, as an Alt+Tab does.
+  const auto take_focus = [&]() {
+    const HWND other = CreateWindowExW(0, L"GraceHarness", L"other", WS_OVERLAPPEDWINDOW, 700, 400, 200, 120, nullptr,
+                                       nullptr, GetModuleHandleW(nullptr), nullptr);
+    ShowWindow(other, SW_SHOW);
+    SetForegroundWindow(other);
+    SetFocus(other);
+    pump_messages();
+    frames(game, 3);
+    return other;
+  };
+  const auto give_back = [&](HWND other) {
+    if (other != nullptr) {
+      DestroyWindow(other);
+    }
+    cursor_into(window);
+    pump_messages();
+    frames(game, 3);
+  };
+  HWND other = take_focus();
+  const GraceUiTestMenu away = grace.menu();
+  const GraceUiTestInput away_input = grace.input();
+  // 3. Back: the menu takes input again, on the same page and row.
+  give_back(other);
+  menu = menu_after(game, grace, away.lists);
+  const GraceUiTestInput back_input = grace.input();
+  const bool back = menu.open == 1 && page == menu.page && row == menu.focused &&
+                    back_input.holder_kind == GRACEUI_TEST_KIND_MENU;
+  check(away.open == 0 && away_input.holder_kind == 0 && away_input.last_close_reason == GRACEUI_TEST_CLOSED_FOCUS_LOST &&
+            back,
+        "menu away: it lets go at an Alt+Tab and takes input again on the return",
+        "away: menu %s, holder %u (%s); back: menu %s on %s at %s, holder %u", away.open == 1 ? "HOLDING" : "let go",
+        away_input.holder_kind, reason_name(away_input.last_close_reason), menu.open == 1 ? "open" : "CLOSED",
+        menu.page, menu.focused, back_input.holder_kind);
+
+  // 4. Away again, and danger meanwhile: the menu closes, and the return finds it closed (invariant 9).
+  other = take_focus();
+  grace.set_world(GRACEUI_TEST_WORLD_DANGER);
+  frames(game, 3);
+  grace.set_world(0);
+  frames(game, 2);
+  give_back(other);
+  frames(game, 3);
+  const GraceUiTestMenu after_danger = grace.menu();
+  const GraceUiTestInput after_input = grace.input();
+  check(after_danger.open == 0 && after_input.holder_kind == 0, "menu away: danger while away closes it",
+        "after danger while away and the focus's return: menu %s, holder %u",
+        after_danger.open == 1 ? "OPEN AGAIN" : "closed", after_input.holder_kind);
+}
+
 void run_menu_recentred(const std::wstring& dll) {
   Game game(false, 1280, 720);
   const HWND window = game.window();
@@ -8670,6 +8751,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"anti-cheat-recheck") {
     std::printf("-- scenario: the module re-check closes the browser view for the session (§7.2 item 1)\n");
     run_anti_cheat_later(dll, true);
+  } else if (scenario == L"menu-away") {
+    std::printf("-- scenario: the menu across an Alt+Tab, and Tab in it (G40, G41)\n");
+    run_menu_away(dll);
   } else if (scenario == L"menu-recentred") {
     std::printf("-- scenario: the menu's pointer in a game that recentres its cursor (D232)\n");
     run_menu_recentred(dll);
@@ -8774,7 +8858,7 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
             L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake"}) {
         run(child_scenario, dll, this_program());
       }

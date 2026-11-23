@@ -2768,15 +2768,13 @@ Action PageView::edit(const EditInput& in) {
       }
       return finish_edit(true, edit_.kind == EditKind::form_field ? 1 : 0);  // an editor's text: one paragraph, done
     case EditKey::tab:
+      // Tab finishes the entry where it is and moves no focus (G41): in search, the query stays in its box and the
+      // results close; in a field, its text is kept as Enter would keep it, the focus staying on the field.
       if (edit_.kind == EditKind::search) {
-        end_edit();  // its query stays in the box; its results close
-        scope_ = in.shift ? Scope::rail : Scope::page;
-        if (in.shift) {
-          rail_focus_ = rail_index_of_page();
-        }
+        end_edit();
         return {};
       }
-      return finish_edit(true, in.shift ? -1 : 1);
+      return finish_edit(true, 0);
     case EditKey::escape:
       if (edit_.kind == EditKind::search) {
         search_query_.clear();

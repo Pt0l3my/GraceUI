@@ -253,6 +253,11 @@ void place_ime(HWND window) noexcept {
 }
 
 void lost_focus(std::int64_t now) noexcept {
+  input::focus_gone();
+  const grace::input::Holder before = input::capture().holder();
+  if (before.kind == grace::input::Kind::menu && before.owner == 0 && before.phase == grace::input::Phase::active) {
+    input::set_menu_away();  // G40: the menu lets go of input but stays, and asks again when the focus comes back
+  }
   input::closed(input::messages().focus_lost(now));
   char32_t dropped[2];
   g_pairer.flush(dropped);
@@ -469,6 +474,9 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
     }
     case WM_KILLFOCUS:
       lost_focus(now);
+      return out;
+    case WM_SETFOCUS:
+      input::focus_back();  // the menu, if it was away, takes input again (G40)
       return out;
     case WM_ACTIVATEAPP:
       if (wparam == FALSE) {

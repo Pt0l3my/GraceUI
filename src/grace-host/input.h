@@ -82,6 +82,16 @@ void window_moved() noexcept;  // WM_SIZE or WM_MOVE: the cursor's confinement f
 // position, which WM_MOUSEMOVE reports, is pulled back too. While raw input or DirectInput gives the mouse's relative
 // motion, GraceUI moves its own pointer by it, within the client area, and leaves the system cursor to the game.
 enum class MotionSource : std::uint8_t { raw_input, direct_input };
+
+// ---- The menu across the game's loss of focus (G40). At an Alt+Tab the menu lets go of input as any holder does
+// (capture released, every key forgotten), but it is kept open, away: its page, row, confirmation, field and sheet
+// as they were. When the game's window has the focus again it asks for input again; granted, it goes on where it was
+// (the keys held then do nothing until released, invariant 8); refused, or if danger or loading came meanwhile
+// (invariant 9), it closes as any close would.
+void set_menu_away() noexcept;   // the window's thread, at the focus's loss, before the menu's close
+bool menu_away() noexcept;
+void focus_back() noexcept;      // the window's thread, at WM_SETFOCUS: the next frames ask again, if it was away
+void focus_gone() noexcept;      // the window's thread, at any loss of the focus: a return not yet taken is off
 // Any thread (the window's for raw input, the game's reading thread for DirectInput), while a holder has the mouse:
 // motion of the mouse, in counts. Raw input is preferred where both come, so that nothing counts twice.
 void relative_motion(MotionSource source, std::int32_t dx, std::int32_t dy) noexcept;

@@ -149,6 +149,7 @@ struct State {
   std::map<std::uint64_t, std::string> command_names;  // a ticket: its command's name, for a slow one's sender (D216)
   std::set<std::uint64_t> captures;  // the tickets the capture's modal sent: their answers go back to it (D209)
   bool pairing = false;                 // Pair a device's sheet is open (G9)
+  bool away = false;                    // let go of input at an Alt+Tab, kept for the focus's return (G40)
   grace::view::PageView::Sheet sheet;   // as last shown
   std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
   std::uint64_t states = 0;    // its other topics', as the menu last took them (D181)
@@ -897,6 +898,13 @@ void drain() noexcept {
   }
 }
 
+// The menu's part of the close routine (§5.1), whatever closed it: changes stay and the page is kept; a confirmation
+// is cancelled and a field's edit ends (its text kept, G38 (2)); Pair a device's code is void (G9, D113).
+void close_view(State& m) {
+  end_pairing(m);
+  active_view(m).cancel_confirmation();
+}
+
 void serve_menu() {
   if (g_lists.load(std::memory_order_acquire) == nullptr) {
     g_lists.store(new grace::abi::DrawListBuffers(), std::memory_order_release);
@@ -910,14 +918,20 @@ void serve_menu() {
     sync_spaces(m);  // a mod's space came or went, open or not
   }
   if (!ours(holder)) {
+    const bool away = input::menu_away();  // G40: let go at an Alt+Tab, kept for the focus's return
     if (m.open) {
       m.open = false;
-      end_pairing(m);  // whatever closed the menu (danger included), the code is void with it (G9, D113, invariant 7)
-      active_view(m).cancel_confirmation();  // the close routine's part (§5.1): changes stay, the page is kept
-      g_editing.store(false, std::memory_order_release);  // an edit ends as Escape ends it (G38 (2))
+      m.away = away;
+      g_editing.store(false, std::memory_order_release);  // no key reaches a field while nothing holds input
       input::set_caret(0, 0, 0);
       active_view(m).pointer(grace::view::Pointer{grace::view::Pointer::Kind::leave, 0, 0, 0});  // no hover, no drag
       watch(m, false);                       // a mod builds nothing the menu no longer shows
+      if (!away) {
+        close_view(m);
+      }
+    } else if (m.away && !away) {
+      m.away = false;  // the return was refused, or danger or loading came while away: the close it was spared
+      close_view(m);
     }
     drain();
     return;
@@ -942,7 +956,10 @@ void serve_menu() {
       activate(m, m.spaces[0]->id, std::string(), From::open);  // the first open: the first mod's space, its first page
     }
     m.ever_opened = true;
-    active_view(m).cancel_confirmation();
+    if (!m.away) {
+      active_view(m).cancel_confirmation();
+    }
+    m.away = false;  // back from an Alt+Tab: the page, row, confirmation, field and sheet as they were (G40)
     watch(m, true);
     dirty = true;
   }
@@ -1242,7 +1259,8 @@ bool key_down(std::uint32_t vk, grace::input::Key code, bool shift, bool ctrl, b
     case VK_DOWN: key = Key::down; break;
     case VK_LEFT: key = Key::left; break;
     case VK_RIGHT: key = Key::right; break;
-    case VK_TAB: key = shift ? Key::previous : Key::next; break;
+    // Tab moves no focus in the menu (G41): the arrows, Enter and Esc do. Inside a field it finishes the entry (its
+    // edit keys, above); otherwise it does nothing here, and never reaches the game while the menu holds the keyboard.
     case VK_RETURN:
     case VK_SPACE: key = Key::activate; break;
     case VK_ESCAPE: key = Key::back; break;
