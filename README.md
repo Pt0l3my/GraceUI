@@ -52,7 +52,9 @@ lets the menu's search in game find every mod's settings, as the browser view's 
 how far its start-up got, so that a test run that stalls says where. **GraceUI 0.2.25** lets a phone or another
 computer at home open the browser view once the player switches Other devices on and pairs it with a six-digit code
 shown in game; each paired device is listed with Forget, and none may change the browser view, set a mod's secrets or do
-anything else a mod marks sensitive (protocol 1.8). Hotkeys and the log are declared for the increments
+anything else a mod marks sensitive (protocol 1.8). **GraceUI 0.2.26** lets a mod take a file from the browser view on
+this PC: a drop zone on its page sends one file, at most 32 MiB, checked on arrival and handed to the mod, which GraceUI
+keeps nothing of (protocol 1.9, ABI 1.6). Hotkeys and the log are declared for the increments
 that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the
