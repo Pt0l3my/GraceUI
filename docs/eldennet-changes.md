@@ -1205,3 +1205,10 @@ The owner declined proposal 0011. Nothing changes in GraceUI, and nothing is ask
   such too, but we only care about while the chatbox is open"). Your box already takes the pad as a holder (D176's PAD
   events), so this is yours to map.
 
+## 58. Search across spaces in game (2026-11-23, D219; GraceUI 0.2.23)
+
+Nothing to change on your side. The menu's search in game now finds every space's settings, as the browser view's
+already did: from EldenNet's pages a player finds GraceUI's Menu size, and from GraceUI's pages your settings, each named
+by its space ("EldenNet › Pacing") and opened on its home page with its row focused. Your settings are found by their
+labels, synonyms and keys, on the pages present in your increment, as before; give them the synonyms players would type.
+
