@@ -355,6 +355,14 @@ std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capaci
 
 void test_set_recheck_ms(std::uint32_t ms) noexcept { spaces::test_set_recheck_ms(ms); }
 
+std::uint32_t test_pairing_code(char* out, std::uint32_t capacity) noexcept {
+  return spaces::test_pairing_code(out, capacity);
+}
+
+void test_set_network_addresses(const std::uint8_t* addresses, std::uint32_t count) noexcept {
+  spaces::test_set_network_addresses(addresses, count);
+}
+
 std::uint32_t test_menu_shows(const char* text) noexcept { return menu::test_shows(text) ? 1 : 0; }
 
 std::uint32_t test_init_step() noexcept { return state::init_step.load(std::memory_order_acquire); }

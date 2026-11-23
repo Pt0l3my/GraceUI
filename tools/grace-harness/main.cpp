@@ -765,6 +765,8 @@ struct GraceUi {
   decltype(&GraceUI_Test_MenuShows) menu_shows = nullptr;
   decltype(&GraceUI_Test_InitStep) init_step = nullptr;
   decltype(&GraceUI_Test_GetServer) get_server = nullptr;
+  decltype(&GraceUI_Test_GetPairingCode) get_pairing_code = nullptr;
+  decltype(&GraceUI_Test_SetNetworkAddresses) set_network_addresses = nullptr;
 
   bool load(const std::wstring& path) {
     if (!g_keep_settings) {  // every scenario starts from GraceUI's defaults, unless it reads what another kept (D179)
@@ -816,7 +818,9 @@ struct GraceUi {
     menu_shows = function_of<decltype(menu_shows)>(module, "GraceUI_Test_MenuShows");
     init_step = function_of<decltype(init_step)>(module, "GraceUI_Test_InitStep");
     get_server = function_of<decltype(get_server)>(module, "GraceUI_Test_GetServer");
-    return get_server != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
+    get_pairing_code = function_of<decltype(get_pairing_code)>(module, "GraceUI_Test_GetPairingCode");
+    set_network_addresses = function_of<decltype(set_network_addresses)>(module, "GraceUI_Test_SetNetworkAddresses");
+    return get_server != nullptr && get_pairing_code != nullptr && set_network_addresses != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
            get_menu_bounds != nullptr && set_anti_cheat_recheck != nullptr && menu_shows != nullptr && init_step != nullptr &&
            panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
@@ -922,6 +926,12 @@ struct GraceUi {
       names.emplace_back(name);
     }
     return names;
+  }
+
+  // The code the pairing sheet shows (G9), or "" while none shows.
+  std::string pairing_code() const {
+    char code[16] = {};
+    return get_pairing_code(code, sizeof code) > 0 ? std::string(code) : std::string();
   }
 
   void print_log() const {
@@ -6690,6 +6700,463 @@ void run_quiet_read(const std::wstring& dll) {
         joined(now).c_str(), file.is_discarded() ? "NO FILE" : file.dump().c_str());
 }
 
+// ---- Other devices at home (G9, §7.2 item 16): the network listener on 127.0.0.2 (GraceUI_Test_SetNetworkAddresses,
+// never a real address), Pair a device's sheet in the menu, a device paired with its code, refused what GraceUI marks
+// sensitive, forgotten from the menu, and kept in user\devices.toml for the next session. Run from the build's GraceUI
+// folder, as pages is, so that the server can start.
+
+constexpr std::array<std::uint8_t, 4> kHomeAddress{127, 0, 0, 2};
+
+std::wstring devices_file_of(const std::wstring& dll) {
+  const std::size_t slash = dll.find_last_of(L"\\/");
+  return (slash == std::wstring::npos ? std::wstring() : dll.substr(0, slash + 1)) + L"user\\devices.toml";
+}
+
+// The harness's note to its second process: the kept device's cookie, beside the file it pairs with; deleted after.
+std::wstring device_note_of(const std::wstring& dll) {
+  const std::size_t slash = dll.find_last_of(L"\\/");
+  return (slash == std::wstring::npos ? std::wstring() : dll.substr(0, slash + 1)) + L"user\\harness-device.txt";
+}
+
+std::string home_host(std::uint16_t port) { return "127.0.0.2:" + std::to_string(port); }
+std::string home_origin(std::uint16_t port) { return "http://127.0.0.2:" + std::to_string(port); }
+
+std::string device_cookie_field(std::string_view cookie) {
+  return cookie.empty() ? std::string() : "Cookie: en_device=" + std::string(cookie) + "\r\n";
+}
+
+std::string home_page_load(std::uint16_t port, std::string_view cookie = "") {
+  return "GET / HTTP/1.1\r\nHost: " + home_host(port) +
+         "\r\nSec-Fetch-Site: none\r\nSec-Fetch-Mode: navigate\r\nSec-Fetch-Dest: document\r\n" +
+         device_cookie_field(cookie) + "\r\n";
+}
+
+std::string home_post(std::uint16_t port, std::string_view path, std::string_view body, std::string_view cookie = "") {
+  return "POST " + std::string(path) + " HTTP/1.1\r\nHost: " + home_host(port) + "\r\nOrigin: " + home_origin(port) +
+         "\r\nSec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: cors\r\nContent-Type: application/json\r\n" +
+         device_cookie_field(cookie) + "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n" + std::string(body);
+}
+
+std::string home_upgrade(std::uint16_t port, std::string_view cookie) {
+  return "GET /api/ws HTTP/1.1\r\nHost: " + home_host(port) + "\r\nOrigin: " + home_origin(port) +
+         "\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\n"
+         "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: websocket\r\n" +
+         device_cookie_field(cookie) + "\r\n";
+}
+
+std::string device_from(const grace::serve::iotest::Reply& reply) {
+  const std::optional<std::string> set = reply.field("set-cookie");
+  if (!set || !set->starts_with("en_device=")) {
+    return {};
+  }
+  return set->substr(10, set->find(';') - 10);
+}
+
+bool home_listening(std::uint16_t port) {
+  grace::serve::iotest::Client client;
+  return client.connect_ipv4(kHomeAddress, port);
+}
+
+// A device's WebSocket on the network listener: upgraded with its cookie, then its ticket.
+bool device_join(grace::serve::iotest::WsClient& ws, std::uint16_t port, std::string_view cookie) {
+  namespace io = grace::serve::iotest;
+  const io::Reply ticket = io::request_ipv4(kHomeAddress, port, home_post(port, "/api/ticket", "{}", cookie));
+  const grace::protocol::Json json = grace::protocol::Json::parse(ticket.body, nullptr, false);
+  if (ticket.status != 200 || !json.is_object() || !json.contains("ticket")) {
+    return false;
+  }
+  return ws.open_head(kHomeAddress, port, home_upgrade(port, cookie)) == 101 &&
+         ws.hello(json["ticket"].get<std::string>());
+}
+
+// A command on a joined WebSocket and its result: "ok", or its error's name.
+std::string answered(grace::serve::iotest::WsClient& ws, std::uint32_t id, const char* name, grace::protocol::Json args) {
+  using grace::protocol::Json;
+  ws.send_json(Json{{"v", 1}, {"t", "cmd"}, {"space", "graceui"}, {"id", id}, {"name", name}, {"args", std::move(args)}});
+  for (int i = 0; i < 20; ++i) {
+    const std::optional<Json> result = ws.next_of("result", std::chrono::milliseconds(500));
+    if (result && result->value("id", 0u) == id) {
+      return result->value("ok", false) ? std::string("ok") : result->value("error", std::string("no answer"));
+    }
+  }
+  return "no answer";
+}
+
+// Opens the menu (if `open`) and walks to `page`, then down to `focus`.
+GraceUiTestMenu to_focus(Game& game, const GraceUi& grace, HWND window, const char* page, const std::string& focus,
+                         bool open) {
+  GraceUiTestMenu menu = grace.menu();
+  if (open) {
+    press(window, VK_F5, kScanF5);
+    menu = menu_after(game, grace, menu.lists);
+  }
+  for (int i = 0; i < 8 && std::string_view(menu.page) != page; ++i) {
+    press(window, VK_NEXT, 0x51);
+    menu = menu_after(game, grace, menu.lists);
+  }
+  for (const UINT key : {VK_DOWN, VK_UP}) {  // down first; up if it lies above
+    for (int i = 0; i < 40 && menu.focused != focus; ++i) {
+      const std::string before = menu.focused;
+      press(window, key, key == VK_DOWN ? 0x50 : 0x48);
+      menu = menu_after(game, grace, menu.lists);
+      if (menu.focused == before) {
+        break;  // the page's end
+      }
+    }
+  }
+  return menu;
+}
+
+std::string wait_code(Game& game, const GraceUi& grace) {
+  std::string code;
+  for (int i = 0; i < 150 && code.size() != 6; ++i) {
+    frames(game, 1);
+    Sleep(20);
+    code = grace.pairing_code();
+  }
+  return code;
+}
+
+bool wait_shows(Game& game, const GraceUi& grace, const std::string& text) {
+  for (int i = 0; i < 150; ++i) {
+    if (grace.menu_shows(text.c_str()) != 0) {
+      return true;
+    }
+    frames(game, 1);
+    Sleep(20);
+  }
+  return false;
+}
+
+std::string device_rows(const grace::protocol::Json& body) {
+  if (!body.is_object() || !body.contains("rows") || !body["rows"].is_array()) {
+    return "NO BODY";
+  }
+  std::string out;
+  for (const grace::protocol::Json& row : body["rows"]) {
+    out += (out.empty() ? "" : "; ") + row.value("name", std::string()) + " (" + row.value("state", std::string()) + ")";
+  }
+  return out.empty() ? "none" : out;
+}
+
+// The demo space for the browser view alone, so that the server runs and the menu opens on GraceUI's own pages.
+GraceUiStatus register_browser_demo(const GraceUiApi1* table, GraceUiConsumer consumer) {
+  const grace::pages::BuiltinSpace& space = grace::pages::builtin_spaces()[1];
+  GraceUiSpaceDesc desc{};
+  desc.size = sizeof desc;
+  desc.views = GRACEUI_VIEW_BROWSER;
+  desc.version = GRACEUI_VERSION_PACK(1, 0, 0);
+  desc.pages = space.pages.data();
+  desc.pages_length = space.pages.size();
+  desc.settings = space.settings.data();
+  desc.settings_length = space.settings.size();
+  desc.increment = "0.2";
+  desc.increment_length = 3;
+  return table->register_pages(consumer, &desc);
+}
+
+GraceUiTestServer wait_running(Game& game, const GraceUi& grace) {
+  GraceUiTestServer server = grace.server();
+  for (int i = 0; i < 150 && server.running == 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+    server = grace.server();
+  }
+  return server;
+}
+
+bool wait_listening(Game& game, std::uint16_t port, bool want) {
+  for (int i = 0; i < 150; ++i) {
+    if (home_listening(port) == want) {
+      return true;
+    }
+    frames(game, 1);
+    Sleep(20);
+  }
+  return false;
+}
+
+void run_pairing_write(const std::wstring& dll) {
+  namespace io = grace::serve::iotest;
+  using grace::protocol::Json;
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  grace.set_network_addresses(kHomeAddress.data(), 1);
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+  const Connected demo = connect(table, request_for("demo", GRACEUI_VERSION_PACK(0, 1, 0), "The demo space", "notices pages"));
+  const GraceUiStatus registered = register_browser_demo(table, demo.answer.consumer);
+  const GraceUiTestServer server = wait_running(game, grace);
+  if (registered != GRACEUI_OK || server.running == 0) {
+    check(false, "pairing: the server runs", "register %s; the server %s", status_name(registered),
+          server.running != 0 ? "runs" : "DOES NOT RUN");
+    grace.print_log();
+    return;
+  }
+  io::start_client_network();
+  const std::uint16_t port = static_cast<std::uint16_t>(server.port);
+
+  // 1. Off by default: nothing listens on the network address, and Pair a device says why.
+  const bool closed_at_first = !home_listening(port);
+  GraceUiTestMenu menu = to_focus(game, grace, window, "graceui.browser", "section-action:other-devices/pair", true);
+  const std::string on_pair = menu.focused;
+  const std::uint32_t refusals = menu.refusals;
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  const bool said_off = wait_shows(game, grace, "Turn on Other devices on your home network first.");
+  check(closed_at_first && on_pair == "section-action:other-devices/pair" && menu.refusals == refusals + 1 && said_off &&
+            grace.pairing_code().empty(),
+        "pairing: off by default", "127.0.0.2 %s; focus on %s; Pair a device %s, %s",
+        closed_at_first ? "closed" : "LISTENING", on_pair.c_str(), menu.refusals == refusals + 1 ? "refused" : "NOT REFUSED",
+        said_off ? "saying why" : "WITHOUT ITS WORDS");
+
+  // 2. On, from the menu: the listener opens; an unpaired device sees the pairing page alone, and no cookie.
+  press(window, VK_DOWN, 0x50);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string on_switch = menu.focused;
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  const bool opened = wait_listening(game, port, true);
+  const io::Reply unpaired = io::request_ipv4(kHomeAddress, port, home_page_load(port));
+  const io::Reply no_ticket = io::request_ipv4(kHomeAddress, port, home_post(port, "/api/ticket", "{}"));
+  check(on_switch == "setting:dashboard.lan" && opened && unpaired.status == 200 &&
+            unpaired.body.find("Pair this device") != std::string::npos && unpaired.count("set-cookie") == 0 &&
+            no_ticket.status == 403,
+        "pairing: on, an unpaired device sees the pairing page", "focus on %s; 127.0.0.2 %s; a page load %d%s; a ticket %d",
+        on_switch.c_str(), opened ? "listening" : "NOT LISTENING", unpaired.status,
+        unpaired.body.find("Pair this device") != std::string::npos ? " (the pairing page)" : " (NOT THE PAIRING PAGE)",
+        no_ticket.status);
+
+  // 3. Pair a device: the sheet shows the code and the address; a wrong code is refused; the right one pairs, once.
+  press(window, VK_UP, 0x48);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string on_pair_again = menu.focused;
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string code = wait_code(game, grace);
+  if (code.size() != 6) {
+    note("focus was on %s; refusals %u", on_pair_again.c_str(), menu.refusals);
+  }
+  const std::string spaced = code.size() == 6 ? code.substr(0, 3) + " " + code.substr(3) : std::string("?");
+  const bool shows_code = wait_shows(game, grace, spaced);
+  const bool shows_address = wait_shows(game, grace, "http://127.0.0.2:" + std::to_string(port) + "/");
+  const std::string wrong_code = code == "000000" ? "000001" : "000000";
+  const io::Reply wrong = io::request_ipv4(kHomeAddress, port,
+                                           home_post(port, "/api/pair", Json{{"code", wrong_code}, {"name", "x"}}.dump()));
+  const io::Reply paired = io::request_ipv4(
+      kHomeAddress, port, home_post(port, "/api/pair", Json{{"code", code}, {"name", "Hallway tablet"}}.dump()));
+  const std::string tablet = device_from(paired);
+  const io::Reply again = io::request_ipv4(
+      kHomeAddress, port, home_post(port, "/api/pair", Json{{"code", code}, {"name", "Hallway tablet"}}.dump()));
+  const bool shows_paired = wait_shows(game, grace, "Hallway tablet is paired");
+  const Json listed = own_topic(game, grace, "graceui.devices", [](const Json& b) { return b["rows"].size() == 1; });
+  check(code.size() == 6 && shows_code && shows_address && wrong.status == 403 && paired.status == 200 &&
+            !tablet.empty() && again.status == 403 && shows_paired && device_rows(listed).starts_with("Hallway tablet ("),
+        "pairing: the sheet's code pairs a device once",
+        "a code %s; shown %s, its address %s; a wrong code %d; the right one %d %s; again %d; the sheet %s; listed: %s",
+        code.size() == 6 ? "of six digits" : "MISSING", shows_code ? "yes" : "NO", shows_address ? "yes" : "NO",
+        wrong.status, paired.status, tablet.empty() ? "WITHOUT A COOKIE" : "with its cookie", again.status,
+        shows_paired ? "says it is paired" : "DOES NOT SAY SO", device_rows(listed).c_str());
+
+  // 4. Kept: devices.toml holds its name and a hash, never the cookie; the settings file never names a device.
+  std::string file;
+  for (int i = 0; i < 150 && file.find("Hallway tablet") == std::string::npos; ++i) {
+    const std::vector<unsigned char> bytes = read_file(devices_file_of(dll));
+    file.assign(bytes.begin(), bytes.end());
+    frames(game, 1);
+    Sleep(20);
+  }
+  const std::vector<unsigned char> settings_bytes = read_file(settings_file_of(dll));
+  const std::string settings(settings_bytes.begin(), settings_bytes.end());
+  check(file.find("graceui_devices = 1") != std::string::npos && file.find("name = \"Hallway tablet\"") != std::string::npos &&
+            file.find("hash = \"") != std::string::npos && !tablet.empty() && file.find(tablet) == std::string::npos &&
+            settings.find("Hallway") == std::string::npos && settings.find(tablet) == std::string::npos,
+        "pairing: kept in devices.toml, never the cookie", "the file %s; the settings file %s",
+        file.empty() ? "MISSING" : (file.find(tablet) == std::string::npos ? "holds a hash" : "HOLDS THE COOKIE"),
+        settings.find("Hallway") == std::string::npos ? "names no device" : "NAMES THE DEVICE");
+
+  // 5. The paired device opens the app and a WebSocket; it is refused what GraceUI marks sensitive, not the rest.
+  const io::Reply app = io::request_ipv4(kHomeAddress, port, home_page_load(port, tablet));
+  io::WsClient device;
+  const bool device_joined = device_join(device, port, tablet);
+  const std::string lan_off = answered(device, 1, "settings.set", Json{{"key", "dashboard.lan"}, {"value", false}});
+  const std::string forget = answered(device, 2, "dashboard.forget_device", Json{{"id", "0123456789abcdef"}});
+  const std::string pair = answered(device, 3, "dashboard.pair", Json::object());
+  const std::string disconnect = answered(device, 4, "dashboard.disconnect", Json{{"confirm", true}});
+  const std::string scale = answered(device, 5, "settings.set", Json{{"key", "ui.scale"}, {"value", 1.3}});
+  const std::string menu_key = answered(device, 6, "settings.set", Json{{"key", "hotkeys.menu"}, {"value", "F6"}});
+  const std::string hotkeys = answered(device, 7, "hotkeys.reset_all", Json{{"confirm", true}});
+  const std::string notices = answered(device, 8, "mods.notices", Json{{"id", "demo"}, {"on", false}});
+  check(app.status == 200 && app.body.find("Pair this device") == std::string::npos && device_from(app) == tablet &&
+            device_joined && lan_off == "not_now" && forget == "not_now" && pair == "not_now" && disconnect == "not_now" &&
+            menu_key == "not_now" && hotkeys == "not_now" && notices == "not_now" && scale == "ok",
+        "pairing: a paired device, refused the sensitive commands",
+        "the page %d%s; its WebSocket %s; dashboard.lan %s, forget %s, pair %s, disconnect %s, the menu's key %s, "
+        "hotkeys %s, notices %s; ui.scale %s",
+        app.status, device_from(app) == tablet ? " (its cookie renewed)" : " (NO RENEWAL)",
+        device_joined ? "joined" : "REFUSED", lan_off.c_str(), forget.c_str(), pair.c_str(), disconnect.c_str(),
+        menu_key.c_str(), hotkeys.c_str(), notices.c_str(), scale.c_str());
+
+  // 6. The code lives only while its sheet is open (D113): Escape closes it, and closing the menu does too.
+  press(window, VK_ESCAPE, kScanEscape);
+  menu = menu_after(game, grace, menu.lists);
+  const bool gone_on_escape = grace.pairing_code().empty();
+  press(window, VK_RETURN, 0x1C);  // focus is still on Pair a device
+  menu = menu_after(game, grace, menu.lists);
+  const std::string second = wait_code(game, grace);
+  press(window, VK_F5, kScanF5);
+  frames(game, 3);
+  const bool gone_on_close = grace.pairing_code().empty();
+  const io::Reply stale = io::request_ipv4(
+      kHomeAddress, port, home_post(port, "/api/pair", Json{{"code", second}, {"name", "Late phone"}}.dump()));
+  check(gone_on_escape && second.size() == 6 && gone_on_close && stale.status == 403 &&
+            stale.body.find("none is showing") != std::string::npos,
+        "pairing: the code ends with its sheet", "Escape %s; a new code %s; the menu closed %s; that code then %d",
+        gone_on_escape ? "voids it" : "LEAVES IT", second.size() == 6 ? "shown" : "MISSING",
+        gone_on_close ? "voids it" : "LEAVES IT", stale.status);
+
+  // 7. A second device; then Forget the first from the menu: its WebSocket ends, its cookie opens the pairing page alone.
+  menu = to_focus(game, grace, window, "graceui.browser", "section-action:other-devices/pair", true);
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string third = wait_code(game, grace);
+  const io::Reply laptop_reply = io::request_ipv4(
+      kHomeAddress, port, home_post(port, "/api/pair", Json{{"code", third}, {"name", "Spare laptop"}}.dump()));
+  const std::string laptop = device_from(laptop_reply);
+  wait_shows(game, grace, "Spare laptop is paired");
+  press(window, VK_ESCAPE, kScanEscape);
+  menu = menu_after(game, grace, menu.lists);
+  const Json both = own_topic(game, grace, "graceui.devices", [](const Json& b) { return b["rows"].size() == 2; });
+  const std::string tablet_id =
+      both.is_object() && both["rows"].size() == 2 ? both["rows"][0].value("id", std::string()) : std::string();
+  menu = to_focus(game, grace, window, "graceui.browser", "row:graceui.devices/" + tablet_id + "/forget", false);
+  const std::string on_forget = menu.focused;
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  press(window, VK_RETURN, 0x1C);  // destructive: the second press confirms
+  menu = menu_after(game, grace, menu.lists);
+  const std::optional<Json> bye = device.next_of("bye", std::chrono::milliseconds(3000));
+  const Json left = own_topic(game, grace, "graceui.devices", [](const Json& b) { return b["rows"].size() == 1; });
+  const io::Reply revoked = io::request_ipv4(kHomeAddress, port, home_page_load(port, tablet));
+  check(!laptop.empty() && on_forget == "row:graceui.devices/" + tablet_id + "/forget" && bye.has_value() &&
+            bye->value("reason", std::string()) == "unauthorised" && device_rows(left).starts_with("Spare laptop (") &&
+            revoked.body.find("Pair this device") != std::string::npos,
+        "pairing: Forget revokes a device at once", "a second device %s; focus on %s; the first's WebSocket %s; listed: %s; "
+        "its cookie then opens %s",
+        laptop.empty() ? "NOT PAIRED" : "paired", on_forget.c_str(),
+        bye ? bye->value("reason", std::string("?")).c_str() : "STAYED OPEN", device_rows(left).c_str(),
+        revoked.body.find("Pair this device") != std::string::npos ? "the pairing page" : "THE APP");
+
+  // 8. Off from the menu: the listener and every device's connection close; the devices stay listed.
+  io::WsClient laptop_ws;
+  const bool laptop_joined = device_join(laptop_ws, port, laptop);
+  menu = to_focus(game, grace, window, "graceui.browser", "setting:dashboard.lan", false);
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  const std::optional<Json> shut = laptop_ws.next_of("bye", std::chrono::milliseconds(3000));
+  const bool closed = wait_listening(game, port, false);
+  const Json still = own_topic(game, grace, "graceui.devices",
+                              [](const Json& b) { return device_rows(b) == "Spare laptop (Not connected)"; });
+  check(laptop_joined && shut.has_value() && shut->value("reason", std::string()) == "shutdown" && closed &&
+            device_rows(still) == "Spare laptop (Not connected)",
+        "pairing: off closes every device connection", "the laptop's WebSocket %s, then %s; 127.0.0.2 %s; listed: %s",
+        laptop_joined ? "joined" : "REFUSED", shut ? shut->value("reason", std::string("?")).c_str() : "STAYED OPEN",
+        closed ? "closed" : "STILL LISTENING", device_rows(still).c_str());
+  press(window, VK_F5, kScanF5);
+  frames(game, 3);
+
+  // 9. The log names no address, code, cookie or device.
+  std::string named;
+  char line[200];
+  for (std::uint32_t i = 0; grace.log_line(i, line, sizeof line) > 0; ++i) {
+    for (const std::string& secret : {std::string("127.0.0.2"), code, second, third, tablet, laptop,
+                                      std::string("Hallway"), std::string("Spare laptop")}) {
+      if (!secret.empty() && std::strstr(line, secret.c_str()) != nullptr) {
+        named = line;
+      }
+    }
+  }
+  check(named.empty() && grace.logged("a device was paired with the browser view (2 paired)") &&
+            grace.logged("a device was forgotten (1 paired)"),
+        "pairing: the log names no address, code, cookie or device", "%s",
+        named.empty() ? "counts only" : named.c_str());
+
+  // For the next session: the laptop's cookie, which only its hash in devices.toml can match.
+  if (HANDLE note = CreateFileW(device_note_of(dll).c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                                FILE_ATTRIBUTE_NORMAL, nullptr);
+      note != INVALID_HANDLE_VALUE) {
+    DWORD written = 0;
+    WriteFile(note, laptop.data(), static_cast<DWORD>(laptop.size()), &written, nullptr);
+    CloseHandle(note);
+  }
+}
+
+void run_pairing_read(const std::wstring& dll) {
+  namespace io = grace::serve::iotest;
+  using grace::protocol::Json;
+  g_keep_settings = true;
+  const std::vector<unsigned char> note = read_file(device_note_of(dll));
+  const std::string laptop(note.begin(), note.end());
+  DeleteFileW(device_note_of(dll).c_str());
+  Game game(false, 1920, 1080);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  grace.set_network_addresses(kHomeAddress.data(), 1);
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+  const Connected demo = connect(table, request_for("demo", GRACEUI_VERSION_PACK(0, 1, 0), "The demo space", "notices pages"));
+  register_browser_demo(table, demo.answer.consumer);
+  const GraceUiTestServer server = wait_running(game, grace);
+  io::start_client_network();
+  const std::uint16_t port = static_cast<std::uint16_t>(server.port);
+  const Json listed = own_topic(game, grace, "graceui.devices", [](const Json& b) { return b["rows"].size() == 1; });
+  // Other devices was left off: on again from this PC's browser (dashboard.lan is never a device's to change).
+  const io::Reply page = io::request(port, io::page_load(port));
+  const std::string cookie = io::cookie_from(page);
+  io::WsClient pc;
+  const bool joined = !cookie.empty() && pc.join(port, cookie, io::fetch_ticket(port, cookie));
+  const std::string on = joined ? answered(pc, 1, "settings.set", Json{{"key", "dashboard.lan"}, {"value", true}})
+                                : std::string("not joined");
+  const bool opened = wait_listening(game, port, true);
+  const io::Reply kept = io::request_ipv4(kHomeAddress, port, home_page_load(port, laptop));
+  io::WsClient device;
+  const bool device_joined = device_join(device, port, laptop);
+  const io::Reply stranger =
+      io::request_ipv4(kHomeAddress, port, home_page_load(port, std::string(laptop.size(), 'A')));
+  check(server.running == 1 && grace.logged("paired devices: 1 kept from an earlier session, 0 left out") &&
+            device_rows(listed).starts_with("Spare laptop (") && on == "ok" && opened && !laptop.empty() &&
+            kept.status == 200 && kept.body.find("Pair this device") == std::string::npos && device_joined &&
+            stranger.body.find("Pair this device") != std::string::npos,
+        "pairing: the next session keeps the device", "listed: %s; on from this PC %s; 127.0.0.2 %s; the kept cookie "
+        "opens %s, its WebSocket %s; another cookie the %s",
+        device_rows(listed).c_str(), on.c_str(), opened ? "listening" : "NOT LISTENING",
+        kept.body.find("Pair this device") == std::string::npos ? "the app" : "THE PAIRING PAGE",
+        device_joined ? "joined" : "REFUSED",
+        stranger.body.find("Pair this device") != std::string::npos ? "pairing page" : "APP");
+}
+
+void run_pairing(const std::wstring& dll) {
+  DeleteFileW(devices_file_of(dll).c_str());
+  DeleteFileW(device_note_of(dll).c_str());
+  for (const wchar_t* child : {L"pairing-write", L"pairing-read"}) {
+    std::fflush(stdout);
+    const int status = run_child(dll, child);
+    char name[64];
+    std::snprintf(name, sizeof name, "%ls scenario", child);
+    check(status == 0, name, "its process ended with %d", status);
+  }
+  DeleteFileW(devices_file_of(dll).c_str());
+  DeleteFileW(device_note_of(dll).c_str());
+  DeleteFileW(settings_file_of(dll).c_str());
+}
+
 void run_quiet(const std::wstring& dll) {
   DeleteFileW(settings_file_of(dll).c_str());
   for (const wchar_t* child : {L"quiet-write", L"quiet-read"}) {
@@ -7999,6 +8466,15 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"settings-bad") {
     std::printf("-- scenario: a settings file that is not GraceUI's (D179)\n");
     run_settings_bad(dll);
+  } else if (scenario == L"pairing") {
+    std::printf("-- scenario: another device at home, paired with a code shown in game (G9)\n");
+    run_pairing(dll);
+  } else if (scenario == L"pairing-write") {
+    std::printf("-- scenario: Pair a device, a device's rights, Forget, and the switch (G9)\n");
+    run_pairing_write(dll);
+  } else if (scenario == L"pairing-read") {
+    std::printf("-- scenario: the next session keeps the paired device (G9)\n");
+    run_pairing_read(dll);
   } else if (scenario == L"quiet") {
     std::printf("-- scenario: a mod's notices quieted from the Mods page (G32, D181)\n");
     run_quiet(dll);
@@ -8060,6 +8536,7 @@ int wmain(int argc, wchar_t** argv) {
       run(L"pages", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
       run(L"anti-cheat-flag", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
       run(L"anti-cheat-recheck", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
+      run(L"pairing", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());  // G9: the app's page
       DeleteFileW(settings_file_of(folder_of_this_program() + L"..\\GraceUI\\graceui.dll").c_str());  // D179: none left
       // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in
       // GraceUI\graceui.dll, which nothing else loads.

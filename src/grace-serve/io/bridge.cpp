@@ -534,11 +534,15 @@ void Engine::hello(Connection& c, const protocol::Hello& hello, Clock::time_poin
   c.phase = Connection::Phase::open;
   c.pings_out = 0;
   c.next_ping = now + config_.timings.ping;
-  // §6.8: a third view, once its ticket is shown, supersedes the oldest.
-  if (Connection* oldest = oldest_websocket(Connection::Phase::open, &c);
-      oldest != nullptr && count_websockets(Connection::Phase::open) > kMaxWebSockets) {
-    log(LogLevel::info, "A third WebSocket superseded the oldest.");
-    close_socket(*oldest, protocol::ByeReason::superseded, 1000, now);
+  // §6.8: a third view, once its ticket is shown, supersedes the oldest; a device's never this PC's (G9).
+  if (count_websockets(Connection::Phase::open) > kMaxWebSockets) {
+    if (Connection* oldest = displaced(Connection::Phase::open, c); oldest != nullptr) {
+      log(LogLevel::info, "A third WebSocket superseded the oldest.");
+      close_socket(*oldest, protocol::ByeReason::superseded, 1000, now);
+    } else {
+      log(LogLevel::info, "A device's WebSocket was closed: this PC's views hold every place.");
+      close_socket(c, protocol::ByeReason::superseded, 1000, now);
+    }
   }
 }
 
@@ -648,13 +652,14 @@ void Engine::command(Connection& c, protocol::Cmd& cmd) {
     send_result_error(c, *port, cmd.id, protocol::ErrorCode::unknown_command);
     return;
   }
-  if (!confirmed(port->description, cmd.name, cmd.args)) {
-    send_result_error(c, *port, cmd.id, protocol::ErrorCode::confirm_required);  // §7.3, D173
+  if (c.network && sensitive_command(port->description, cmd.name, cmd.args)) {
+    // A paired device never sets a secret or a provider, nor what its space marks sensitive (§7.2 item 16, D81): told
+    // so before any confirmation is asked of it, which would change nothing.
+    send_result_error(c, *port, cmd.id, protocol::ErrorCode::not_now, "Only on the PC the game runs on.");
     return;
   }
-  if (c.network && sensitive_command(port->description, cmd.name, cmd.args)) {
-    // A paired device never sets a secret or a provider, nor what its space marks sensitive (§7.2 item 16, D81).
-    send_result_error(c, *port, cmd.id, protocol::ErrorCode::not_now, "Only on the PC the game runs on.");
+  if (!confirmed(port->description, cmd.name, cmd.args)) {
+    send_result_error(c, *port, cmd.id, protocol::ErrorCode::confirm_required);  // §7.3, D173
     return;
   }
   bool full = false;
@@ -667,6 +672,7 @@ void Engine::command(Connection& c, protocol::Cmd& cmd) {
       event.kind = SpaceEvent::Kind::command;
       event.command = cmd.name;
       event.args = std::move(cmd.args);
+      event.view = c.network ? protocol::CommandView::device : protocol::CommandView::browser;  // never the view's word
       event.reply = CommandRef{c.serial, cmd.id,
                                std::find(port->description.secret.begin(), port->description.secret.end(), cmd.name) !=
                                    port->description.secret.end()};

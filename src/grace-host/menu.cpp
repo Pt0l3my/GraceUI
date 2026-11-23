@@ -724,8 +724,8 @@ void run(State& m, const grace::protocol::Cmd& command) {
       return;
     }
     m.pairing = true;
-    m.sheet = {};
-    refresh_pairing(m);
+    m.sheet = pairing_sheet(spaces::pairing_view());
+    own_view(m).view.show_sheet(m.sheet);  // open before refresh_pairing looks, which takes a closed sheet as ended
     return;
   }
   // Its other commands (a Mods page switch, D181) go to the one entry point the browser's views use too.

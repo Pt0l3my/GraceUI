@@ -433,6 +433,7 @@ TEST_CASE("the menu's side, with no server: the space listed, a watch, its state
   const Polled command = poll(registry);
   REQUIRE(command.kind == EventKind::command);
   CHECK(Json::parse(command.frame)["name"] == "settings.set");
+  CHECK(Json::parse(command.frame)["view"] == "game");  // the in-game menu's (§7.3, D224)
   CHECK(registry.answer(kMod, command.reply,
                         R"({"v":1,"t":"result","space":"demo","id":0,"error":"invalid_value","detail":"No."})",
                         why) == Status::ok);
@@ -679,10 +680,12 @@ TEST_CASE("a row secret's command reaches its space; its result comes back with 
   REQUIRE(result);
   CHECK((*result)["ok"] == true);
   CHECK_FALSE(result->contains("body"));
-  // Another command's body is passed as before.
-  REQUIRE(view->send_json(frame("cmd", {{"space", "demo"}, {"id", 6}, {"name", "lantern.trim"}, {"args", Json::object()}})));
+  // Another command's body is passed as before. A view that names itself the game is not believed (§7.3, D224).
+  REQUIRE(view->send_json(frame("cmd", {{"space", "demo"}, {"id", 6}, {"name", "lantern.trim"}, {"args", Json::object()},
+                                        {"view", "game"}})));
   const Polled trim = wait_event(registry);
   REQUIRE(trim.kind == EventKind::command);
+  CHECK(Json::parse(trim.frame)["view"] == "browser");
   CHECK(registry.answer(kMod, trim.reply, R"({"v":1,"t":"result","space":"demo","id":6,"ok":true,"body":{"trimmed":1}})",
                         why) == Status::ok);
   const auto kept = view->next_of("result");

@@ -43,6 +43,7 @@ void Connection::clear() noexcept {
   socket.close();
   serial = 0;
   exact_peer = false;
+  peer_ipv4 = 0;
   http = false;
   websocket = false;
   network = false;
@@ -158,6 +159,8 @@ StartResult Engine::start() {
   network_wanted_ = false;
   network_seen_.clear();
   connected_seen_.clear();
+  pair_logged_ = {};
+  pair_unlogged_ = 0;
   pool_.clear();
   for (std::size_t i = 0; i < kPoolSize; ++i) {
     pool_.push_back(std::make_unique<Connection>(loopback_rules_));
@@ -606,6 +609,7 @@ void Engine::accept_from(const io::Socket& listener, bool network, Clock::time_p
     c.parser.reset(network ? network_rules_ : loopback_rules_);
     c.socket = std::move(accepted.socket);
     c.exact_peer = accepted.exact;
+    c.peer_ipv4 = accepted.ipv4;
     c.serial = next_serial_++;
     c.http = true;
     c.accepted = now;
@@ -947,16 +951,28 @@ void Engine::issue_ticket(Connection& c, Clock::time_point now) {
     respond_status(c, 503, kUnavailable, false, now);
     return;
   }
-  // A dead or stale slot, or else the oldest: at most kMaxTickets wait (EST).
-  Ticket* slot = &tickets_[0];
+  // A dead or stale slot, or else the oldest: at most kMaxTickets wait (EST). A device's ticket takes the place of a
+  // device's alone, never this PC's; this PC's takes a device's first (G9).
+  Ticket* slot = nullptr;
+  Ticket* device = nullptr;
+  Ticket* pc = nullptr;
   for (Ticket& ticket : tickets_) {
     if (!ticket.live || now - ticket.issued >= config_.timings.ticket) {
       slot = &ticket;
       break;
     }
-    if (ticket.issued < slot->issued) {
-      slot = &ticket;
+    Ticket*& oldest = ticket.network ? device : pc;
+    if (oldest == nullptr || ticket.issued < oldest->issued) {
+      oldest = &ticket;
     }
+  }
+  if (slot == nullptr) {
+    slot = c.network ? device : (device != nullptr ? device : pc);
+  }
+  if (slot == nullptr) {
+    token.fill(0);
+    respond_status(c, 503, kUnavailable, false, now);  // every place holds this PC's tickets
+    return;
   }
   slot->token = token;
   slot->issued = now;
@@ -1011,10 +1027,26 @@ void Engine::upgrade(Connection& c, std::size_t after, Clock::time_point now) {
   }
   // Sockets still waiting for their hello have a cap of their own, and one past it closes the oldest of them, never a
   // view that showed its ticket: only a welcomed view supersedes one (§6.8, at the welcome).
-  if (Connection* oldest = oldest_websocket(Connection::Phase::hello, &c);
-      oldest != nullptr && count_websockets(Connection::Phase::hello) > kMaxWebSockets) {
-    close_socket(*oldest, protocol::ByeReason::unauthorised, 1000, now);
+  if (count_websockets(Connection::Phase::hello) > kMaxWebSockets) {
+    // A device's never closes this PC's (G9): then it is the one closed.
+    Connection* oldest = displaced(Connection::Phase::hello, c);
+    close_socket(oldest != nullptr ? *oldest : c, protocol::ByeReason::unauthorised, 1000, now);
   }
+}
+
+Connection* Engine::displaced(Connection::Phase phase, const Connection& fresh) noexcept {
+  Connection* device = nullptr;
+  Connection* pc = nullptr;
+  for (const auto& slot : pool_) {
+    if (slot.get() == &fresh || !slot->websocket || slot->phase != phase) {
+      continue;
+    }
+    Connection*& oldest = slot->network ? device : pc;
+    if (oldest == nullptr || slot->upgraded < oldest->upgraded) {
+      oldest = slot.get();
+    }
+  }
+  return fresh.network ? device : (device != nullptr ? device : pc);
 }
 
 Connection* Engine::oldest_websocket(Connection::Phase phase, const Connection* except) noexcept {
@@ -1033,9 +1065,10 @@ Connection* Engine::oldest_websocket(Connection::Phase phase, const Connection* 
 namespace {
 
 constexpr std::string_view kPairedWords = "Paired.";
-constexpr std::string_view kWrongCode = "That code is not right: check the one shown in game, and try again.";
-constexpr std::string_view kNoCode =
-    "No code is showing in game: open GraceUI's Browser view page there and choose Pair a device.";
+// One answer whether the code was wrong or none was showing, so that the network learns nothing of when one shows.
+constexpr std::string_view kNotPaired =
+    "That code is not right, or none is showing now. In game, choose Pair a device on GraceUI's Browser view page, "
+    "then enter the code it shows.";
 constexpr std::string_view kTooMany = "Sixteen devices are paired already: forget one in game first.";
 constexpr std::string_view kBadName = "Give this device a name of 1 to 32 characters.";
 constexpr std::string_view kBadPair = "Send the code and a name.";
@@ -1200,7 +1233,7 @@ void Engine::finish_pair(Connection& c, Clock::time_point now) {
     std::lock_guard lock(hub_->mutex);
     full = devices_.size() >= kMaxDevices;
     if (!full) {
-      tried = hub_->pairing.attempt(code, now);  // a full list never spends the code
+      tried = hub_->pairing.attempt(code, now, c.peer_ipv4);  // a full list never spends the code
     }
     if (tried == PairingCode::Try::paired) {
       hub_->paired.push_back(PairedDevice{std::string(key.id.data(), key.id.size()), name, key.hash});
@@ -1214,9 +1247,16 @@ void Engine::finish_pair(Connection& c, Clock::time_point now) {
   }
   if (tried != PairingCode::Try::paired) {
     token.fill(0);
-    log(LogLevel::info, tried == PairingCode::Try::wrong ? "A device tried a pairing code that was not right."
-                                                         : "A device asked to pair while no code was showing.");
-    respond_status(c, 403, tried == PairingCode::Try::wrong ? kWrongCode : kNoCode, false, now);
+    // At most one line in 10 s, with the count since: a flood of requests cannot push the log's other lines out.
+    ++pair_unlogged_;
+    if (pair_logged_ == Clock::time_point{} || now - pair_logged_ >= std::chrono::seconds(10)) {
+      log(LogLevel::info, pair_unlogged_ == 1 ? std::string("A device's pairing code was refused.")
+                                              : "Devices' pairing codes were refused " + std::to_string(pair_unlogged_) +
+                                                    " times.");
+      pair_logged_ = now;
+      pair_unlogged_ = 0;
+    }
+    respond_status(c, 403, kNotPaired, false, now);
     return;
   }
   devices_.push_back(key);

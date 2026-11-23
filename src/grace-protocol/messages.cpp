@@ -108,6 +108,23 @@ bool from_string(std::string_view text, ResetScopeKind& out) noexcept {
   return false;
 }
 
+std::string_view to_string(CommandView value) noexcept {
+  static constexpr std::array<std::string_view, 3> kNames = {"game", "browser", "device"};
+  const auto index = static_cast<std::size_t>(value);
+  return index < kNames.size() ? kNames[index] : std::string_view("");
+}
+
+bool from_string(std::string_view text, CommandView& out) noexcept {
+  static constexpr std::array<std::string_view, 3> kNames = {"game", "browser", "device"};
+  for (std::size_t i = 0; i < kNames.size(); ++i) {
+    if (kNames[i] == text) {
+      out = static_cast<CommandView>(i);
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string_view to_string(TopicShape value) noexcept {
   static constexpr std::array<std::string_view, 2> kNames = {"state", "stream"};
   const auto index = static_cast<std::size_t>(value);
@@ -2051,6 +2068,15 @@ static bool decode_cmd(Json& in, Cmd& out, DecodeError& e) {
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "view", false, path, e)) {
+    const std::string p = path.empty() ? std::string("view") : path + ".view";
+    out.view.emplace();
+    if (!read_enum(*v, *out.view, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -2321,6 +2347,9 @@ Json encode_message(const Message& message) {
       out["id"] = Json(in.id);
       out["name"] = Json(in.name);
       out["args"] = Json(in.args);
+      if (in.view) {
+        out["view"] = Json(to_string(*in.view));
+      }
     } else if constexpr (std::is_same_v<T, Result>) {
       out["t"] = "result";
       out["space"] = in.space;
@@ -2439,6 +2468,9 @@ void encode_text(const Message& message, std::string& out) {
       append_field(out, "id", Json(in.id));
       append_field(out, "name", Json(in.name));
       append_field(out, "args", in.args);
+      if (in.view) {
+        append_field(out, "view", Json(to_string(*in.view)));
+      }
     } else if constexpr (std::is_same_v<T, Result>) {
       out += ",\"t\":\"result\"";
       append_field(out, "space", Json(in.space));

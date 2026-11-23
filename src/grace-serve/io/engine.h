@@ -66,6 +66,7 @@ struct Connection {
   io::Socket socket;
   std::uint64_t serial = 0;  // never reused: what a command's result is routed by
   bool exact_peer = false;   // the peer is exactly 127.0.0.1 or ::1 (item 3)
+  std::uint32_t peer_ipv4 = 0;  // the peer's IPv4 address as a number, 0 for IPv6 (G9: a code's tries per peer)
   bool http = false;         // counted against kMaxHttpConnections
   bool websocket = false;    // counted against kMaxWebSockets (hello or open)
   bool network = false;      // accepted by the network listener (G9): another device at home
@@ -79,6 +80,7 @@ struct Connection {
 
   HeadParser parser;
   std::array<char, kMaxTicketBody> body{};  // the ticket's request body, then its response's
+  static_assert(kMaxPairBody <= kMaxTicketBody, "the code's request body is read into the same buffer (G9)");
   std::size_t body_size = 0;
   std::size_t body_need = 0;
   std::array<char, kMaxResponseHead + kMaxTarget> head{};
@@ -168,6 +170,9 @@ class Engine {
   // WebSockets in `phase` (hello: waiting for their ticket; open: welcomed views), and the oldest of them but `except`.
   std::size_t count_websockets(Connection::Phase phase) const noexcept;
   Connection* oldest_websocket(Connection::Phase phase, const Connection* except) noexcept;
+  // The one a new WebSocket past the cap closes (G9): a device's displaces a device's alone, never this PC's (then it
+  // is itself the one, and null comes back); this PC's displaces a device's first, else this PC's oldest.
+  Connection* displaced(Connection::Phase phase, const Connection& fresh) noexcept;
 
   // The bridge (bridge.cpp).
   void take_hub(Clock::time_point now);
@@ -207,6 +212,8 @@ class Engine {
   std::array<io::Socket, kMaxNetworkAddresses> network_;
   std::array<std::string, kMaxNetworkAddresses> network_names_;
   std::array<std::string_view, kMaxNetworkAddresses> network_views_;
+  Clock::time_point pair_logged_{};  // the code request's log line, at most once in 10 s (G9)
+  std::size_t pair_unlogged_ = 0;
   bool network_wanted_ = false;
   Clock::time_point next_address_check_{};
   // The addresses the PC had at the last apply, sorted: a bind that failed is not tried again until they change.

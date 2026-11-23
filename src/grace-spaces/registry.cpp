@@ -392,7 +392,7 @@ Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity,
           space->port->answer(event.reply, std::move(busy));
           continue;
         }
-        message = protocol::Cmd{space->id, event.reply.id, event.command, std::move(event.args)};
+        message = protocol::Cmd{space->id, event.reply.id, event.command, std::move(event.args), event.view};  // D224
         space->held_kind = EventKind::command;
         space->held_reply = next_reply_++;
         Pending pending;
@@ -616,6 +616,7 @@ bool Registry::game_command(std::string_view space_id, protocol::Cmd command, st
         return false;
       }
       command.space = space->id;
+      command.view = protocol::CommandView::game;  // the in-game menu's (§7.3, D224)
       Pending pending;
       pending.reply = next_reply_++;
       pending.owner = space->owner;

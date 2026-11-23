@@ -18,7 +18,8 @@ protocol = { major = 1, minor = 8 }  # 1.1 (D172): result.detail; a stream clear
                                      # 1.5 (G38): topic families, and a page's master list (D215)
                                      # 1.6 (G38): slow commands, answered within 90 s (D216)
                                      # 1.7 (G38): the editor block and the conflict code (D217)
-                                     # 1.8 (G9): sensitive commands and settings, refused from paired devices (D221)
+                                     # 1.8 (G9): sensitive commands and settings, refused from paired devices (D221);
+                                     # the view that sent a command, named to its space (D224)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -50,6 +51,9 @@ values = ["auto", "inherit"]
 
 [enums.reset_scope_kind]
 values = ["key", "page", "all"]
+
+[enums.command_view]  # 1.8 (D224, §7.3): the in-game menu, a browser on this PC, or a paired device at home
+values = ["game", "browser", "device"]
 
 [enums.topic_shape]
 values = ["state", "stream"]
@@ -386,6 +390,8 @@ fields = [
   { name = "id", type = "u32" },
   { name = "name", type = "id" },
   { name = "args", type = "object", max = 16384 },
+  # 1.8 (D224, §7.3): which view sent it, as GraceUI saw the channel; set for the space, and a view's own never kept
+  { name = "view", type = "enum.command_view", optional = true },
 ]
 
 [messages.result]

@@ -176,6 +176,21 @@ GRACEUI_API void GraceUI_Test_SetAntiCheatRecheck(uint32_t ms) {
   }
 }
 
+GRACEUI_API uint32_t GraceUI_Test_GetPairingCode(char* out, uint32_t capacity) {
+  try {
+    return grace::host::test_pairing_code(out, capacity);
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API void GraceUI_Test_SetNetworkAddresses(const uint8_t* addresses, uint32_t count) {
+  try {
+    grace::host::test_set_network_addresses(addresses, count);
+  } catch (...) {
+  }
+}
+
 GRACEUI_API uint32_t GraceUI_Test_InitStep(void) {
   try {
     return grace::host::test_init_step();

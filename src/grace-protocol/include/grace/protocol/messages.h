@@ -96,6 +96,14 @@ enum class ResetScopeKind : std::uint8_t {
 std::string_view to_string(ResetScopeKind value) noexcept;
 bool from_string(std::string_view text, ResetScopeKind& out) noexcept;
 
+enum class CommandView : std::uint8_t {
+  game,
+  browser,
+  device,
+};
+std::string_view to_string(CommandView value) noexcept;
+bool from_string(std::string_view text, CommandView& out) noexcept;
+
 enum class TopicShape : std::uint8_t {
   state,
   stream,
@@ -524,6 +532,7 @@ struct Cmd {
   std::uint32_t id{};
   std::string name{};
   Json args{};
+  std::optional<CommandView> view{};
   bool operator==(const Cmd&) const = default;
 };
 // The answer to one command: ok, or an error with its reason in words a player reads (detail, 1.1).

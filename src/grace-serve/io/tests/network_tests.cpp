@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <string>
+#include <mutex>
 #include <thread>
 
 #include "../platform.h"
@@ -206,10 +207,10 @@ TEST_CASE("the code pairs once, within its time, and is void after five wrong tr
     return request_ipv4(kHome, f.port, home_post(f.port, kPairRoute, pair_body(code, name)));
   };
 
-  // No code showing.
+  // No code showing: the same answer as a wrong one, so that the network learns nothing of when a code shows.
   Reply none = try_code("123456");
   CHECK(none.status == 403);
-  CHECK(none.body.find("No code is showing") != std::string::npos);
+  CHECK(none.body.find("none is showing") != std::string::npos);
   CHECK(device_from(none).empty());
 
   // The right code: a cookie, HttpOnly and SameSite=Strict, host-only, for 400 days.
@@ -239,14 +240,18 @@ TEST_CASE("the code pairs once, within its time, and is void after five wrong tr
   CHECK(f.server.pairing_code().empty());
   CHECK(try_code(code).status == 403);
 
-  // Void after five wrong tries, the right one included after them.
+  // One peer's wrong tries hold that peer, not the code: past three, it is refused even the right code, which still
+  // shows for another device (the five tries that void a code take more than one peer: pairing_tests).
   code = f.server.start_pairing();
   const std::string other = code == "000000" ? "000001" : "000000";
   for (std::size_t i = 0; i < kCodeTries; ++i) {
-    CHECK(try_code(other).status == 403);
+    const Reply refused = try_code(other);
+    CHECK(refused.status == 403);
+    CHECK(refused.body == missed.body);  // one answer, whether wrong or held
   }
-  CHECK(f.server.pairing_code().empty());
+  CHECK(f.server.pairing_code() == code);
   CHECK(try_code(code).status == 403);
+  CHECK(f.server.pairing_code() == code);
 
   // A bad name or body spends nothing: the code still pairs after them.
   code = f.server.start_pairing();
@@ -352,6 +357,79 @@ TEST_CASE("a paired device is refused every sensitive command (G9, D81)") {
   result = pc->next_of("result");
   REQUIRE(result.has_value());
   CHECK((*result)["ok"] == true);
+}
+
+TEST_CASE("a space learns which view sent a command from its channel, never from the view (§7.3, D224)") {
+  Fixture f(home_options());
+  REQUIRE(network_on(f));
+  std::mutex mutex;
+  std::vector<std::string> views;
+  f.demo->set_on_command([&](const SpaceEvent& event) {
+    {
+      std::lock_guard lock(mutex);
+      views.emplace_back(protocol::to_string(event.view));
+    }
+    protocol::Result result;
+    result.space = "demo";
+    result.id = event.reply.id;
+    result.ok = true;
+    f.demo->port->answer(event.reply, std::move(result));
+  });
+  const std::string cookie = pair(f);
+  WsClient device;
+  REQUIRE(device.open_head(kHome, f.port, home_upgrade(f.port, cookie)) == 101);
+  REQUIRE(device.hello(ticket_for(f.port, cookie)));
+  Json claimed = cmd("demo", "lantern.trim", 1);
+  claimed["view"] = "game";  // a view's own word is never kept
+  REQUIRE(device.send_json(claimed));
+  REQUIRE(device.next_of("result").has_value());
+  const std::unique_ptr<WsClient> pc = f.join();
+  REQUIRE(pc != nullptr);
+  Json pretending = cmd("demo", "lantern.trim", 2);
+  pretending["view"] = "device";
+  REQUIRE(pc->send_json(pretending));
+  REQUIRE(pc->next_of("result").has_value());
+  std::lock_guard lock(mutex);
+  CHECK(views == std::vector<std::string>{"device", "browser"});
+}
+
+TEST_CASE("a device never takes this PC's place: its views, waiting sockets and tickets (D221's review)") {
+  Fixture f(home_options());
+  REQUIRE(network_on(f));
+  const std::string cookie = pair(f);
+  // This PC's two views hold every place: a device's view is the one closed, and this PC's stay.
+  const std::unique_ptr<WsClient> first = f.join();
+  const std::unique_ptr<WsClient> second = f.join();
+  REQUIRE(first != nullptr);
+  REQUIRE(second != nullptr);
+  WsClient device;
+  REQUIRE(device.open_head(kHome, f.port, home_upgrade(f.port, cookie)) == 101);
+  const std::string ticket = ticket_for(f.port, cookie);
+  REQUIRE_FALSE(ticket.empty());
+  Json hello = {{"v", 1}, {"t", "hello"}, {"protocol", "1.0"}, {"bundle", "test"}, {"caps", Json::array()}};
+  hello["ticket"] = ticket;
+  REQUIRE(device.send_json(hello));
+  const std::optional<Json> bye = device.next_of("bye", 2s);
+  REQUIRE(bye.has_value());
+  CHECK((*bye)["reason"] == "superseded");
+  CHECK(first->quiet(300ms));
+  CHECK(second->quiet(300ms));
+  // A third view of this PC's takes a place as before, its oldest's.
+  const std::unique_ptr<WsClient> third = f.join();
+  REQUIRE(third != nullptr);
+  CHECK((*first->next_of("bye"))["reason"] == "superseded");
+  // Every ticket place held by this PC's: a device's ticket is refused, never one of this PC's voided.
+  const std::string session = f.cookie();
+  std::vector<std::string> mine;
+  for (std::size_t i = 0; i < kMaxTickets; ++i) {
+    mine.push_back(fetch_ticket(f.port, session));
+    REQUIRE_FALSE(mine.back().empty());
+  }
+  const Reply refused = request_ipv4(kHome, f.port, home_post(f.port, "/api/ticket", "{}", cookie));
+  CHECK(refused.status == 503);
+  WsClient last;
+  REQUIRE(last.open(f.port, session) == 101);
+  CHECK(last.hello(mine.front()));  // the oldest of this PC's still opens its view
 }
 
 TEST_CASE("Forget disconnects a device at once, and keeps the others (G9)") {

@@ -339,6 +339,12 @@ GRACEUI_API void GraceUI_Test_SetAntiCheatRecheck(uint32_t ms);
  * it, NUL-terminated; answers its length, or 0 before it is first published, for no such topic, or if it does not fit.
  * A copy kept under a lock: safe to read while GraceUI's thread is busy. */
 GRACEUI_API uint32_t GraceUI_Test_GetTopic(const char* topic, char* out, uint32_t capacity);
+/* ---- Other devices at home (G9). The six digits the pairing sheet shows, NUL-terminated, as a device would read them
+ * in game: their length, or 0 while no code shows. A copy kept under a lock: safe while GraceUI's thread is busy. */
+GRACEUI_API uint32_t GraceUI_Test_GetPairingCode(char* out, uint32_t capacity);
+/* The network listener's addresses in place of the PC's own: `count` IPv4 addresses of 4 bytes each (at most 4), taken
+ * at the server's next start. A test listens on 127.0.0.2 alone, never on a real address of the machine. */
+GRACEUI_API void GraceUI_Test_SetNetworkAddresses(const uint8_t* addresses, uint32_t count);
 
 /* ---- The spaces and the browser view's server (D169). */
 typedef struct GraceUiTestServer {

@@ -84,6 +84,10 @@ struct TestView {
 void test_view(TestView& out) noexcept;
 // The module re-check's interval, for a test: 0 keeps 60 s.
 void test_set_recheck_ms(std::uint32_t ms) noexcept;
+// The code the pairing sheet shows (G9), as GraceUI_Test_GetPairingCode reads it: its length, 0 while none shows.
+std::uint32_t test_pairing_code(char* out, std::uint32_t capacity) noexcept;
+// The network listener's addresses for a test (127.0.0.2), taken at the server's next start.
+void test_set_network_addresses(const std::uint8_t* addresses, std::uint32_t count) noexcept;
 // One of GraceUI's own topics as JSON text (GraceUI_Test_GetTopic): its length, 0 for none or if it does not fit.
 std::uint32_t test_topic(const char* topic, char* out, std::uint32_t capacity) noexcept;
 #endif

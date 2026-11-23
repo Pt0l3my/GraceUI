@@ -97,6 +97,8 @@ struct SpaceEvent {
   std::string command;
   protocol::Json args;
   CommandRef reply;
+  // With command: the view that sent it, from the channel it came on (§7.3, D224): this PC's browser or a paired device.
+  protocol::CommandView view = protocol::CommandView::browser;
 };
 
 namespace detail {

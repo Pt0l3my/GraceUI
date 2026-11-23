@@ -94,6 +94,36 @@ TEST_CASE("a pairing code: six digits for two minutes, once, void after five wro
   CHECK(code.attempt("00004２", t0) == PairingCode::Try::wrong);
 }
 
+TEST_CASE("one peer cannot void the code: past its three wrong tries it is held, and the code stays (D221)") {
+  const Clock::time_point t0{};
+  std::array<std::uint8_t, 64> random{};
+  random[3] = 42;
+  PairingCode code;
+  constexpr std::uint32_t kStranger = 0xC0000201u;  // 192.0.2.1 (RFC 5737)
+  constexpr std::uint32_t kPhone = 0xC0000202u;
+  constexpr std::uint32_t kOther = 0xC0000203u;
+  REQUIRE(code.start(random, t0));
+  for (std::size_t i = 0; i < kPeerTries; ++i) {
+    CHECK(code.attempt("123456", t0, kStranger) == PairingCode::Try::wrong);
+  }
+  CHECK(code.attempt("123456", t0, kStranger) == PairingCode::Try::held);
+  CHECK(code.attempt("000042", t0, kStranger) == PairingCode::Try::held);  // even the right code, once held
+  CHECK(code.showing(t0));
+  CHECK(code.attempt("000042", t0, kPhone) == PairingCode::Try::paired);
+  // The shared count still voids it: three from one peer, two from another.
+  REQUIRE(code.start(random, t0));
+  for (std::size_t i = 0; i < 3; ++i) {
+    CHECK(code.attempt("123456", t0, kStranger) == PairingCode::Try::wrong);
+  }
+  CHECK(code.attempt("123456", t0, kOther) == PairingCode::Try::wrong);
+  CHECK(code.attempt("123456", t0, kOther) == PairingCode::Try::wrong);
+  CHECK_FALSE(code.showing(t0));
+  CHECK(code.attempt("000042", t0, kPhone) == PairingCode::Try::none);
+  // A new code forgets who was held.
+  REQUIRE(code.start(random, t0));
+  CHECK(code.attempt("000042", t0, kStranger) == PairingCode::Try::paired);
+}
+
 TEST_CASE("a paired device is matched by the hash of its cookie, among others of any name") {
   const std::string phone = token(1);
   const std::string tablet = token(2);
@@ -118,6 +148,13 @@ TEST_CASE("a device's name and id") {
   CHECK_FALSE(valid_device_name(""));
   CHECK_FALSE(valid_device_name("   "));
   CHECK_FALSE(valid_device_name("a\nb"));
+  // Nothing invisible that could make one name look like another (D221's review).
+  for (const char* hidden : {"Phone\u200B", "\u202EenohP", "Ph\u00ADone", "A\u0085", "\uFEFFPhone", "Pho\u2066ne",
+                             "Line\u2028two"}) {
+    CAPTURE(hidden);
+    CHECK_FALSE(valid_device_name(hidden));
+  }
+  CHECK(valid_device_name("Ålesund ☾ 2"));
   CHECK_FALSE(valid_device_name("\xFF"));
   CHECK(valid_device_id("0123456789abcdef"));
   CHECK_FALSE(valid_device_id("0123456789ABCDEF"));

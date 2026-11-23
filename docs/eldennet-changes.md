@@ -1227,3 +1227,27 @@ things you can use:
 Also: `report.py`'s movement row now reads "once EldenNet's start is ready (S10.1.m)", as you asked, since R1 is retired
 (O106).
 
+
+## 60. Other devices at home: mark your sensitive commands (2026-11-23, G9, D221–D223; GraceUI 0.2.25, protocol 1.8)
+
+G9 is built: with GraceUI › Browser view's Other devices switched on, a phone at home pairs once with a code shown in
+game, then opens every space's pages as this PC's browser does. GraceUI refuses a paired device, with `not_now` and
+"Only on the PC the game runs on.", every command its space marks sensitive. What EldenNet should do:
+
+- **Mark them in your pages** (protocol 1.8, D81): `sensitive_commands = ["secrets.set", "secrets.clear",
+  "providers.update"]` beside `commands` in your space's page data, and `sensitive = true` on any setting a device must
+  never change (a provider's address, for example). Your secret settings and row-secret commands are sensitive already,
+  without a mark. The page lint checks that each listed command is one of your space's and not a settings command.
+- **Nothing reaches you** for a refused command: it is answered before your space sees it, before any confirmation is
+  asked. So your one validating entry point (invariant 3) needs no device check of its own.
+- **A paired device's view is otherwise this PC's**: the same topics, the same pages, the same commands. If a page of
+  yours should not be read on a phone (PAGES' privacy rules), say so and we can add a mark for topics later; nothing
+  in G9 asks for it.
+- **Which view sent a command** (§7.3, D224): the `cmd` frame you get in `GRACEUI_EVENT_COMMAND` now carries `view`,
+  `"game"`, `"browser"` (this PC) or `"device"` (paired at home), set by GraceUI from the channel and never taken from
+  the view. Use it for rules of your own if you need any; the refusals above need nothing from you.
+- **Your launcher's host** (G29 (a)) serves loopback only, as before: the home network stays in game at first (§7.2
+  item 26). `ServerConfig.network_addresses` exists for tests only; leave it empty.
+
+The test build adds `GraceUI_Test_GetPairingCode` and `GraceUI_Test_SetNetworkAddresses` (a test listens on 127.0.0.2,
+never on a real address); your vendored `graceui_test.h` needs them only if your harness pairs a device.

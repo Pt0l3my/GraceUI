@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -68,6 +69,20 @@ constinit Pairing* g_pairing = nullptr;
 constinit std::vector<grace::spaces::PairedDeviceRecord>* g_devices = nullptr;
 constinit int g_lan_applied = -1;  // dashboard.lan as last given to the server; -1 before the first
 constinit bool g_devices_keep_failed = false;
+#if defined(GRACEUI_TEST_EXPORTS)
+// The test build's: the code the sheet shows, and the addresses the network listener takes in a test (127.0.0.2).
+constinit grace::abi::SpinLock g_test_pairing_lock;
+constinit std::array<char, 8> g_test_code{};
+constinit std::array<std::array<std::uint8_t, 4>, 4> g_test_addresses{};
+constinit std::uint32_t g_test_address_count = 0;
+
+void test_code(std::string_view code) noexcept {
+  g_test_pairing_lock.lock();
+  g_test_code.fill('\0');
+  std::copy_n(code.begin(), std::min(code.size(), g_test_code.size() - 1), g_test_code.begin());
+  g_test_pairing_lock.unlock();
+}
+#endif
 
 Pairing& pairing() {
   if (g_pairing == nullptr) {
@@ -117,6 +132,11 @@ void start(const grace::spaces::OwnSpace& own) {
   config.folder = std::filesystem::path(folder);
   config.log = &server_log;
   config.paired_wake = [] { hooks::wake(); };  // the sheet shows the device paired, and the file keeps it (G9)
+#if defined(GRACEUI_TEST_EXPORTS)
+  g_test_pairing_lock.lock();
+  config.network_addresses.assign(g_test_addresses.begin(), g_test_addresses.begin() + g_test_address_count);
+  g_test_pairing_lock.unlock();
+#endif
   const grace::serve::StartResult result = g_server->start(config);
   if (result != grace::serve::StartResult::ok) {
     g_start_failed.store(true, std::memory_order_relaxed);  // not tried again this session: the port's setting takes effect at the next launch
@@ -1093,6 +1113,9 @@ PairingStart start_pairing() noexcept {
       p.addresses.push_back("http://" + address + ":" + port + "/");
     }
     log_line("Pair a device: a code is shown in game");  // never the code, nor the address (PV3, PV5)
+#if defined(GRACEUI_TEST_EXPORTS)
+    test_code(code);
+#endif
     out.ok = true;
   } catch (...) {
     out.words = "Not possible right now.";
@@ -1107,6 +1130,9 @@ void cancel_pairing() noexcept {
   if (!g_pairing->paired && g_server != nullptr) {
     g_server->cancel_pairing();  // the code is void at once (D113)
   }
+#if defined(GRACEUI_TEST_EXPORTS)
+  test_code({});
+#endif
   try {
     *g_pairing = Pairing{};
   } catch (...) {
@@ -1140,6 +1166,11 @@ PairingView pairing_view() noexcept {
       if (p.ended && g_server != nullptr) {
         g_server->cancel_pairing();
       }
+#if defined(GRACEUI_TEST_EXPORTS)
+      if (p.ended || p.paired) {
+        test_code({});
+      }
+#endif
     }
     if (p.paired) {
       view.state = PairingView::State::paired;
@@ -1170,6 +1201,30 @@ void test_view(TestView& out) noexcept {
 }
 
 void test_set_recheck_ms(std::uint32_t ms) noexcept { g_test_recheck_ms.store(ms, std::memory_order_relaxed); }
+
+std::uint32_t test_pairing_code(char* out, std::uint32_t capacity) noexcept {
+  if (out == nullptr || capacity == 0) {
+    return 0;
+  }
+  g_test_pairing_lock.lock();
+  const std::array<char, 8> code = g_test_code;
+  g_test_pairing_lock.unlock();
+  const std::size_t length = std::strlen(code.data());
+  if (length == 0 || length + 1 > capacity) {
+    return 0;
+  }
+  std::memcpy(out, code.data(), length + 1);
+  return static_cast<std::uint32_t>(length);
+}
+
+void test_set_network_addresses(const std::uint8_t* addresses, std::uint32_t count) noexcept {
+  g_test_pairing_lock.lock();
+  g_test_address_count = addresses == nullptr ? 0 : std::min<std::uint32_t>(count, 4);
+  for (std::uint32_t i = 0; i < g_test_address_count; ++i) {
+    std::copy_n(addresses + 4 * i, 4, g_test_addresses[i].begin());
+  }
+  g_test_pairing_lock.unlock();
+}
 
 std::uint32_t test_topic(const char* topic, char* out, std::uint32_t capacity) noexcept {
   // Read on the caller's thread while GraceUI's thread may be writing: a test reads it only once GraceUI is idle.

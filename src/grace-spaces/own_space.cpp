@@ -162,7 +162,7 @@ void OwnSpace::serve() {
         result.space = pages_.space;
         result.id = event.reply.id;
         if (event.command == "settings.set" || event.command == "settings.reset") {
-          protocol::Cmd command{pages_.space, event.reply.id, event.command, std::move(event.args)};
+          protocol::Cmd command{pages_.space, event.reply.id, event.command, std::move(event.args), event.view};
           const pages::Outcome outcome = apply(command);
           if (outcome.ok) {
             result.ok = true;
@@ -178,7 +178,7 @@ void OwnSpace::serve() {
           }
           continue;
         } else if (event.command != "menu.close" && hooks_.command && declared_command(event.command)) {
-          protocol::Cmd command{pages_.space, event.reply.id, event.command, std::move(event.args)};
+          protocol::Cmd command{pages_.space, event.reply.id, event.command, std::move(event.args), event.view};
           const pages::Outcome outcome = hooks_.command(command);
           if (outcome.ok) {
             result.ok = true;

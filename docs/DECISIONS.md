@@ -166,6 +166,11 @@ one-line notes (DESIGN §4.6.5). The four rail entries and their tag are unchang
 
 **See also.** G4, whose answer raised it.
 
+**Later changes.** 2026-11-23: built in GraceUI 0.2.25, as decided (DESIGN D221–D223): Other devices is a switch on
+GraceUI › Browser view, off by default; Pair a device shows the code on a sheet in game, valid while the sheet is open
+(D113); the device types its own name on its pairing page; each paired device is listed there with Forget, and a paired
+device is refused every command a space marks sensitive.
+
 ## G10
 
 **Which module owns the one overlay** · *2026-11-07 · Decided by the owner, as recommended*

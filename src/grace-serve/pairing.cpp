@@ -89,15 +89,25 @@ bool valid_device_name(std::string_view name) noexcept {
   }
   std::size_t characters = 0;
   bool printable = false;
-  for (const char ch : name) {
-    const auto byte = static_cast<unsigned char>(ch);
-    if (byte < 0x20 || byte == 0x7F) {
-      return false;  // a control character
+  for (std::size_t i = 0; i < name.size();) {
+    // One code point (the UTF-8 is valid, so its length follows from its first byte).
+    const auto first = static_cast<unsigned char>(name[i]);
+    const std::size_t length = first < 0x80 ? 1 : first < 0xE0 ? 2 : first < 0xF0 ? 3 : 4;
+    std::uint32_t code = length == 1 ? first : first & (0xFFu >> (length + 1));
+    for (std::size_t k = 1; k < length; ++k) {
+      code = code << 6 | (static_cast<unsigned char>(name[i + k]) & 0x3Fu);
     }
-    if ((byte & 0xC0u) != 0x80u) {
-      ++characters;
+    i += length;
+    // No control (C0, DEL, C1), and nothing invisible that could make one name look like another: no zero-width,
+    // joiner, bidirectional, line or paragraph separator, soft hyphen or byte order mark.
+    const bool hidden = code < 0x20 || (code >= 0x7F && code <= 0x9F) || code == 0xAD ||
+                        (code >= 0x200B && code <= 0x200F) || (code >= 0x2028 && code <= 0x202E) ||
+                        (code >= 0x2060 && code <= 0x2069) || code == 0xFEFF;
+    if (hidden) {
+      return false;
     }
-    printable = printable || byte != ' ';
+    ++characters;
+    printable = printable || code != ' ';
   }
   return printable && characters <= kMaxDeviceName;
 }
@@ -117,6 +127,7 @@ bool valid_device_id(std::string_view id) noexcept {
 bool PairingCode::start(std::span<const std::uint8_t> random, Clock::time_point now) noexcept {
   live_ = false;
   wrong_ = 0;
+  peers_ = {};
   for (std::size_t at = 0; at + 4 <= random.size(); at += 4) {
     const std::uint32_t draw = static_cast<std::uint32_t>(random[at]) << 24 |
                                static_cast<std::uint32_t>(random[at + 1]) << 16 |
@@ -136,14 +147,30 @@ bool PairingCode::start(std::span<const std::uint8_t> random, Clock::time_point 
   return false;
 }
 
-PairingCode::Try PairingCode::attempt(std::string_view code, Clock::time_point now) noexcept {
+PairingCode::Try PairingCode::attempt(std::string_view code, Clock::time_point now, std::uint32_t peer) noexcept {
   if (!showing(now)) {
     live_ = false;
     return Try::none;
   }
+  PeerTries* mine = nullptr;
+  for (PeerTries& entry : peers_) {
+    if (peer != 0 && (entry.peer == peer || (entry.peer == 0 && mine == nullptr))) {
+      mine = &entry;
+      if (entry.peer == peer) {
+        break;
+      }
+    }
+  }
+  if (mine != nullptr && mine->peer == peer && mine->wrong >= kPeerTries) {
+    return Try::held;  // before the comparison: a peer that spent its tries cannot pair with this code
+  }
   if (constant_time_equal(code, std::string_view(code_.data(), code_.size()))) {
     cancel();  // once
     return Try::paired;
+  }
+  if (mine != nullptr) {
+    mine->peer = peer;
+    ++mine->wrong;
   }
   if (++wrong_ >= kCodeTries) {
     cancel();  // void after five wrong tries
@@ -160,6 +187,7 @@ std::string_view PairingCode::code(Clock::time_point now) const noexcept {
 void PairingCode::cancel() noexcept {
   live_ = false;
   wrong_ = 0;
+  peers_ = {};
   code_.fill('0');
 }
 

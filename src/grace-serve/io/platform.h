@@ -67,6 +67,7 @@ struct Accepted {
   bool loopback = false;  // the peer is a loopback address (127.0.0.0/8 or ::1)
   bool exact = false;     // the peer is exactly 127.0.0.1 or ::1 (item 3)
   bool home = false;      // a private (RFC 1918) or link-local (169.254/16) IPv4 peer: another device at home (item 25)
+  std::uint32_t ipv4 = 0;  // an IPv4 peer's address as a number (0 for IPv6): a pairing code's tries per peer (G9)
 };
 
 enum class Io : std::uint8_t { done, would_block, closed, failed };

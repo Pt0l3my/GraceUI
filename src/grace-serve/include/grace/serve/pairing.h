@@ -25,6 +25,9 @@ inline constexpr std::string_view kPairStyleRoute = "/pair.css";
 
 inline constexpr std::size_t kCodeDigits = 6;
 inline constexpr std::size_t kCodeTries = 5;  // wrong tries before the code is void
+// Wrong tries one peer may make on one code; past them its tries are refused and count nothing, so that one device on
+// the network cannot void the code the player is about to enter (D221's review).
+inline constexpr std::size_t kPeerTries = 3;
 inline constexpr std::chrono::seconds kCodeLife{120};
 inline constexpr std::size_t kMaxDevices = 16;     // paired at once (EST)
 inline constexpr std::size_t kMaxDeviceName = 32;  // characters
@@ -63,11 +66,13 @@ class PairingCode {
     paired,  // the code was right: it is used, and void from now
     wrong,   // not the code; after kCodeTries of them the code is void
     none,    // no code is showing: never started, used, expired or void
+    held,    // this peer's kPeerTries are spent on this code: refused, the code untried and still showing
   };
   // A new code from the random bytes (rejection sampling, 4 bytes a draw), replacing any shown; false if every draw
   // was rejected (a chance below 1 in 10^50 with 64 bytes), and then none is showing.
   bool start(std::span<const std::uint8_t> random, Clock::time_point now) noexcept;
-  Try attempt(std::string_view code, Clock::time_point now) noexcept;
+  // `peer`: the device's IPv4 address as a number (0: not known, and then only the shared count applies).
+  Try attempt(std::string_view code, Clock::time_point now, std::uint32_t peer = 0) noexcept;
   bool showing(Clock::time_point now) const noexcept;
   // The code while it shows, else empty.
   std::string_view code(Clock::time_point now) const noexcept;
@@ -79,6 +84,11 @@ class PairingCode {
   bool live_ = false;
   Clock::time_point expires_{};
   std::size_t wrong_ = 0;
+  struct PeerTries {
+    std::uint32_t peer = 0;
+    std::uint8_t wrong = 0;
+  };
+  std::array<PeerTries, 8> peers_{};  // past eight peers on one code, the shared count alone applies
 };
 
 // The pairing page an unpaired device sees for any page load on the network listener, with its script and style:

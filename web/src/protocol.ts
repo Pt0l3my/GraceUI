@@ -36,6 +36,9 @@ export const TRI_THIRDS: readonly TriThird[] = ["auto", "inherit"];
 export type ResetScopeKind = "key" | "page" | "all";
 export const RESET_SCOPE_KINDS: readonly ResetScopeKind[] = ["key", "page", "all"];
 
+export type CommandView = "game" | "browser" | "device";
+export const COMMAND_VIEWS: readonly CommandView[] = ["game", "browser", "device"];
+
 export type TopicShape = "state" | "stream";
 export const TOPIC_SHAPES: readonly TopicShape[] = ["state", "stream"];
 
@@ -335,6 +338,7 @@ export interface Cmd {
   id: number;
   name: string;
   args: JsonObject;
+  view?: CommandView;
 }
 
 /** The answer to one command: ok, or an error with its reason in words a player reads (detail, 1.1). */
