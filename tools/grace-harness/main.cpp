@@ -569,6 +569,11 @@ class Game {
 
   // One frame of the game's: clear the current back buffer, then present it. Answers the presented buffer's index.
   UINT frame(Colour clear, PresentWith with) {
+    if (recentre_) {
+      POINT centre{static_cast<LONG>(width_ / 2), static_cast<LONG>(height_ / 2)};
+      ClientToScreen(window_, &centre);
+      SetCursorPos(centre.x, centre.y);
+    }
     const UINT index = swap_chain_->GetCurrentBackBufferIndex();
     wait_for(fence_, buffer_fences_[index]);
     require(allocators_[index]->Reset(), "Reset");
@@ -677,6 +682,19 @@ class Game {
   UINT width() const { return width_; }
   UINT height() const { return height_; }
   HWND window() const { return window_; }
+
+  // A game that turns its camera by the mouse (D232's case): it reads the mouse as raw input, and puts the cursor back
+  // at its window's centre before every frame, whatever holds input.
+  void recentre() {
+    RAWINPUTDEVICE mouse{};
+    mouse.usUsagePage = 0x01;  // generic desktop
+    mouse.usUsage = 0x02;      // mouse
+    mouse.hwndTarget = window_;
+    if (!RegisterRawInputDevices(&mouse, 1, sizeof mouse)) {
+      fatal("RegisterRawInputDevices for the mouse");
+    }
+    recentre_ = true;
+  }
   ID3D12Device* device() const { return device_; }
 
  private:
@@ -693,6 +711,7 @@ class Game {
   }
 
   HWND window_ = nullptr;
+  bool recentre_ = false;
   IDXGIFactory4* factory_ = nullptr;
   ID3D12Device* device_ = nullptr;
   ID3D12CommandQueue* queue_ = nullptr;
@@ -6561,6 +6580,57 @@ void run_editor(const std::wstring& dll) {
   frames(game, 5);
 }
 
+// The menu's pointer in a game that recentres its cursor every frame and reads the mouse as raw input, as the owner met
+// it in the real game (D232): the pointer moves by the mouse's own motion, keeps where it was moved, and is not pulled
+// back to the centre by the game's cursor.
+void run_menu_recentred(const std::wstring& dll) {
+  Game game(false, 1280, 720);
+  const HWND window = game.window();
+  cursor_into(window);
+  game.recentre();
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  frames(game, 3);
+  const GraceUiTestInput start = grace.input();
+  const auto move_by = [&](LONG dx, LONG dy, int times) {
+    for (int i = 0; i < times; ++i) {
+      inject_mouse(dx, dy, MOUSEEVENTF_MOVE);
+      settle();
+      frames(game, 1);
+    }
+  };
+  // 1. Right and down by 240 and 120 counts, in steps, the game recentring its cursor before each frame. Steps of six
+  // counts at most: Wine, like Windows' legacy acceleration, doubles an injected move above its first threshold (6).
+  move_by(6, 3, 40);
+  frames(game, 2);
+  const GraceUiTestInput moved = grace.input();
+  // 2. No motion for a dozen frames: the game goes on recentring, and the pointer stays.
+  frames(game, 12);
+  const GraceUiTestInput kept = grace.input();
+  // 3. Left by 800 counts: clamped at the client area's edge, never outside it.
+  move_by(-80, 0, 10);
+  frames(game, 2);
+  const GraceUiTestInput edge = grace.input();
+  menu = grace.menu();
+  const int right = moved.imgui_mouse_x - start.imgui_mouse_x;
+  const int down = moved.imgui_mouse_y - start.imgui_mouse_y;
+  check(right >= 200 && right <= 280 && down >= 100 && down <= 140 && kept.imgui_mouse_x == moved.imgui_mouse_x &&
+            kept.imgui_mouse_y == moved.imgui_mouse_y && edge.imgui_mouse_x == 0 && menu.off == 0,
+        "menu recentred: the pointer by the mouse's motion",
+        "from %d,%d: moved by 240,120 counts to %d,%d (%+d,%+d); after 12 frames of the game's recentring %d,%d; then "
+        "800 counts left: %d (the client area's edge 0)",
+        start.imgui_mouse_x, start.imgui_mouse_y, moved.imgui_mouse_x, moved.imgui_mouse_y, right, down,
+        kept.imgui_mouse_x, kept.imgui_mouse_y, edge.imgui_mouse_x);
+  press(window, VK_F5, kScanF5);
+  frames(game, 2);
+}
+
 void run_menu_mouse(const std::wstring& dll) {
   Game game(false, 1920, 1080);
   const HWND window = game.window();
@@ -8600,6 +8670,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"anti-cheat-recheck") {
     std::printf("-- scenario: the module re-check closes the browser view for the session (§7.2 item 1)\n");
     run_anti_cheat_later(dll, true);
+  } else if (scenario == L"menu-recentred") {
+    std::printf("-- scenario: the menu's pointer in a game that recentres its cursor (D232)\n");
+    run_menu_recentred(dll);
   } else if (scenario == L"menu-mouse") {
     std::printf("-- scenario: the in-game menu by mouse (§5.5)\n");
     run_menu_mouse(dll);
@@ -8701,7 +8774,7 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
             L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake"}) {
         run(child_scenario, dll, this_program());
       }

@@ -56,7 +56,8 @@ anything else a mod marks sensitive (protocol 1.8). **GraceUI 0.2.26** lets a mo
 this PC: a drop zone on its page sends one file, at most 32 MiB, checked on arrival and handed to the mod, which GraceUI
 keeps nothing of (protocol 1.9, ABI 1.6). **GraceUI 0.2.27** records, in its test build, how far its first frames got,
 so that a game that stops there says where; **GraceUI 0.2.28**'s test observer records the faults a run meets and the
-code that met them. Hotkeys and the log are declared for the increments
+code that met them. **GraceUI 0.2.29** moves the menu's pointer by the mouse's own motion, so that a game that keeps its
+cursor at the centre for its camera no longer pulls the pointer back. Hotkeys and the log are declared for the increments
 that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the

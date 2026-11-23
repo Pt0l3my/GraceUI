@@ -395,7 +395,9 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
       return out;
     case WM_MOUSEMOVE: {
       const Decision decision = rules.mouse_motion();
-      if (decision.to_holder) {
+      // While the mouse's own motion drives the pointer (D232), the cursor's position is the game's to set and not
+      // where the player points: a game that recentres its cursor would pull the pointer back with it.
+      if (decision.to_holder && !input::pointer_by_motion()) {
         push_mouse(HolderEvent::Type::mouse_move, 0, false, low_signed(lparam), high_signed(lparam));
       }
       out.route = decision.route;
@@ -449,6 +451,18 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
           out.route = rules.raw_input(device).route;
           out.device = device;
           out.passed = 4;
+        }
+        if (device == grace::input::want_mouse) {
+          // The mouse's relative motion, for the pointer while a holder has the mouse (D232); an absolute device's
+          // (a tablet, a remote desktop) moves the cursor, which WM_MOUSEMOVE reports.
+          RAWINPUT raw{};
+          UINT raw_size = sizeof raw;
+          // SAFETY: as above; the input is copied into ours, at most sizeof raw bytes.
+          if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lparam), RID_INPUT, &raw, &raw_size, sizeof header) !=
+                  static_cast<UINT>(-1) &&
+              (raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0) {
+            input::relative_motion(input::MotionSource::raw_input, raw.data.mouse.lLastX, raw.data.mouse.lLastY);
+          }
         }
       }
       return out;
@@ -552,6 +566,7 @@ void filter_device_state(IDirectInputDevice8W* device, DWORD size, void* data) n
         // SAFETY: DirectInput has just written `size` bytes at `data`: a DIMOUSESTATE or a DIMOUSESTATE2, whose first
         // `size` bytes DIMOUSESTATE2 shares.
         std::memcpy(&mouse, data, size);
+        input::relative_motion(input::MotionSource::direct_input, mouse.lX, mouse.lY);  // before it is blanked (D232)
         grace::input::MouseState view;
         view.x = mouse.lX;
         view.y = mouse.lY;

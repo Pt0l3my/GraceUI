@@ -76,6 +76,18 @@ bool window_filtered() noexcept;
 bool window_unicode() noexcept;
 void set_client_size(std::int32_t width, std::int32_t height) noexcept;
 void window_moved() noexcept;  // WM_SIZE or WM_MOVE: the cursor's confinement follows the window
+
+// ---- The pointer by the mouse's own motion while a holder has the mouse (D232). A game that turns its camera by the
+// mouse puts the system cursor back at its centre (SetCursorPos, ClipCursor) whatever holds input, so the cursor's
+// position, which WM_MOUSEMOVE reports, is pulled back too. While raw input or DirectInput gives the mouse's relative
+// motion, GraceUI moves its own pointer by it, within the client area, and leaves the system cursor to the game.
+enum class MotionSource : std::uint8_t { raw_input, direct_input };
+// Any thread (the window's for raw input, the game's reading thread for DirectInput), while a holder has the mouse:
+// motion of the mouse, in counts. Raw input is preferred where both come, so that nothing counts twice.
+void relative_motion(MotionSource source, std::int32_t dx, std::int32_t dy) noexcept;
+// Whether the mouse's motion drives the pointer now (some came within the last second): WM_MOUSEMOVE's position is
+// then left out.
+bool pointer_by_motion() noexcept;
 // The code page an ANSI window's characters are read in: its keyboard layout's (WM_INPUTLANGCHANGE), unless a test set one.
 void set_keyboard_code_page(std::uint32_t code_page) noexcept;
 std::uint32_t code_page() noexcept;
