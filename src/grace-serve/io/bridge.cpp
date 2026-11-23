@@ -281,6 +281,7 @@ void Engine::close_socket(Connection& c, std::optional<protocol::ByeReason> bye,
 }
 
 void Engine::release(Connection& c) noexcept {
+  release_uploads(c);  // a POST's file let go, a session's ticket with it (G28)
   for (const Subscription& sub : c.subs) {
     if (!sub.port->registered.load()) {
       continue;
@@ -454,6 +455,8 @@ void Engine::message(Connection& c, bool text, std::span<const std::uint8_t> pay
     unsubscribe(c, *unsub);
   } else if (auto* cmd = std::get_if<protocol::Cmd>(&parsed)) {
     command(c, *cmd);
+  } else if (auto* upload = std::get_if<protocol::Upload>(&parsed)) {
+    upload_request(c, *upload, now);  // an upload's ticket (G28)
   } else if (std::holds_alternative<protocol::Ping>(parsed)) {
     send_message(c, protocol::Message{protocol::Pong{}});
   } else if (std::holds_alternative<protocol::Pong>(parsed)) {
@@ -656,6 +659,11 @@ void Engine::command(Connection& c, protocol::Cmd& cmd) {
     // A paired device never sets a secret or a provider, nor what its space marks sensitive (§7.2 item 16, D81): told
     // so before any confirmation is asked of it, which would change nothing.
     send_result_error(c, *port, cmd.id, protocol::ErrorCode::not_now, "Only on the PC the game runs on.");
+    return;
+  }
+  if (file_command(port->description, cmd.name)) {
+    // A file command comes with its file, by the upload route alone (D226).
+    send_result_error(c, *port, cmd.id, protocol::ErrorCode::invalid_value, "This takes a file: add it with its button.");
     return;
   }
   if (!confirmed(port->description, cmd.name, cmd.args)) {

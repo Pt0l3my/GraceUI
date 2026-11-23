@@ -69,6 +69,9 @@ void Connection::clear() noexcept {
   bad = 0;
   logged_bad = false;
   pings_out = 0;
+  upload.reset();  // zeroed with its last holder (FileBytes)
+  upload_got = 0;
+  upload_slot = 0;
 }
 
 Engine::Engine(std::shared_ptr<Hub> hub, const ServerConfig& config) : hub_(std::move(hub)), config_(config) {
@@ -148,7 +151,14 @@ StartResult Engine::start() {
 
   loopback_rules_ = HeadRules{};
   loopback_rules_.listener = listener_;
-  loopback_rules_.max_content_length = kMaxTicketBody;  // the one body a route takes (item 9)
+  // The largest body a route takes: an upload's (G28, §7.2 item 18); each route caps its own below it (a ticket's 256 B).
+  loopback_rules_.max_content_length = kMaxUpload;
+  uploads_ = {};
+  {
+    std::lock_guard lock(worker_mutex_);
+    hash_jobs_.clear();
+    hash_done_.clear();
+  }
   network_listener_ = Listener{};
   network_listener_.network = true;
   network_listener_.port = config_.port;
@@ -302,9 +312,27 @@ void Engine::worker_main() noexcept {
       files_pending_ = std::move(table);
     }
     wake_.signal();
-    // Later jobs (the upload's SHA-256, §7.2 item 18) come here; until then the worker waits to be stopped.
+    // Then each upload's SHA-256 (§7.2 item 18, §7.6), off the I/O thread, until the server stops.
     std::unique_lock lock(worker_mutex_);
-    worker_wake_.wait(lock, [this] { return worker_stop_; });
+    while (true) {
+      worker_wake_.wait(lock, [this] { return worker_stop_ || !hash_jobs_.empty(); });
+      if (worker_stop_) {
+        hash_jobs_.clear();
+        break;
+      }
+      HashJob job = std::move(hash_jobs_.front());
+      hash_jobs_.pop_front();
+      lock.unlock();
+      Sha256 sha;
+      sha.update(job.file->bytes());
+      const std::array<std::uint8_t, 32> digest = sha.finish();
+      job.file.reset();  // the worker's hold on the file ends here
+      lock.lock();
+      hash_done_.push_back(HashDone{job.serial, digest});
+      lock.unlock();
+      wake_.signal();
+      lock.lock();
+    }
   } catch (...) {
     log(LogLevel::error, "The browser view's worker stopped after a fault.");
   }
@@ -345,6 +373,8 @@ void Engine::loop() {
     Clock::time_point now = Clock::now();
     take_hub(now);
     take_files(now);
+    take_hashes(now);     // the worker's checked uploads (G28)
+    expire_uploads(now);  // and tickets not used in time
     follow_addresses(now);
     Clock::time_point next = now + std::chrono::seconds(1);
     std::size_t http = 0;
@@ -635,6 +665,8 @@ void Engine::timers(Connection& c, Clock::time_point now) {
     case Phase::respond:
     case Phase::closing:
     case Phase::draining:
+    case Phase::upload:   // an upload's body within its time; dropped, its session hears so (G28)
+    case Phase::hashing:
       if (now >= c.deadline) {
         drop(c);  // no answer to a head that never ended (D111), or a drain past its bound (item 24)
       }
@@ -720,6 +752,10 @@ void Engine::readable(Connection& c, Clock::time_point now) {
       }
       ws_bytes(c, std::span<const std::uint8_t>(bytes_.data(), count), now);
       return;
+    case Phase::upload:
+      upload_bytes(c, data, now);  // into its file, up to the ticket's size (G28)
+      return;
+    case Phase::hashing:   // anything past the file is not read into it
     case Phase::draining:  // read and dropped, until the peer's end
     case Phase::files:
     case Phase::respond:
@@ -833,6 +869,14 @@ void Engine::route(Connection& c, std::string_view after, Clock::time_point now)
     return;
   }
   const RequestHead& head = c.parser.head();
+  if (head.path == kUploadRoute) {
+    if (head.has_query || head.method != Method::post) {
+      respond_status(c, 404, kNotFound, false, now);
+    } else {
+      upload_post(c, after, now);  // G28, §7.2 item 18: on the loopback listener alone
+    }
+    return;
+  }
   if (head.path == kSocketRoute || head.path == kTicketRoute) {
     if (head.has_query) {
       respond_status(c, 404, kNotFound, false, now);  // nothing goes in a query string (item 4)

@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -91,6 +92,21 @@ struct CommandRef {
   bool secret = false;  // a row secret's command (D194): its result goes back without a body
 };
 
+// An uploaded file's bytes (G28, D226, §7.2 item 18), handed to the space with its command: zeroed when the last holder
+// lets go, so that nothing of the file stays in GraceUI's memory once the space has taken it.
+class FileBytes {
+ public:
+  explicit FileBytes(std::size_t size) : bytes_(size) {}
+  ~FileBytes();
+  FileBytes(const FileBytes&) = delete;
+  FileBytes& operator=(const FileBytes&) = delete;
+  std::span<std::uint8_t> bytes() noexcept { return bytes_; }
+  std::span<const std::uint8_t> bytes() const noexcept { return bytes_; }
+
+ private:
+  std::vector<std::uint8_t> bytes_;
+};
+
 struct SpaceEvent {
   enum class Kind : std::uint8_t {
     none,       // nothing is waiting
@@ -105,6 +121,8 @@ struct SpaceEvent {
   CommandRef reply;
   // With command: the view that sent it, from the channel it came on (§7.3, D224): this PC's browser or a paired device.
   protocol::CommandView view = protocol::CommandView::browser;
+  // With a file command (D226): the file, its SHA-256 checked against the ticket's; null for any other command.
+  std::shared_ptr<const FileBytes> file;
 };
 
 namespace detail {

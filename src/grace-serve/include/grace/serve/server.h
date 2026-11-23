@@ -65,6 +65,11 @@ struct PairedDevice {
 };
 // Tickets fetched and not yet used: a newer one replaces the oldest (EST).
 inline constexpr std::size_t kMaxTickets = 8;
+// The upload route (G28, D226, §7.2 item 18): one file for a space's file command, on the loopback listener alone, its
+// one-use ticket asked for over the WebSocket first and sent in this field.
+inline constexpr std::string_view kUploadRoute = "/upload";
+inline constexpr std::string_view kUploadTicketField = "grace-upload-ticket";
+inline constexpr std::size_t kMaxUploads = 4;  // tickets held at once: one a session (two), and a closing session's
 
 // Every deadline of the server, on the monotonic clock. Tests shorten them; a host keeps the defaults.
 struct Timings {
@@ -76,6 +81,8 @@ struct Timings {
   std::chrono::milliseconds write{5000};       // an HTTP response must be sent within this (SRV §5.2)
   std::chrono::milliseconds state_interval{250};  // a state topic at most this often to a view (4 Hz, §2.4)
   std::chrono::milliseconds rate_window{1000};    // the window of the 20 messages a connection may send (§6.8)
+  std::chrono::milliseconds upload{30000};         // an upload's body within this of its head (EST; G28)
+  std::chrono::milliseconds upload_ticket{60000};  // an upload's ticket, used once within this of its issue (§7.2 item 18)
 };
 
 enum class LogLevel : std::uint8_t { info, warning, error };

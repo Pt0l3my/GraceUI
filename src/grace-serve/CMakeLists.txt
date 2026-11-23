@@ -25,7 +25,8 @@ add_library(grace_serve STATIC
   io/bridge.cpp
   io/files.cpp
   io/server.cpp
-  io/space.cpp)
+  io/space.cpp
+  io/upload.cpp)
 if(WIN32)
   target_sources(grace_serve PRIVATE io/platform_win32.cpp)
   target_link_libraries(grace_serve PRIVATE ws2_32 bcrypt)
@@ -69,7 +70,8 @@ if(GRACEUI_UNIT_TESTS OR (WIN32 AND GRACEUI_TEST_EXPORTS))
     io/tests/harness.cpp
     io/tests/http_tests.cpp
     io/tests/lifecycle_tests.cpp
-    io/tests/network_tests.cpp)
+    io/tests/network_tests.cpp
+    io/tests/upload_tests.cpp)
   target_link_libraries(grace_serve_io_tests PRIVATE grace_serve grace_pages gu_doctest)
   if(WIN32)
     target_link_libraries(grace_serve_io_tests PRIVATE ws2_32)

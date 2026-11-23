@@ -94,12 +94,15 @@ std::string_view reason_phrase(std::uint16_t status) noexcept {
   switch (status) {
     case 101: return "Switching Protocols";
     case 200: return "OK";
+    case 202: return "Accepted";  // an upload handed to its space (G28)
     case 307: return "Temporary Redirect";
     case 400: return "Bad Request";
     case 403: return "Forbidden";
     case 404: return "Not Found";
     case 405: return "Method Not Allowed";
     case 408: return "Request Timeout";
+    case 409: return "Conflict";         // an upload whose session went away (G28)
+    case 411: return "Length Required";  // an upload without its Content-Length (G28)
     case 413: return "Content Too Large";
     case 414: return "URI Too Long";
     case 415: return "Unsupported Media Type";

@@ -58,6 +58,8 @@ struct Connection {
     open,      // a WebSocket after welcome
     closing,   // a WebSocket whose Close the server sent: waiting for the page's, within close_wait
     draining,  // the send side shut down: reading until the peer's end, within close_wait (item 24)
+    upload,    // reading an upload's body into its file, within timings.upload of its head (G28)
+    hashing,   // the worker checks the upload's SHA-256; then the file goes to its space, or is let go
   };
 
   explicit Connection(const HeadRules& rules) noexcept : parser(rules) {}
@@ -105,6 +107,11 @@ struct Connection {
   std::size_t pings_out = 0;
   Clock::time_point next_ping{};
 
+  // An upload's POST (G28): its file as it arrives, and its ticket's slot.
+  std::shared_ptr<FileBytes> upload;
+  std::size_t upload_got = 0;
+  std::size_t upload_slot = 0;
+
   void clear() noexcept;
 };
 
@@ -149,6 +156,17 @@ class Engine {
   void take_body(Connection& c, std::string_view after, Clock::time_point now);
   void body_done(Connection& c, Clock::time_point now);
   void apply_network(bool on, Clock::time_point now);
+
+  // Uploads (upload.cpp; G28, D226, §7.2 item 18).
+  void upload_request(Connection& c, protocol::Upload& request, Clock::time_point now);
+  void upload_post(Connection& c, std::string_view after, Clock::time_point now);
+  void upload_bytes(Connection& c, std::string_view data, Clock::time_point now);
+  void take_hashes(Clock::time_point now);
+  void expire_uploads(Clock::time_point now);
+  void release_uploads(const Connection& c) noexcept;
+  // Tells the session that asked, by its command's id, that its upload did not reach the space; frees the slot.
+  void upload_failed(std::size_t slot, protocol::ErrorCode code, std::string_view words, Clock::time_point now);
+  Connection* connection_of(std::uint64_t serial) noexcept;
   // The PC's addresses the network listener may take: the test's own, else its private ones; deduplicated, at most
   // kMaxNetworkAddresses, never 0.0.0.0, multicast or reserved.
   std::vector<std::array<std::uint8_t, 4>> network_candidates() const;
@@ -233,6 +251,32 @@ class Engine {
   std::condition_variable worker_wake_;
   bool worker_stop_ = false;                         // under worker_mutex_
   std::shared_ptr<const FileTable> files_pending_;   // under worker_mutex_
+  struct HashJob {
+    std::uint64_t serial = 0;  // the POST's connection
+    std::shared_ptr<const FileBytes> file;
+  };
+  struct HashDone {
+    std::uint64_t serial = 0;
+    std::array<std::uint8_t, 32> sha256{};
+  };
+  std::deque<HashJob> hash_jobs_;    // under worker_mutex_: the worker's (§7.6)
+  std::deque<HashDone> hash_done_;   // under worker_mutex_: the I/O thread's
+  // An upload's ticket (G28): bound to the session that asked (its WebSocket), the space, the command and its args, and
+  // the file's size and SHA-256; used once, within timings.upload_ticket.
+  struct UploadTicket {
+    bool live = false;  // issued, not yet used
+    bool busy = false;  // used: its file on its way, being checked, or handed over
+    std::array<char, kTokenChars> token{};
+    std::uint64_t session = 0;  // the WebSocket's serial: where the command's result goes
+    std::shared_ptr<PortState> port;
+    std::string command;
+    protocol::Json args;
+    std::uint32_t id = 0;
+    std::uint64_t size = 0;
+    std::array<std::uint8_t, 32> sha256{};
+    Clock::time_point issued{};
+  };
+  std::array<UploadTicket, kMaxUploads> uploads_;
 
   // The I/O thread's alone.
   std::vector<std::unique_ptr<Connection>> pool_;
