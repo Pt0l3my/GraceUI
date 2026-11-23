@@ -4818,15 +4818,47 @@ bool load_spike_tools(Game& game) {
   return patched() == 1;
 }
 
+// A fault of the harness's own (D231): a continuable access violation with a mark, which the harness's handler, last in
+// the process's list, resumes once the observer's, first, has recorded it.
+constexpr ULONG_PTR kHarnessFault = 0x6772616365;
+
+LONG CALLBACK resume_harness_fault(EXCEPTION_POINTERS* pointers) {
+  const EXCEPTION_RECORD& record = *pointers->ExceptionRecord;
+  return record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION && record.NumberParameters == 3 &&
+                 record.ExceptionInformation[2] == kHarnessFault
+             ? EXCEPTION_CONTINUE_EXECUTION
+             : EXCEPTION_CONTINUE_SEARCH;
+}
+
+// Never inlined, so that both of its faults come from one site (an unrolled loop would make two).
+#if defined(_MSC_VER)
+__declspec(noinline)
+#else
+__attribute__((noinline))
+#endif
+void raise_harness_fault() {
+  const ULONG_PTR arguments[3] = {0, 0, kHarnessFault};  // a read of the null page, and the harness's mark
+  RaiseException(EXCEPTION_ACCESS_VIOLATION, 0, 3, arguments);
+}
+
+std::string lower_text(std::string text) {
+  for (char& c : text) {
+    c = c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+  }
+  return text;
+}
+
 void run_spike(const std::wstring& dll, bool tools_first) {
   using grace::protocol::Json;
   const std::wstring parent = folder_of_this_program() + (tools_first ? L"spike-first" : L"spike-after");
   const std::wstring folder = parent + L"\\s4-1";
   const std::wstring path = folder + L"\\" + GRACE_SPIKE_FILE;
   const std::wstring log_path = folder + L"\\" + GRACE_SPIKE_LOG_FILE;
+  const std::wstring fault_path = folder + L"\\" + GRACE_SPIKE_FAULT_FILE;
   CreateDirectoryW(parent.c_str(), nullptr);
   DeleteFileW(path.c_str());
   DeleteFileW(log_path.c_str());
+  DeleteFileW(fault_path.c_str());
   SetEnvironmentVariableW(GRACE_SPIKE_DIR_VARIABLE, folder.c_str());
   SetEnvironmentVariableW(L"GRACE_SPIKE_TYPING_MS", L"3000");
   SetEnvironmentVariableW(L"GRACE_SPIKE_STATE_MS", L"300");
@@ -4922,6 +4954,39 @@ void run_spike(const std::wstring& dll, bool tools_first) {
         header_line ? "headed" : "NOT HEADED", static_cast<unsigned long long>(expected),
         numbered ? "numbered in order" : "NOT IN ORDER", queue_logged ? "with" : "WITHOUT",
         report_text.find("present queue found") == std::string::npos ? "holds none of it" : "HOLDS LOG TEXT");
+
+  // 2c. The fault recorder (D231): a fault raised twice from one site is written once, recorded and never handled
+  // (the harness's own handler resumes it), with the faulting thread's frames as fixed words in the report and as
+  // modules' file names beside it.
+  PVOID resume = AddVectoredExceptionHandler(0, &resume_harness_fault);
+  for (int i = 0; i < 2; ++i) {
+    raise_harness_fault();
+  }
+  if (resume != nullptr) {
+    RemoveVectoredExceptionHandler(resume);
+  }
+  const std::vector<Json> faults = lines_of(read_report(path), "fault");
+  const Json fault = faults.empty() ? Json::object() : faults.front();
+  bool system_first = false;
+  bool harness_frame = false;
+  if (fault.contains("at") && fault["at"].is_array() && !fault["at"].empty() && fault["at"][0].is_string()) {
+    const std::string first_at = fault["at"][0].get<std::string>();
+    system_first = first_at.rfind("kernel+", 0) == 0 || first_at.rfind("ntdll+", 0) == 0;
+    for (const Json& at : fault["at"]) {
+      harness_frame = harness_frame || (at.is_string() && at.get<std::string>().rfind("game+", 0) == 0);
+    }
+  }
+  const std::string fault_text = lower_text(read_text(fault_path));
+  check(faults.size() == 1 && fault.value("code", std::uint64_t{0}) == EXCEPTION_ACCESS_VIOLATION &&
+            fault.value("access", std::string()) == "read" && fault.value("null_target", std::uint64_t{9}) == 1 &&
+            system_first && harness_frame && fault_text.rfind("# faults seen", 0) == 0 &&
+            fault_text.find("grace-harness.exe+0x") != std::string::npos &&
+            fault_text.find("kernelbase.dll+0x") != std::string::npos,
+        "spike: the fault recorder",
+        "%zu fault line(s) for two faults from one site; the first: %s; the text file %s the harness's and KernelBase's "
+        "frames",
+        faults.size(), fault.dump().c_str(),
+        fault_text.find("grace-harness.exe+0x") != std::string::npos ? "names" : "DOES NOT NAME");
 
   // 3. The typing test (with the tools first): F9 opens it, letters and the mouse go to it and none reaches the game,
   // and it gives the controls back when its time is up.

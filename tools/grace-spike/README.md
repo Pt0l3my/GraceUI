@@ -87,4 +87,8 @@ after it), the observer writes a state line at once whenever that step changes, 
 step in its drawing row. The observer also copies GraceUI's own log lines into `graceui-log.txt` beside the report,
 never into it (the report keeps to numbers and its own words): it is GraceUI's text, with no path and no name in it,
 so read it before you send it if you like. To place a crash more closely, set `GRACE_SPIKE_STATE_MS=200` in the run's
-environment (200 to 60000 ms between state lines; 5000 by default).
+environment (200 to 60000 ms between state lines; 5000 by default). Since GraceUI 0.2.28 (D231) the observer also
+records faults, never handling one: a `fault` line in the report for each access violation, illegal instruction or the
+like, with the faulting thread's frames as fixed words and offsets, and `graceui-faults.txt` beside it with the
+modules' file names; a run that fell has its last fault there. The game's own routine faults show up too, once each:
+`report.py` lists them and judges none.

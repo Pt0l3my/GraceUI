@@ -21,6 +21,9 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cwchar>
+#include <string_view>
 #include <cstdint>
 #include <cstdlib>
 #include <initializer_list>
@@ -85,6 +88,7 @@ class Report {
                         nullptr);
     return file_ != INVALID_HANDLE_VALUE;
   }
+  HANDLE handle() const { return file_; }
   // Written at once, unbuffered: a crash loses at most the line being written.
   void write(const Line& line) const {
     const std::string text = line.text();
@@ -95,6 +99,370 @@ class Report {
  private:
   HANDLE file_ = INVALID_HANDLE_VALUE;
 };
+
+// ---- The fault recorder (D231): what was running when the process fell.
+//
+// A vectored exception handler, first in the process's list, that records an access violation, an illegal or privileged
+// instruction, an in-page error or a division by zero and never handles one: it answers EXCEPTION_CONTINUE_SEARCH
+// whatever it found, so the process goes on, or falls, as it would have. For each it writes the code, the access, whether
+// the target was the null page, GraceUI's frame step (D230), and the faulting thread's frames as a module and an offset:
+// the instruction first, then, where there is no unwind data for it (the pointer at 0, a leaf, code made at run time),
+// the return address at the top of the stack, which names the call that went there, then up to a dozen unwound. In the
+// report each module is a fixed word of this file's (the report's rule holds); in graceui-faults.txt beside it, its file
+// name. Each site (the instruction and the frame above it) is written once, and at most 64 lines a run, so a game's own
+// routine first-chance faults cannot flood either file.
+//
+// The handler runs on the faulting thread, which may hold any lock (the heap's, the loader's): it allocates nothing,
+// takes no lock and calls no function that might, reading only the module table the observer's thread keeps and writing
+// with WriteFile from buffers on its stack. A fault inside it is not recorded again.
+
+enum class ModuleKind : std::uint8_t {
+  graceui, grace_spike, grace_standin, eldennet, game, dxgi, d3d12, d3d12core, dinput, xinput, user32, ntdll, kernel,
+  system, other,
+};
+
+const char* module_word(ModuleKind kind) {
+  switch (kind) {
+    case ModuleKind::graceui: return "graceui";
+    case ModuleKind::grace_spike: return "grace_spike";
+    case ModuleKind::grace_standin: return "grace_standin";
+    case ModuleKind::eldennet: return "eldennet";
+    case ModuleKind::game: return "game";
+    case ModuleKind::dxgi: return "dxgi";
+    case ModuleKind::d3d12: return "d3d12";
+    case ModuleKind::d3d12core: return "d3d12core";
+    case ModuleKind::dinput: return "dinput";
+    case ModuleKind::xinput: return "xinput";
+    case ModuleKind::user32: return "user32";
+    case ModuleKind::ntdll: return "ntdll";
+    case ModuleKind::kernel: return "kernel";
+    case ModuleKind::system: return "system";
+    case ModuleKind::other: return "other";
+  }
+  return "other";
+}
+
+struct ModuleSpan {
+  std::uintptr_t base;
+  std::uintptr_t end;
+  ModuleKind kind;
+  char name[48];  // the file's name, printable ASCII, for graceui-faults.txt alone
+};
+
+constexpr std::uint32_t kModules = 512;
+struct ModuleTable {
+  std::uint32_t count;
+  ModuleSpan spans[kModules];
+};
+
+// Two tables: the observer's thread fills the one the handler is not told of, then names it.
+ModuleTable g_module_tables[2];
+std::atomic<int> g_module_table{-1};
+
+ModuleKind kind_of(const wchar_t* name, bool in_system, bool is_exe) {
+  wchar_t lower[64] = {};
+  for (int i = 0; i < 63 && name[i] != 0; ++i) {
+    lower[i] = name[i] >= L'A' && name[i] <= L'Z' ? static_cast<wchar_t>(name[i] - L'A' + L'a') : name[i];
+  }
+  const std::wstring_view n(lower);
+  if (is_exe) {
+    return ModuleKind::game;
+  }
+  if (n == L"graceui.dll") {
+    return ModuleKind::graceui;
+  }
+  if (n == L"grace-spike.dll") {
+    return ModuleKind::grace_spike;
+  }
+  if (n == L"grace-standin.dll") {
+    return ModuleKind::grace_standin;
+  }
+  if (n == L"eldennet.dll") {
+    return ModuleKind::eldennet;
+  }
+  if (n == L"dxgi.dll") {
+    return ModuleKind::dxgi;
+  }
+  if (n == L"d3d12.dll") {
+    return ModuleKind::d3d12;
+  }
+  if (n == L"d3d12core.dll") {
+    return ModuleKind::d3d12core;
+  }
+  if (n == L"dinput8.dll") {
+    return ModuleKind::dinput;
+  }
+  if (n.substr(0, 6) == L"xinput") {
+    return ModuleKind::xinput;
+  }
+  if (n == L"user32.dll" || n == L"win32u.dll") {
+    return ModuleKind::user32;
+  }
+  if (n == L"ntdll.dll") {
+    return ModuleKind::ntdll;
+  }
+  if (n == L"kernel32.dll" || n == L"kernelbase.dll") {
+    return ModuleKind::kernel;
+  }
+  return in_system ? ModuleKind::system : ModuleKind::other;
+}
+
+// The observer's thread only: the process's modules now, for the handler.
+void refresh_modules() {
+  const int current = g_module_table.load(std::memory_order_acquire);
+  ModuleTable& table = g_module_tables[current == 0 ? 1 : 0];
+  HMODULE modules[kModules] = {};
+  DWORD needed = 0;
+  if (!EnumProcessModules(GetCurrentProcess(), modules, sizeof modules, &needed)) {
+    return;
+  }
+  wchar_t system[MAX_PATH] = {};
+  const UINT system_length = GetSystemDirectoryW(system, MAX_PATH);
+  const HMODULE exe = GetModuleHandleW(nullptr);
+  const std::uint32_t count = std::min<std::uint32_t>(needed / sizeof(HMODULE), kModules);
+  std::uint32_t kept = 0;
+  for (std::uint32_t i = 0; i < count; ++i) {
+    MODULEINFO info{};
+    wchar_t path[MAX_PATH] = {};
+    wchar_t name[64] = {};
+    if (!GetModuleInformation(GetCurrentProcess(), modules[i], &info, sizeof info) ||
+        GetModuleFileNameW(modules[i], path, MAX_PATH) == 0) {
+      continue;
+    }
+    const wchar_t* slash = std::wcsrchr(path, L'\\');
+    const wchar_t* base = slash != nullptr ? slash + 1 : path;
+    for (int c = 0; c < 63 && base[c] != 0; ++c) {
+      name[c] = base[c];
+    }
+    const bool in_system = system_length > 0 && _wcsnicmp(path, system, system_length) == 0;
+    ModuleSpan& span = table.spans[kept++];
+    // SAFETY: an address, kept as a number; the handler compares numbers and never reads through it.
+    span.base = reinterpret_cast<std::uintptr_t>(info.lpBaseOfDll);
+    span.end = span.base + info.SizeOfImage;
+    span.kind = kind_of(name, in_system, modules[i] == exe);
+    for (int c = 0; c < 47; ++c) {
+      const wchar_t w = name[c];
+      span.name[c] = w == 0 ? '\0' : (w >= 0x20 && w < 0x7F ? static_cast<char>(w) : '?');
+      if (w == 0) {
+        break;
+      }
+    }
+    span.name[47] = '\0';
+  }
+  table.count = kept;
+  g_module_table.store(current == 0 ? 1 : 0, std::memory_order_release);
+}
+
+const ModuleSpan* module_at(std::uintptr_t address) {
+  const int current = g_module_table.load(std::memory_order_acquire);
+  if (current < 0) {
+    return nullptr;
+  }
+  const ModuleTable& table = g_module_tables[current];
+  for (std::uint32_t i = 0; i < table.count && i < kModules; ++i) {
+    if (address >= table.spans[i].base && address < table.spans[i].end) {
+      return &table.spans[i];
+    }
+  }
+  return nullptr;
+}
+
+// A line built on the stack, never past its end.
+struct Text {
+  char data[1536];
+  std::size_t length = 0;
+  void put(const char* text) {
+    for (; *text != 0 && length + 1 < sizeof data; ++text) {
+      data[length++] = *text;
+    }
+  }
+  void number(std::uint64_t value) {
+    char digits[24];
+    int n = 0;
+    do {
+      digits[n++] = static_cast<char>('0' + value % 10);
+      value /= 10;
+    } while (value != 0 && n < 24);
+    while (n > 0 && length + 1 < sizeof data) {
+      data[length++] = digits[--n];
+    }
+  }
+  void hex(std::uint64_t value) {
+    put("0x");
+    char digits[20];
+    int n = 0;
+    do {
+      digits[n++] = "0123456789abcdef"[value & 15];
+      value >>= 4;
+    } while (value != 0 && n < 20);
+    while (n > 0 && length + 1 < sizeof data) {
+      data[length++] = digits[--n];
+    }
+  }
+};
+
+HANDLE g_fault_report = INVALID_HANDLE_VALUE;  // the report's handle, for the handler's lines
+HANDLE g_fault_text = INVALID_HANDLE_VALUE;    // graceui-faults.txt
+using FrameStepFn = std::uint32_t (*)();
+std::atomic<FrameStepFn> g_fault_frame_step{nullptr};
+std::atomic<bool> g_fault_busy{false};
+std::atomic<std::uint32_t> g_fault_lines{0};
+constexpr std::uint32_t kFaultLines = 64;
+std::uintptr_t g_fault_sites[kFaultLines][2] = {};
+
+void write_text(HANDLE file, const Text& text) {
+  if (file != INVALID_HANDLE_VALUE) {
+    DWORD written = 0;
+    WriteFile(file, text.data, static_cast<DWORD>(text.length), &written, nullptr);
+  }
+}
+
+#if defined(_M_X64) || defined(__x86_64__)
+constexpr int kFrames = 13;
+
+// The faulting thread's frames, from a copy of its context: the instruction, then each caller, as far as the stack is
+// the thread's own and at most kFrames.
+int frames_of(const CONTEXT& faulting, std::uintptr_t (&frames)[kFrames]) {
+  CONTEXT context = faulting;
+  ULONG_PTR low = 0;
+  ULONG_PTR high = 0;
+  GetCurrentThreadStackLimits(&low, &high);  // the thread's own stack, from its information block
+  int count = 0;
+  frames[count++] = static_cast<std::uintptr_t>(context.Rip);
+  while (count < kFrames) {
+    if (context.Rsp < low || context.Rsp + 8 > high) {
+      break;  // not this thread's stack: nothing more is read
+    }
+    DWORD64 image = 0;
+    PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &image, nullptr);
+    if (function == nullptr) {
+      // No unwind data (the pointer at 0, a leaf, code made at run time): the return address is at the stack's top.
+      // SAFETY: Rsp lies within this thread's stack, checked above, and 8 bytes fit below its base.
+      context.Rip = *reinterpret_cast<const DWORD64*>(context.Rsp);
+      context.Rsp += 8;
+    } else {
+      PVOID handler_data = nullptr;
+      DWORD64 establisher = 0;
+      RtlVirtualUnwind(UNW_FLAG_NHANDLER, image, context.Rip, function, &context, &handler_data, &establisher,
+                       nullptr);
+    }
+    if (context.Rip == 0) {
+      break;
+    }
+    frames[count++] = static_cast<std::uintptr_t>(context.Rip);
+  }
+  return count;
+}
+#endif
+
+LONG CALLBACK on_fault(EXCEPTION_POINTERS* pointers) {
+  const DWORD code = pointers->ExceptionRecord->ExceptionCode;
+  if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION &&
+      code != EXCEPTION_PRIV_INSTRUCTION && code != EXCEPTION_IN_PAGE_ERROR && code != EXCEPTION_INT_DIVIDE_BY_ZERO) {
+    return EXCEPTION_CONTINUE_SEARCH;
+  }
+  if (g_fault_lines.load(std::memory_order_relaxed) >= kFaultLines || g_fault_busy.exchange(true)) {
+    return EXCEPTION_CONTINUE_SEARCH;  // full, or another fault is being written (perhaps this one's own)
+  }
+#if defined(_M_X64) || defined(__x86_64__)
+  std::uintptr_t frames[kFrames] = {};
+  const int count = frames_of(*pointers->ContextRecord, frames);
+  const std::uintptr_t caller = count > 1 ? frames[1] : 0;
+  bool seen = false;
+  const std::uint32_t lines = g_fault_lines.load(std::memory_order_relaxed);
+  for (std::uint32_t i = 0; i < lines; ++i) {
+    seen = seen || (g_fault_sites[i][0] == frames[0] && g_fault_sites[i][1] == caller);
+  }
+  if (!seen) {
+    g_fault_sites[lines][0] = frames[0];
+    g_fault_sites[lines][1] = caller;
+    g_fault_lines.store(lines + 1, std::memory_order_relaxed);
+    const EXCEPTION_RECORD& record = *pointers->ExceptionRecord;
+    const bool has_access = code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_IN_PAGE_ERROR;
+    const ULONG_PTR access = has_access && record.NumberParameters >= 2 ? record.ExceptionInformation[0] : 99;
+    const ULONG_PTR target = has_access && record.NumberParameters >= 2 ? record.ExceptionInformation[1] : 0;
+    const char* access_word = access == 0 ? "read" : access == 1 ? "write" : access == 8 ? "execute" : "none";
+    const FrameStepFn step_of = g_fault_frame_step.load(std::memory_order_acquire);
+    const std::uint32_t step = step_of != nullptr ? step_of() : 0;
+    Text line;
+    line.put("{\"report\":\"graceui_spike\",\"schema\":1,\"t\":");
+    line.number(static_cast<std::uint64_t>(now_ms()));
+    line.put(",\"k\":\"fault\",\"code\":");
+    line.number(code);
+    line.put(",\"access\":\"");
+    line.put(access_word);
+    line.put("\",\"null_target\":");
+    line.number(has_access && target < 0x10000 ? 1 : 0);
+    line.put(",\"frame_step\":");
+    line.number(step);
+    line.put(",\"thread\":");
+    line.number(GetCurrentThreadId());
+    line.put(",\"at\":[");
+    Text text;
+    text.put("t=");
+    text.number(static_cast<std::uint64_t>(now_ms()));
+    text.put(" fault ");
+    text.hex(code);
+    text.put(" ");
+    text.put(access_word);
+    if (has_access) {
+      text.put(target < 0x10000 ? " of the null page" : " elsewhere");
+    }
+    text.put(", frame_step ");
+    text.number(step);
+    text.put(", thread ");
+    text.number(GetCurrentThreadId());
+    text.put("\n");
+    for (int i = 0; i < count; ++i) {
+      const ModuleSpan* span = module_at(frames[i]);
+      line.put(i == 0 ? "\"" : ",\"");
+      text.put("  at ");
+      if (frames[i] < 0x10000) {
+        line.put("null+");
+        line.hex(frames[i]);
+        text.put("the null page+");
+        text.hex(frames[i]);
+      } else if (span == nullptr) {
+        line.put("unknown");
+        text.put("no module (");
+        text.hex(frames[i]);
+        text.put(")");
+      } else {
+        line.put(module_word(span->kind));
+        line.put("+");
+        line.hex(frames[i] - span->base);
+        text.put(span->name);
+        text.put("+");
+        text.hex(frames[i] - span->base);
+      }
+      line.put("\"");
+      text.put("\n");
+    }
+    line.put("]}\n");
+    write_text(g_fault_report, line);
+    write_text(g_fault_text, text);
+  }
+#endif
+  g_fault_busy.store(false);
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
+// The observer's thread, once: graceui-faults.txt opened, the modules read, the handler first in the process's list.
+void start_fault_recorder(const std::wstring& folder, HANDLE report) {
+  const std::wstring path = folder + L"\\" + GRACE_SPIKE_FAULT_FILE;
+  g_fault_text = CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS,
+                             FILE_ATTRIBUTE_NORMAL, nullptr);
+  g_fault_report = report;
+  if (g_fault_text != INVALID_HANDLE_VALUE) {
+    const char header[] =
+        "# Faults seen by grace-spike.dll (recorded, never handled): each with the faulting thread's frames, as a "
+        "module's file name and an offset\n";
+    DWORD written = 0;
+    WriteFile(g_fault_text, header, sizeof header - 1, &written, nullptr);
+  }
+  refresh_modules();
+  AddVectoredExceptionHandler(1, &on_fault);
+}
 
 // ---- The fixed words.
 
@@ -516,6 +884,7 @@ DWORD WINAPI spike_worker(LPVOID) {
   if (!report.open(folder)) {
     return 0;
   }
+  start_fault_recorder(folder, report.handle());  // D231
   const std::uint32_t typing_ms = environment_ms(L"GRACE_SPIKE_TYPING_MS", GRACE_SPIKE_TYPING_MS, 1000, 600000);
   const std::uint32_t state_ms = environment_ms(L"GRACE_SPIKE_STATE_MS", GRACE_SPIKE_STATE_MS, 200, 60000);
 
@@ -523,7 +892,11 @@ DWORD WINAPI spike_worker(LPVOID) {
   HMODULE graceui = nullptr;
   for (int i = 0; i < 12000 && (graceui = GetModuleHandleW(L"graceui.dll")) == nullptr; ++i) {
     Sleep(50);
+    if (i % 20 == 19) {
+      refresh_modules();  // once a second while it waits (D231)
+    }
   }
+  refresh_modules();
   const char* eldennet_at_find = present(L"eldennet.dll");
   GraceUiSysFound found{};
   found.size = sizeof found;
@@ -538,6 +911,9 @@ DWORD WINAPI spike_worker(LPVOID) {
   GraceUiConnectAnswer answer{};
   const GraceUiStatus connected = api ? api.connect(mod, answer) : GRACEUI_REFUSED;
   const bool test_build = api && counters.bind(found.module);
+  if (test_build) {
+    g_fault_frame_step.store(counters.frame_step, std::memory_order_release);  // D231
+  }
   std::uint64_t standin_presents = 0;
   Line header("header");
   header.word("spike", spike_word(folder))
@@ -592,6 +968,7 @@ DWORD WINAPI spike_worker(LPVOID) {
   Typing typing;
   std::int64_t next_state = now_ms();
   std::uint32_t last_step = 0;  // GraceUI's frame step as last written (D230)
+  std::int64_t modules_read = now_ms();
   for (;;) {
     GraceUiEvent event{};
     while (drawing && api.poll(me, event) == GRACEUI_OK && event.kind != GRACEUI_EVENT_NONE) {
@@ -660,6 +1037,10 @@ DWORD WINAPI spike_worker(LPVOID) {
       }
     }
     log_copy.copy(counters);
+    if (now_ms() - modules_read >= 500) {
+      refresh_modules();  // the table the fault recorder reads, twice a second (D231)
+      modules_read = now_ms();
+    }
     // A state line at each of GraceUI's first-frame steps as well as on the clock (D230): a game that falls in them
     // leaves the last step it reached, within this loop's 50 ms.
     const std::uint32_t step = counters.frame_step != nullptr ? counters.frame_step() : 0;

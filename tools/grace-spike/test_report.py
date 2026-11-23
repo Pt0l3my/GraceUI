@@ -135,6 +135,17 @@ class Reader(unittest.TestCase):
         older = report.judge(self.write("s0e-9", [header("s0e"), state()]), {})
         self.assertNotIn("step", [r for r in older["rules"] if r["rule"] == "drawing"][0]["detail"])
 
+    def test_faults_are_listed_never_judged(self):  # D231
+        fault = {"report": "graceui_spike", "schema": 1, "t": 9, "k": "fault", "code": 3221225477, "access": "execute",
+                 "null_target": 1, "frame_step": 2, "thread": 7, "at": ["null+0x0", "other+0x1a2b", "graceui+0x40"]}
+        lines = [header("s0e"), state(), fault]
+        verdict = report.judge(self.write("s0e-f", lines), {})
+        clean = report.judge(self.write("s0e-g", [header("s0e"), state()]), {})
+        self.assertEqual(verdict["verdict"], clean["verdict"])
+        self.assertEqual(verdict["faults"], [{"code": 3221225477, "access": "execute", "null_target": 1, "frame_step": 2,
+                                              "at": ["null+0x0", "other+0x1a2b", "graceui+0x40"]}])
+        self.assertEqual(clean["faults"], [])
+
     def test_the_atlas_at_150_is_judged_against_its_limit(self):
         lines = [header("s4"), state(ui_scale_x100=150, atlas=[4096, 8192]), typing(), state()]
         self.assertEqual(self.results(report.judge(self.write("s4-1", lines), {}))["atlas_150"], "failed")

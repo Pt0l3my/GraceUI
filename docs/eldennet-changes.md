@@ -1300,3 +1300,17 @@ For A1's next run, after its two crashes between GraceUI binding the swap chain 
   default), so the last one before a crash is close to it.
 - Your vendored `graceui_test.h` gains `GraceUI_Test_FrameStep`, `GraceUI_Test_LogCount` and
   `GraceUI_Test_GetLogNumber`; it needs them only if your own harness reads them.
+
+## 63. The spike package: the fault recorder (2026-11-23, D231; GraceUI 0.2.28, test-only)
+
+A1's and A0's four crashes faulted at address 0 in no module (Windows' Application Error events), which names no
+caller. 0.2.28's grace-spike.dll records each fault a run meets, without handling it, so the next crash names the call
+that went to 0:
+
+- **Repack with 0.2.28's test build and its grace-spike.dll** (graceui.dll itself is unchanged since 0.2.27 but for its
+  version). Each fault gives a `fault` line in `graceui-spike.jsonl` (the code, the access, whether the target was the
+  null page, `frame_step`, the thread and the frames as fixed words with offsets) and its frames by module file name in
+  a third file beside the report, `graceui-faults.txt`. Your README's "send the files in the spikes folder" covers it;
+  it names third-party modules by file name, so the owner may read it first.
+- **Routine faults appear too**, once each site and at most 64 a run: the game, its anti-tamper or a driver may raise
+  and handle their own. `report.py` lists them under each run and judges none; a run that fell has its last one there.

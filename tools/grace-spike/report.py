@@ -227,7 +227,11 @@ def judge(path, hand):
     results = [r["result"] for r in rules]
     needed = [r["result"] for r in rules if not r["optional"]]
     verdict = FAILED if FAILED in results else "incomplete" if NOT_MEASURED in needed else PASSED
-    return {"run": path.parent.name, "spike": spike, "verdict": verdict, "rules": rules}
+    # The faults the observer recorded (D231): listed, never judged, since a game's own first-chance faults are no
+    # failure of a run; a run that fell has its last one among them. The modules' names are in graceui-faults.txt.
+    faults = [{"code": f.get("code"), "access": f.get("access"), "null_target": f.get("null_target"),
+               "frame_step": f.get("frame_step"), "at": f.get("at", [])} for f in of(lines, "fault")]
+    return {"run": path.parent.name, "spike": spike, "verdict": verdict, "rules": rules, "faults": faults}
 
 
 def reports_in(paths):
@@ -274,6 +278,11 @@ def run(argv):
             for r in verdict["rules"]:
                 tag = " (if you have one)" if r["optional"] else ""
                 print(f"  {r['rule']}: {r['result']}{tag}: {r['detail']}")
+            for f in verdict["faults"]:
+                code = f["code"] if isinstance(f["code"], int) else 0
+                print(f"  fault (recorded, not judged): {code:#x}, {f['access']}"
+                      f"{' of the null page' if f['null_target'] else ''}, frame_step {f['frame_step']}, "
+                      f"at {', '.join(str(a) for a in f['at'][:6])}")
     return 1 if any(v["verdict"] == FAILED for v in runs) else 0
 
 
