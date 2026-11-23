@@ -1341,4 +1341,7 @@ You asked for it for spikes.6 (your WHY§539). Nothing changes for EldenNet's co
   crash at the quit was not a block of GraceUI's own found damaged.
 - `GRACEUI_TEST_HEAP_CHECK_MS` (100 to 600000; 5000 by default) sets how often GraceUI's thread checks every block.
   The guard costs memory (up to 64 MiB of freed blocks kept, and 96 bytes a block) and some time at each allocation;
-  the present thread allocates nothing after warm-up, so frames are not slowed.
+  the present thread allocates nothing after warm-up, so frames are not slowed, but GraceUI's warm-up takes longer
+  (under Wine a notice came 30 to 80 frames later). If one of your GraceUI cases counts warm-up frames, set
+  `GRACEUI_TEST_HEAP_GUARD=off` in its environment (read at graceui.dll's first allocation); leave the guard on for the
+  spike runs.
