@@ -123,6 +123,18 @@ class Reader(unittest.TestCase):
         older = report.judge(self.write("s0e_alone-2", [header("s0e_alone"), state(host="started", install_runs=0)]), {})
         self.assertNotIn("step", [r for r in older["rules"] if r["rule"] == "hooks_once"][0]["detail"])
 
+    def test_a_run_that_fell_in_graceuis_first_frames_says_where(self):  # D230
+        lines = [header("s0e"), state(frames_drawn=0, frame_step=7)]
+        verdict = report.judge(self.write("s0e-7", lines), {})
+        drawing = [r for r in verdict["rules"] if r["rule"] == "drawing"][0]
+        self.assertEqual(drawing["result"], "failed")
+        self.assertIn("step 7, Dear ImGui's backends begun", drawing["detail"])
+        # Past its first frames, or from an older test build, nothing is said of it.
+        done = report.judge(self.write("s0e-8", [header("s0e"), state(frame_step=11)]), {})
+        self.assertNotIn("step", [r for r in done["rules"] if r["rule"] == "drawing"][0]["detail"])
+        older = report.judge(self.write("s0e-9", [header("s0e"), state()]), {})
+        self.assertNotIn("step", [r for r in older["rules"] if r["rule"] == "drawing"][0]["detail"])
+
     def test_the_atlas_at_150_is_judged_against_its_limit(self):
         lines = [header("s4"), state(ui_scale_x100=150, atlas=[4096, 8192]), typing(), state()]
         self.assertEqual(self.results(report.judge(self.write("s4-1", lines), {}))["atlas_150"], "failed")

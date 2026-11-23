@@ -481,6 +481,7 @@ SwapChainTag* classify(IDXGISwapChain* chain) {
   }
   g_bound_tag = tag;
   draw::bind(chain3, device, desc, window);
+  state::reach_frame_step(2);  // D230
   want_window(window);
   return tag;
 }
@@ -521,6 +522,7 @@ bool before_present(IDXGISwapChain* chain) {
 
 bool guarded_before_present(IDXGISwapChain* chain, UINT flags) noexcept {
   state::presents.fetch_add(1, std::memory_order_relaxed);
+  state::reach_frame_step(1);  // D230
   if ((flags & DXGI_PRESENT_TEST) != 0) {
     return false;  // a test present shows nothing, so nothing is drawn
   }
@@ -591,6 +593,9 @@ class PresentCall {
     --t_present_depth;
     if (outermost_ && bound_) {
       record_cost(own_, submit_);
+      if (state::frame_step.load(std::memory_order_relaxed) == 10) {
+        state::reach_frame_step(11);  // the game's Present returned after GraceUI's first frame (D230)
+      }
     }
   }
   PresentCall(const PresentCall&) = delete;

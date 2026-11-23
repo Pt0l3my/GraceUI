@@ -198,8 +198,13 @@ struct Counters {
   using GetCosts = std::uint32_t (*)(GraceUiTestFrameCost*, std::uint32_t);
   using GetSetting = std::uint32_t (*)(const char*, char*, std::uint32_t);
   using GetStep = std::uint32_t (*)();
+  using GetCount = std::uint64_t (*)();
+  using GetNumbered = std::uint32_t (*)(std::uint64_t, char*, std::uint32_t);
   GetState state = nullptr;
   GetStep init_step = nullptr;  // since 0.2.24 (D220); absent from an older test build, and then left out
+  GetStep frame_step = nullptr;      // since 0.2.27 (D230), as init_step
+  GetCount log_count = nullptr;      // since 0.2.27 (D230): GraceUI's log, copied beside the report
+  GetNumbered log_number = nullptr;
   GetInput input = nullptr;
   GetMenu menu = nullptr;
   GetCosts costs = nullptr;
@@ -212,6 +217,9 @@ struct Counters {
     costs = export_of<GetCosts>(module, "GraceUI_Test_GetFrameCosts");
     setting = export_of<GetSetting>(module, "GraceUI_Test_GetSetting");
     init_step = export_of<GetStep>(module, "GraceUI_Test_InitStep");
+    frame_step = export_of<GetStep>(module, "GraceUI_Test_FrameStep");
+    log_count = export_of<GetCount>(module, "GraceUI_Test_LogCount");
+    log_number = export_of<GetNumbered>(module, "GraceUI_Test_GetLogNumber");
     return state != nullptr && input != nullptr && menu != nullptr && costs != nullptr && setting != nullptr;
   }
   GraceUiTestState read_state() const {
@@ -293,6 +301,51 @@ const char* standin_word(std::uint64_t& presents) {
   return state == 1 ? "patched" : state == 2 ? "failed" : "waiting";
 }
 
+// GraceUI's own log lines (D230), copied as they come into a text file beside the report, never into it: the report
+// holds numbers and this file's own words alone, and the log is GraceUI's text (its own words, numbers and mods' ids;
+// never a path or a name, PV3), which the player can read before passing it on. Each line: the report's clock, the
+// line's number in GraceUI's log, and its text, any byte outside printable ASCII written as '?'.
+class LogCopy {
+ public:
+  bool open(const std::wstring& folder) {
+    const std::wstring path = folder + L"\\" + GRACE_SPIKE_LOG_FILE;
+    file_ = CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL,
+                        nullptr);
+    if (file_ == INVALID_HANDLE_VALUE) {
+      return false;
+    }
+    put("# GraceUI's own log, copied by grace-spike.dll: t (the report's clock, ms), n (the line's number), the line\n");
+    return true;
+  }
+  void copy(const Counters& counters) {
+    if (file_ == INVALID_HANDLE_VALUE || counters.log_count == nullptr || counters.log_number == nullptr) {
+      return;
+    }
+    const std::uint64_t count = counters.log_count();
+    for (; next_ < count; ++next_) {
+      char text[200] = {};
+      const std::uint32_t length = counters.log_number(next_, text, sizeof text);
+      std::string line = "t=" + std::to_string(now_ms()) + " n=" + std::to_string(next_) + " ";
+      if (length == 0) {
+        line += "(overwritten before it was copied)";
+      }
+      for (std::uint32_t i = 0; i < length && i < sizeof text; ++i) {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        line += c >= 0x20 && c < 0x7F ? static_cast<char>(c) : '?';
+      }
+      put(line + "\n");
+    }
+  }
+
+ private:
+  void put(const std::string& text) const {
+    DWORD written = 0;
+    WriteFile(file_, text.data(), static_cast<DWORD>(text.size()), &written, nullptr);
+  }
+  HANDLE file_ = INVALID_HANDLE_VALUE;
+  std::uint64_t next_ = 0;
+};
+
 void write_state(const Report& report, const Counters& counters) {
   const GraceUiTestState s = counters.read_state();
   const GraceUiTestInput in = counters.read_input();
@@ -310,6 +363,7 @@ void write_state(const Report& report, const Counters& counters) {
   line.word("host", host_word(s.host))
       .num("install_runs", s.hook_install_runs)
       .num("init_step", counters.init_step != nullptr ? counters.init_step() : 0)
+      .num("frame_step", counters.frame_step != nullptr ? counters.frame_step() : 0)
       .num("init_threads", s.init_threads_started)
       .num("hooks", s.hooks_installed)
       .num("dinput_hooks", in.dinput_hooks)
@@ -533,8 +587,11 @@ DWORD WINAPI spike_worker(LPVOID) {
                                      .word("panel", can_type ? "made" : "refused"));
   }
 
+  LogCopy log_copy;
+  log_copy.open(folder);
   Typing typing;
   std::int64_t next_state = now_ms();
+  std::uint32_t last_step = 0;  // GraceUI's frame step as last written (D230)
   for (;;) {
     GraceUiEvent event{};
     while (drawing && api.poll(me, event) == GRACEUI_OK && event.kind != GRACEUI_EVENT_NONE) {
@@ -602,8 +659,13 @@ DWORD WINAPI spike_worker(LPVOID) {
         }
       }
     }
-    if (now_ms() >= next_state) {
+    log_copy.copy(counters);
+    // A state line at each of GraceUI's first-frame steps as well as on the clock (D230): a game that falls in them
+    // leaves the last step it reached, within this loop's 50 ms.
+    const std::uint32_t step = counters.frame_step != nullptr ? counters.frame_step() : 0;
+    if (now_ms() >= next_state || step != last_step) {
       write_state(report, counters);
+      last_step = step;
       next_state = now_ms() + state_ms;
     }
     Sleep(typing.on ? 33 : 50);  // while it types, a frame of its own about 30 times a second

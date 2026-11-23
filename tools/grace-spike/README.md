@@ -79,4 +79,12 @@ We read the reports with `python3 -I tools/grace-spike/report.py <the spikes fol
 incomplete when one is not measured, and fails otherwise; a row "if you have one" never makes a run incomplete. Until
 EldenNet's recording can measure movement (once EldenNet's start is ready, S10.1.m; R1 is retired, O106), the
 movement row is your answer. Since GraceUI 0.2.24 (D220) each state line also says how far GraceUI's start got
-(`init_step`), and a run whose hooks never went in names that step in its hooks row.
+(`init_step`), and a run whose hooks never went in names that step in its hooks row. Since GraceUI 0.2.27 (D230) each
+state line also says how far GraceUI's first frames got (`frame_step`, 1 to 11: a Present through GraceUI's detour,
+the swap chain bound, the queue found, the atlas asked, baked, the renderer's objects made, Dear ImGui's backends
+begun, the atlas's upload submitted, the atlas on the GPU, GraceUI's first frame submitted, the game's Present returned
+after it), the observer writes a state line at once whenever that step changes, and a run that drew nothing names the
+step in its drawing row. The observer also copies GraceUI's own log lines into `graceui-log.txt` beside the report,
+never into it (the report keeps to numbers and its own words): it is GraceUI's text, with no path and no name in it,
+so read it before you send it if you like. To place a crash more closely, set `GRACE_SPIKE_STATE_MS=200` in the run's
+environment (200 to 60000 ms between state lines; 5000 by default).

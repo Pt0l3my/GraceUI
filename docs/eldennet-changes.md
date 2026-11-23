@@ -1284,3 +1284,19 @@ should do for item 3 of the Plugins list above:
 - **Take the file promptly** (D229): one file waits for your space at a time, so a second gets `busy` ("Another file is
   waiting for this mod") until you have polled the first; and an event left on `GRACEUI_FULL` past its answer's
   deadline is dropped with its file, the view told it failed, so poll again with room at once.
+
+## 62. The spike package: the first frames' step and GraceUI's log (2026-11-23, D230; GraceUI 0.2.27, test build)
+
+For A1's next run, after its two crashes between GraceUI binding the swap chain and its first frame:
+
+- **Repack with 0.2.27's test build and its grace-spike.dll.** Each state line carries `frame_step` (1 to 11, the steps
+  of GraceUI's first frames, D230), and the observer writes a state line at once whenever it changes. `report.py` names
+  the step in the drawing row of a run that drew nothing.
+- **A second file in the run's folder, `graceui-log.txt`**: GraceUI's own log lines, copied by the observer as they
+  come, numbered, and kept apart from `graceui-spike.jsonl`, whose words stay the observer's own. It holds GraceUI's
+  text, numbers and mods' ids, never a path or a name (PV3). Your README's "send the files in the spikes folder"
+  already covers it; say that it is there and may be read first.
+- **`GRACE_SPIKE_STATE_MS=200`** in the run's environment puts a state line every 200 ms (200 to 60000; 5000 by
+  default), so the last one before a crash is close to it.
+- Your vendored `graceui_test.h` gains `GraceUI_Test_FrameStep`, `GraceUI_Test_LogCount` and
+  `GraceUI_Test_GetLogNumber`; it needs them only if your own harness reads them.

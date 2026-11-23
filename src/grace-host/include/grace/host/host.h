@@ -120,6 +120,8 @@ void test_fill_state(GraceUiTestState& out) noexcept;
 void test_reset_counters() noexcept;
 std::uint32_t test_copy_frame_costs(GraceUiTestFrameCost* out, std::uint32_t capacity) noexcept;
 std::uint32_t test_copy_log_line(std::uint32_t index, char* out, std::uint32_t capacity) noexcept;
+std::uint32_t test_copy_log_number(std::uint64_t number, char* out, std::uint32_t capacity) noexcept;  // D230
+std::uint64_t test_log_count() noexcept;                                                              // D230
 std::uint32_t test_copy_hook_name(std::uint32_t index, char* out, std::uint32_t capacity) noexcept;
 void test_request_input(std::uint32_t owner, std::uint32_t kind, std::uint32_t wants, GraceUiTestAnswer& out) noexcept;
 bool test_release_input(std::uint32_t owner) noexcept;
@@ -148,6 +150,7 @@ void test_set_recheck_ms(std::uint32_t ms) noexcept;
 std::uint32_t test_pairing_code(char* out, std::uint32_t capacity) noexcept;
 void test_set_network_addresses(const std::uint8_t* addresses, std::uint32_t count) noexcept;
 std::uint32_t test_init_step() noexcept;
+std::uint32_t test_frame_step() noexcept;  // D230
 void test_fill_server(GraceUiTestServer& out) noexcept;
 #endif
 

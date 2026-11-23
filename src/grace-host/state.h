@@ -33,6 +33,18 @@ inline constinit std::atomic<std::uint32_t> hook_install_runs{0};
 // hook targets read from a swap chain of GraceUI's own, 5 the input targets, 6 the install, 7 hooked (a give-up stays at
 // its step). Read from any thread, so that an init that stops says where; 0 before the thread starts.
 inline constinit std::atomic<std::uint32_t> init_step{0};
+// How far GraceUI's first frames got (D230), each step reached once and never undone: 1 a Present through GraceUI's
+// detour, 2 the game's swap chain bound, 3 the present queue found, 4 the atlas asked of GraceUI's thread, 5 the atlas
+// baked, 6 the renderer's objects made on the game's device, 7 Dear ImGui's backends begun, 8 the atlas's upload
+// submitted, 9 the atlas on the GPU, 10 GraceUI's first frame submitted, 11 the game's Present returned after it. Read
+// from any thread, so that a game that falls in GraceUI's first frames says where; 0 before any Present.
+inline constinit std::atomic<std::uint32_t> frame_step{0};
+inline void reach_frame_step(std::uint32_t step) noexcept {
+  std::uint32_t now = frame_step.load(std::memory_order_relaxed);
+  while (now < step &&
+         !frame_step.compare_exchange_weak(now, step, std::memory_order_release, std::memory_order_relaxed)) {
+  }
+}
 inline constinit std::atomic<std::uint32_t> hooks_installed{0};  // every hook: the table's and the window procedure's
 inline constinit std::atomic<std::uint32_t> render_hooks{0};
 inline constinit std::atomic<std::uint32_t> dinput_hooks{0};

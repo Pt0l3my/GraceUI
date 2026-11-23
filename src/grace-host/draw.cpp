@@ -684,6 +684,7 @@ bool start_atlas() {
   if (!submit_upload()) {
     return false;
   }
+  state::reach_frame_step(8);  // the atlas's upload submitted, with the mods' textures (D230)
   g.atlas_fence = g.fence_last;
   if (textures != 0) {
     log_line("%u textures of mods' joined the atlas's upload", textures);
@@ -708,6 +709,7 @@ bool finish_atlas() noexcept {
   release(g.atlas_upload);
   g.atlas_ready = true;
   state::atlas_ready.store(true, std::memory_order_relaxed);
+  state::reach_frame_step(9);  // D230
   return true;
 }
 
@@ -750,7 +752,12 @@ bool build_renderer() {
   }
 
   // Dear ImGui's context and the baked atlas are GraceUI's thread's (bake_atlas), made before this runs.
-  if (!ImGui_ImplWin32_Init(g.window) || !init_dx12_backend() || !start_atlas()) {
+  state::reach_frame_step(6);  // the renderer's own objects made on the game's device (D230)
+  if (!ImGui_ImplWin32_Init(g.window) || !init_dx12_backend()) {
+    return false;
+  }
+  state::reach_frame_step(7);  // D230
+  if (!start_atlas()) {
     return false;
   }
   LARGE_INTEGER frequency{};
@@ -1246,6 +1253,7 @@ void record_and_submit(Slot& slot, const BackBuffer& buffer, ImDrawData* data) {
   }
   slot.fence_value = g.fence_last;
   state::frames_drawn.fetch_add(1, std::memory_order_relaxed);
+  state::reach_frame_step(10);  // D230
 }
 
 // Warm-up (D117, D139 as amended): the faces sealed and the bake asked of GraceUI's thread; nothing drawn until it is
@@ -1256,6 +1264,7 @@ bool warm_up() {
       session::registry().seal_faces();  // from now on register_face answers too late (D80)
       g_baked.device = g.device;
       g_bake.store(Bake::asked, std::memory_order_release);
+      state::reach_frame_step(4);  // D230
       hooks::wake();
       return false;
     case Bake::asked:
@@ -1265,6 +1274,7 @@ bool warm_up() {
       return false;
     case Bake::done: break;
   }
+  state::reach_frame_step(5);  // D230
   if (!build_renderer()) {
     turn_off("the renderer could not be built on the game's device");
     return false;
@@ -1409,6 +1419,7 @@ void set_queue(ID3D12CommandQueue* queue, QueueMethod method) noexcept {
   // The DX12 backend keeps the first queue it was given for its own texture path only, which never runs (D117).
   g.queue = queue;
   state::queue_method.store(method, std::memory_order_relaxed);
+  state::reach_frame_step(3);  // D230
   log_line("present queue found: %s", method_name(method));
 }
 

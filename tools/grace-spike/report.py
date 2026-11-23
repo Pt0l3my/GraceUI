@@ -26,6 +26,12 @@ TYPING_MS = 60000
 INIT_STEPS = {1: "its fonts", 2: "waiting for the game's window", 3: "binding Direct3D",
               4: "reading the hook targets from a swap chain of its own", 5: "finding the input targets",
               6: "the install", 7: "done"}
+# How far GraceUI's first frames got (D230), as GraceUI_Test_FrameStep names them.
+FRAME_STEPS = {1: "a Present through GraceUI's detour", 2: "the game's swap chain bound", 3: "the present queue found",
+               4: "the atlas asked of GraceUI's thread", 5: "the atlas baked",
+               6: "the renderer's objects made on the game's device", 7: "Dear ImGui's backends begun",
+               8: "the atlas's upload submitted", 9: "the atlas on the GPU", 10: "GraceUI's first frame submitted",
+               11: "the game's Present returned after it"}
 ATLAS_LIMIT = 4096  # DESIGN §3.16: within 4096 x 4096 at 4K or 150%
 RECEIVED_SLACK = 2  # characters typed as a test ends, discarded with its holder before its panel took them (D176)
 HAND_RULES = ("movement", "steam_overlay", "steam_keyboard", "proton")
@@ -91,9 +97,12 @@ def common_rules(header, states):
                       f"run(s), {last.get('init_threads')} init thread(s){stopped}"))
     drawn = max(state.get("frames_drawn", 0) for state in states)
     off = any(state.get("render_off", 0) for state in states)
+    # Where GraceUI's first frames stopped (D230), from a test build that has the step, when the run ended before them.
+    step = last.get("frame_step", 0)
+    first = f"; its first frames stopped at step {step}, {FRAME_STEPS[step]}" if step in FRAME_STEPS and step != 11 else ""
     rules.append(rule("drawing", PASSED if drawn > 0 and not off else FAILED,
                       f"{drawn} frames drawn, render {'OFF' if off else 'on'}, Present's prologue "
-                      f"{last.get('prologue')}"))
+                      f"{last.get('prologue')}{first}"))
     warm = [state for state in states if state.get("frames_drawn", 0) > 0]
     if warm:
         grew = warm[-1].get("allocations", 0) - warm[0].get("allocations", 0)

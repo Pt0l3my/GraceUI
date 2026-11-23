@@ -26,6 +26,12 @@ void log_line(const char* format, ...) noexcept GRACE_PRINTF_LIKE;
 // line is being rewritten at that moment.
 bool log_copy_line(std::uint32_t index, LogText& out) noexcept;
 
+// The lines written since GraceUI loaded (D230), and line `number` of them (0 the first) while the ring still keeps
+// it: false once overwritten, or if it is being written at that moment. A reader that keeps the next number it wants
+// misses no line the ring still holds and repeats none.
+std::uint64_t log_count() noexcept;
+bool log_copy_number(std::uint64_t number, LogText& out) noexcept;
+
 // GraceUI's own thread only: sends the lines written since its last call to OutputDebugString, oldest first; lines
 // the ring has already overwritten are skipped, with a line saying how many.
 void log_drain() noexcept;

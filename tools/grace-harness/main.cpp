@@ -4758,20 +4758,25 @@ void run_menu_space(const std::wstring& dll) {
 // F9 and types into it; "spike-after" loads both once GraceUI's hooks are in. Each reads back the report the observer
 // wrote: its header, its state lines and the typing test's line.
 
-std::vector<grace::protocol::Json> read_report(const std::wstring& path) {
-  std::vector<grace::protocol::Json> lines;
+std::string read_text(const std::wstring& path) {
+  std::string text;
   const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
                                   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
-    return lines;
+    return text;
   }
-  std::string text;
   char buffer[4096];
   DWORD got = 0;
   while (ReadFile(file, buffer, sizeof buffer, &got, nullptr) && got > 0) {
     text.append(buffer, got);
   }
   CloseHandle(file);
+  return text;
+}
+
+std::vector<grace::protocol::Json> read_report(const std::wstring& path) {
+  std::vector<grace::protocol::Json> lines;
+  const std::string text = read_text(path);
   std::size_t start = 0;
   for (std::size_t end = text.find('\n'); end != std::string::npos; end = text.find('\n', start)) {
     const grace::protocol::Json line = grace::protocol::Json::parse(text.substr(start, end - start), nullptr, false);
@@ -4818,8 +4823,10 @@ void run_spike(const std::wstring& dll, bool tools_first) {
   const std::wstring parent = folder_of_this_program() + (tools_first ? L"spike-first" : L"spike-after");
   const std::wstring folder = parent + L"\\s4-1";
   const std::wstring path = folder + L"\\" + GRACE_SPIKE_FILE;
+  const std::wstring log_path = folder + L"\\" + GRACE_SPIKE_LOG_FILE;
   CreateDirectoryW(parent.c_str(), nullptr);
   DeleteFileW(path.c_str());
+  DeleteFileW(log_path.c_str());
   SetEnvironmentVariableW(GRACE_SPIKE_DIR_VARIABLE, folder.c_str());
   SetEnvironmentVariableW(L"GRACE_SPIKE_TYPING_MS", L"3000");
   SetEnvironmentVariableW(L"GRACE_SPIKE_STATE_MS", L"300");
@@ -4841,7 +4848,8 @@ void run_spike(const std::wstring& dll, bool tools_first) {
   // frame GraceUI drew: the check below still asks for it, this only waits for it, at most 600 frames.
   const auto drawn_yet = [&] {
     const std::vector<Json> states = lines_of(report, "state");
-    return !states.empty() && states.back().value("frames_drawn", std::uint64_t{0}) > 0;
+    return !states.empty() && states.back().value("frames_drawn", std::uint64_t{0}) > 0 &&
+           states.back().value("frame_step", std::uint64_t{0}) == 11;
   };
   for (int i = 0; i < 600 && (lines_of(report, "typing_ready").empty() || lines_of(report, "state").size() < 3 ||
                               !drawn_yet());
@@ -4871,7 +4879,7 @@ void run_spike(const std::wstring& dll, bool tools_first) {
   check(states.size() >= 3 && last["standin"] == "patched" &&
             number(last, "standin_presents") > number(first, "standin_presents") &&
             number(last, "frames_drawn") > 0 && number(last, "install_runs") == 1 && number(last, "init_step") == 7 &&
-            number(last, "hooks") >= 6 &&
+            number(last, "frame_step") == 11 && number(last, "hooks") >= 6 &&
             last["host"] == "hooked" && last["prologue"] != "unknown" && number(last, "lists_refused") == 0,
         "spike: both overlays draw",
         "%zu state lines; the stand-in %s, its Present called %llu times between the first and the last; GraceUI "
@@ -4883,6 +4891,37 @@ void run_spike(const std::wstring& dll, bool tools_first) {
         static_cast<unsigned long long>(number(last, "init_step")),
         static_cast<unsigned long long>(number(last, "frames_drawn")),
         last.value("prologue", std::string("?")).c_str());
+
+  // 2b. How far GraceUI's first frames got, and GraceUI's own log (D230): the step only grows, to 11, with a state line
+  // at its changes; the log is copied beside the report, numbered in order, and never into it.
+  bool rising = true;
+  std::uint64_t step = 0;
+  std::size_t step_lines = 0;
+  for (const Json& state : states) {
+    const std::uint64_t now = number(state, "frame_step");
+    rising = rising && now >= step;
+    step_lines += now != step ? 1 : 0;
+    step = now;
+  }
+  const std::string log = read_text(log_path);
+  const std::string report_text = read_text(path);
+  const bool queue_logged = log.find("present queue found") != std::string::npos;
+  const bool header_line = log.rfind("# GraceUI's own log", 0) == 0;
+  bool numbered = true;
+  std::uint64_t expected = 0;
+  for (std::size_t at = log.find(" n="); at != std::string::npos; at = log.find(" n=", at + 3)) {
+    numbered = numbered && std::strtoull(log.c_str() + at + 3, nullptr, 10) == expected;
+    ++expected;
+  }
+  // With the tools after GraceUI, the observer may first look once its first frames are done: one change, 0 to 11.
+  check(rising && step == 11 && step_lines >= (tools_first ? 2u : 1u) && header_line && queue_logged && numbered && expected >= 3 &&
+            report_text.find("present queue found") == std::string::npos,
+        "spike: the first frames' step and GraceUI's log beside the report",
+        "the step %s to %llu over %zu change(s); the log file %s, %llu line(s) %s, %s the queue's line; the report %s",
+        rising ? "rose" : "DID NOT ONLY RISE", static_cast<unsigned long long>(step), step_lines,
+        header_line ? "headed" : "NOT HEADED", static_cast<unsigned long long>(expected),
+        numbered ? "numbered in order" : "NOT IN ORDER", queue_logged ? "with" : "WITHOUT",
+        report_text.find("present queue found") == std::string::npos ? "holds none of it" : "HOLDS LOG TEXT");
 
   // 3. The typing test (with the tools first): F9 opens it, letters and the mouse go to it and none reaches the game,
   // and it gives the controls back when its time is up.

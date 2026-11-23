@@ -367,6 +367,10 @@ std::uint32_t test_menu_shows(const char* text) noexcept { return menu::test_sho
 
 std::uint32_t test_init_step() noexcept { return state::init_step.load(std::memory_order_acquire); }
 
+std::uint32_t test_frame_step() noexcept { return state::frame_step.load(std::memory_order_acquire); }
+
+std::uint64_t test_log_count() noexcept { return log_count(); }
+
 std::uint32_t test_menu_bounds(const char* name, float* out) noexcept {
   float values[8] = {};
   if (out == nullptr || !menu::test_bounds(name, values)) {
@@ -458,11 +462,9 @@ std::uint32_t test_copy_frame_costs(GraceUiTestFrameCost* out, std::uint32_t cap
   return static_cast<std::uint32_t>(wanted);
 }
 
-std::uint32_t test_copy_log_line(std::uint32_t index, char* out, std::uint32_t capacity) noexcept {
-  LogText line{};
-  if (capacity == 0 || !log_copy_line(index, line)) {
-    return 0;
-  }
+namespace {
+
+std::uint32_t copy_out(const LogText& line, char* out, std::uint32_t capacity) noexcept {
   std::uint32_t length = 0;
   while (length + 1 < capacity && length < line.size() && line[length] != '\0') {
     // SAFETY: length + 1 < capacity, the caller's size of `out`, which leaves room for the terminating NUL.
@@ -471,6 +473,18 @@ std::uint32_t test_copy_log_line(std::uint32_t index, char* out, std::uint32_t c
   }
   out[length] = '\0';
   return length;
+}
+
+}  // namespace
+
+std::uint32_t test_copy_log_line(std::uint32_t index, char* out, std::uint32_t capacity) noexcept {
+  LogText line{};
+  return capacity != 0 && log_copy_line(index, line) ? copy_out(line, out, capacity) : 0;
+}
+
+std::uint32_t test_copy_log_number(std::uint64_t number, char* out, std::uint32_t capacity) noexcept {
+  LogText line{};
+  return capacity != 0 && log_copy_number(number, line) ? copy_out(line, out, capacity) : 0;
 }
 
 namespace {
