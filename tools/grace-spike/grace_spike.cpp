@@ -103,7 +103,7 @@ class Report {
 // ---- The fault recorder (D231): what was running when the process fell.
 //
 // A vectored exception handler, first in the process's list, that records an access violation, an illegal or privileged
-// instruction, an in-page error or a division by zero and never handles one: it answers EXCEPTION_CONTINUE_SEARCH
+// instruction, an in-page error, a division by zero or the heap's corruption and never handles one: it answers EXCEPTION_CONTINUE_SEARCH
 // whatever it found, so the process goes on, or falls, as it would have. For each it writes the code, the access, whether
 // the target was the null page, GraceUI's frame step (D230), and the faulting thread's frames as a module and an offset:
 // the instruction first, then, where there is no unwind data for it (the pointer at 0, a leaf, code made at run time),
@@ -355,10 +355,15 @@ int frames_of(const CONTEXT& faulting, std::uintptr_t (&frames)[kFrames]) {
 }
 #endif
 
+// STATUS_HEAP_CORRUPTION, which the heap raises when a check fails (spikes.4's quits, D231): its frames name the
+// free or allocation that found it. ntstatus.h, which names it, is not included beside windows.h.
+constexpr DWORD kHeapCorruption = 0xC0000374;
+
 LONG CALLBACK on_fault(EXCEPTION_POINTERS* pointers) {
   const DWORD code = pointers->ExceptionRecord->ExceptionCode;
   if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION &&
-      code != EXCEPTION_PRIV_INSTRUCTION && code != EXCEPTION_IN_PAGE_ERROR && code != EXCEPTION_INT_DIVIDE_BY_ZERO) {
+      code != EXCEPTION_PRIV_INSTRUCTION && code != EXCEPTION_IN_PAGE_ERROR && code != EXCEPTION_INT_DIVIDE_BY_ZERO &&
+      code != kHeapCorruption) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
   if (g_fault_lines.load(std::memory_order_relaxed) >= kFaultLines || g_fault_busy.exchange(true)) {
