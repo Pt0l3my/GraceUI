@@ -166,6 +166,11 @@ one-line notes (DESIGN §4.6.5). The four rail entries and their tag are unchang
 
 **See also.** G4, whose answer raised it.
 
+**Later changes.** 2026-11-23: built in GraceUI 0.2.25, as decided (DESIGN D221–D223): Other devices is a switch on
+GraceUI › Browser view, off by default; Pair a device shows the code on a sheet in game, valid while the sheet is open
+(D113); the device types its own name on its pairing page; each paired device is listed there with Forget, and a paired
+device is refused every command a space marks sensitive.
+
 ## G10
 
 **Which module owns the one overlay** · *2026-11-07 · Decided by the owner, as recommended*
@@ -545,6 +550,12 @@ a one-use ticket; refused from any paired device; GraceUI keeps nothing after ha
 18).
 
 **Owner's words.** "Narrow upload route (Recommended)".
+
+**Later changes.** 2026-11-23: built in GraceUI 0.2.26 (protocol 1.9, ABI 1.6), as decided (DESIGN D226–D229): a space
+names its file commands, each sensitive; an upload block on its page is a drop zone with a button in the browser on this
+PC, and a line saying where to add the file in game and on a paired device; the page asks for a one-use ticket over its
+connection, then sends the bytes to `POST /upload` on the loopback listener, where GraceUI checks their size and SHA-256
+before handing them to the space, which gets them through ABI 1.6 and answers as for any command.
 
 ## G29
 

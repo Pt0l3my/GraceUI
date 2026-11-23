@@ -1227,3 +1227,60 @@ things you can use:
 Also: `report.py`'s movement row now reads "once EldenNet's start is ready (S10.1.m)", as you asked, since R1 is retired
 (O106).
 
+
+## 60. Other devices at home: mark your sensitive commands (2026-11-23, G9, D221–D223; GraceUI 0.2.25, protocol 1.8)
+
+G9 is built: with GraceUI › Browser view's Other devices switched on, a phone at home pairs once with a code shown in
+game, then opens every space's pages as this PC's browser does. GraceUI refuses a paired device, with `not_now` and
+"Only on the PC the game runs on.", every command its space marks sensitive. What EldenNet should do:
+
+- **Mark them in your pages** (protocol 1.8, D81): `sensitive_commands = ["secrets.set", "secrets.clear",
+  "providers.update"]` beside `commands` in your space's page data, and `sensitive = true` on any setting a device must
+  never change (a provider's address, for example). Your secret settings and row-secret commands are sensitive already,
+  without a mark. The page lint checks that each listed command is one of your space's and not a settings command.
+- **Nothing reaches you** for a refused command: it is answered before your space sees it, before any confirmation is
+  asked. So your one validating entry point (invariant 3) needs no device check of its own.
+- **A paired device's view is otherwise this PC's**: the same topics, the same pages, the same commands. If a page of
+  yours should not be read on a phone (PAGES' privacy rules), say so and we can add a mark for topics later; nothing
+  in G9 asks for it.
+- **Which view sent a command** (§7.3, D224): the `cmd` frame you get in `GRACEUI_EVENT_COMMAND` now carries `view`,
+  `"game"`, `"browser"` (this PC) or `"device"` (paired at home), set by GraceUI from the channel and never taken from
+  the view. Use it for rules of your own if you need any; the refusals above need nothing from you.
+- **Your launcher's host** (G29 (a)) serves loopback only, as before: the home network stays in game at first (§7.2
+  item 26). `ServerConfig.network_addresses` exists for tests only; leave it empty.
+
+The test build adds `GraceUI_Test_GetPairingCode` and `GraceUI_Test_SetNetworkAddresses` (a test listens on 127.0.0.2,
+never on a real address); your vendored `graceui_test.h` needs them only if your harness pairs a device.
+
+## 61. Taking a file: `plugins.install` (2026-11-23, G28, D226–D229; GraceUI 0.2.26, protocol 1.9, ABI 1.6)
+
+G28 is built: a space may take one file from the browser view on this PC, by `POST /upload` on the loopback listener
+alone, with a one-use ticket bound to the session, the command and the file's size and SHA-256 (§7.2 item 18). GraceUI
+checks the bytes on arrival and hands them to your space with the command; it keeps nothing afterwards. What EldenNet
+should do for item 3 of the Plugins list above:
+
+- **Declare the command** in your space's page data (D226): `file_commands = ["plugins.install"]`, and the same name in
+  `sensitive_commands`. The lint refuses a file command that is not one of your commands, not sensitive, slow, or a
+  settings command, and more than four of them.
+- **Put the drop zone on the Plugins page** (D227): a section's block `{ kind = "upload", command = "plugins.install",
+  submit = "Add file", accept = "…" }`, `accept` listing the extensions your plugins come in (such as ".zip"). The
+  browser view draws a drop zone with that button on this PC; a paired device and the in-game menu show a line saying
+  where to add the file instead. The file's name never leaves the page, so if you need a name, read it from inside the
+  package.
+- **Read the file through ABI 1.6** (D228): build against `graceui.h` with `GRACEUI_ABI1_MINOR` 6, and give `poll` a
+  file buffer in the event's `file` and `file_capacity`, either `GRACEUI_UPLOAD_MAX` bytes (32 MiB) kept for it or one
+  grown when `poll` answers `GRACEUI_FULL`: then `frame_length` and `file_length` say how much each buffer needs, the event is kept, and
+  the next poll with buffers that large takes it whole. A command with a file arrives as `GRACEUI_EVENT_COMMAND` with
+  `file_length` above zero; its args are those the page sent (`{}` from the upload block). A mod built before ABI 1.6
+  may not register file commands, and if your event has no room for a file GraceUI answers the command `not_now` itself.
+- **Answer as for any command**: your `result` (ok, or an error with its words in `detail`) is shown under the drop
+  zone. Run your validator before anything installs (your O67): GraceUI checks only the size and the hash against the
+  ticket, never what the file holds. Zero your buffer once you are done with it.
+- **Your launcher's host** (G29 (a)) links `grace-serve`, which serves the same route on loopback: there a file
+  command's `SpaceEvent` carries `file`, the bytes behind a shared pointer, zeroed when its last holder lets it go.
+- **Nothing reaches you** from a paired device, or from a `cmd` that names `plugins.install` without a file: GraceUI
+  refuses both before your space sees them. The menu never sends it either, so name it in no action, row action, form
+  or editor (the lint refuses that, D229): the upload block alone sends it.
+- **Take the file promptly** (D229): one file waits for your space at a time, so a second gets `busy` ("Another file is
+  waiting for this mod") until you have polled the first; and an event left on `GRACEUI_FULL` past its answer's
+  deadline is dropped with its file, the view told it failed, so poll again with room at once.
