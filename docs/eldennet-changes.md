@@ -1193,3 +1193,15 @@ No change of the ABI or the protocol.
 - **Focus** stays on Save, in game and in the browser, once the new row's profile is drawn; publish it when its member is
   watched, as for any row.
 
+## 57. No second Esc after the box closes (2026-11-23, G39 (c))
+
+The owner declined proposal 0011. Nothing changes in GraceUI, and nothing is asked of you but this:
+
+- **NPC §5.7's second Esc goes.** Esc and the pad act on the chat box only while it is open: Enter sends the line, Esc
+  (or the pad's B, as NPC §5.6 has it) cancels and closes the box. Once the box has closed, or the reply is out, Esc and
+  the pad are the game's again at once. A reply still pacing after its box has closed finishes; no press stops it.
+- **S11.4.d needs nothing of GraceUI's**: it can be marked dropped (G39), and WHY§437's third point answered by it.
+- **The pad while the box is open** may work as the keys do (the owner: "You can implement gamepad buttons to work as
+  such too, but we only care about while the chatbox is open"). Your box already takes the pad as a holder (D176's PAD
+  events), so this is yours to map.
+
