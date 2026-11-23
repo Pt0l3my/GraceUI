@@ -1193,3 +1193,37 @@ No change of the ABI or the protocol.
 - **Focus** stays on Save, in game and in the browser, once the new row's profile is drawn; publish it when its member is
   watched, as for any row.
 
+## 57. No second Esc after the box closes (2026-11-23, G39 (c))
+
+The owner declined proposal 0011. Nothing changes in GraceUI, and nothing is asked of you but this:
+
+- **NPC §5.7's second Esc goes.** Esc and the pad act on the chat box only while it is open: Enter sends the line, Esc
+  (or the pad's B, as NPC §5.6 has it) cancels and closes the box. Once the box has closed, or the reply is out, Esc and
+  the pad are the game's again at once. A reply still pacing after its box has closed finishes; no press stops it.
+- **S11.4.d needs nothing of GraceUI's**: it can be marked dropped (G39), and WHY§437's third point answered by it.
+- **The pad while the box is open** may work as the keys do (the owner: "You can implement gamepad buttons to work as
+  such too, but we only care about while the chatbox is open"). Your box already takes the pad as a holder (D176's PAD
+  events), so this is yours to map.
+
+## 58. Search across spaces in game (2026-11-23, D219; GraceUI 0.2.23)
+
+Nothing to change on your side. The menu's search in game now finds every space's settings, as the browser view's
+already did: from EldenNet's pages a player finds GraceUI's Menu size, and from GraceUI's pages your settings, each named
+by its space ("EldenNet › Pacing") and opened on its home page with its row focused. Your settings are found by their
+labels, synonyms and keys, on the pages present in your increment, as before; give them the synonyms players would type.
+
+## 59. The init's step, readable from outside (2026-11-23, D220; GraceUI 0.2.24)
+
+From your package case A2's stall (GraceUI injected late, `install_runs` 0 for 240 s under load). Nothing to change; two
+things you can use:
+
+- **`GraceUI_Test_InitStep()`** in the test build: 0 before the init thread starts; 1 its fonts, 2 waiting for the
+  game's window, 3 binding Direct3D, 4 reading the hook targets from a swap chain of GraceUI's own, 5 the input targets,
+  6 the install, 7 hooked. Read it from any thread. `GraceUiTestState` does not grow, so your vendored `graceui_test.h`
+  needs only the new declaration, if you want to call it, for example in a harness case that times out.
+- **The spike observer** writes it in each state line as `init_step`, and `report.py` names the step in the hooks row
+  when the host never hooked. An older test build leaves it out.
+
+Also: `report.py`'s movement row now reads "once EldenNet's start is ready (S10.1.m)", as you asked, since R1 is retired
+(O106).
+
