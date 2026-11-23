@@ -257,6 +257,11 @@ class PageView {
   // The focused element, as "rail:<page or category>", "search", "action:<id>", "tab:<id>", "section:<id>",
   // "advanced:<section>", "setting:<key>", "shortcut:<key>", "related:<page>" or "cell:<topic>/<row's key>".
   std::string focused() const;
+  // Whether the focus ring is drawn (G42): set by a key or the pad (input), cleared by the mouse (pointer), and given
+  // by the host, whose menu opens with it cleared. A view starts with it set, as a keyboard player sees it (grace-dev's
+  // dumps); the browser view's own rule is the browser's :focus-visible.
+  void set_focus_shown(bool shown) noexcept { focus_shown_ = shown; }
+  bool focus_shown() const noexcept { return focus_shown_; }
   // Where the last layout drew an element, named as focused() names it: its row (within the page's clip) and its control
   // (a setting's or a cell's; else the row). Both empty if it was not drawn. For tests and the pointer's host.
   struct Bounds {
@@ -489,6 +494,7 @@ class PageView {
   float scale_ = 1;             // the last layout's effective scale
   std::vector<Hit> hits_;       // the last layout's
   bool pointer_in_ = false;     // the pointer is over the menu: hover tints
+  bool focus_shown_ = true;     // the focus ring is drawn (G42)
   float pointer_x_ = 0;
   float pointer_y_ = 0;
   std::string drag_;            // a slider's key while its button is held

@@ -1017,7 +1017,7 @@ the browser view's question, in the question dialog here: "In game only (Recomme
 
 ## G42
 
-**The menu's focus ring while the player uses the mouse** · *Raised by the owner 2026-11-23 (EldenNet's spikes.5); Open*
+**The menu's focus ring while the player uses the mouse** · *Raised by the owner and decided 2026-11-23 (EldenNet's spikes.5)*
 
 **Question.** The owner, through EldenNet's session: "Some elements in the menu show a highlight border, as if
 selected, with nothing chosen." It is the focus ring (`gold.hi`, 3 px, 2 px off the element, §3.3): the menu opens with
@@ -1036,3 +1036,9 @@ cleared by the mouse; the ring and the focused row's tint are drawn only while i
 (b): nothing. (c): as (a), the flag also set while pad mode is on.
 
 **Follows from.** §3.3, §3.12, §5.3; D178, D232, D236.
+
+**Decision (2026-11-23).** (a), as recommended. Built in GraceUI 0.2.33 (DESIGN D237): the menu opens with no ring, a
+key or the pad shows it on the focus, and the mouse's move or press puts it away again, the focus kept; an Alt+Tab's
+return keeps what was. Only the ring changes: the hover tint, the footer's key hints and the focus itself are as before.
+
+**Owner's words.** Answering this question in the session: "After keys or pad (Recommended)".

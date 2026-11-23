@@ -1884,6 +1884,7 @@ void PageView::settle_expected() {
 }
 
 Action PageView::input(const Input& in) {
+  focus_shown_ = true;            // a key or the pad: the ring shows where they act (G42)
   master_focus_pending_ = false;  // a key moves focus on its own from now on
   refocus_name_.clear();
   if (in.key == Key::activate && !editing() && !capture_open() && scope_ == Scope::page && running(focused())) {
@@ -1900,6 +1901,9 @@ Action PageView::input(const Input& in) {
 }
 
 Action PageView::pointer(const Pointer& in) {
+  if (in.kind != Pointer::Kind::leave) {
+    focus_shown_ = false;  // the mouse: the ring goes, the focus stays (G42)
+  }
   if (in.kind == Pointer::Kind::press) {
     master_focus_pending_ = false;
     refocus_name_.clear();
@@ -4846,7 +4850,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     }
     c.text(hints, TypeRole::ui_sm, page_x + gutter, H - footer_h + std::round((footer_h - line_height(TypeRole::ui_sm, s)) / 2),
            page_w - 2 * gutter, Colour::ink_faint);
-    if (c.focus_found) {
+    if (c.focus_found && focus_shown_) {
       const float off = std::round(tokens::kGrace.size.focus_offset * s);
       const Rect ring{c.focus.x - off, c.focus.y - off, c.focus.w + 2 * off, c.focus.h + 2 * off};
       c.clip = scope_ == Scope::page ? 1 : 0;

@@ -6940,6 +6940,74 @@ void run_menu_away(const std::wstring& dll) {
         after_danger.open == 1 ? "OPEN AGAIN" : "closed", after_input.holder_kind);
 }
 
+// ---- G42: the menu's focus ring shows after a key or the pad and goes with the mouse; the focus stays. Read from the
+// test export and from the frame's pixels: gold.hi in the band just outside the focused control's box.
+int ring_pixels(const Frame& frame, const MenuBounds& at) {
+  if (!at.found) {
+    return -1;
+  }
+  const auto near_gold_hi = [](std::uint32_t pixel) {
+    return std::abs(channel(pixel, 0) - 0xE3) <= 24 && std::abs(channel(pixel, 8) - 0xC5) <= 24 &&
+           std::abs(channel(pixel, 16) - 0x79) <= 24;
+  };
+  int count = 0;
+  const int y = static_cast<int>(at.control[1] + at.control[3] / 2);
+  const int left = static_cast<int>(at.control[0]);
+  const int right = static_cast<int>(at.control[0] + at.control[2]);
+  for (int d = 1; d <= 12; ++d) {
+    for (const int x : {left - d, right + d - 1}) {
+      if (x >= 0 && y >= 0 && x < static_cast<int>(frame.width) && y < static_cast<int>(frame.height) &&
+          near_gold_hi(frame.at(static_cast<UINT>(x), static_cast<UINT>(y)))) {
+        ++count;
+      }
+    }
+  }
+  return count;
+}
+
+void run_menu_focus_ring(const std::wstring& dll) {
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  frames(game, 3);
+  menu = grace.menu();
+  const std::string first(menu.focused);
+  const int at_open = ring_pixels(game.frame_and_read(kInputColour, PresentWith::present), menu_bounds(grace, menu.focused));
+  const std::uint32_t shown_at_open = menu.focus_shown;
+  // A key: the ring shows where the keys act.
+  press(window, VK_DOWN, 0x50);
+  menu = menu_after(game, grace, menu.lists);
+  frames(game, 2);
+  menu = grace.menu();
+  const std::string after_key(menu.focused);
+  const int with_key = ring_pixels(game.frame_and_read(kInputColour, PresentWith::present), menu_bounds(grace, menu.focused));
+  const std::uint32_t shown_with_key = menu.focus_shown;
+  // The mouse: the ring goes, the focus stays.
+  inject_mouse(6, 3, MOUSEEVENTF_MOVE);
+  settle();
+  menu = menu_after(game, grace, menu.lists);
+  frames(game, 2);
+  menu = grace.menu();
+  const int with_mouse = ring_pixels(game.frame_and_read(kInputColour, PresentWith::present), menu_bounds(grace, menu.focused));
+  check(shown_at_open == 0 && at_open == 0 && shown_with_key == 1 && with_key > 0 && after_key != first &&
+            menu.focus_shown == 0 && with_mouse == 0 && std::string(menu.focused) == after_key,
+        "menu focus ring: after a key, gone with the mouse (G42)",
+        "at open on %s: %s (%d gold pixels beside it); a key, on %s: %s (%d); the mouse: %s (%d), the focus %s",
+        first.c_str(), shown_at_open != 0 ? "SHOWN" : "hidden", at_open, after_key.c_str(),
+        shown_with_key != 0 ? "shown" : "HIDDEN", with_key, menu.focus_shown != 0 ? "SHOWN" : "hidden", with_mouse,
+        std::string(menu.focused) == after_key ? "kept" : "MOVED");
+  press(window, VK_F5, kScanF5);
+  frames(game, 2);
+}
+
 void run_menu_recentred(const std::wstring& dll) {
   Game game(false, 1280, 720);
   const HWND window = game.window();
@@ -9114,6 +9182,9 @@ int wmain(int argc, wchar_t** argv) {
     run_heap_guard_observer(dll);
   } else if (scenario == L"heap-guard-spike") {
     run_heap_guard_spike(dll);
+  } else if (scenario == L"menu-focus-ring") {
+    std::printf("-- scenario: the menu's focus ring after a key, not with the mouse (G42)\n");
+    run_menu_focus_ring(dll);
   } else if (scenario == L"heap-guard-off") {
     std::printf("-- scenario: the test build's heap guard turned off (D235)\n");
     run_heap_guard_off(dll);
@@ -9183,7 +9254,7 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-focus-ring", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
             L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake", L"heap-guard", L"heap-guard-off"}) {
         run(child_scenario, dll, this_program());
       }

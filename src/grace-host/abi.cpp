@@ -341,6 +341,7 @@ void test_fill_menu(GraceUiTestMenu& out) noexcept {
   out.baked_scale = view.baked_scale;
   std::memcpy(out.page, view.page, sizeof out.page);
   std::memcpy(out.focused, view.focused, sizeof out.focused);
+  out.focus_shown = view.focus_shown;
 }
 
 void test_fill_server(GraceUiTestServer& out) noexcept {

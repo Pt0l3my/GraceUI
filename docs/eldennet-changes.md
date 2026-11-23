@@ -1356,5 +1356,7 @@ From the three things the owner saw by hand in spikes.5 (your message of 2026-11
   stays the game's, so the camera may turn during it. The owner's question in GraceUI's `tools/grace-spike/README.md`
   is now only whether the Tarnished stayed still. If EldenNet's spike package carries its own copy of that checklist,
   bring it into line.
-- The highlight border is a separate question, put to the owner (GraceUI's G42).
+- **The highlight border was the focus ring**, drawn from the menu's open and while the mouse was used. The owner
+  decided (GraceUI's G42) that in game it shows only once a key or the pad is used and goes with the mouse, as in
+  the browser view (D237). Your space's pages in GraceUI's menu follow it; nothing for EldenNet to change.
 
