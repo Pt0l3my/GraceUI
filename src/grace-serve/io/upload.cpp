@@ -248,9 +248,14 @@ void Engine::take_hashes(Clock::time_point now) {
       continue;
     }
     bool full = false;
+    bool waiting = false;
     {
       std::lock_guard lock(ticket.port->mutex);
-      if (ticket.port->commands.size() >= protocol::kCommandQueue) {
+      // One file waits for a space at a time (D229): the count cap alone would let one session queue 32 files of
+      // 32 MiB behind a slow space, since its place is free once a file is handed over.
+      waiting = std::any_of(ticket.port->commands.begin(), ticket.port->commands.end(),
+                            [](const SpaceEvent& queued) { return queued.file != nullptr; });
+      if (waiting || ticket.port->commands.size() >= protocol::kCommandQueue) {
         full = true;
       } else {
         SpaceEvent event;
@@ -258,7 +263,9 @@ void Engine::take_hashes(Clock::time_point now) {
         event.command = ticket.command;
         event.args = std::move(ticket.args);
         event.view = protocol::CommandView::browser;  // the loopback listener's alone
-        event.reply = CommandRef{ticket.session, ticket.id, false};
+        const std::vector<std::string>& secret = ticket.port->description.secret;
+        event.reply = CommandRef{ticket.session, ticket.id,
+                                 std::find(secret.begin(), secret.end(), ticket.command) != secret.end()};  // as cmd's
         event.file = std::move(c->upload);
         ticket.port->commands.push_back(std::move(event));
       }
@@ -266,7 +273,10 @@ void Engine::take_hashes(Clock::time_point now) {
     if (full) {
       respond_status(*c, 503, kBusySpace, false, now);
       c->upload.reset();
-      upload_failed(slot, protocol::ErrorCode::rate_limited, "The space has too many commands waiting.", now);
+      upload_failed(slot, waiting ? protocol::ErrorCode::busy : protocol::ErrorCode::rate_limited,
+                    waiting ? "Another file is waiting for this mod: add this one once it has answered."
+                            : "The space has too many commands waiting.",
+                    now);
       continue;
     }
     const std::shared_ptr<PortState> port = ticket.port;

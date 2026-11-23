@@ -724,6 +724,13 @@ void Engine::readable(Connection& c, Clock::time_point now) {
     drop(c);  // the peer's end, or an error: in draining, the drain's end (item 24)
     return;
   }
+  // What was read is wiped once handled, whatever the phase (D229): an upload's bytes pass through this buffer, and
+  // GraceUI keeps nothing of a file (§7.2 item 18).
+  struct Wipe {
+    std::array<char, 16384>& buffer;
+    std::size_t count;
+    ~Wipe() { std::memset(buffer.data(), 0, std::min(count, buffer.size())); }
+  } wipe{scratch_, count};
   const std::string_view data(scratch_.data(), count);
   switch (c.phase) {
     case Phase::head: {

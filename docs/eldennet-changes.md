@@ -1252,7 +1252,7 @@ game, then opens every space's pages as this PC's browser does. GraceUI refuses 
 The test build adds `GraceUI_Test_GetPairingCode` and `GraceUI_Test_SetNetworkAddresses` (a test listens on 127.0.0.2,
 never on a real address); your vendored `graceui_test.h` needs them only if your harness pairs a device.
 
-## 61. Taking a file: `plugins.install` (2026-11-23, G28, D226–D228; GraceUI 0.2.26, protocol 1.9, ABI 1.6)
+## 61. Taking a file: `plugins.install` (2026-11-23, G28, D226–D229; GraceUI 0.2.26, protocol 1.9, ABI 1.6)
 
 G28 is built: a space may take one file from the browser view on this PC, by `POST /upload` on the loopback listener
 alone, with a one-use ticket bound to the session, the command and the file's size and SHA-256 (§7.2 item 18). GraceUI
@@ -1279,4 +1279,8 @@ should do for item 3 of the Plugins list above:
 - **Your launcher's host** (G29 (a)) links `grace-serve`, which serves the same route on loopback: there a file
   command's `SpaceEvent` carries `file`, the bytes behind a shared pointer, zeroed when its last holder lets it go.
 - **Nothing reaches you** from a paired device, or from a `cmd` that names `plugins.install` without a file: GraceUI
-  refuses both before your space sees them.
+  refuses both before your space sees them. The menu never sends it either, so name it in no action, row action, form
+  or editor (the lint refuses that, D229): the upload block alone sends it.
+- **Take the file promptly** (D229): one file waits for your space at a time, so a second gets `busy` ("Another file is
+  waiting for this mod") until you have polled the first; and an event left on `GRACEUI_FULL` past its answer's
+  deadline is dropped with its file, the view told it failed, so poll again with room at once.

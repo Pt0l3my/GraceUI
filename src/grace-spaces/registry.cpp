@@ -507,7 +507,15 @@ std::size_t Registry::expire(std::chrono::steady_clock::time_point now) {
         ++it;
         continue;
       }
-      const Space* space = find(it->owner);
+      Space* space = find(it->owner);
+      if (space != nullptr && space->held_kind != EventKind::none && space->held_reply == it->reply) {
+        // Held on FULL past its deadline (D229): the view has its answer, so the event, and any file with it, is let
+        // go rather than delivered later, a second time if the player tries again.
+        space->held_kind = EventKind::none;
+        space->held_reply = 0;
+        space->held_frame.clear();
+        space->held_file.reset();
+      }
       late.emplace_back(space != nullptr ? space->port : nullptr, *it);
       names.push_back(space != nullptr ? space->id : std::string());
       it = pending_.erase(it);
@@ -631,11 +639,19 @@ bool Registry::game_command(std::string_view space_id, protocol::Cmd command, st
       }
       const auto& declared = space->description.commands;
       const bool known = std::find(declared.begin(), declared.end(), command.name) != declared.end();
-      if (!known || !serve::confirmed(space->description, command.name, command.args)) {
+      // A file command comes only with its file, by the upload route (D229): from the menu, as from a view's cmd, it is
+      // refused before the mod sees it.
+      const bool file = known && serve::file_command(space->description, command.name);
+      if (!known || file || !serve::confirmed(space->description, command.name, command.args)) {
         protocol::Result refused;  // as the server answers a view's (invariant 3, §7.3): the mod never sees it
         refused.space = space->id;
         refused.id = command.id;
-        refused.error = known ? protocol::ErrorCode::confirm_required : protocol::ErrorCode::unknown_command;
+        refused.error = !known ? protocol::ErrorCode::unknown_command
+                        : file ? protocol::ErrorCode::invalid_value
+                               : protocol::ErrorCode::confirm_required;
+        if (file) {
+          refused.detail = "This takes a file: add it in the browser view on this PC.";
+        }
         ticket = next_reply_++;
         game_results_.push_back(GameResult{ticket, std::move(refused)});
         answered = true;

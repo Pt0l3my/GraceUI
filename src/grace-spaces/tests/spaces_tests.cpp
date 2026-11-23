@@ -632,6 +632,13 @@ TEST_CASE("G34's parts are checked at registration: row actions, a row secret, a
   pages = demo;
   keepers(pages)[2]["blocks"][0]["command"] = "keepers.hire";
   refused(pages, described, "a form block, and only a form block");
+  // A file command is sent only by an upload block (D229).
+  pages = demo;
+  keepers(pages)[1]["blocks"][0]["command"] = "keepers.import";
+  refused(pages, described, "keepers.import is a file command, which only an upload block sends");
+  pages = demo;
+  keepers(pages)[0]["blocks"][0]["row_actions"][0]["command"] = "keepers.import";
+  refused(pages, described, "keepers.import is a file command, which only an upload block sends");
   Json settings = described;
   for (Json& s : settings["settings"]) {
     if (s["key"] == "lantern.oil_kind") {
@@ -860,6 +867,66 @@ TEST_CASE("a file command's file reaches the mod beside its frame, once, by ABI 
   REQUIRE(refused.has_value());
   CHECK((*refused)["id"] == 6);
   CHECK((*refused)["error"] == "not_now");
+}
+
+TEST_CASE("a file held on FULL past its deadline is let go, never delivered after the view was answered (D229)") {
+  Fixture fixture(no_spaces());
+  REQUIRE(fixture.started == serve::StartResult::ok);
+  spaces::Registry registry;
+  registry.attach(fixture.server);
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(demo_pages(), demo_settings()), why) == Status::ok);
+  REQUIRE(fixture.wait_files());
+  auto view = fixture.join(nullptr);
+  REQUIRE(view != nullptr);
+  const std::string file(4096, 'h');
+  REQUIRE(upload(fixture, *view, 8, file) == 202);
+  std::string frame_buffer(16384, '\0');
+  std::vector<std::uint8_t> small(16);
+  spaces::FileOut out;
+  out.buffer = small.data();
+  out.capacity = small.size();
+  out.takes = true;
+  EventKind kind = EventKind::none;
+  std::uint64_t reply = 0;
+  std::uint64_t length = 0;
+  Status status = Status::ok;
+  for (int i = 0; i < 200 && kind == EventKind::none; ++i) {
+    status = registry.poll(kMod, frame_buffer.data(), frame_buffer.size(), kind, reply, length, out);
+    if (kind == EventKind::none) {
+      std::this_thread::sleep_for(10ms);
+    }
+  }
+  REQUIRE(status == Status::full);
+  // The mod never comes back with room in time: the view is answered, and the held file goes with its deadline.
+  CHECK(registry.expire(std::chrono::steady_clock::now() + 200s) == 1);
+  const std::optional<Json> late = view->next_of("result");
+  REQUIRE(late.has_value());
+  CHECK((*late)["id"] == 8);
+  CHECK((*late)["error"] == "internal");
+  std::vector<std::uint8_t> room(file.size());
+  out.buffer = room.data();
+  out.capacity = room.size();
+  status = registry.poll(kMod, frame_buffer.data(), frame_buffer.size(), kind, reply, length, out);
+  CHECK(status == Status::ok);
+  CHECK(kind == EventKind::none);  // nothing delivered a second time
+  CHECK(out.length == 0);
+}
+
+TEST_CASE("the menu never sends a file command: only the upload route does (D229)") {
+  spaces::Registry registry;
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame), why) == Status::ok);
+  std::uint64_t ticket = 0;
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 1, "keepers.import", Json::object()}, ticket));
+  CHECK(poll(registry).kind == EventKind::none);  // the mod never sees it
+  const auto results = registry.take_game_results();
+  REQUIRE(results.size() == 1);
+  CHECK(results[0].ticket == ticket);
+  CHECK(results[0].result.error == protocol::ErrorCode::invalid_value);
+  CHECK(results[0].result.detail == "This takes a file: add it in the browser view on this PC.");
 }
 
 TEST_CASE("a space with file commands needs a mod built for ABI 1.6 (D226)") {

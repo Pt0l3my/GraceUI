@@ -196,6 +196,24 @@ def lint(space_pages, description, fixtures, known_spaces):
         if name in space_pages.get("slow_commands", []):
             failures.append(f"{space}: file command {name} is not a slow command: its bytes are not held 90 s (D226)")
     unique("file command", space_pages.get("file_commands", []), space)
+    files = set(space_pages.get("file_commands", []))
+
+    def file_uses(node, where):
+        # A file command is sent only by an upload block (D229): never by an action, a row's, a form or an editor.
+        if isinstance(node, dict):
+            named = [node.get("command")] if node.get("kind") != "upload" else []
+            named += [node.get(part) for part in ("save", "check", "reset", "restore", "draft")]
+            for name in named:
+                if isinstance(name, str) and name in files:
+                    failures.append(f"{where}: {name} is a file command, sent only by an upload block (D229)")
+            where = f"{space}: {node['id']}" if isinstance(node.get("id"), str) and "category" in node else where
+            for value in node.values():
+                file_uses(value, where)
+        elif isinstance(node, list):
+            for value in node:
+                file_uses(value, where)
+
+    file_uses(space_pages.get("pages", []), space)
     for t in space_pages["topics"]:
         if (t["shape"] == "stream") != ("ring" in t):
             failures.append(f"{space}: topic {t['id']}: a stream names its ring, a state does not")

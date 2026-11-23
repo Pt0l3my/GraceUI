@@ -285,6 +285,15 @@ class Seeded(unittest.TestCase):
         sp, desc, fx = demo()
         page(sp, "demo.keepers")["sections"][1]["blocks"][0]["accept"] = ".zip"
         self.expect("accept belongs to an upload block", sp, desc, fx)
+        # Sent only by an upload block (D229): never by a form, a row action or a page's action.
+        sp, desc, fx = demo()
+        form = next(b for s in page(sp, "demo.keepers")["sections"] for b in s["blocks"] if b.get("kind") == "form")
+        form["command"] = "keepers.import"
+        self.expect("keepers.import is a file command, sent only by an upload block", sp, desc, fx)
+        sp, desc, fx = demo()
+        table = next(b for s in page(sp, "demo.keepers")["sections"] for b in s["blocks"] if b.get("row_actions"))
+        table["row_actions"][0]["command"] = "keepers.import"
+        self.expect("keepers.import is a file command, sent only by an upload block", sp, desc, fx)
 
     def test_setting_descriptions(self):
         cases = [

@@ -376,3 +376,38 @@ TEST_CASE("an upload: one at a time a session, a file command alone, this PC alo
   CHECK((*refused)["error"] == "not_now");
   CHECK(taker.all().empty());
 }
+
+TEST_CASE("an upload waits behind no other file for its space: one file queued a space at a time (D229)") {
+  Fixture f(upload_options());
+  Taker taker;
+  taker.attach(*f.demo);
+  f.demo->hold(true);  // a slow mod: what it is sent waits in its queue
+  const std::unique_ptr<WsClient> ws = f.join();
+  REQUIRE(ws != nullptr);
+  const std::string cookie = f.cookie();
+  const std::string file = roster(64 * 1024);
+  const auto send = [&](std::uint32_t id) {
+    REQUIRE(ws->send_json(upload_frame(id, "keepers.import", file.size(), sha256_hex(file))));
+    const std::string ticket = ticket_of(*ws, id);
+    REQUIRE(ticket.size() == kTokenChars);
+    return request(f.port, post_head(f.port, cookie, ticket, file.size()) + file, 10s);
+  };
+  CHECK(send(1).status == 202);  // queued for the space, its place free again
+  const Reply second = send(2);
+  CHECK(second.status == 503);   // refused while the first waits, not queued behind it
+  const std::optional<Json> refused = result_of(*ws, 2);
+  REQUIRE(refused.has_value());
+  CHECK((*refused)["error"] == "busy");
+  CHECK((*refused)["detail"] == "Another file is waiting for this mod: add this one once it has answered.");
+  CHECK(taker.all().empty());
+  f.demo->hold(false);
+  const std::optional<Json> first = result_of(*ws, 1);
+  REQUIRE(first.has_value());
+  CHECK((*first)["ok"] == true);
+  CHECK(send(3).status == 202);  // once taken, the next file goes
+  REQUIRE(result_of(*ws, 3).has_value());
+  const std::vector<Taken> taken = taker.all();
+  REQUIRE(taken.size() == 2);
+  CHECK(taken[0].bytes == file);
+  CHECK(taken[1].bytes == file);
+}

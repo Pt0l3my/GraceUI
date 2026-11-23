@@ -128,6 +128,19 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
   const auto declared = [&](const std::string& command) {
     return std::find(pages.commands.begin(), pages.commands.end(), command) != pages.commands.end();
   };
+  // A file command is sent only by an upload block (D229): never by an action, a row's, a form or an editor.
+  const std::vector<std::string>& files = pages.file_commands.value_or(std::vector<std::string>{});
+  const auto is_file = [&](const std::string& command) {
+    return std::find(files.begin(), files.end(), command) != files.end();
+  };
+  const auto usable = [&](const std::string& command) { return declared(command) && !is_file(command); };
+  const auto file_sent = [&](const std::string& where, const std::string& command) {
+    if (!is_file(command)) {
+      return false;
+    }
+    why = where + command + " is a file command, which only an upload block sends";
+    return true;
+  };
   // A file command (D226): the space's own, not a settings command, sensitive (never from a paired device), not slow.
   const std::vector<std::string>& sensitive = pages.sensitive_commands.value_or(std::vector<std::string>{});
   const std::vector<std::string>& slow = pages.slow_commands.value_or(std::vector<std::string>{});
@@ -148,7 +161,10 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
     }
     std::vector<std::string> ids;
     for (const protocol::RowAction& action : block.row_actions.value_or(std::vector<protocol::RowAction>{})) {
-      if (action.label.empty() || !declared(action.command) ||
+      if (file_sent(where, action.command)) {
+        return false;
+      }
+      if (action.label.empty() || !usable(action.command) ||
           std::find(ids.begin(), ids.end(), action.id) != ids.end()) {
         why = where + "row action " + action.id + " has no label, a command the space does not declare, or a twin";
         return false;
@@ -159,7 +175,10 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       }
       ids.push_back(action.id);
     }
-    if (block.row_secret && !declared(block.row_secret->command)) {
+    if (block.row_secret && file_sent(where, block.row_secret->command)) {
+      return false;
+    }
+    if (block.row_secret && !usable(block.row_secret->command)) {
       why = where + "a row secret's command is not one the space declares";
       return false;
     }
@@ -167,7 +186,6 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
     const bool upload = block.kind == protocol::BlockKind::upload;
     if (upload) {
       // An upload block (D226): one file command of the space's, sensitive, with its button's label; nothing else.
-      const std::vector<std::string>& files = pages.file_commands.value_or(std::vector<std::string>{});
       if (!block.command || std::find(files.begin(), files.end(), *block.command) == files.end() || !block.submit ||
           block.submit->empty() || block.fields || block.keys || block.component || block.topic || block.props ||
           block.editor) {
@@ -180,13 +198,25 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       why = where + "accept belongs to an upload block";
       return false;
     }
+    if (block.editor) {
+      const protocol::EditorBlock& ed = *block.editor;
+      for (const std::optional<std::string>& name : {std::optional<std::string>(ed.save), ed.check, ed.reset, ed.restore,
+                                                     ed.draft}) {
+        if (name && file_sent(where, *name)) {
+          return false;
+        }
+      }
+    }
     if (form != (block.command.has_value() || block.fields.has_value() || block.submit.has_value())) {
       why = where + "a form block, and only a form block, has a command, fields and a submit label";
       return false;
     }
+    if (form && block.command && file_sent(where, *block.command)) {
+      return false;
+    }
     if (form) {
       const std::vector<protocol::FormField>& fields = block.fields.value_or(std::vector<protocol::FormField>{});
-      if (!block.command || !declared(*block.command) || fields.empty() || !block.submit || block.submit->empty() ||
+      if (!block.command || !usable(*block.command) || fields.empty() || !block.submit || block.submit->empty() ||
           block.keys || block.component || block.topic) {
         why = where + "a form block has a declared command, one to four fields and a submit label, and nothing else";
         return false;
@@ -204,6 +234,11 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
     return true;
   };
   for (const protocol::Page& page : pages.pages) {
+    for (const protocol::PageAction& action : page.actions.value_or(std::vector<protocol::PageAction>{})) {
+      if (file_sent(page.id + ": ", action.command)) {
+        return false;
+      }
+    }
     std::vector<const protocol::PageSection*> sections;
     if (page.sections) {
       for (const protocol::PageSection& section : *page.sections) {
@@ -221,7 +256,10 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       // A section's own actions and status (D202), held as header actions and components are.
       std::vector<std::string> action_ids;
       for (const protocol::PageAction& action : section->actions.value_or(std::vector<protocol::PageAction>{})) {
-        if (action.label.empty() || !declared(action.command) ||
+        if (file_sent(page.id + ": ", action.command)) {
+          return false;
+        }
+        if (action.label.empty() || !usable(action.command) ||
             std::find(action_ids.begin(), action_ids.end(), action.id) != action_ids.end()) {
           why = page.id + ": section " + section->id + "'s action " + action.id +
                 " has no label, a command the space does not declare, or a twin";
