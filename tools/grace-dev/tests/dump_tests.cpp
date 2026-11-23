@@ -56,6 +56,24 @@ TEST_CASE("--dump: the demo's Overview at 800x600, as its golden says") {
   CHECK(test::contains(result.text, "check_draw_list: passes\n"));
 }
 
+TEST_CASE("--dump draws a master's chosen row: the demo's Lamps at 1280x720, the first lamp's detail from its member") {
+  // The master list's topic chooses its first row; the row's member (lantern.lamp/harbour-mouth, D215) is then given
+  // too, as the menu watches it (EldenNet's Named NPCs goldens, its WHY§524).
+  const DumpResult result = dumped("demo", "demo.lamps", 1280, 720);
+  CHECK(result.passes);
+  const std::filesystem::path golden = test::tests_folder() / "golden" / "demo-lamps-1280x720.txt";
+#ifndef _WIN32
+  if (const char* update = std::getenv("GRACE_UPDATE_GOLDEN"); update != nullptr && update[0] == '1') {
+    std::ofstream(golden, std::ios::binary) << result.text;
+  }
+#endif
+  CHECK_MESSAGE(test::read_text(golden) == result.text, "the dump differs from ", golden.string(),
+                " (run with GRACE_UPDATE_GOLDEN=1 to accept it)");
+  CHECK(test::contains(result.text, "\"Harbour mouth\""));  // the chosen row
+  CHECK(test::contains(result.text, "\"Tall\""));           // its member's flame
+  CHECK_FALSE(test::contains(result.text, "Nothing to show yet."));
+}
+
 TEST_CASE("--dump draws what grace-view's own goldens hold: GraceUI's Menu page at 1920x1080, its default size") {
   const DumpResult result = dumped("graceui", "graceui.menu", 1920, 1080);
   const std::filesystem::path golden =
