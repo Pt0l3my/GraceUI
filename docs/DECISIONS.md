@@ -1014,3 +1014,25 @@ the mod's Dear ImGui, so whether Tab moves between its widgets is the mod's to c
 **Owner's words.** Through EldenNet's session: "I think it makes no sense for TAB to work in GraceUI as tabbing between
 UI elements, it's rather annoying, we can keep tab function, but let's disable keyboard based UI element tabbing."; to
 the browser view's question, in the question dialog here: "In game only (Recommended)".
+
+## G42
+
+**The menu's focus ring while the player uses the mouse** · *Raised by the owner 2026-11-23 (EldenNet's spikes.5); Open*
+
+**Question.** The owner, through EldenNet's session: "Some elements in the menu show a highlight border, as if
+selected, with nothing chosen." It is the focus ring (`gold.hi`, 3 px, 2 px off the element, §3.3): the menu opens with
+the focus on its first control (Menu size's slider on GraceUI › Menu) and draws the ring wherever the focus is, whether
+the player uses the keys, the pad or the mouse. §3.12 asks for visible focus for keyboard and pad users and says nothing
+of the mouse; the browser view draws its ring only after keyboard use (`:focus-visible`). **(a) As the browser does**
+(recommended): in game the ring shows once a key or the pad is used in the menu (that press also acts as it does now),
+and goes when the mouse moves or clicks; the focus itself is kept, so the keys go on from where it is. **(b) Always,
+as now.** **(c) Never with a pointer**: as (a), and in pad mode always.
+
+**Recommendation.** (a): the ring says "your keys act here", which a mouse player does not need and reads as a
+selection; it matches the browser view, and nothing a keyboard or pad player sees changes.
+
+**What each answer changes.** (a): grace-view keeps a "focus seen" flag per menu session, set by a key or pad press and
+cleared by the mouse; the ring and the focused row's tint are drawn only while it is set; the footer's key hints stay.
+(b): nothing. (c): as (a), the flag also set while pad mode is on.
+
+**Follows from.** §3.3, §3.12, §5.3; D178, D232, D236.

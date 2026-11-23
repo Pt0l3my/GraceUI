@@ -1345,3 +1345,16 @@ You asked for it for spikes.6 (your WHY§539). Nothing changes for EldenNet's co
   (under Wine a notice came 30 to 80 frames later). If one of your GraceUI cases counts warm-up frames, set
   `GRACEUI_TEST_HEAP_GUARD=off` in its environment (read at graceui.dll's first allocation); leave the guard on for the
   spike runs.
+
+## 66. The owner's spikes.5 findings: the pointer, and the typing test's mouse (2026-11-23, D236; GraceUI 0.2.33)
+
+From the three things the owner saw by hand in spikes.5 (your message of 2026-11-23):
+
+- **The pointer no longer snaps back to the centre** a second after the mouse stops, in the menu and in a panel that
+  holds the mouse. Nothing for EldenNet to change: a panel of yours that takes the mouse gets the same pointer.
+- **The observer's typing test (F9) takes the keyboard and the pad only**, as your chat box does (O113); the mouse
+  stays the game's, so the camera may turn during it. The owner's question in GraceUI's `tools/grace-spike/README.md`
+  is now only whether the Tarnished stayed still. If EldenNet's spike package carries its own copy of that checklist,
+  bring it into line.
+- The highlight border is a separate question, put to the owner (GraceUI's G42).
+

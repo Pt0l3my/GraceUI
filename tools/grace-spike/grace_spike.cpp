@@ -6,7 +6,8 @@
 //   - It finds GraceUI without loading it (by name, as it is looked for every 50 ms for up to ten minutes): GraceUI may
 //     come first (the launcher's --also) or after EldenNet, which loads it itself (graceui-sys's LOAD).
 //   - It connects as a mod (notices, panels, input, hotkeys), shows one banner, and on F9 opens a typing test: a panel
-//     that takes the keyboard, the mouse and the pad for 60 s, then gives them back. From GraceUI 0.2.1 it asks for its
+//     that takes the keyboard and the pad for 60 s, then gives them back; the mouse stays the game's, as with
+//     EldenNet's chat box (its O113), so that the owner's checks match it. From GraceUI 0.2.1 it asks for its
 //     holder's events (D176) and feeds them to its own Dear ImGui (graceui::imgui::feed), whose field shows what is
 //     typed, on screen only; the report counts what the panel received, beside what GraceUI's own Dear ImGui counted.
 //   - Every 5 s it reads the test build's counters and writes one line of its report, graceui-spike.jsonl in that
@@ -886,7 +887,7 @@ void build(graceui::imgui::DrawList& list, std::uint32_t seconds_left, std::uint
   ImGui::Begin("grace-spike", nullptr,
                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                    (field ? 0 : ImGuiWindowFlags_NoInputs));
-  ImGui::TextUnformatted("Typing test: type anything, W, A, S and D among it, and move the mouse.");
+  ImGui::TextUnformatted("Typing test: type anything, W, A, S and D among it.");
   ImGui::TextUnformatted("The Tarnished should not move. Hold Esc for a second to stop early.");
   ImGui::Separator();
   ImGui::Text("Seconds left: %u", seconds_left);
@@ -1068,7 +1069,7 @@ DWORD WINAPI spike_worker(LPVOID) {
         GraceUiInputRequest request{};
         request.size = sizeof request;
         request.kind = GRACEUI_HOLDER_PANEL;
-        request.wants = GRACEUI_WANT_KEYBOARD | GRACEUI_WANT_MOUSE | GRACEUI_WANT_PAD;
+        request.wants = GRACEUI_WANT_KEYBOARD | GRACEUI_WANT_PAD;  // the mouse stays the game's, as the chat box's
         request.panel = panel;
         request.flags = events ? GRACEUI_INPUT_EVENTS : 0u;
         GraceUiInputAnswer granted{};

@@ -95,9 +95,12 @@ void focus_gone() noexcept;      // the window's thread, at any loss of the focu
 // Any thread (the window's for raw input, the game's reading thread for DirectInput), while a holder has the mouse:
 // motion of the mouse, in counts. Raw input is preferred where both come, so that nothing counts twice.
 void relative_motion(MotionSource source, std::int32_t dx, std::int32_t dy) noexcept;
-// Whether the mouse's motion drives the pointer now (some came within the last second): WM_MOUSEMOVE's position is
-// then left out.
+// Whether the mouse's motion drives the pointer: from the first motion a holder of the mouse is given until it ends, or
+// until an absolute device (a tablet, a remote desktop) reports through raw input (D232, D236). WM_MOUSEMOVE's position
+// is then left out: a game that keeps its cursor at its centre sends it at the centre, moving or still.
 bool pointer_by_motion() noexcept;
+// The window's thread: raw input from an absolute device, whose position WM_MOUSEMOVE reports; the pointer follows it.
+void absolute_motion() noexcept;
 // The code page an ANSI window's characters are read in: its keyboard layout's (WM_INPUTLANGCHANGE), unless a test set one.
 void set_keyboard_code_page(std::uint32_t code_page) noexcept;
 std::uint32_t code_page() noexcept;

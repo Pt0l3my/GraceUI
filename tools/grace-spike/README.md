@@ -52,8 +52,9 @@ fault of GraceUI's own from one that comes only with EldenNet beside it.
 With EldenNet, injected early.
 
 1. Load a save and stand somewhere safe, away from enemies.
-2. Press F9: the typing test opens in the middle of the screen and takes the keyboard, the mouse and the pad.
-3. For 60 seconds, type anything (W, A, S and D among it, and some held down) and move the mouse about. What you type
+2. Press F9: the typing test opens in the middle of the screen and takes the keyboard and the pad. The mouse stays
+   the game's, as it does while EldenNet's chat box is open, so moving it turns the camera.
+3. For 60 seconds, type anything (W, A, S and D among it, and some held down). What you type
    shows in the test's own field (GraceUI 0.2.1 and later), on screen only: the report counts it and never keeps it.
    The test closes by itself after 60 seconds; holding Esc for a second stops it early.
 4. Note whether the Tarnished moved or the camera turned at any time while the test was open.
@@ -71,7 +72,7 @@ If you have them, the Steam floating keyboard and Proton are rows of their own: 
 
 Send the files in `%APPDATA%\EldenNet\spikes\` as EldenNet's README says, with your answers to:
 
-- Did the Tarnished stay still and the camera stay put during the typing test (run B)? (yes or no)
+- Did the Tarnished stay still during the typing test (run B)? (yes or no; the camera may turn if you moved the mouse)
 - If the Steam overlay showed: was GraceUI still drawing after it closed? (yes or no)
 
 We read the reports with `python3 -I tools/grace-spike/report.py <the spikes folder> --by-hand movement=yes` (and

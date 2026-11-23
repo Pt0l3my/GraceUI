@@ -464,9 +464,12 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
           UINT raw_size = sizeof raw;
           // SAFETY: as above; the input is copied into ours, at most sizeof raw bytes.
           if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lparam), RID_INPUT, &raw, &raw_size, sizeof header) !=
-                  static_cast<UINT>(-1) &&
-              (raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0) {
-            input::relative_motion(input::MotionSource::raw_input, raw.data.mouse.lLastX, raw.data.mouse.lLastY);
+              static_cast<UINT>(-1)) {
+            if ((raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0) {
+              input::relative_motion(input::MotionSource::raw_input, raw.data.mouse.lLastX, raw.data.mouse.lLastY);
+            } else {
+              input::absolute_motion();  // a tablet or a remote desktop: WM_MOUSEMOVE's position is where it points
+            }
           }
         }
       }

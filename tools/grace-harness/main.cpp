@@ -5277,8 +5277,8 @@ void run_spike(const std::wstring& dll, bool tools_first) {
         faults.size(), fault.dump().c_str(),
         fault_text.find("grace-harness.exe+0x") != std::string::npos ? "names" : "DOES NOT NAME");
 
-  // 3. The typing test (with the tools first): F9 opens it, letters and the mouse go to it and none reaches the game,
-  // and it gives the controls back when its time is up.
+  // 3. The typing test (with the tools first): F9 opens it, letters go to it and none reaches the game, the mouse stays
+  // the game's (as EldenNet's chat box leaves it, its O113), and it gives the controls back when its time is up.
   if (tools_first) {
     press(window, VK_F9, 0x43);
     GraceUiTestInput input = grace.input();
@@ -5296,7 +5296,11 @@ void run_spike(const std::wstring& dll, bool tools_first) {
       post_key(window, vk, 0, false, false);
       frames(game, 2);
     }
+    const int mouse_before = g_seen.mouse;
     inject_mouse(30, 10, MOUSEEVENTF_MOVE);
+    settle();
+    frames(game, 2);
+    const bool mouse_to_game = g_seen.mouse > mouse_before;
     std::vector<Json> typed;
     for (int i = 0; i < 300 && typed.empty(); ++i) {
       frames(game, 1);
@@ -5310,14 +5314,16 @@ void run_spike(const std::wstring& dll, bool tools_first) {
     // keys, the pointer, and its end as GraceUI recorded it; and its own Dear ImGui takes every character feed gave it.
     const Json received = typing.value("received", Json::array());
     const bool panel_received = received.size() == 4 && received[0] == typing["chars"] && received[1] >= 10 &&
-                                received[2] >= 1 && typing["end_event"] == "released" &&
+                                received[2] == 0 && typing["end_event"] == "released" &&
                                 number(typing, "dropped") == 0 && typing["imgui_chars"] == received[0];
     check(held && typed.size() == 1 && typing["end"] == "released" && number(typing, "held_ms") >= 3000 &&
-              number(typing, "chars") >= 5 && none_passed && panel_received && g_seen.chars == 0 &&
+              number(typing, "chars") >= 5 && none_passed && panel_received && g_seen.chars == 0 && mouse_to_game &&
               grace.input().holder_kind == 0,
           "spike: the typing test",
-          "F9: the observer's panel %s input; its line: %s; characters reaching the game: %d; the holder after: %u",
-          held ? "took" : "DID NOT TAKE", typing.dump().c_str(), g_seen.chars, grace.input().holder_kind);
+          "F9: the observer's panel %s the keyboard and the pad; its line: %s; characters reaching the game: %d; the "
+          "mouse %s; the holder after: %u",
+          held ? "took" : "DID NOT TAKE", typing.dump().c_str(), g_seen.chars,
+          mouse_to_game ? "the game's" : "NOT THE GAME'S", grace.input().holder_kind);
   }
   grace.print_log();
 }
@@ -6964,6 +6970,14 @@ void run_menu_recentred(const std::wstring& dll) {
   // 2. No motion for a dozen frames: the game goes on recentring, and the pointer stays.
   frames(game, 12);
   const GraceUiTestInput kept = grace.input();
+  // 2b. No motion for 1.5 s, past a second of stillness (the owner's spikes.5: the pointer snapped back to the centre
+  // about a second after the mouse stopped): the game still recentring, the pointer stays.
+  const ULONGLONG still_from = GetTickCount64();
+  while (GetTickCount64() - still_from < 1500) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  const GraceUiTestInput still = grace.input();
   // 3. Left by 800 counts: clamped at the client area's edge, never outside it.
   move_by(-80, 0, 10);
   frames(game, 2);
@@ -6972,12 +6986,13 @@ void run_menu_recentred(const std::wstring& dll) {
   const int right = moved.imgui_mouse_x - start.imgui_mouse_x;
   const int down = moved.imgui_mouse_y - start.imgui_mouse_y;
   check(right >= 200 && right <= 280 && down >= 100 && down <= 140 && kept.imgui_mouse_x == moved.imgui_mouse_x &&
-            kept.imgui_mouse_y == moved.imgui_mouse_y && edge.imgui_mouse_x == 0 && menu.off == 0,
+            kept.imgui_mouse_y == moved.imgui_mouse_y && still.imgui_mouse_x == moved.imgui_mouse_x &&
+            still.imgui_mouse_y == moved.imgui_mouse_y && edge.imgui_mouse_x == 0 && menu.off == 0,
         "menu recentred: the pointer by the mouse's motion",
-        "from %d,%d: moved by 240,120 counts to %d,%d (%+d,%+d); after 12 frames of the game's recentring %d,%d; then "
-        "800 counts left: %d (the client area's edge 0)",
+        "from %d,%d: moved by 240,120 counts to %d,%d (%+d,%+d); after 12 frames of the game's recentring %d,%d, and "
+        "after 1.5 s of it %d,%d; then 800 counts left: %d (the client area's edge 0)",
         start.imgui_mouse_x, start.imgui_mouse_y, moved.imgui_mouse_x, moved.imgui_mouse_y, right, down,
-        kept.imgui_mouse_x, kept.imgui_mouse_y, edge.imgui_mouse_x);
+        kept.imgui_mouse_x, kept.imgui_mouse_y, still.imgui_mouse_x, still.imgui_mouse_y, edge.imgui_mouse_x);
   press(window, VK_F5, kScanF5);
   frames(game, 2);
 }
