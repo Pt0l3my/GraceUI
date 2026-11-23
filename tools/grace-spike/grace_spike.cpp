@@ -197,7 +197,9 @@ struct Counters {
   using GetMenu = std::uint32_t (*)(GraceUiTestMenu*);
   using GetCosts = std::uint32_t (*)(GraceUiTestFrameCost*, std::uint32_t);
   using GetSetting = std::uint32_t (*)(const char*, char*, std::uint32_t);
+  using GetStep = std::uint32_t (*)();
   GetState state = nullptr;
+  GetStep init_step = nullptr;  // since 0.2.24 (D220); absent from an older test build, and then left out
   GetInput input = nullptr;
   GetMenu menu = nullptr;
   GetCosts costs = nullptr;
@@ -209,6 +211,7 @@ struct Counters {
     menu = export_of<GetMenu>(module, "GraceUI_Test_GetMenu");
     costs = export_of<GetCosts>(module, "GraceUI_Test_GetFrameCosts");
     setting = export_of<GetSetting>(module, "GraceUI_Test_GetSetting");
+    init_step = export_of<GetStep>(module, "GraceUI_Test_InitStep");
     return state != nullptr && input != nullptr && menu != nullptr && costs != nullptr && setting != nullptr;
   }
   GraceUiTestState read_state() const {
@@ -306,6 +309,7 @@ void write_state(const Report& report, const Counters& counters) {
   Line line("state");
   line.word("host", host_word(s.host))
       .num("install_runs", s.hook_install_runs)
+      .num("init_step", counters.init_step != nullptr ? counters.init_step() : 0)
       .num("init_threads", s.init_threads_started)
       .num("hooks", s.hooks_installed)
       .num("dinput_hooks", in.dinput_hooks)

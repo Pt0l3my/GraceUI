@@ -763,6 +763,7 @@ struct GraceUi {
   decltype(&GraceUI_Test_GetMenuBounds) get_menu_bounds = nullptr;
   decltype(&GraceUI_Test_SetAntiCheatRecheck) set_anti_cheat_recheck = nullptr;
   decltype(&GraceUI_Test_MenuShows) menu_shows = nullptr;
+  decltype(&GraceUI_Test_InitStep) init_step = nullptr;
   decltype(&GraceUI_Test_GetServer) get_server = nullptr;
 
   bool load(const std::wstring& path) {
@@ -813,9 +814,10 @@ struct GraceUi {
     get_menu_bounds = function_of<decltype(get_menu_bounds)>(module, "GraceUI_Test_GetMenuBounds");
     set_anti_cheat_recheck = function_of<decltype(set_anti_cheat_recheck)>(module, "GraceUI_Test_SetAntiCheatRecheck");
     menu_shows = function_of<decltype(menu_shows)>(module, "GraceUI_Test_MenuShows");
+    init_step = function_of<decltype(init_step)>(module, "GraceUI_Test_InitStep");
     get_server = function_of<decltype(get_server)>(module, "GraceUI_Test_GetServer");
     return get_server != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
-           get_menu_bounds != nullptr && set_anti_cheat_recheck != nullptr && menu_shows != nullptr &&
+           get_menu_bounds != nullptr && set_anti_cheat_recheck != nullptr && menu_shows != nullptr && init_step != nullptr &&
            panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
@@ -973,12 +975,13 @@ bool hooks_as_expected(const GraceUi& grace, std::uint32_t xinput, std::string& 
   char text[900];
   std::snprintf(text, sizeof text,
                 "%u hooks in %u install run: the render half's %u, GetDeviceState %u, XInputGetState %u (of %u XInput "
-                "DLLs loaded), the window procedure %u; %s: %s",
+                "DLLs loaded), the window procedure %u; %s: %s; the init's step %u",
                 state.hooks_installed, state.hook_install_runs, input.render_hooks, input.dinput_hooks,
                 input.xinput_hooks, xinput, input.window_filter, published ? "all in D102's list" : "NOT all in D102's list",
-                names.c_str());
+                names.c_str(), grace.init_step());
   why = text;
-  return published && state.hook_install_runs == 1 && input.render_hooks == 5 && input.dinput_hooks >= 1 &&
+  return published && state.hook_install_runs == 1 && grace.init_step() == 7 && input.render_hooks == 5 &&
+         input.dinput_hooks >= 1 &&
          input.dinput_hooks <= 2 && input.xinput_hooks == xinput && input.window_filter == 1 &&
          state.hooks_installed == input.render_hooks + input.dinput_hooks + input.xinput_hooks + input.window_filter;
 }
@@ -4755,7 +4758,15 @@ void run_spike(const std::wstring& dll, bool tools_first) {
     loaded = load_spike_tools(game);
   }
   std::vector<Json> report;
-  for (int i = 0; i < 300 && (lines_of(report, "typing_ready").empty() || lines_of(report, "state").size() < 3); ++i) {
+  // Three state lines, and on a slow machine (a software renderer at a frame or two a second) until one of them shows a
+  // frame GraceUI drew: the check below still asks for it, this only waits for it, at most 600 frames.
+  const auto drawn_yet = [&] {
+    const std::vector<Json> states = lines_of(report, "state");
+    return !states.empty() && states.back().value("frames_drawn", std::uint64_t{0}) > 0;
+  };
+  for (int i = 0; i < 600 && (lines_of(report, "typing_ready").empty() || lines_of(report, "state").size() < 3 ||
+                              !drawn_yet());
+       ++i) {
     frames(game, 1);
     Sleep(20);
     report = read_report(path);
@@ -4780,15 +4791,17 @@ void run_spike(const std::wstring& dll, bool tools_first) {
   const auto number = [](const Json& line, const char* key) { return line.value(key, std::uint64_t{0}); };
   check(states.size() >= 3 && last["standin"] == "patched" &&
             number(last, "standin_presents") > number(first, "standin_presents") &&
-            number(last, "frames_drawn") > 0 && number(last, "install_runs") == 1 && number(last, "hooks") >= 6 &&
+            number(last, "frames_drawn") > 0 && number(last, "install_runs") == 1 && number(last, "init_step") == 7 &&
+            number(last, "hooks") >= 6 &&
             last["host"] == "hooked" && last["prologue"] != "unknown" && number(last, "lists_refused") == 0,
         "spike: both overlays draw",
         "%zu state lines; the stand-in %s, its Present called %llu times between the first and the last; GraceUI "
-        "%s with %llu hooks from %llu install run(s), %llu frames drawn, Present's prologue %s",
+        "%s with %llu hooks from %llu install run(s) (its init at step %llu), %llu frames drawn, Present's prologue %s",
         states.size(), last.value("standin", std::string("?")).c_str(),
         static_cast<unsigned long long>(number(last, "standin_presents") - number(first, "standin_presents")),
         last.value("host", std::string("?")).c_str(), static_cast<unsigned long long>(number(last, "hooks")),
         static_cast<unsigned long long>(number(last, "install_runs")),
+        static_cast<unsigned long long>(number(last, "init_step")),
         static_cast<unsigned long long>(number(last, "frames_drawn")),
         last.value("prologue", std::string("?")).c_str());
 

@@ -22,6 +22,10 @@ REPORT = "graceui_spike"
 SCHEMA = 1
 FILE = "graceui-spike.jsonl"
 TYPING_MS = 60000
+# GraceUI's init thread's steps (D220), as GraceUI_Test_InitStep names them.
+INIT_STEPS = {1: "its fonts", 2: "waiting for the game's window", 3: "binding Direct3D",
+              4: "reading the hook targets from a swap chain of its own", 5: "finding the input targets",
+              6: "the install", 7: "done"}
 ATLAS_LIMIT = 4096  # DESIGN §3.16: within 4096 x 4096 at 4K or 150%
 RECEIVED_SLACK = 2  # characters typed as a test ends, discarded with its holder before its panel took them (D176)
 HAND_RULES = ("movement", "steam_overlay", "steam_keyboard", "proton")
@@ -78,9 +82,13 @@ def common_rules(header, states):
         return rules
     last = states[-1]
     once = last.get("host") == "hooked" and last.get("install_runs") == 1 and last.get("init_threads", 0) <= 1
+    # Where an init that never hooked stopped (D220): the step GraceUI's init thread reached, from a test build that has it.
+    stopped = ""
+    if not once and last.get("init_step", 0) in INIT_STEPS and last.get("init_step") != 7:
+        stopped = f"; its init stopped at step {last['init_step']}, {INIT_STEPS[last['init_step']]}"
     rules.append(rule("hooks_once", PASSED if once else FAILED,
                       f"host {last.get('host')}, {last.get('hooks')} hooks from {last.get('install_runs')} install "
-                      f"run(s), {last.get('init_threads')} init thread(s)"))
+                      f"run(s), {last.get('init_threads')} init thread(s){stopped}"))
     drawn = max(state.get("frames_drawn", 0) for state in states)
     off = any(state.get("render_off", 0) for state in states)
     rules.append(rule("drawing", PASSED if drawn > 0 and not off else FAILED,
@@ -149,7 +157,7 @@ def s4_rules(header, states, typings, hand):
     else:
         rules.append(rule("nothing_passed", NOT_MEASURED, "no typing test"))
     rules.append(received_rule(typings))
-    rules.append(hand_rule("movement", hand, "EldenNet's recording measures it once R1 has its task"))
+    rules.append(hand_rule("movement", hand, "EldenNet's recording measures it once EldenNet's start is ready (S10.1.m)"))
     scaled = [state for state in states if state.get("ui_scale_x100", 0) >= 150]
     if scaled:
         largest = max(max(state.get("atlas", [0, 0])) for state in scaled)

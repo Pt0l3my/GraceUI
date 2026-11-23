@@ -29,6 +29,10 @@ namespace state {
 inline constinit std::atomic<HostState> host{HostState::not_asked};
 inline constinit std::atomic<std::uint32_t> init_threads_started{0};
 inline constinit std::atomic<std::uint32_t> hook_install_runs{0};
+// The init thread's step (D220), set before each: 1 its fonts, 2 waiting for the game's window, 3 Direct3D bound, 4 the
+// hook targets read from a swap chain of GraceUI's own, 5 the input targets, 6 the install, 7 hooked (a give-up stays at
+// its step). Read from any thread, so that an init that stops says where; 0 before the thread starts.
+inline constinit std::atomic<std::uint32_t> init_step{0};
 inline constinit std::atomic<std::uint32_t> hooks_installed{0};  // every hook: the table's and the window procedure's
 inline constinit std::atomic<std::uint32_t> render_hooks{0};
 inline constinit std::atomic<std::uint32_t> dinput_hooks{0};

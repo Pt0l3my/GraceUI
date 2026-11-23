@@ -176,6 +176,14 @@ GRACEUI_API void GraceUI_Test_SetAntiCheatRecheck(uint32_t ms) {
   }
 }
 
+GRACEUI_API uint32_t GraceUI_Test_InitStep(void) {
+  try {
+    return grace::host::test_init_step();
+  } catch (...) {
+    return 0;
+  }
+}
+
 GRACEUI_API uint32_t GraceUI_Test_MenuShows(const char* text) {
   try {
     return grace::host::test_menu_shows(text);

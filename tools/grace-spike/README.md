@@ -1,6 +1,6 @@
 # The in-game spikes S0-E and S4: GraceUI's part (D175)
 
-What GraceUI brings to the spike runs on the owner's PC, beside EldenNet's R1 session: S0-E (GraceUI's hooks beside
+What GraceUI brings to the spike runs on the owner's PC: S0-E (GraceUI's hooks beside
 EldenNet and beside another overlay, in both load orders) and S4 (input: nothing reaches the game while GraceUI's
 panel holds the controls). EldenNet's spike package carries these files and its own README gives each run's launcher
 command; this page says what each run is for and what to do in the game.
@@ -77,4 +77,6 @@ Send the files in `%APPDATA%\EldenNet\spikes\` as EldenNet's README says, with y
 We read the reports with `python3 -I tools/grace-spike/report.py <the spikes folder> --by-hand movement=yes` (and
 `steam_overlay=`, `steam_keyboard=`, `proton=` as you answer). A run passes when every rule it needs passes, is
 incomplete when one is not measured, and fails otherwise; a row "if you have one" never makes a run incomplete. Until
-EldenNet's recording can measure movement (after R1), the movement row is your answer.
+EldenNet's recording can measure movement (once EldenNet's start is ready, S10.1.m; R1 is retired, O106), the
+movement row is your answer. Since GraceUI 0.2.24 (D220) each state line also says how far GraceUI's start got
+(`init_step`), and a run whose hooks never went in names that step in its hooks row.

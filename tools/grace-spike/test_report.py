@@ -113,6 +113,16 @@ class Reader(unittest.TestCase):
                  state(standin="patched", standin_presents=40, frames_drawn=300)]
         self.assertEqual(self.results(report.judge(self.write("s0e_alone-1", lines), {}))["beside_standin"], "failed")
 
+    def test_an_init_that_never_hooked_says_where_it_stopped(self):
+        lines = [header("s0e_alone"), state(host="started", install_runs=0, hooks=0, frames_drawn=0, init_step=4)]
+        verdict = report.judge(self.write("s0e_alone-1", lines), {})
+        hooks = [r for r in verdict["rules"] if r["rule"] == "hooks_once"][0]
+        self.assertEqual(hooks["result"], "failed")
+        self.assertIn("step 4, reading the hook targets", hooks["detail"])
+        # An older test build has no step: nothing is said of it.
+        older = report.judge(self.write("s0e_alone-2", [header("s0e_alone"), state(host="started", install_runs=0)]), {})
+        self.assertNotIn("step", [r for r in older["rules"] if r["rule"] == "hooks_once"][0]["detail"])
+
     def test_the_atlas_at_150_is_judged_against_its_limit(self):
         lines = [header("s4"), state(ui_scale_x100=150, atlas=[4096, 8192]), typing(), state()]
         self.assertEqual(self.results(report.judge(self.write("s4-1", lines), {}))["atlas_150"], "failed")

@@ -861,6 +861,7 @@ void install(const grace_host_fn (&render)[kRenderHooks], const hooks_input::Tar
   state::dinput_hooks.store(dinput_hooks, std::memory_order_relaxed);
   state::xinput_hooks.store(xinput_hooks, std::memory_order_relaxed);
   state::hooks_installed.store(static_cast<std::uint32_t>(count), std::memory_order_relaxed);
+  state::init_step.store(7, std::memory_order_release);  // done (D220), before the host reads as hooked
   state::host.store(HostState::hooked, std::memory_order_release);
   log_line("%d hooks installed: the render half's %d, GetDeviceState %u, XInputGetState %u, the window procedure %u",
            count, kRenderHooks, dinput_hooks, xinput_hooks, filtered ? 1u : 0u);
@@ -922,24 +923,31 @@ void move_filter() noexcept {
 void run_init() noexcept {
   // The anti-cheat check ran in the first request, before this thread started (D133); in its notice-only mode the
   // hooks go in all the same, input off from the start (D88).
+  const auto step = [](std::uint32_t n) { state::init_step.store(n, std::memory_order_release); };
+  step(1);
   atlas::load_own_fonts();  // GraceUI's notices' face, read here so that warm-up reads no file (§3.16)
+  step(2);
   const HWND window = wait_for_game_window();
   if (window == nullptr) {
     give_up("no window of this process appeared within 120 s");
     return;
   }
+  step(3);
   if (!grace_host_bind_d3d()) {
     give_up("Direct3D 12, DXGI or the shader compiler (d3dcompiler_47.dll) could not be found in System32");
     return;
   }
   grace_host_fn render[kRenderHooks] = {};
+  step(4);
   if (!grace_host_read_hook_targets(render)) {
     give_up("the hook targets could not be read from a Direct3D 12 swap chain of GraceUI's own");
     return;
   }
   hooks_input::Targets input_targets;
+  step(5);
   hooks_input::find_targets(input_targets);
-  install(render, input_targets, window);
+  step(6);
+  install(render, input_targets, window);  // 7 once it has hooked; a give-up in it leaves 6
 }
 
 }  // namespace

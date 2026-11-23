@@ -142,6 +142,7 @@ std::uint32_t test_copy_topic(const char* topic, char* out, std::uint32_t capaci
 std::uint32_t test_menu_bounds(const char* name, float* out) noexcept;
 std::uint32_t test_menu_shows(const char* text) noexcept;
 void test_set_recheck_ms(std::uint32_t ms) noexcept;
+std::uint32_t test_init_step() noexcept;
 void test_fill_server(GraceUiTestServer& out) noexcept;
 #endif
 
