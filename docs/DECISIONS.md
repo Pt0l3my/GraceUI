@@ -903,3 +903,30 @@ the editor block, recorded in the proposal's §7 and to be built with it:
 
 It needs no cancel command for a draft: it cancels when the member is no longer watched. Its view on the three
 questions was the owner's answers.
+
+## G39
+
+**One Escape for a mod after its box has closed** · *Put 2026-11-23 with proposal 0011* · **Open**
+
+**Question.** EldenNet's rule for ending a conversation (its NPC §5.7) has two steps while a reply still paces: the
+first Esc closes the chat box and lets the reply finish; a second Esc ends it at once. The second press cannot reach
+EldenNet: with the box closed nothing holds input, and Escape cannot be a hotkey (D155), so it opens the game's menu
+over the reply (EldenNet's S11.4.d, its WHY§437). [Proposal 0011](proposals/0011-escape-after-close.md) lets a mod
+arm Escape while nothing holds input: the next press goes to that mod and never to the game, then it is disarmed. It
+asks (1) whether a mod may take one Escape press while nothing holds input: (a) yes, armed by the mod, one press, for
+at most 60 s, Escape only, answered at once like `request_input` and disarmed by any holder, danger, loading, focus
+loss, no render, a fault or time, the mod told why; (b) only within a fixed 5 s after the mod's own box closes, with no
+arming; (c) no, and EldenNet's rule changes so that a reply stops only while its box is open; and (2) the pad: (a) the
+keyboard only for now, or (b) the pad's B too while armed.
+
+**Recommendation.** (1) (a): it is EldenNet's rule as designed, it costs the player at most one Esc while a reply
+paces, and it is honest in D77's way. (2) (a): B dodges in the game, a dodge must never be eaten, and the owner tests
+with keyboard and mouse only (D205).
+
+**What each answer changes.** Under (1) (a) or (b): `grace-input` and ABI 1.6 (`arm_escape`, or under (b) an automatic
+window; two event kinds; `has_cap("escape")`), unit tests and an "escape" harness scenario; EldenNet arms it while its
+reply paces, ends the conversation on the press and shows the hint in its subtitles. Under (c): nothing in GraceUI;
+EldenNet changes NPC §5.7. Under (2) (b): B masked while armed, checked on S4's second round by testers.
+
+**Follows from.** D77, D155, D176, D204, D205, D212; invariants 8, 9 and 17; EldenNet's NPC §5.7, WHY§437 and S11.4.d.
+
