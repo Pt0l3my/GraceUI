@@ -44,6 +44,9 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
   decided, as recommended (the framework opens with GraceUI 1.1; no SkyrimNet-derived material in GraceUI; EldenNet's
   pages live in EldenNet; one server library for hosts outside the game), and folded into both designs the same day
   (EldenNet's roadmap S7.8.d and S7.12.e).
+- **2026-11-23.** G40 (the menu across an Alt+Tab: it stays open, lets go of the mouse and keys while the player is
+  away, and takes them again on return) and G41 (Tab moves no focus in game; the browser view keeps the browser's Tab)
+  raised by the owner from the first in-game run and decided the same day, as recommended.
 - **Open.** None.
 
 ## G1
@@ -955,3 +958,59 @@ function is immediately back to normal (game's function)"; to (2): "no need to s
 with Esc or enter reply with Enter. You can implement gamepad buttons to work as such too, but we only care about while
 the chatbox is open, if the chatbox is not open those keys are back to normal function."
 
+
+## G40
+
+**The menu across an Alt+Tab** · *Raised by the owner and decided 2026-11-23 (EldenNet's spike package, run A5)*
+
+**Question.** The owner reported, testing the menu in the real game: "using ALT + TAB cuases GraceUI to close." It did
+so by design: focus loss was one of the menu's exit paths (§5.1), so that it could never keep the mouse and keys while
+the player was in another window. EldenNet's session put the question to the owner in its question dialog: "GraceUI's
+menu closes when you Alt+Tab out of the game. It does that on purpose today, so it can never keep hold of your mouse
+and keys while you're in another window. What should happen instead?" **(a) Stay open, resume on return**
+(recommended): while the player is away, the menu lets go of the mouse and keys; back in the game, it is still open
+where they left it and takes the controls again. **(b) Keep closing it.**
+
+**Recommendation.** (a): nothing is held while the player is away, which is what the close was for, and nothing they
+had open is lost.
+
+**What each answer changes.** (a): the focus's loss releases capture and input as the close routine does (invariant 7)
+without closing the menu's view; on the focus's return the menu asks for input again, its page, row, confirmation,
+field and sheet as they were; the keys held then do nothing until released (invariant 8); danger or loading while away
+closes it (invariant 9). (b): nothing.
+
+**Follows from.** §5.1, D77, D145; invariants 7, 8, 9 and 17.
+
+**Decision (2026-11-23).** (a), as recommended. Built in GraceUI 0.2.30 (DESIGN D233).
+
+**Owner's words.** The report: "using ALT + TAB cuases GraceUI to close."; the choice, in EldenNet's question dialog:
+"Stay open, resume on return (Recommended)". Relayed by EldenNet's session the same day.
+
+## G41
+
+**Tab in the menu** · *Raised by the owner and decided 2026-11-23 (EldenNet's spike package, run A5)*
+
+**Question.** The owner, through EldenNet's session: "I think it makes no sense for TAB to work in GraceUI as tabbing
+between UI elements, it's rather annoying, we can keep tab function, but let's disable keyboard based UI element
+tabbing." Tab moved the focus between the rail, the top bar and the page, and on from a field (§5.3, §5.7). One point
+was left open, and put to the owner here: should the browser view lose Tab-between-elements too, where Tab is the
+browser's own keyboard navigation? **(a) In game only** (recommended): the in-game menu and GraceUI's own panels stop
+moving the focus on Tab; Tab still finishes a text field's entry and stays free for a mod to bind (EldenNet's skip);
+the browser view keeps the browser's Tab. **(b) Both views.** **(c) In game, and Tab does nothing in text boxes
+either.**
+
+**Recommendation.** (a): the arrows, Enter and Esc already move through everything in game, and in a browser Tab is
+what keyboard-only and screen-reader users rely on.
+
+**What each answer changes.** (a): the menu no longer maps Tab to the next and previous control; a field's Tab finishes
+its entry where it is; §5.3 and §5.7 lose their Tab rules; the top bar's search is reached by `/` and Ctrl+F, as
+before. (b): the web shell also overrides the browser's Tab. (c): as (a), and Tab is ignored in fields.
+
+**Follows from.** §4.3, §5.3, §5.7; D214.
+
+**Decision (2026-11-23).** (a), as recommended. Built in GraceUI 0.2.30 (DESIGN D233). A mod's own panel is drawn by
+the mod's Dear ImGui, so whether Tab moves between its widgets is the mod's to choose.
+
+**Owner's words.** Through EldenNet's session: "I think it makes no sense for TAB to work in GraceUI as tabbing between
+UI elements, it's rather annoying, we can keep tab function, but let's disable keyboard based UI element tabbing."; to
+the browser view's question, in the question dialog here: "In game only (Recommended)".
