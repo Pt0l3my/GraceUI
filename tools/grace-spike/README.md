@@ -16,8 +16,9 @@ command; this page says what each run is for and what to do in the game.
 - `grace-standin.dll`: a stand-in for another overlay, of our own, that counts the game's frames on their way to the
   screen. It is never part of a release.
 
-Neither reads the game's memory or calls the game's code. EldenNet makes no call into the game in these runs (its
-banner says "spike: no call").
+Neither reads the game's memory or calls the game's code. EldenNet makes no call into the game in these runs: its
+banner, EldenNet's own and not GraceUI's, says "EldenNet test run: it makes no call into the game", in the normal tone,
+whatever stopped its reading (from EldenNet's spike package after 0.1.0-spikes.6; the reason is in its log).
 
 ## The runs, in order
 
