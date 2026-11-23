@@ -1212,3 +1212,18 @@ already did: from EldenNet's pages a player finds GraceUI's Menu size, and from 
 by its space ("EldenNet › Pacing") and opened on its home page with its row focused. Your settings are found by their
 labels, synonyms and keys, on the pages present in your increment, as before; give them the synonyms players would type.
 
+## 59. The init's step, readable from outside (2026-11-23, D220; GraceUI 0.2.24)
+
+From your package case A2's stall (GraceUI injected late, `install_runs` 0 for 240 s under load). Nothing to change; two
+things you can use:
+
+- **`GraceUI_Test_InitStep()`** in the test build: 0 before the init thread starts; 1 its fonts, 2 waiting for the
+  game's window, 3 binding Direct3D, 4 reading the hook targets from a swap chain of GraceUI's own, 5 the input targets,
+  6 the install, 7 hooked. Read it from any thread. `GraceUiTestState` does not grow, so your vendored `graceui_test.h`
+  needs only the new declaration, if you want to call it, for example in a harness case that times out.
+- **The spike observer** writes it in each state line as `init_step`, and `report.py` names the step in the hooks row
+  when the host never hooked. An older test build leaves it out.
+
+Also: `report.py`'s movement row now reads "once EldenNet's start is ready (S10.1.m)", as you asked, since R1 is retired
+(O106).
+
