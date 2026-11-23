@@ -9,6 +9,8 @@
 // real server.
 #pragma once
 
+#include <atomic>
+
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -28,6 +30,7 @@ inline constexpr std::uint32_t kViewGame = 1;     // GRACEUI_VIEW_GAME
 inline constexpr std::uint32_t kViewBrowser = 2;  // GRACEUI_VIEW_BROWSER
 inline constexpr std::size_t kMaxSpaces = 16;     // mods' spaces in a session (EST)
 inline constexpr std::chrono::milliseconds kAnswerDeadline{10000};  // a command unanswered past this: internal (EST)
+inline constexpr std::chrono::milliseconds kSlowAnswerDeadline{90000};  // a slow command's (D216): a model's draft (EST)
 inline constexpr std::size_t kMaxPending = 256;  // commands polled and not yet answered, across every space (EST)
 
 enum class Status : std::uint8_t {
@@ -45,6 +48,15 @@ struct Registration {
   std::string increment;        // "0.2", named in welcome
   std::string_view pages;       // space_pages JSON (D160): its "space" must be the mod's id
   std::string_view settings;    // settings_description JSON
+  bool takes_files = true;      // built for ABI 1.6 or later (D226): a space with file commands needs it
+};
+
+// A file command's file, for poll (ABI 1.6, D226): the mod's buffer, and the file's length written back (0: none).
+struct FileOut {
+  std::uint8_t* buffer = nullptr;
+  std::uint64_t capacity = 0;
+  std::uint64_t length = 0;
+  bool takes = false;  // the mod's event has the file's fields: a file command reaches it; else GraceUI answers it
 };
 
 class Registry {
@@ -75,6 +87,11 @@ class Registry {
   // `length` the size needed and the event kept for the next call, when `capacity` is too small.
   Status poll(std::uint64_t owner, char* buffer, std::uint64_t capacity, EventKind& kind, std::uint64_t& reply,
               std::uint64_t& length);
+  // As poll, with a file command's file (D226) written into `file`'s buffer beside the frame: full when either does
+  // not fit, both lengths set and the event kept. A mod that takes no files is never given a file command: GraceUI
+  // answers it not_now. The registry lets go of the file once written (FileBytes zeroes it with its last holder).
+  Status poll(std::uint64_t owner, char* buffer, std::uint64_t capacity, EventKind& kind, std::uint64_t& reply,
+              std::uint64_t& length, FileOut& file);
   // The result frame of the command `reply` names: ok, or refused (not a result, not the mod's command, answered
   // already, or past its deadline). Its space and id are set by the registry, whatever the frame held.
   Status answer(std::uint64_t owner, std::uint64_t reply, std::string_view frame, std::string& why);
@@ -101,6 +118,11 @@ class Registry {
   // Called (outside the lock, from any thread) when something waits for the menu: a space came or went, a state it
   // watches was published, a result of its came back.
   void set_game_wake(std::function<void()> wake);
+  // Called with a space's owner (its consumer) whenever an event waits for its poll: a view's watch, unwatch or
+  // command, from the browser (on the server's I/O thread) or the menu. It takes no lock and must never wait: the host
+  // sets the mod's wait handle (D212). Set once, before any space is added.
+  using OwnerWake = void (*)(std::uint64_t owner) noexcept;
+  void set_owner_wake(OwnerWake wake) noexcept { owner_wake_.store(wake, std::memory_order_release); }
   // The spaces that asked for the game's view, in the order they registered.
   std::vector<GameSpace> game_spaces() const;
   std::uint64_t spaces_revision() const noexcept;
@@ -129,6 +151,15 @@ class Registry {
   std::vector<GameResult> game_results_;
   std::function<void()> game_wake_;
   void wake_game() const;
+  std::atomic<OwnerWake> owner_wake_{nullptr};
+  void wake_owner(std::uint64_t owner) const noexcept {
+    if (const OwnerWake wake = owner_wake_.load(std::memory_order_acquire); wake != nullptr) {
+      wake(owner);
+    }
+  }
+  serve::SpaceWake wake_of(std::uint64_t owner) const {
+    return [this, owner] { wake_owner(owner); };  // the registry lives as long as the process (it is never destroyed)
+  }
 };
 
 }  // namespace grace::spaces

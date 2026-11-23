@@ -99,7 +99,6 @@ test("a refusal: the reason in words, the value as the space holds it, focus ask
 test("a locked setting sends nothing (grace-view's set)", async () => {
   const { session, transport } = await started();
   session.set("demo", "lantern.festival", true);
-  session.set("graceui", "dashboard.lan", true);
   session.reset("demo", "lantern.festival");
   await tick(30);
   assert.deepEqual(transport.sent, []);
@@ -138,9 +137,16 @@ test("a setting's home: its tab opened and focus asked for its row; Page Up and 
   assert.equal(session.route.value?.page, "demo.keepers");
   assert.equal(session.step(1), true);
   assert.equal(session.route.value?.page, "demo.log");
-  session.open("demo", "demo.festival");
+  session.open("demo", "demo.lamps");  // the last page in rail order, since D215's Lamps
   assert.equal(session.step(1), false);
   assert.equal(session.open("demo", "demo.nowhere"), false);
+});
+
+test("a space's slow commands are known, so that their answer is waited for longer (D216)", async () => {
+  const { session } = await started();
+  assert.equal(session.slow("demo", "oil.order"), true);
+  assert.equal(session.slow("demo", "lantern.trim"), false);
+  assert.equal(session.slow("graceui", "oil.order"), false);
 });
 
 test("a header action sends its command as grace-view's: a destructive one with its confirmation", async () => {

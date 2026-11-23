@@ -60,7 +60,7 @@ Decision MessageRules::key(Key key, std::uint32_t vk, bool down, bool system, bo
   if (key == kEscape) {
     capture_->escape(Source::messages, down, now_ms);
   }
-  if (key != kNoKey && key == menu_key_) {
+  if (key != kNoKey && key == menu_key()) {
     decision.route = Route::consume;  // the menu key never reaches the game, and is the host's, never a holder's
     if (down && !repeat) {
       decision.menu = capture_->menu_key(now_ms);
@@ -122,7 +122,7 @@ Decision MessageRules::key(Key key, std::uint32_t vk, bool down, bool system, bo
 Decision MessageRules::character(Key key) noexcept {
   const Holder holder = follow();
   Decision decision;
-  const bool menu = key != kNoKey && key == menu_key_;
+  const bool menu = key != kNoKey && key == menu_key();
   if (holder.takes(want_keyboard)) {
     decision.route = Route::consume;
     decision.to_holder = !menu && (key == kNoKey || holder_down_.test(key));

@@ -32,7 +32,7 @@ test("welcome names both spaces, with their settings schemas", async () => {
   assert.equal(await transport.connect(events), true);
   const welcome = got.welcome[0];
   assert.ok(welcome);
-  assert.equal(welcome.protocol, "1.3");
+  assert.equal(welcome.protocol, "1.9");
   assert.deepEqual(welcome.spaces.map((s) => s.id), ["graceui", "demo"]);
   assert.equal(welcome.spaces[1]?.settings_schema.hash, space("demo").settings.schema.hash);
 });
@@ -87,7 +87,8 @@ test("the space refuses what its description refuses", () => {
     return answer.ok ? "ok" : answer.error;
   };
   assert.equal(refusal(demo, "settings.set", { key: "lantern.festival", value: true }), "locked");
-  assert.equal(refusal(graceui, "settings.set", { key: "dashboard.lan", value: true }), "locked");
+  assert.equal(refusal(graceui, "settings.set", { key: "dashboard.lan", value: true }), "ok");  // live since G9
+  assert.equal(refusal(graceui, "settings.set", { key: "ui.scale", value: 9 }), "invalid_value");
   assert.equal(refusal(demo, "settings.set", { key: "lantern.nope", value: 1 }), "unknown_key");
   assert.equal(refusal(demo, "settings.set", { key: "lantern.gap_s", value: 11 }), "invalid_value");
   assert.equal(refusal(demo, "settings.set", { key: "lantern.gap_s", value: "3" }), "invalid_value");
@@ -129,4 +130,19 @@ test("a reset of a page needs its confirmation, and resets only that page's unlo
   assert.deepEqual(outcome.answer, { ok: true });
   assert.equal(demo.value("lantern.gap_s"), 2.5);
   assert.equal(demo.handle("settings.reset", { scope: "page", target: "demo.nowhere", confirm: true }).answer.ok, false);
+});
+
+test("a file command (G28): sent with its file, the demo space counts its keepers; sent plainly, or a file for a " +
+     "command that takes none, it is refused", async () => {
+  const transport = new FixtureTransport(builtinSpaces());
+  await transport.connect(recorder().events);
+  const roster = new File(["[[keeper]]\nname = \"Maren Holt\"\n[[keeper]]\nname = \"Tobin Reed\"\n"], "roster.toml");
+  assert.deepEqual(await transport.upload("demo", "keepers.import", {}, roster), { ok: true, body: { added: 2 } });
+  assert.deepEqual(transport.sent.at(-1), { space: "demo", name: "keepers.import", args: {}, size: roster.size });
+  const none = await transport.upload("demo", "keepers.import", {}, new File(["# no one\n"], "empty.txt"));
+  assert.deepEqual(none, { ok: false, error: "invalid_value", detail: "No keeper in that file." });
+  assert.deepEqual(await transport.upload("demo", "lantern.trim", {}, roster), { ok: false, error: "unknown_command" });
+  const plain = new FixtureSpace(space("demo")).handle("keepers.import", {}).answer;
+  assert.deepEqual(plain, { ok: false, error: "invalid_value", detail: "This takes a file: add it with its button." });
+  transport.close();
 });

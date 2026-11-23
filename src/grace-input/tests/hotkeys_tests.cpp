@@ -1,11 +1,16 @@
 // The mods' hotkeys (hotkeys.h) and what the window procedure's filter and DirectInput's view do with them (D155).
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <atomic>
+#include <string>
+#include <string_view>
 #include <thread>
+#include <vector>
 
 #include "grace/input/devices.h"
 #include "grace/input/hotkeys.h"
+#include "grace/input/kept_bindings.h"
 #include "grace/input/messages.h"
 
 namespace {
@@ -289,4 +294,232 @@ TEST_CASE("presses counted on one thread while another adds, removes and takes a
     taken += press.count;
   }
   CHECK(taken == kPresses);
+}
+
+TEST_CASE("the Hotkeys page's list: each hotkey's mod, name, defaults and which of them are bound (D206)") {
+  Hotkeys hotkeys;
+  std::uint32_t f11 = 0;
+  std::uint32_t taken = 0;
+  std::uint32_t talk = 0;
+  Binding binding;
+  REQUIRE(hotkeys.add(1, "debug-view", kF11, 0, 0, kF5, f11, &binding, "Debug view") == Added::bound);
+  REQUIRE(hotkeys.add(2, "debug", kF11, 0, 0, kF5, taken, &binding, "Debug") == Added::unbound);
+  const std::uint32_t chord = 0x0020u | (0x0001u << 16);
+  REQUIRE(hotkeys.add(2, "talk", kNoKey, 0, chord, kF5, talk, &binding, "Talk") == Added::bound);
+  Listed listed[kMaxHotkeys];
+  REQUIRE(hotkeys.list(listed, kMaxHotkeys) == 3);
+  CHECK(listed[0].id == f11);
+  CHECK(listed[0].owner == 1);
+  CHECK(listed[0].name() == "Debug view");
+  CHECK(listed[0].action() == "debug-view");
+  CHECK(listed[0].key == kF11);
+  CHECK(listed[0].key_bound);
+  CHECK(listed[1].name() == "Debug");
+  CHECK_FALSE(listed[1].key_bound);
+  CHECK(listed[2].chord == chord);
+  CHECK(listed[2].chord_bound);
+  CHECK(listed[2].key == kNoKey);
+  CHECK(hotkeys.list(listed, 1) == 1);  // at most its capacity
+  hotkeys.remove_owner(2);
+  REQUIRE(hotkeys.list(listed, kMaxHotkeys) == 1);
+  CHECK(listed[0].name() == "Debug view");
+  std::uint32_t again = 0;
+  REQUIRE(hotkeys.add(3, "again", kK, 0, 0, kF5, again, &binding, "") == Added::bound);
+  REQUIRE(hotkeys.list(listed, kMaxHotkeys) == 2);
+  CHECK(listed[1].name().empty());  // a freed slot keeps no name of its last hotkey's
+}
+
+TEST_CASE("keys' names: one per key, as the settings' key names allow, and modifiers before them (D206)") {
+  CHECK(key_name(kF5) == "F5");
+  CHECK(key_name(kF11) == "F11");
+  CHECK(key_name(kA) == "A");
+  CHECK(key_name(0x02) == "1");
+  CHECK(key_name(0xC9) == "PageUp");
+  CHECK(key_name(0x9C) == "NumpadEnter");
+  CHECK(key_name(0xD3) == "Delete");
+  CHECK(key_name(kNoKey).empty());
+  CHECK(key_name(0xFF).empty());
+  CHECK(key_text(kK, kModCtrl) == "Ctrl+K");
+  CHECK(key_text(kK, kModCtrl | kModShift | kModAlt) == "Ctrl+Shift+Alt+K");
+  std::vector<std::string_view> seen;
+  for (int code = 0; code < 256; ++code) {
+    const std::string_view name = key_name(static_cast<Key>(code));
+    if (name.empty()) {
+      continue;
+    }
+    CHECK(name.size() <= 12);
+    for (const char c : name) {
+      CHECK(((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')));
+    }
+    CHECK(std::find(seen.begin(), seen.end(), name) == seen.end());
+    seen.push_back(name);
+  }
+  CHECK(seen.size() >= 100);
+}
+
+TEST_CASE("a key's name read back, with its modifiers; anything else is not a key (D208)") {
+  Key key = 0;
+  std::uint8_t modifiers = 0;
+  CHECK(key_from_text("Ctrl+Shift+K", key, modifiers));
+  CHECK(key == kK);
+  CHECK(modifiers == (kModCtrl | kModShift));
+  CHECK(key_from_text("F11", key, modifiers));
+  CHECK(key == kF11);
+  CHECK(modifiers == 0);
+  CHECK(key_from_text("", key, modifiers));
+  CHECK(key == kNoKey);
+  CHECK_FALSE(key_from_text("Ctrl+", key, modifiers));
+  CHECK_FALSE(key_from_text("Hyper+K", key, modifiers));
+  CHECK_FALSE(key_from_text("k", key, modifiers));
+  for (int code = 1; code < 256; ++code) {
+    if (!key_name(static_cast<Key>(code)).empty()) {
+      CHECK(key_from_text(key_text(static_cast<Key>(code), kModAlt), key, modifiers));
+      CHECK(key == code);
+    }
+  }
+}
+
+TEST_CASE("the player rebinds a hotkey: a taken key is named and changes nothing, unless moved (G37, D208)") {
+  Hotkeys hotkeys;
+  std::uint32_t f11 = 0;
+  std::uint32_t k = 0;
+  Binding binding;
+  REQUIRE(hotkeys.add(1, "debug-view", kF11, 0, 0, kF5, f11, &binding, "Debug view") == Added::bound);
+  REQUIRE(hotkeys.add(2, "chat", kK, kModCtrl, 0, kF5, k, &binding, "Chat") == Added::bound);
+  Taken other;
+  CHECK(hotkeys.rebind_key(k, kF11, 0, kF5, false, other) == Rebound::taken);
+  CHECK(other.id == f11);
+  CHECK(hotkeys.match(kF11, 0) == f11);  // nothing changed
+  CHECK(hotkeys.match(kK, kModCtrl) == k);
+  CHECK(hotkeys.rebind_key(k, kF5, 0, kF5, true, other) == Rebound::taken);  // never the menu's key
+  CHECK(other.menu);
+  CHECK(hotkeys.rebind_key(k, kEscape, 0, kF5, true, other) == Rebound::invalid);
+  CHECK(hotkeys.rebind_key(k, kF11, 0, kF5, true, other) == Rebound::done);  // moved
+  CHECK(other.id == f11);
+  CHECK(hotkeys.match(kF11, 0) == k);
+  CHECK(hotkeys.match(kK, kModCtrl) == 0);
+  CHECK(hotkeys.bare().test(kF11));
+  Listed lost;
+  REQUIRE(hotkeys.find(f11, lost));
+  CHECK(lost.key == kNoKey);  // the other lost its key altogether, kept so across sessions by the host
+  CHECK_FALSE(lost.key_bound);
+  CHECK(lost.defaults.key == kF11);
+  std::uint32_t changed = 0;
+  CHECK(hotkeys.take_changed(1, changed));
+  CHECK(changed == f11);
+  CHECK_FALSE(hotkeys.take_changed(1, changed));
+  CHECK(hotkeys.take_changed(2, changed));
+  CHECK(changed == k);
+  // A reset gives a default back only where it is free.
+  CHECK(hotkeys.reset(f11, kF5) == Rebound::done);
+  REQUIRE(hotkeys.find(f11, lost));
+  CHECK(lost.key == kF11);
+  CHECK_FALSE(lost.key_bound);  // the second hotkey has F11 now
+  CHECK(hotkeys.reset(k, kF5) == Rebound::done);
+  CHECK(hotkeys.match(kK, kModCtrl) == k);
+  CHECK(hotkeys.reset(f11, kF5) == Rebound::done);
+  CHECK(hotkeys.match(kF11, 0) == f11);
+  // No key at all, and a press of the old one fires nothing.
+  CHECK(hotkeys.rebind_key(f11, kNoKey, kModCtrl, kF5, false, other) == Rebound::done);
+  CHECK(hotkeys.match(kF11, 0) == 0);
+  CHECK_FALSE(hotkeys.bare().test(kF11));
+  hotkeys.remove(f11);
+  CHECK(hotkeys.rebind_key(f11, kA, 0, kF5, false, other) == Rebound::gone);
+}
+
+TEST_CASE("a chord rebound and moved; the menu's key moved unbinds the hotkey on it (G37, D208)") {
+  Hotkeys hotkeys;
+  constexpr std::uint32_t kChord = 0x0020u | (0x0001u << 16);
+  constexpr std::uint32_t kOther = 0x1000u | (0x0002u << 16);
+  std::uint32_t talk = 0;
+  std::uint32_t wave = 0;
+  Binding binding;
+  REQUIRE(hotkeys.add(1, "talk", kNoKey, 0, kChord, kF5, talk, &binding, "Talk") == Added::bound);
+  REQUIRE(hotkeys.add(2, "wave", kA, 0, kOther, kF5, wave, &binding, "Wave") == Added::bound);
+  Taken other;
+  CHECK(hotkeys.rebind_chord(wave, kChord, false, other) == Rebound::taken);
+  CHECK(other.id == talk);
+  CHECK(hotkeys.rebind_chord(wave, 0x0003u, false, other) == Rebound::invalid);
+  CHECK(hotkeys.rebind_chord(wave, kChord, true, other) == Rebound::done);
+  CHECK(hotkeys.match_chord(0x0001, 0x0020) == wave);
+  CHECK(hotkeys.match_chord(0x0002, 0x1000) == 0);
+  Listed talk_now;
+  REQUIRE(hotkeys.find(talk, talk_now));
+  CHECK(talk_now.chord == 0);
+  std::uint32_t lost[4] = {};
+  CHECK(hotkeys.menu_key_moved(kA, lost, 4) == 1);  // the menu's key is A now: Wave's A goes
+  CHECK(lost[0] == wave);
+  CHECK(hotkeys.match(kA, 0) == 0);
+  CHECK(hotkeys.match_chord(0x0001, 0x0020) == wave);  // its chord stays
+}
+
+TEST_CASE("a hotkey registered with the player's binding takes it, and keeps its mod's defaults for a reset (D208)") {
+  Hotkeys hotkeys;
+  std::uint32_t id = 0;
+  Binding binding;
+  const Chosen chosen{kK, kModAlt, 0};
+  REQUIRE(hotkeys.add(1, "debug-view", kF11, 0, 0x0020u | (0x0001u << 16), kF5, id, &binding, "Debug view", &chosen) ==
+          Added::bound);
+  CHECK(hotkeys.match(kK, kModAlt) == id);
+  CHECK(hotkeys.match(kF11, 0) == 0);
+  CHECK(hotkeys.chord_keys() == 0);  // the player left it no chord
+  const Chosen reserved{kEscape, 0, 0};
+  std::uint32_t second = 0;
+  REQUIRE(hotkeys.add(2, "other", kA, 0, 0, kF5, second, &binding, "Other", &reserved) == Added::bound);
+  CHECK(hotkeys.match(kA, 0) == second);  // a kept binding no longer valid: the defaults
+  CHECK(hotkeys.reset(id, kF5) == Rebound::done);
+  CHECK(hotkeys.match(kF11, 0) == id);
+  CHECK(hotkeys.chord_keys() == 0x0020);
+}
+
+TEST_CASE("the player's bindings kept: by mod and action, replaced, forgotten, bounded (D208)") {
+  KeptBindings kept;
+  CHECK(kept.revision() == 0);
+  CHECK(kept.keep("eldennet", "talk", Chosen{kK, 0, 0}));
+  const std::uint64_t after_one = kept.revision();
+  CHECK(after_one > 0);
+  CHECK(kept.keep("eldennet", "talk", Chosen{kK, 0, 0}));
+  CHECK(kept.revision() == after_one);  // nothing changed: nothing to write again
+  CHECK(kept.keep("eldennet", "talk", Chosen{kA, kModCtrl, 0x0020u | (0x0001u << 16)}));
+  CHECK(kept.revision() > after_one);
+  Chosen got;
+  REQUIRE(kept.find("eldennet", "talk", got));
+  CHECK(got.key == kA);
+  CHECK(got.modifiers == kModCtrl);
+  CHECK(got.chord == (0x0020u | (0x0001u << 16)));
+  CHECK_FALSE(kept.find("eldennet", "debug", got));
+  CHECK_FALSE(kept.keep("", "talk", got));
+  CHECK_FALSE(kept.keep(std::string(33, 'a'), "talk", got));
+  kept.forget("eldennet", "talk");
+  CHECK_FALSE(kept.find("eldennet", "talk", got));
+  for (std::size_t i = 0; i < kKeptBindings; ++i) {
+    CHECK(kept.keep("mod-" + std::to_string(i), "a", Chosen{}));
+  }
+  CHECK_FALSE(kept.keep("one-more", "a", Chosen{}));
+  KeptBindings::Entry all[kKeptBindings];
+  CHECK(kept.all(all, kKeptBindings) == kKeptBindings);
+  kept.forget_all();
+  CHECK(kept.all(all, kKeptBindings) == 0);
+}
+
+TEST_CASE("a hotkey's owner without the lock, and the owners with a change waiting, for their wait handles (D212)") {
+  Hotkeys hotkeys;
+  std::uint32_t a = 0;
+  std::uint32_t b = 0;
+  Binding binding;
+  REQUIRE(hotkeys.add(3, "one", kF11, 0, 0, kF5, a, &binding, "One") == Added::bound);
+  REQUIRE(hotkeys.add(7, "two", kK, 0, 0, kF5, b, &binding, "Two") == Added::bound);
+  CHECK(hotkeys.owner_of(a) == 3);
+  CHECK(hotkeys.owner_of(b) == 7);
+  CHECK(hotkeys.owner_of(0) == 0);
+  CHECK(hotkeys.changed_owners() == 0);
+  Taken other;
+  REQUIRE(hotkeys.rebind_key(a, kK, 0, kF5, true, other) == Rebound::done);  // moved from 7's
+  CHECK(hotkeys.changed_owners() == ((std::uint64_t{1} << 3) | (std::uint64_t{1} << 7)));
+  std::uint32_t id = 0;
+  CHECK(hotkeys.take_changed(3, id));
+  CHECK(hotkeys.changed_owners() == (std::uint64_t{1} << 7));
+  hotkeys.remove(b);
+  CHECK(hotkeys.owner_of(b) == 0);
+  CHECK(hotkeys.changed_owners() == 0);
 }

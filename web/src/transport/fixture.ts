@@ -21,8 +21,8 @@ export class FixtureTransport implements Transport {
   private nextSub = 1;
   private readonly subs = new Map<number, { space: string; topic: string }>();
   private readonly options: FixtureOptions;
-  /** Every command sent, in order, as the space received it (the tests read it). */
-  readonly sent: { space: string; name: string; args: JsonObject }[] = [];
+  /** Every command sent, in order, as the space received it (the tests read it); an upload's with its file's size. */
+  readonly sent: { space: string; name: string; args: JsonObject; size?: number }[] = [];
 
   constructor(spaces: FixtureSpaceData[], options: FixtureOptions = {}) {
     for (const data of spaces) {
@@ -111,6 +111,16 @@ export class FixtureTransport implements Transport {
         });
       });
     });
+  }
+
+  upload(space: string, name: string, args: JsonObject, file: Blob): Promise<Answer> {
+    this.sent.push({ space, name, args: structuredClone(args), size: file.size });
+    return file.text().then((text) => new Promise<Answer>((resolve) => {
+      this.later(() => {
+        const s = this.spaces.get(space);
+        resolve(s ? s.handleFile(name, args, text).answer : { ok: false, error: "unknown_command" });
+      });
+    }), () => ({ ok: false, error: "internal", local: "The file could not be read." }));
   }
 
   close(): void {

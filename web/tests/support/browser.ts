@@ -24,6 +24,7 @@ export interface PwLocator {
   waitFor(options?: object): Promise<void>;
   evaluateAll<T>(fn: (elements: Element[]) => T): Promise<T>;
   locator(selector: string): PwLocator;
+  setInputFiles(files: { name: string; mimeType: string; buffer: Buffer }): Promise<void>;
 }
 export interface PwPage {
   goto(url: string): Promise<unknown>;

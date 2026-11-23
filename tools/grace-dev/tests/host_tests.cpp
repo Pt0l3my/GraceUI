@@ -243,7 +243,6 @@ TEST_CASE("each refusal is the store's: its code, and its words in the result's 
       {"demo", "settings.reset", Json{{"scope", "page"}, {"target", "demo.behaviour"}}, "confirm_required"},
       {"demo", "settings.reset", Json{{"scope", "all"}}, "confirm_required"},
       {"demo", "settings.set", Json{{"key", "lantern.brightness"}}, "invalid_value"},  // no value
-      {"graceui", "settings.set", set("dashboard.lan", true), "locked"},
       {"graceui", "settings.set", set("ui.scale", 1.013), "invalid_value"},  // off its step
   };
   for (const Case& c : cases) {

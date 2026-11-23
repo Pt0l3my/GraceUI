@@ -19,6 +19,22 @@ std::size_t PortState::topic_index(std::string_view id) const noexcept {
   return npos;
 }
 
+bool PortState::is_member(std::string_view id) const noexcept { return family_member(description, id); }
+
+std::size_t PortState::member_slot_locked(std::string_view id) const noexcept {
+  for (std::size_t i = 0; i < members.size(); ++i) {
+    if (members[i].id == id) {
+      return declared + i;
+    }
+  }
+  return npos;
+}
+
+std::string_view PortState::topic_id_locked(std::size_t index) const noexcept {
+  return index < declared ? std::string_view(description.topics[index].id)
+                          : std::string_view(members[index - declared].id);
+}
+
 bool PortState::has_command(std::string_view name) const noexcept {
   for (const std::string& command : description.commands) {
     if (command == name) {
@@ -50,6 +66,24 @@ std::shared_ptr<const std::string> encode_to_page(const protocol::Message& messa
 
 }  // namespace detail
 
+bool family_member(const SpaceDescription& description, std::string_view topic) noexcept {
+  const std::size_t slash = topic.rfind('/');
+  if (slash == std::string_view::npos || slash == 0 || slash + 1 >= topic.size()) {
+    return false;
+  }
+  const std::string_view family = topic.substr(0, slash);
+  for (const protocol::TopicInfo& t : description.topics) {
+    if (t.id == family) {
+      return t.family.value_or(false) && t.shape == protocol::TopicShape::state;
+    }
+  }
+  return false;
+}
+
+bool file_command(const SpaceDescription& description, std::string_view command) noexcept {
+  return std::find(description.files.begin(), description.files.end(), command) != description.files.end();
+}
+
 SpaceDescription describe_space(const protocol::SpacePages& pages, const protocol::SettingsDescription& settings,
                                 std::string version, std::string increment) {
   SpaceDescription description;
@@ -60,6 +94,11 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
   description.info.settings_schema = settings.schema;
   description.topics = pages.topics;
   description.commands = pages.commands;
+  for (const std::string& name : pages.slow_commands.value_or(std::vector<std::string>{})) {
+    if (std::find(pages.commands.begin(), pages.commands.end(), name) != pages.commands.end()) {
+      description.slow.push_back(name);  // a declared command's alone (D216)
+    }
+  }
   const auto add = [](std::vector<std::string>& list, const std::string& command) {
     if (std::find(list.begin(), list.end(), command) == list.end()) {
       list.push_back(command);
@@ -100,6 +139,23 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
       blocks_of(tab.sections);
     }
   }
+  for (const std::string& name : pages.sensitive_commands.value_or(std::vector<std::string>{})) {
+    if (std::find(pages.commands.begin(), pages.commands.end(), name) != pages.commands.end()) {
+      add(description.sensitive, name);  // a declared command's alone (D221)
+    }
+  }
+  for (const std::string& name : pages.file_commands.value_or(std::vector<std::string>{})) {
+    // A declared command's alone, and one also marked sensitive (D226): the page lint and registration check both.
+    if (std::find(pages.commands.begin(), pages.commands.end(), name) != pages.commands.end() &&
+        std::find(description.sensitive.begin(), description.sensitive.end(), name) != description.sensitive.end()) {
+      add(description.files, name);
+    }
+  }
+  for (const protocol::Setting& setting : settings.settings) {
+    if (setting.sensitive.value_or(false) || setting.type == protocol::SettingType::secret) {
+      description.sensitive_keys.push_back({setting.key, setting.home});  // a secret is never set from a device
+    }
+  }
   description.pages = protocol::encode(pages);
   return description;
 }
@@ -111,6 +167,39 @@ bool confirmed(const SpaceDescription& description, std::string_view command, co
   }
   const auto it = args.is_object() ? args.find("confirm") : args.end();
   return args.is_object() && it != args.end() && it->is_boolean() && it->get<bool>();
+}
+
+bool sensitive_command(const SpaceDescription& description, std::string_view command,
+                       const protocol::Json& args) noexcept {
+  const auto listed = [&](const std::vector<std::string>& list) {
+    return std::find(list.begin(), list.end(), command) != list.end();
+  };
+  if (listed(description.sensitive) || listed(description.secret)) {
+    return true;
+  }
+  const auto text = [&](const char* name) -> std::string_view {
+    const auto it = args.is_object() ? args.find(name) : args.end();
+    return args.is_object() && it != args.end() && it->is_string() ? std::string_view(it->get_ref<const std::string&>())
+                                                                   : std::string_view();
+  };
+  const auto any = [&](auto&& match) {
+    return std::any_of(description.sensitive_keys.begin(), description.sensitive_keys.end(), match);
+  };
+  if (command == "settings.set") {
+    return any([&](const SpaceDescription::SensitiveKey& k) { return k.key == text("key"); });
+  }
+  if (command == "settings.reset") {
+    const std::string_view scope = text("scope");
+    const std::string_view target = text("target");
+    if (scope == "key") {
+      return any([&](const SpaceDescription::SensitiveKey& k) { return k.key == target; });
+    }
+    if (scope == "page") {
+      return any([&](const SpaceDescription::SensitiveKey& k) { return k.home == target; });
+    }
+    return !description.sensitive_keys.empty();  // all, or a scope the space will refuse anyway
+  }
+  return false;
 }
 
 SpacePort::SpacePort(std::shared_ptr<detail::Hub> hub, std::shared_ptr<detail::PortState> state) noexcept
@@ -130,7 +219,7 @@ bool SpacePort::poll(SpaceEvent& event) noexcept {
       if (state_->watched[i] != state_->reported[i]) {
         state_->reported[i] = state_->watched[i];
         event.kind = state_->watched[i] != 0 ? SpaceEvent::Kind::watched : SpaceEvent::Kind::unwatched;
-        event.topic = state_->description.topics[i].id;
+        event.topic = std::string(state_->topic_id_locked(i));  // a member's slot keeps its id until this is said
         return true;
       }
     }
@@ -152,8 +241,18 @@ bool SpacePort::publish(protocol::Message message) noexcept {
     out.port = state_;
     if (auto* state = std::get_if<protocol::State>(&message)) {
       out.topic = state_->topic_index(state->topic);
-      if (out.topic == detail::npos || state_->description.topics[out.topic].shape != protocol::TopicShape::state) {
-        return false;
+      if (out.topic == detail::npos && state_->is_member(state->topic)) {
+        // A family's member (D215): to its slot while a view watches it, else nowhere (as for any unwatched topic).
+        std::lock_guard lock(state_->mutex);
+        out.topic = state_->member_slot_locked(state->topic);
+        if (out.topic == detail::npos || state_->watched[out.topic] == 0) {
+          return true;
+        }
+        out.generation = state_->members[out.topic - state_->declared].generation;
+      } else if (out.topic == detail::npos ||
+                 state_->description.topics[out.topic].shape != protocol::TopicShape::state ||
+                 state_->description.topics[out.topic].family.value_or(false)) {
+        return false;  // not a topic of the space's; or a family itself, whose members alone are published
       }
       state->space = state_->description.info.id;
       out.kind = detail::Outgoing::Kind::state;

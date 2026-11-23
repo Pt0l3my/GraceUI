@@ -22,6 +22,16 @@ REPORT = "graceui_spike"
 SCHEMA = 1
 FILE = "graceui-spike.jsonl"
 TYPING_MS = 60000
+# GraceUI's init thread's steps (D220), as GraceUI_Test_InitStep names them.
+INIT_STEPS = {1: "its fonts", 2: "waiting for the game's window", 3: "binding Direct3D",
+              4: "reading the hook targets from a swap chain of its own", 5: "finding the input targets",
+              6: "the install", 7: "done"}
+# How far GraceUI's first frames got (D230), as GraceUI_Test_FrameStep names them.
+FRAME_STEPS = {1: "a Present through GraceUI's detour", 2: "the game's swap chain bound", 3: "the present queue found",
+               4: "the atlas asked of GraceUI's thread", 5: "the atlas baked",
+               6: "the renderer's objects made on the game's device", 7: "Dear ImGui's backends begun",
+               8: "the atlas's upload submitted", 9: "the atlas on the GPU", 10: "GraceUI's first frame submitted",
+               11: "the game's Present returned after it"}
 ATLAS_LIMIT = 4096  # DESIGN §3.16: within 4096 x 4096 at 4K or 150%
 RECEIVED_SLACK = 2  # characters typed as a test ends, discarded with its holder before its panel took them (D176)
 HAND_RULES = ("movement", "steam_overlay", "steam_keyboard", "proton")
@@ -78,14 +88,21 @@ def common_rules(header, states):
         return rules
     last = states[-1]
     once = last.get("host") == "hooked" and last.get("install_runs") == 1 and last.get("init_threads", 0) <= 1
+    # Where an init that never hooked stopped (D220): the step GraceUI's init thread reached, from a test build that has it.
+    stopped = ""
+    if not once and last.get("init_step", 0) in INIT_STEPS and last.get("init_step") != 7:
+        stopped = f"; its init stopped at step {last['init_step']}, {INIT_STEPS[last['init_step']]}"
     rules.append(rule("hooks_once", PASSED if once else FAILED,
                       f"host {last.get('host')}, {last.get('hooks')} hooks from {last.get('install_runs')} install "
-                      f"run(s), {last.get('init_threads')} init thread(s)"))
+                      f"run(s), {last.get('init_threads')} init thread(s){stopped}"))
     drawn = max(state.get("frames_drawn", 0) for state in states)
     off = any(state.get("render_off", 0) for state in states)
+    # Where GraceUI's first frames stopped (D230), from a test build that has the step, when the run ended before them.
+    step = last.get("frame_step", 0)
+    first = f"; its first frames stopped at step {step}, {FRAME_STEPS[step]}" if step in FRAME_STEPS and step != 11 else ""
     rules.append(rule("drawing", PASSED if drawn > 0 and not off else FAILED,
                       f"{drawn} frames drawn, render {'OFF' if off else 'on'}, Present's prologue "
-                      f"{last.get('prologue')}"))
+                      f"{last.get('prologue')}{first}"))
     warm = [state for state in states if state.get("frames_drawn", 0) > 0]
     if warm:
         grew = warm[-1].get("allocations", 0) - warm[0].get("allocations", 0)
@@ -149,7 +166,7 @@ def s4_rules(header, states, typings, hand):
     else:
         rules.append(rule("nothing_passed", NOT_MEASURED, "no typing test"))
     rules.append(received_rule(typings))
-    rules.append(hand_rule("movement", hand, "EldenNet's recording measures it once R1 has its task"))
+    rules.append(hand_rule("movement", hand, "EldenNet's recording measures it once EldenNet's start is ready (S10.1.m)"))
     scaled = [state for state in states if state.get("ui_scale_x100", 0) >= 150]
     if scaled:
         largest = max(max(state.get("atlas", [0, 0])) for state in scaled)
@@ -210,7 +227,11 @@ def judge(path, hand):
     results = [r["result"] for r in rules]
     needed = [r["result"] for r in rules if not r["optional"]]
     verdict = FAILED if FAILED in results else "incomplete" if NOT_MEASURED in needed else PASSED
-    return {"run": path.parent.name, "spike": spike, "verdict": verdict, "rules": rules}
+    # The faults the observer recorded (D231): listed, never judged, since a game's own first-chance faults are no
+    # failure of a run; a run that fell has its last one among them. The modules' names are in graceui-faults.txt.
+    faults = [{"code": f.get("code"), "access": f.get("access"), "null_target": f.get("null_target"),
+               "frame_step": f.get("frame_step"), "at": f.get("at", [])} for f in of(lines, "fault")]
+    return {"run": path.parent.name, "spike": spike, "verdict": verdict, "rules": rules, "faults": faults}
 
 
 def reports_in(paths):
@@ -257,6 +278,11 @@ def run(argv):
             for r in verdict["rules"]:
                 tag = " (if you have one)" if r["optional"] else ""
                 print(f"  {r['rule']}: {r['result']}{tag}: {r['detail']}")
+            for f in verdict["faults"]:
+                code = f["code"] if isinstance(f["code"], int) else 0
+                print(f"  fault (recorded, not judged): {code:#x}, {f['access']}"
+                      f"{' of the null page' if f['null_target'] else ''}, frame_step {f['frame_step']}, "
+                      f"at {', '.join(str(a) for a in f['at'][:6])}")
     return 1 if any(v["verdict"] == FAILED for v in runs) else 0
 
 

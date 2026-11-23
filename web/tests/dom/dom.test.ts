@@ -8,6 +8,7 @@
 // 1100 px; the space switcher and the status lamp appear only when there is something to show (invariant 2).
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { FakeHost } from "../support/fake-host.ts";
@@ -190,6 +191,10 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       const ours: string[] = [];
       for (const p of allPages()) {
         await openFromRail(page, p.category, p.page);
+        if (await page.locator(".master").count() > 0) {
+          // A master page's detail, its tabs among it, once its first row is chosen (D215).
+          await page.locator(".master__row[aria-selected=true]").waitFor();
+        }
         const tabs = await page.locator("[role=tab]").count();
         for (let tab = 0; tab < Math.max(tabs, 1); ++tab) {
           if (tabs > 0) {
@@ -344,6 +349,188 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("G37 in the browser: a row's key captured, a taken one asked about then moved, a chord from two pickers; the " +
+       "menu's row takes no actions (D208, D209)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "graceui", "graceui.hotkeys");
+      const rows = page.locator("main table.table tbody tr");
+      assert.equal(await rows.nth(0).locator("[data-row-action]").count(), 0, "the menu's own row: no id, no actions");
+      const sent = () => host.received.filter((f) => f.t === "cmd" && f.name === "hotkeys.key");
+      // A free key: sent with the row's id, and nothing asked.
+      await rows.nth(2).locator("[data-row-action='key']").click();
+      const field = page.locator("dialog.modal[open] [data-capture='key']");
+      await field.waitFor();
+      assert.match((await page.locator("dialog.modal[open] .modal__title").textContent()) ?? "",
+                   /Change key: Tide Charts, Show the tide table/);
+      await field.press("F9");
+      for (let i = 0; i < 20 && sent().length === 0; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(sent()[0]?.args, { id: "tide-charts/tide-table", value: "F9" });
+      await page.waitForFunction(() => document.querySelector("dialog.modal[open]") === null);
+      // A key another row has: the space's question, then the same again with its confirmation.
+      await rows.nth(2).locator("[data-row-action='key']").click();
+      await field.waitFor();
+      await field.press("Control+T");  // its own key: nothing to ask
+      await page.waitForFunction(() => document.querySelector("dialog.modal[open]") === null);
+      await rows.nth(2).locator("[data-row-action='key']").click();
+      await field.waitFor();
+      await field.press("T");
+      await page.locator("dialog.modal[open] [data-confirm]").waitFor();
+      assert.match((await page.locator("dialog.modal[open] .prose").textContent()) ?? "",
+                   /T is Demo space's Trim the wick\. Use it here/);
+      await page.locator("dialog.modal[open] [data-confirm]").click();
+      for (let i = 0; i < 20 && sent().length < 4; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(sent()[1]?.args, { id: "tide-charts/tide-table", value: "Ctrl+T" });
+      assert.deepEqual(sent()[2]?.args, { id: "tide-charts/tide-table", value: "T" });
+      assert.deepEqual(sent()[3]?.args, { id: "tide-charts/tide-table", value: "T", confirm: true });
+      // A pad chord from two pickers; the same button twice is refused in words; no pad chord sends 0.
+      const chords = () => host.received.filter((f) => f.t === "cmd" && f.name === "hotkeys.chord");
+      await rows.nth(3).locator("[data-row-action='chord']").click();
+      await page.locator("dialog.modal[open] [data-capture='anchor']").waitFor();
+      await page.locator("dialog.modal[open] [data-capture='anchor']").selectOption("12");
+      await page.locator("dialog.modal[open] [data-capture-use]").click();
+      await page.locator("dialog.modal[open] .row__note[role=status]").waitFor();
+      assert.equal(chords().length, 0);
+      await page.locator("dialog.modal[open] [data-capture='anchor']").selectOption("1");
+      await page.locator("dialog.modal[open] [data-capture-use]").click();
+      for (let i = 0; i < 20 && chords().length === 0; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(chords()[0]?.args, { id: "quiet-camp/pitch-tent", value: 0x0002 * 0x10000 + 0x0020 });
+      await rows.nth(3).locator("[data-row-action='chord']").click();
+      await page.locator("dialog.modal[open] [data-capture-none]").click();
+      for (let i = 0; i < 20 && chords().length < 2; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(chords()[1]?.args, { id: "quiet-camp/pitch-tent", value: 0 });
+    } finally {
+      await close();
+    }
+  });
+
+  test("master and detail in the browser: the first row chosen, its member watched and drawn, ↓ the next, Enter into " +
+       "the detail, no key in the address (D215)", async () => {
+    const { page, close } = await fresh();
+    const subs = () => host.received.filter((f) => f.t === "sub" && typeof f.topic === "string" &&
+                                                   f.topic.startsWith("lantern.lamp/")).map((f) => f.topic);
+    const unsubs = () => host.received.filter((f) => f.t === "unsub" && typeof f.topic === "string" &&
+                                                     f.topic.startsWith("lantern.lamp/")).map((f) => f.topic);
+    try {
+      await openFromRail(page, "records", "demo.lamps");
+      await page.locator(".master__row[aria-selected=true]").waitFor();
+      assert.equal(await page.locator(".master__row").count(), 3);
+      assert.equal(await page.locator(".master__row[aria-selected=true]").getAttribute("data-key"), "harbour-mouth");
+      await page.locator(".tile__value", { hasText: "Tall" }).waitFor();
+      assert.deepEqual(subs(), ["lantern.lamp/harbour-mouth"]);
+      // ↓ chooses the next row: its member watched, the last one let go, its tiles drawn.
+      await page.locator(".master__row[aria-selected=true]").focus();
+      await page.keyboard.press("ArrowDown");
+      await page.locator(".master__row[data-key='fish-steps'][aria-selected=true]").waitFor();
+      await page.locator(".tile__value", { hasText: "Low" }).waitFor();
+      for (let i = 0; i < 20 && unsubs().length === 0; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(subs(), ["lantern.lamp/harbour-mouth", "lantern.lamp/fish-steps"]);
+      assert.deepEqual(unsubs(), ["lantern.lamp/harbour-mouth"]);
+      // Enter goes into the detail; nothing of the row's key is in the address or the title.
+      await page.keyboard.press("Enter");
+      const inDetail = await page.evaluate(() => document.getElementById(document.activeElement?.closest(".detail")?.id ?? "") !== null);
+      assert.equal(inDetail, true);
+      const where = await page.evaluate(() => location.href + " " + document.title);
+      assert.equal(where.includes("fish-steps"), false);
+      // The Notes tab draws the same member's sentence.
+      await page.getByRole("tab", { name: "Notes", exact: true }).click();
+      await page.locator(".sentence", { hasText: "trimmed short on purpose" }).waitFor();
+    } finally {
+      await close();
+    }
+  });
+
+  test("the editor in the browser: fields drawn, an edit Unsaved and kept per row, check's messages under their " +
+       "fields, a save, a draft's Use this, prose one paragraph (D217)", async () => {
+    const { page, close } = await fresh();
+    const cmds = (name: string) => host.received.filter((f) => f.t === "cmd" && f.name === name);
+    try {
+      await openFromRail(page, "records", "demo.lamps");
+      await page.locator(".master__row[aria-selected=true]").waitFor();
+      await page.locator("[role=tab]", { hasText: "Your notes" }).click();
+      const editor = page.locator(".editor[data-editor='lantern.note/harbour-mouth']");
+      await editor.waitFor();
+      const brief = editor.locator(".editor__field[data-field=brief] input");
+      assert.equal(await brief.inputValue(), "Mouth lamp");
+      assert.equal(await editor.locator(".editor__field[data-field='public.summary'] .editor__count").textContent(),
+                   "19 / 35 words");
+      assert.equal(await editor.locator(".editor__field[data-field=sayings] .editor__item").count(), 3);
+      assert.equal(await editor.locator(".editor__field[data-field=sayings] .editor__locked").textContent(),
+                   "Locked: Written by hand: change it in the file.");
+      await editor.locator(".editor__field[data-field=oil] option", { hasText: "Olive oil" }).waitFor({ state: "attached" });
+      assert.equal(await editor.locator(".editor__field[data-field=met] .editor__shown").textContent(),
+                   "Harbour mouth, on the first evening");
+      // An edit: Unsaved, its count live, held to its 24 characters.
+      await brief.fill("Mouth lamp of the harbour wall, the far one");
+      assert.equal(await brief.inputValue(), "Mouth lamp of the harbou");
+      await editor.locator(".editor__head .editor__unsaved", { hasText: "Unsaved changes" }).waitFor();
+      // Prose is one paragraph: Enter types nothing, a pasted line break is a space.
+      const summary = editor.locator(".editor__field[data-field='public.summary'] textarea");
+      await summary.focus();
+      await page.keyboard.press("End");
+      await page.keyboard.press("Enter");
+      await page.keyboard.type(" Green.");
+      assert.equal((await summary.inputValue()).includes("\n"), false);
+      // The edit is kept per row: another lamp, then back.
+      await page.locator(".master__row[data-key='fish-steps']").click();
+      await page.locator(".editor[data-editor='lantern.note/fish-steps']").waitFor();
+      await page.locator(".editor__why", { hasText: "The drafter is resting" }).waitFor();
+      await page.locator(".master__row[data-key='harbour-mouth']").click();
+      await editor.waitFor();
+      assert.equal(await brief.inputValue(), "Mouth lamp of the harbou");
+      // Check: the space's messages under their fields, in its words.
+      await editor.locator("[data-editor-part=check]").click();
+      await editor.locator(".editor__top, .editor__message").first().waitFor();
+      assert.equal(cmds("note.check").length, 1);
+      assert.equal((cmds("note.check")[0]?.args as { rev: number }).rev, 1);
+      // Save: sent with its revision; the space publishes it again, and Unsaved goes.
+      await editor.locator("[data-editor-part=save]").click();
+      await editor.locator(".editor__state", { hasText: "Saved" }).waitFor();
+      for (let i = 0; i < 20 && await editor.locator(".editor__head .editor__unsaved").count() > 0; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.equal(await editor.locator(".editor__head .editor__unsaved").count(), 0);
+      assert.equal(await brief.inputValue(), "Mouth lamp of the harbou");
+      const saved = cmds("note.save")[0]?.args as { rev: number; doc: { [k: string]: unknown } };
+      assert.equal(saved.rev, 1);
+      assert.equal("met" in saved.doc, false);
+      // A draft: the notes sent, its proposal beside the field; Use this makes it an unsaved edit.
+      await editor.locator(".editor__draft textarea").fill("tall and green");
+      await editor.locator("[data-editor-part=draft]").click();
+      await editor.locator("[data-proposal=brief]").waitFor();
+      assert.equal(await editor.locator("[data-proposal=brief] .editor__proposal-words").textContent(), "tall and green");
+      await editor.locator("[data-use=brief]").click();
+      assert.equal(await brief.inputValue(), "tall and green");
+      await editor.locator(".editor__head .editor__unsaved").waitFor();
+      assert.equal(await editor.locator("[data-proposal=brief]").count(), 0);
+      await editor.locator("[data-keep='public.summary']").click();
+      assert.equal(await editor.locator(".editor__proposal").count(), 0);
+      // A save whose answer names another row (D218): the list chooses it, and Save keeps focus once its note comes.
+      host.bodies.set("note.save", { chosen: "old-crane" });
+      await editor.locator("[data-editor-part=save]").click();
+      await page.locator(".master__row[data-key='old-crane'][aria-selected=true]").waitFor();
+      await page.locator(".editor[data-editor='lantern.note/old-crane']").waitFor();
+      for (let i = 0; i < 20 && await page.evaluate(() => document.activeElement?.getAttribute("data-editor-part")) !== "save"; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.equal(await page.evaluate(() => document.activeElement?.closest(".editor")?.getAttribute("data-editor")),
+                   "lantern.note/old-crane");
+      host.bodies.delete("note.save");
+    } finally {
+      await close();
+    }
+  });
+
   test("proposal 0007 in the browser: a row's action asks first, a row's secret is sent once and kept nowhere, a " +
        "form sends its fields, a picker offers the space's choices (D192 to D195)", async () => {
     const { page, close } = await fresh();
@@ -412,6 +599,85 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     } finally {
       host.refuse.delete("keepers.hire");
       await close();
+    }
+  });
+
+  test("an upload in the browser: a roster file chosen or dropped is sent once with its ticket, its bytes and hash " +
+       "checked, its name never sent; a wrong kind, the space's refusal and a paired device in words (G28)", async () => {
+    const { page, problems, close } = await fresh();
+    const frames = () => host.received.filter((f) => f.t === "upload");
+    const posts = () => host.requests.filter((r) => r === "POST /upload");
+    const settle = async (got: () => unknown[], n: number) => {
+      for (let i = 0; i < 60 && got().length < n; ++i) {
+        await page.waitForTimeout(50);
+      }
+    };
+    const shows = (selector: string, words: string) => page.waitForFunction(
+      (a: { selector: string; words: string }) => (document.querySelector(a.selector)?.textContent ?? "").includes(a.words),
+      { selector, words }, { timeout: 5000 });
+    const zoneOf = "[data-upload='keepers.import']";
+    const roster = Buffer.from("[[keeper]]\nname = \"Maren Holt\"\n\n[[keeper]]\nname = \"Tobin Reed\"\n", "utf8");
+    try {
+      await openFromRail(page, "demo", "demo.keepers");
+      const zone = page.locator(zoneOf);
+      await zone.waitFor();
+      assert.match((await zone.locator(".upload__hint").textContent()) ?? "", /Drop a \.toml or \.txt file here/);
+      assert.equal(await zone.locator("button").textContent(), "Add a roster file");
+      // Chosen with its button's input: one upload frame, its ticket, one POST, the space's answer in words.
+      await zone.locator("input[type=file]").setInputFiles({ name: "harbour-roster.toml", mimeType: "text/plain",
+                                                              buffer: roster });
+      await shows(`${zoneOf} .upload__status`, "Accepted");
+      assert.equal(await zone.locator(".upload__status").textContent(), "Accepted: harbour-roster.toml.");
+      assert.equal(frames().length, 1);
+      const sent = frames()[0];
+      assert.equal(sent?.size, roster.length);
+      assert.equal(sent?.sha256, createHash("sha256").update(roster).digest("hex"));
+      assert.deepEqual(sent?.args, {});
+      assert.deepEqual(host.uploads.map((u) => [u.name, u.bytes.equals(roster)]), [["keepers.import", true]]);
+      assert.equal(posts().length, 1);
+      assert.ok(!JSON.stringify(host.received).includes("harbour-roster"), "the file's name stays in the page");
+      // A wrong kind is refused here, before anything is sent.
+      await zone.locator("input[type=file]").setInputFiles({ name: "harbour.png", mimeType: "image/png",
+                                                              buffer: Buffer.from([1, 2, 3]) });
+      await shows(`${zoneOf} .row__refusal`, "Choose a .toml or .txt file.");
+      assert.equal(frames().length, 1);
+      // Dropped on the zone: the space's own refusal in its words (no keeper in it).
+      await page.evaluate((selector: string) => {
+        const target = document.querySelector(selector);
+        const data = new DataTransfer();
+        data.items.add(new File(["# nothing here\n"], "empty-roster.txt", { type: "text/plain" }));
+        target?.dispatchEvent(new DragEvent("dragover", { dataTransfer: data, bubbles: true, cancelable: true }));
+        target?.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
+      }, zoneOf);
+      await shows(`${zoneOf} .row__refusal`, "No keeper in that file.");
+      assert.equal(frames().length, 2);
+      assert.equal(host.uploads.length, 2);
+      // Refused by the space before its ticket: nothing is posted.
+      host.refuse.set("keepers.import", "not_now");
+      await zone.locator("input[type=file]").setInputFiles({ name: "harbour-roster.toml", mimeType: "text/plain",
+                                                              buffer: roster });
+      await settle(frames, 3);
+      await shows(`${zoneOf} .row__refusal`, "Not possible right now.");
+      assert.equal(posts().length, 2);
+      assert.equal(host.uploads.length, 2);
+      assert.deepEqual(problems, []);
+      assert.deepEqual(await violations(page), []);
+    } finally {
+      await close();
+    }
+    // A paired device is told where to add the file, and offered nothing to send.
+    host = await startHost(DIST, builtinSpaces());
+    host.setView("device");
+    const device = await openPage(browser, host);
+    try {
+      await openFromRail(device.page, "demo", "demo.keepers");
+      const zone = device.page.locator(zoneOf);
+      await zone.waitFor();
+      assert.match((await zone.textContent()) ?? "", /only on the PC the game runs on/);
+      assert.equal(await zone.locator("input, button").count(), 0);
+    } finally {
+      await device.close();
+      await host.close();
     }
   });
 
@@ -622,8 +888,8 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     try {
       await openFromRail(page, "graceui", "graceui.menu");
       assert.equal(await page.locator("[data-rail='page:graceui.about']").count(), 1);
-      assert.equal(await page.locator("[data-rail='page:graceui.hotkeys']").count(), 0);  // ships in 0.6
-      assert.equal(await page.locator("[data-rail='page:graceui.compatibility']").count(), 0);
+      assert.equal(await page.locator("[data-rail='page:graceui.hotkeys']").count(), 1);  // 0.2 since D206
+      assert.equal(await page.locator("[data-rail='page:graceui.compatibility']").count(), 0);  // ships in 0.6
     } finally {
       await close();
     }
@@ -636,7 +902,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.equal(await page.locator(".mark").count(), 3);
       await page.locator("[data-rail='category:records']").click();
       await page.locator(".flyout").waitFor();
-      assert.equal(await page.locator(".flyout .flyout__page").count(), 2);
+      assert.equal(await page.locator(".flyout .flyout__page").count(), 3);  // Log, Festival and Lamps (D215)
       await page.waitForFunction(() => document.activeElement?.classList.contains("flyout__page") === true);
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => document.querySelector(".flyout") === null);

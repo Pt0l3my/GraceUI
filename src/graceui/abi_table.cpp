@@ -429,10 +429,11 @@ constexpr std::uint32_t kEvent10 = 16;
 constexpr std::uint32_t kEvent02 = 48;       // with reply, frame, frame_capacity and frame_length (D169)
 constexpr std::uint32_t kEvent11 = 104;      // with a holder's fields, ABI 1.1 (D176)
 constexpr std::uint32_t kEvent12 = 136;      // with the display's fields, ABI 1.2 (D180)
+constexpr std::uint32_t kEvent16 = 160;      // with a file's fields, ABI 1.6 (D226)
 constexpr std::uint32_t kSpaceDesc02 = 64;   // GraceUiSpaceDesc as GraceUI 0.2 first gave it
 constexpr std::uint32_t kCaret11 = 32;       // GraceUiCaret as ABI 1.1 first gave it
 constexpr std::uint64_t kPagesMax = 1u << 20;  // a space's page data or settings description: 1 MiB (EST)
-static_assert(sizeof(GraceUiEvent) == kEvent12 && sizeof(GraceUiSpaceDesc) == kSpaceDesc02 &&
+static_assert(sizeof(GraceUiEvent) == kEvent16 && sizeof(GraceUiSpaceDesc) == kSpaceDesc02 &&
               sizeof(GraceUiCaret) == kCaret11);
 
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, const GraceUiHotkeyDesc* hotkey,
@@ -477,11 +478,16 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent* event) noexcept {
       read_in(event, kEvent02, in);
       out.frame = in.frame;
       out.frame_capacity = in.frame == nullptr ? 0 : in.frame_capacity;
+      if (event_size >= kEvent16) {
+        out.file = in.file;  // ABI 1.6 (D226): the mod's buffer for a file command's file
+        out.file_capacity = in.file == nullptr ? 0 : in.file_capacity;
+      }
     }
     // ABI 1.1 (D176): an event that holds a holder's fields takes the mod's holder's events too.
     // ABI 1.2 (D180): one of 1.2's size takes the display's event too.
     const GraceUiStatus status =
-        grace::host::abi1::poll(consumer, out, protocol, event_size >= kEvent11, event_size >= kEvent12);
+        grace::host::abi1::poll(consumer, out, protocol, event_size >= kEvent11, event_size >= kEvent12,
+                                event_size >= kEvent16);
     if (status == GRACEUI_OK || status == GRACEUI_FULL) {
       write_out(event, event_size, out);
     }
@@ -583,6 +589,44 @@ GraceUiStatus set_caret(GraceUiConsumer consumer, const GraceUiCaret* caret) noe
   }
 }
 
+// ---- ABI 1.4's slot (D210).
+
+GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t hotkey_id, GraceUiHotkeyBinding* binding) noexcept {
+  try {
+    if (binding == nullptr || binding->size < sizeof(GraceUiHotkeyBinding)) {
+      return refused_argument(consumer, "describe_hotkey", "a binding that is null or below 1.4's size");
+    }
+    GraceUiHotkeyBinding out{};
+    out.size = binding->size;
+    const GraceUiStatus status = grace::host::abi1::describe_hotkey(consumer, hotkey_id, out);
+    if (status == GRACEUI_OK) {
+      out.size = binding->size;
+      *binding = out;  // 1.4's size, which the check above guarantees the caller's struct has
+    }
+    return status;
+  } catch (...) {
+    grace::host::abi1::fault("describe_hotkey");
+    return GRACEUI_FAULT;
+  }
+}
+
+// ---- ABI 1.5's slot (D212).
+
+GraceUiStatus wake_event(GraceUiConsumer consumer, void** event) noexcept {
+  try {
+    if (event == nullptr) {
+      return refused_argument(consumer, "wake_event", "a null place for the handle");
+    }
+    void* handle = nullptr;
+    const GraceUiStatus status = grace::host::abi1::wake_event(consumer, handle);
+    *event = status == GRACEUI_OK ? handle : nullptr;
+    return status;
+  } catch (...) {
+    grace::host::abi1::fault("wake_event");
+    return GRACEUI_FAULT;
+  }
+}
+
 constinit const GraceUiApi1 kTable = {
     sizeof(GraceUiApi1),
     GRACEUI_ABI1_MINOR,
@@ -609,6 +653,8 @@ constinit const GraceUiApi1 kTable = {
     &set_world_state,
     &log,
     &set_caret,
+    &describe_hotkey,
+    &wake_event,
 };
 
 }  // namespace

@@ -17,6 +17,7 @@
 #include <cstring>
 #include <iterator>
 #include <map>
+#include <set>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -55,7 +56,23 @@ struct MenuInput {
   Key key = Key::down;
   std::uint8_t shift = 0;
   std::uint32_t generation = 0;  // the holder it is for
+  grace::input::Key captured = grace::input::kNoKey;  // while a capture waits (D209): the key pressed, whole
+  std::uint8_t modifiers = 0;                         // and its Ctrl, Shift and Alt (GRACEUI_MOD_*)
+  // While a field edits (G38 (a)): one of its keys (an EditKey, plus 1), a character typed, or the clipboard's text,
+  // which waits in g_paste.
+  std::uint8_t edit = 0;
+  char32_t character = 0;
+  bool paste = false;
 };
+
+// Whether the menu's view waits for a key to capture (D209): set on GraceUI's thread after each input, read by the
+// window procedure's key_down.
+constinit std::atomic<bool> g_awaiting_key{false};
+// Whether one of its fields edits (G38 (a)), likewise: its keys then go to the field, and characters to the menu.
+constinit std::atomic<bool> g_editing{false};
+// The clipboard's text for a paste, read on the window procedure's thread at Ctrl+V and taken on GraceUI's.
+constinit grace::abi::SpinLock g_paste_lock;
+constinit std::string* g_paste = nullptr;  // made at the first paste, never freed
 
 constinit grace::input::SpscRing<MenuInput, 64> g_keys;  // the window procedure's
 constinit grace::input::SpscRing<MenuInput, 64> g_pad;   // the present thread's
@@ -129,6 +146,11 @@ struct State {
   bool ever_opened = false;
   std::uint32_t next_command = 1;
   std::map<std::uint64_t, std::pair<std::string, std::string>> commands;  // a ticket: its space and its key
+  std::map<std::uint64_t, std::string> command_names;  // a ticket: its command's name, for a slow one's sender (D216)
+  std::set<std::uint64_t> captures;  // the tickets the capture's modal sent: their answers go back to it (D209)
+  bool pairing = false;                 // Pair a device's sheet is open (G9)
+  bool away = false;                    // let go of input at an Alt+Tab, kept for the focus's return (G40)
+  grace::view::PageView::Sheet sheet;   // as last shown
   std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
   std::uint64_t states = 0;    // its other topics', as the menu last took them (D181)
   grace::view::DisplayList list;
@@ -178,6 +200,8 @@ std::vector<grace::view::RailLink> category_links(const grace::protocol::SpacePa
   return links;
 }
 
+void link_search(State& m);
+
 void load(State& m) {
   grace::spaces::OwnSpace& own = own_space();
   auto view = std::make_unique<SpaceView>();
@@ -196,6 +220,7 @@ void load(State& m) {
   m.spaces.push_back(std::move(view));
   m.active = 0;
   m.loaded = true;
+  link_search(m);
 }
 
 // The rails around each space (D79): a mod's space with GraceUI's at its foot, and from two mods' spaces a switcher;
@@ -280,6 +305,20 @@ void watch(State& m, bool on) {
   watch_topics(m);  // its open page's components with it
 }
 
+// Search across spaces (D219): each space's view finds every other space's settings too, linked anew whenever the
+// spaces change, so that no view keeps a link to one that has gone.
+void link_search(State& m) {
+  for (std::size_t i = 0; i < m.spaces.size(); ++i) {
+    std::vector<grace::view::PageView::SearchOther> others;
+    for (std::size_t j = 0; j < m.spaces.size(); ++j) {
+      if (j != i) {
+        others.push_back({m.spaces[j]->id, m.spaces[j]->name, &m.spaces[j]->view});
+      }
+    }
+    m.spaces[i]->view.set_search_others(std::move(others));
+  }
+}
+
 // The spaces that asked for the game's view, as the registry has them now: a new one gets a page view, open on its
 // first page; one that has gone is dropped, and if it was open, GraceUI's own is (D171).
 bool sync_spaces(State& m) {
@@ -322,6 +361,7 @@ bool sync_spaces(State& m) {
       m.active = i;
     }
   }
+  link_search(m);
   update_rails(m);
   return true;
 }
@@ -367,6 +407,7 @@ const char* refusal_words(grace::protocol::ErrorCode code) noexcept {
     case ErrorCode::busy: return "Already running.";
     case ErrorCode::confirm_required: return "This needs a confirmation first.";
     case ErrorCode::rate_limited: return "Too many changes at once: try again in a moment.";
+    case ErrorCode::conflict: return "Changed elsewhere since you opened it.";
     case ErrorCode::unauthorised:
     case ErrorCode::version:
     case ErrorCode::bad_message:
@@ -423,6 +464,50 @@ bool take_from_spaces(State& m) {
     if (it == m.commands.end()) {
       continue;
     }
+    if (const auto named = m.command_names.find(result.ticket); named != m.command_names.end()) {
+      for (auto& view : m.spaces) {
+        if (view->id == it->second.first) {
+          view->view.finished(named->second);  // a slow command's control takes presses again (D216)
+        }
+      }
+      m.command_names.erase(named);
+    }
+    if (m.captures.erase(result.ticket) != 0) {
+      for (auto& view : m.spaces) {
+        if (view->id == it->second.first) {
+          const bool refused = result.result.error.has_value();
+          std::string words = refused ? refusal_words(*result.result.error) : std::string();
+          if (refused && result.result.detail.has_value() && !result.result.detail->empty()) {
+            words = *result.result.detail;
+          }
+          view->view.capture_answered(!refused,
+                                      refused && *result.result.error == grace::protocol::ErrorCode::confirm_required,
+                                      words);
+        }
+      }
+      m.commands.erase(it);
+      changed = true;
+      continue;
+    }
+    if (it->second.second.rfind("editor:", 0) == 0) {
+      // An editor's command (D217): its answer, body and all, goes to the element that sent it, whatever is open.
+      if (result.result.error.has_value()) {
+        g_refusals.fetch_add(1, std::memory_order_relaxed);
+      }
+      for (auto& view : m.spaces) {
+        if (view->id == it->second.first) {
+          grace::protocol::Result answer = result.result;
+          const bool messages = answer.body.has_value() && answer.body->is_object() && answer.body->contains("messages");
+          if (answer.error.has_value() && (!answer.detail.has_value() || answer.detail->empty()) && !messages) {
+            answer.detail = refusal_words(*answer.error);  // the view's own words where the space gave none
+          }
+          view->view.editor_answer(it->second.second, answer);
+        }
+      }
+      m.commands.erase(it);
+      changed = true;
+      continue;
+    }
     if (result.result.error.has_value()) {
       g_refusals.fetch_add(1, std::memory_order_relaxed);
       std::string detail = refusal_words(*result.result.error);
@@ -434,6 +519,12 @@ bool take_from_spaces(State& m) {
           const std::string& key = it->second.second;
           view->view.refused(key, detail);
           view->view.restore(key, view->values.contains(key) ? view->values[key] : grace::protocol::Json());
+        }
+      }
+    } else {
+      for (auto& view : m.spaces) {
+        if (view->id == it->second.first && !it->second.second.empty()) {
+          view->view.accepted(it->second.second);  // a form the space took: its fields empty (D195)
         }
       }
     }
@@ -454,6 +545,7 @@ void take_effects(State& m) {
   own_view(m).view.set_values(store.values());
   m.revision = own_space().revision();
   spaces::publish_ui_scale(own_space());  // the mods hear of a new ui.scale (D180)
+  spaces::publish_menu_key(own_space());  // a new menu key works at once (D208)
   spaces::keep_own_settings();  // for the next session (D179): only after a change
 }
 
@@ -483,6 +575,70 @@ std::string key_of(const grace::protocol::Cmd& command) {
   return {};
 }
 
+// Pair a device's sheet (G9, §7.2 item 16): the code and where to enter it, then the device paired, or why it ended.
+// The code and the address are shown here alone, in game: never on a page, in a topic or in the log (D66, PV3).
+grace::view::PageView::Sheet pairing_sheet(const spaces::PairingView& view) {
+  grace::view::PageView::Sheet sheet;
+  switch (view.state) {
+    case spaces::PairingView::State::showing: {
+      sheet.title = "Pair a device";
+      sheet.figure = view.code.size() == 6 ? view.code.substr(0, 3) + " " + view.code.substr(3) : view.code;
+      sheet.lines.push_back(view.addresses.size() == 1
+                                ? "On the phone or computer, open this address in its browser:"
+                                : "On the phone or computer, open one of these addresses in its browser:");
+      for (const std::string& address : view.addresses) {
+        sheet.lines.push_back(address);
+      }
+      char left[16] = {};
+      std::snprintf(left, sizeof left, "%u:%02u", view.seconds / 60, view.seconds % 60);
+      sheet.lines.push_back("Enter this code there, with a name for the device. It works once, for " + std::string(left) +
+                            " more, while this stays open.");
+      break;
+    }
+    case spaces::PairingView::State::paired:
+      sheet.title = "Paired";
+      sheet.lines.push_back(view.paired_name + " is paired, and opens the browser view from now on.");
+      sheet.lines.push_back("It is listed under Other devices, where Forget revokes it.");
+      break;
+    case spaces::PairingView::State::ended:
+      sheet.title = "The code has ended";
+      sheet.lines.push_back(view.why);
+      sheet.lines.push_back("Close this, and choose Pair a device again for a new code.");
+      break;
+    case spaces::PairingView::State::none:
+      break;
+  }
+  return sheet;
+}
+
+// The sheet as it should be now: shown again when its words changed (each second, while the code shows). True if so.
+bool refresh_pairing(State& m) {
+  if (!m.pairing) {
+    return false;
+  }
+  if (!own_view(m).view.sheet_open()) {
+    m.pairing = false;  // closed by the view itself: the code goes with it
+    spaces::cancel_pairing();
+    return true;
+  }
+  grace::view::PageView::Sheet sheet = pairing_sheet(spaces::pairing_view());
+  if (sheet == m.sheet) {
+    return false;
+  }
+  m.sheet = sheet;
+  own_view(m).view.show_sheet(std::move(sheet));
+  return true;
+}
+
+void end_pairing(State& m) {
+  if (m.pairing) {
+    spaces::cancel_pairing();  // void at once (D113)
+    own_view(m).view.close_sheet();
+    m.pairing = false;
+    m.sheet = {};
+  }
+}
+
 // A command from the page view: GraceUI's own space answers it here, at its one entry point (invariant 3); a mod's
 // space's goes to the mod, as a view's command does, and its result comes back to the menu (D171).
 void run(State& m, const grace::protocol::Cmd& command) {
@@ -501,14 +657,48 @@ void run(State& m, const grace::protocol::Cmd& command) {
     const std::string where = focused.rfind("cell:", 0) == 0             ? focused.substr(5)
                               : focused.rfind("row:", 0) == 0            ? focused.substr(4)
                               : focused.rfind("section-action:", 0) == 0 ? focused.substr(15)
+                              : focused.rfind("submit:", 0) == 0         ? focused.substr(7)  // a form's (D195)
+                              : focused.rfind("secret:", 0) == 0         ? focused.substr(7)  // a row secret's (D194)
+                              : focused.rfind("editor:", 0) == 0         ? focused  // an editor's, whole (D217)
                                                                          : key_of(command);
     std::uint64_t ticket = 0;
+    const bool capture = space.view.capture_open();
+    const std::string name = sent.name;
     if (spaces::registry().game_command(space.id, std::move(sent), ticket)) {
       m.commands[ticket] = {space.id, where};
+      m.command_names[ticket] = name;
+      if (capture) {
+        m.captures.insert(ticket);
+      }
     } else {
       g_refusals.fetch_add(1, std::memory_order_relaxed);
-      space.view.refused(where, "Not now: the space has too many commands waiting.");
+      space.view.finished(name);  // never sent: nothing to wait for
+      if (capture) {
+        space.view.capture_answered(false, false, "Not now: the space has too many commands waiting.");
+      } else if (where.rfind("editor:", 0) == 0) {
+        grace::protocol::Result busy;
+        busy.error = grace::protocol::ErrorCode::busy;
+        busy.detail = "Not now: the space has too many commands waiting.";
+        space.view.editor_answer(where, busy);
+      } else {
+        space.view.refused(where, "Not now: the space has too many commands waiting.");
+      }
     }
+    return;
+  }
+  if (own_view(m).view.capture_open()) {
+    // The capture's command (D209): its answer goes back to the modal, which asks before a move.
+    const grace::pages::Outcome outcome = own_space().apply(command);
+    if (!outcome.ok) {
+      g_refusals.fetch_add(1, std::memory_order_relaxed);
+    }
+    own_view(m).view.capture_answered(
+        outcome.ok, !outcome.ok && outcome.error == grace::protocol::ErrorCode::confirm_required,
+        outcome.ok ? std::string_view() : std::string_view(outcome.detail));
+    if (command.name == "settings.set") {
+      take_effects(m);
+    }
+    take_topics(m);
     return;
   }
   if (command.name == "settings.set" || command.name == "settings.reset") {
@@ -523,6 +713,20 @@ void run(State& m, const grace::protocol::Cmd& command) {
   if (command.name == "dashboard.disconnect") {
     spaces::disconnect_browsers();  // a new session cookie; every browser must load the page again (§7.2 item 17)
     log_line("the menu's Disconnect: every browser's session ended");
+    return;
+  }
+  if (command.name == "dashboard.pair") {
+    // Pair a device (G9): its code on a sheet over the menu, valid while the sheet stays open (D113).
+    const spaces::PairingStart start = spaces::start_pairing();
+    if (!start.ok) {
+      g_refusals.fetch_add(1, std::memory_order_relaxed);
+      const std::string focused = own_view(m).view.focused();
+      own_view(m).view.refused(focused.rfind("section-action:", 0) == 0 ? focused.substr(15) : focused, start.words);
+      return;
+    }
+    m.pairing = true;
+    m.sheet = pairing_sheet(spaces::pairing_view());
+    own_view(m).view.show_sheet(m.sheet);  // open before refresh_pairing looks, which takes a closed sheet as ended
     return;
   }
   // Its other commands (a Mods page switch, D181) go to the one entry point the browser's views use too.
@@ -546,8 +750,14 @@ void act(State& m, const grace::view::Action& action) {
     case grace::view::Action::Kind::close:
       input::close_holder(grace::input::Closed::released, m.generation);  // back from the rail (§5.3)
       break;
+    case grace::view::Action::Kind::sheet_closed:
+      end_pairing(m);  // its Close: the code is void (G9)
+      break;
     case grace::view::Action::Kind::switch_space:
       activate(m, action.space, action.page, on_switcher ? From::switcher : From::link);  // another space (D79, D171)
+      if (!action.key.empty() && m.spaces[m.active]->id == action.space) {
+        m.spaces[m.active]->view.reveal(action.key);  // a search hit's row, on its home page (D219)
+      }
       break;
     case grace::view::Action::Kind::opened_page:
     case grace::view::Action::Kind::none:
@@ -555,14 +765,64 @@ void act(State& m, const grace::view::Action& action) {
   }
 }
 
+// Ctrl+C or Ctrl+X in a field (G38 (a)): its text on the clipboard, as Unicode, from GraceUI's own thread. The game's
+// window is the clipboard's owner, so that the clipboard takes the text (a null owner would refuse it).
+void put_on_clipboard(const std::string& utf8) noexcept {
+  const int units = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
+  if (units <= 0 || !OpenClipboard(input::window())) {
+    return;
+  }
+  EmptyClipboard();
+  if (HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, (static_cast<SIZE_T>(units) + 1) * sizeof(wchar_t)); memory != nullptr) {
+    if (auto* text = static_cast<wchar_t*>(GlobalLock(memory)); text != nullptr) {
+      MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), text, units);
+      text[units] = L'\0';
+      GlobalUnlock(memory);
+      if (SetClipboardData(CF_UNICODETEXT, memory) == nullptr) {
+        GlobalFree(memory);  // the clipboard did not take it
+      }
+    } else {
+      GlobalFree(memory);
+    }
+  }
+  CloseClipboard();
+}
+
 void take(State& m, const MenuInput& in, bool& dirty) {
   if (in.generation != m.generation) {
     return;  // pressed for an earlier holder
   }
-  const grace::view::Action action = active_view(m).input(grace::view::Input{in.key, in.shift != 0});
+  grace::view::PageView& view = active_view(m);
+  if (in.character != 0 && !view.editing() && in.character != U'/') {
+    return;  // a menu key's own character (Q, E, Enter): nothing to type it into, nothing to lay out again
+  }
+  grace::view::Action action;
+  if (in.captured != grace::input::kNoKey) {
+    action = view.captured(grace::input::key_text(in.captured, in.modifiers));
+  } else if (in.character != 0) {
+    action = view.typed(in.character);
+  } else if (in.paste) {
+    std::string text;
+    g_paste_lock.lock();
+    if (g_paste != nullptr) {
+      text.swap(*g_paste);
+    }
+    g_paste_lock.unlock();
+    action = view.pasted(text);
+  } else if (in.edit != 0) {
+    action = view.edit(grace::view::PageView::EditInput{static_cast<grace::view::PageView::EditKey>(in.edit - 1),
+                                                         (in.modifiers & 2u) != 0, (in.modifiers & 1u) != 0});
+  } else {
+    action = view.input(grace::view::Input{in.key, in.shift != 0});
+  }
   g_inputs.fetch_add(1, std::memory_order_relaxed);
   dirty = true;
   act(m, action);
+  if (std::string copied; active_view(m).take_clipboard(copied)) {
+    put_on_clipboard(copied);
+  }
+  g_awaiting_key.store(active_view(m).awaiting_key(), std::memory_order_release);
+  g_editing.store(active_view(m).editing(), std::memory_order_release);
 }
 
 void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
@@ -610,6 +870,13 @@ void publish(State& m) {
   std::vector<std::pair<std::string, grace::view::PageView::Bounds>> bounds = active_view(m).all_bounds();
   std::string shown = m.list.text;
 #endif
+  // The IME's composition window at the edited field's caret, in the back buffer's pixels (§5.6, D57); none otherwise.
+  if (const grace::view::Rect caret = active_view(m).caret(); caret.w > 0) {
+    input::set_caret(static_cast<std::int32_t>(caret.x), static_cast<std::int32_t>(caret.y),
+                     static_cast<std::int32_t>(caret.h));
+  } else {
+    input::set_caret(0, 0, 0);
+  }
   g_view_lock.lock();
   m.page.assign(active_view(m).page());
   m.focused = active_view(m).focused();
@@ -631,6 +898,13 @@ void drain() noexcept {
   }
 }
 
+// The menu's part of the close routine (§5.1), whatever closed it: changes stay and the page is kept; a confirmation
+// is cancelled and a field's edit ends (its text kept, G38 (2)); Pair a device's code is void (G9, D113).
+void close_view(State& m) {
+  end_pairing(m);
+  active_view(m).cancel_confirmation();
+}
+
 void serve_menu() {
   if (g_lists.load(std::memory_order_acquire) == nullptr) {
     g_lists.store(new grace::abi::DrawListBuffers(), std::memory_order_release);
@@ -644,11 +918,20 @@ void serve_menu() {
     sync_spaces(m);  // a mod's space came or went, open or not
   }
   if (!ours(holder)) {
+    const bool away = input::menu_away();  // G40: let go at an Alt+Tab, kept for the focus's return
     if (m.open) {
       m.open = false;
-      active_view(m).cancel_confirmation();  // the close routine's part (§5.1): changes stay, the page is kept
+      m.away = away;
+      g_editing.store(false, std::memory_order_release);  // no key reaches a field while nothing holds input
+      input::set_caret(0, 0, 0);
       active_view(m).pointer(grace::view::Pointer{grace::view::Pointer::Kind::leave, 0, 0, 0});  // no hover, no drag
       watch(m, false);                       // a mod builds nothing the menu no longer shows
+      if (!away) {
+        close_view(m);
+      }
+    } else if (m.away && !away) {
+      m.away = false;  // the return was refused, or danger or loading came while away: the close it was spared
+      close_view(m);
     }
     drain();
     return;
@@ -673,12 +956,18 @@ void serve_menu() {
       activate(m, m.spaces[0]->id, std::string(), From::open);  // the first open: the first mod's space, its first page
     }
     m.ever_opened = true;
-    active_view(m).cancel_confirmation();
+    if (!m.away) {
+      active_view(m).cancel_confirmation();
+    }
+    m.away = false;  // back from an Alt+Tab: the page, row, confirmation, field and sheet as they were (G40)
     watch(m, true);
     dirty = true;
   }
   if (take_from_spaces(m)) {
     dirty = true;
+  }
+  if (refresh_pairing(m)) {
+    dirty = true;  // the code's time, or a device paired (G9)
   }
   MenuInput in;
   for (int i = 0; i < 64 && g_keys.pop(in); ++i) {
@@ -702,6 +991,9 @@ void serve_menu() {
     m.height = height;
     dirty = true;
   }
+  // A mod's answer may have closed the capture, or the menu closed with it open (D209).
+  g_awaiting_key.store(m.open && active_view(m).awaiting_key(), std::memory_order_release);
+  g_editing.store(m.open && active_view(m).editing(), std::memory_order_release);
   if (dirty && m.open) {
     publish(m);
   }
@@ -825,14 +1117,150 @@ void pointer(std::uint8_t kind, float x, float y, float wheel, std::uint32_t gen
   }
 }
 
-bool key_down(std::uint32_t vk, bool shift, bool ctrl) noexcept {
+namespace {
+
+// Ctrl+V in a field (G38 (a)): the clipboard's Unicode text, as UTF-8, at most 16 KiB, read on the window procedure's
+// thread and handed to GraceUI's. False if it holds none.
+bool read_clipboard() noexcept {
+  if (!IsClipboardFormatAvailable(CF_UNICODETEXT) || !OpenClipboard(input::window())) {
+    return false;
+  }
+  bool any = false;
+  if (HANDLE data = GetClipboardData(CF_UNICODETEXT); data != nullptr) {
+    if (const auto* text = static_cast<const wchar_t*>(GlobalLock(data)); text != nullptr) {
+      const SIZE_T units = GlobalSize(data) / sizeof(wchar_t);
+      int length = 0;
+      while (static_cast<SIZE_T>(length) < units && length < 16384 && text[length] != L'\0') {
+        ++length;
+      }
+      const int bytes = WideCharToMultiByte(CP_UTF8, 0, text, length, nullptr, 0, nullptr, nullptr);
+      if (bytes > 0) {
+        try {
+          std::string utf8(static_cast<std::size_t>(bytes), '\0');
+          WideCharToMultiByte(CP_UTF8, 0, text, length, utf8.data(), bytes, nullptr, nullptr);
+          g_paste_lock.lock();
+          if (g_paste == nullptr) {
+            g_paste = new std::string();
+          }
+          g_paste->swap(utf8);
+          g_paste_lock.unlock();
+          any = true;
+        } catch (...) {
+          // no room for it: no paste
+        }
+      }
+      GlobalUnlock(data);
+    }
+  }
+  CloseClipboard();
+  return any;
+}
+
+// A key while a field edits (G38 (a)): its editing keys go to GraceUI's thread; every other key is the field's, and
+// types through the characters the window procedure takes.
+bool edit_key(std::uint32_t vk, bool shift, bool ctrl) noexcept {
+  using EditKey = grace::view::PageView::EditKey;
+  EditKey key{};
+  switch (vk) {
+    case VK_LEFT: key = EditKey::left; break;
+    case VK_RIGHT: key = EditKey::right; break;
+    case VK_UP: key = EditKey::up; break;
+    case VK_DOWN: key = EditKey::down; break;
+    case VK_HOME: key = EditKey::home; break;
+    case VK_END: key = EditKey::end; break;
+    case VK_BACK: key = EditKey::backspace; break;
+    case VK_DELETE: key = EditKey::erase; break;
+    case VK_RETURN: key = EditKey::enter; break;
+    case VK_ESCAPE: key = EditKey::escape; break;
+    case VK_TAB: key = EditKey::tab; break;
+    case 'A':
+      if (!ctrl) {
+        return true;
+      }
+      key = EditKey::select_all;
+      break;
+    case 'C':
+      if (!ctrl) {
+        return true;
+      }
+      key = EditKey::copy;
+      break;
+    case 'X':
+      if (!ctrl) {
+        return true;
+      }
+      key = EditKey::cut;
+      break;
+    case 'V': {
+      if (!ctrl) {
+        return true;
+      }
+      MenuInput in;
+      in.generation = input::capture().holder().generation;
+      in.paste = true;
+      if (read_clipboard() && g_keys.push(in)) {
+        hooks::wake();
+      }
+      return true;
+    }
+    default:
+      return true;  // the field's: its character comes as WM_CHAR
+  }
+  MenuInput in;
+  in.generation = input::capture().holder().generation;
+  in.edit = static_cast<std::uint8_t>(static_cast<std::uint8_t>(key) + 1);
+  in.modifiers = static_cast<std::uint8_t>((ctrl ? 1u : 0u) | (shift ? 2u : 0u));
+  if (g_keys.push(in)) {
+    hooks::wake();
+  }
+  return true;
+}
+
+}  // namespace
+
+void character(char32_t code_point) noexcept {
+  // While a capture waits, a character is none of the menu's. Otherwise it goes in order with the keys, even before
+  // GraceUI's thread has seen the Enter that starts an edit, and that thread drops what no field wants (only `/` opens
+  // search, §4.3).
+  if (g_awaiting_key.load(std::memory_order_acquire)) {
+    return;
+  }
+  MenuInput in;
+  in.generation = input::capture().holder().generation;
+  in.character = code_point;
+  if (g_keys.push(in)) {
+    hooks::wake();
+  }
+}
+
+bool key_down(std::uint32_t vk, grace::input::Key code, bool shift, bool ctrl, bool alt) noexcept {
+  if (g_editing.load(std::memory_order_acquire) && !g_awaiting_key.load(std::memory_order_acquire)) {
+    return edit_key(vk, shift, ctrl);
+  }
+  if (g_awaiting_key.load(std::memory_order_acquire) && vk != VK_ESCAPE) {
+    // A capture waits (D209): the key itself, with its modifiers; a modifier alone waits on, and Escape cancels below.
+    if (code == grace::input::kNoKey || vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU || vk == VK_LSHIFT ||
+        vk == VK_RSHIFT || vk == VK_LCONTROL || vk == VK_RCONTROL || vk == VK_LMENU || vk == VK_RMENU ||
+        vk == VK_LWIN || vk == VK_RWIN) {
+      return true;
+    }
+    MenuInput in;
+    in.generation = input::capture().holder().generation;
+    in.captured = code;
+    in.modifiers = static_cast<std::uint8_t>((ctrl ? 1u : 0u) | (shift ? 2u : 0u) | (alt ? 4u : 0u));
+    if (g_keys.push(in)) {
+      hooks::wake();
+    }
+    return true;
+  }
   Key key{};
   switch (vk) {
     case VK_UP: key = Key::up; break;
     case VK_DOWN: key = Key::down; break;
     case VK_LEFT: key = Key::left; break;
     case VK_RIGHT: key = Key::right; break;
-    case VK_TAB: key = shift ? Key::previous : Key::next; break;
+    // Tab moves no focus in the menu (G41): the arrows, Enter and Esc do. Inside a field it finishes the entry (its
+    // edit keys, above); otherwise it does nothing here, and never reaches the game while the menu holds the keyboard.
     case VK_RETURN:
     case VK_SPACE: key = Key::activate; break;
     case VK_ESCAPE: key = Key::back; break;
@@ -841,9 +1269,15 @@ bool key_down(std::uint32_t vk, bool shift, bool ctrl) noexcept {
     case VK_PRIOR: key = Key::previous_page; break;
     case VK_NEXT: key = Key::next_page; break;
     case 'R': key = Key::reset; break;
-    default: return false;  // search (`/`, Ctrl+F) comes with GraceUI's text field (§5.6)
+    case 'F':
+      if (!ctrl) {
+        return false;
+      }
+      key = Key::search;  // Ctrl+F (§4.3); `/` comes as its character
+      break;
+    default: return false;
   }
-  if (ctrl) {
+  if (ctrl && key != Key::search) {
     return false;
   }
   const std::uint32_t generation = input::capture().holder().generation;

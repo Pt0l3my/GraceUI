@@ -32,6 +32,7 @@
 #include "input.h"
 #include "log.h"
 #include "menu.h"
+#include "wake.h"
 
 namespace grace::host::hooks_input {
 namespace {
@@ -105,6 +106,13 @@ std::uint32_t keyboard_code_page(HWND window) noexcept {
 }
 
 void push_code_points(const char32_t* points, int count, std::uint32_t generation) noexcept {
+  if (const grace::input::Holder holder = input::capture().holder();
+      holder.kind == grace::input::Kind::menu && holder.owner == 0) {
+    for (int i = 0; i < count; ++i) {
+      menu::character(points[i]);  // the menu's own field, or its search (G38 (a))
+    }
+    return;
+  }
   for (int i = 0; i < count; ++i) {
     HolderEvent event;
     event.type = HolderEvent::Type::character;
@@ -187,7 +195,8 @@ void push_key(Key key, std::uint32_t vk, bool down, bool repeat) noexcept {
     // The menu's keys go to GraceUI's thread as the page view's inputs (D167), never to Dear ImGui; its modifiers are
     // read only for its own presses.
     if (down) {
-      menu::key_down(vk, (GetKeyState(VK_SHIFT) & 0x8000) != 0, (GetKeyState(VK_CONTROL) & 0x8000) != 0);
+      menu::key_down(vk, key, (GetKeyState(VK_SHIFT) & 0x8000) != 0, (GetKeyState(VK_CONTROL) & 0x8000) != 0,
+                     (GetKeyState(VK_MENU) & 0x8000) != 0);
     }
     return;
   }
@@ -244,6 +253,11 @@ void place_ime(HWND window) noexcept {
 }
 
 void lost_focus(std::int64_t now) noexcept {
+  input::focus_gone();
+  const grace::input::Holder before = input::capture().holder();
+  if (before.kind == grace::input::Kind::menu && before.owner == 0 && before.phase == grace::input::Phase::active) {
+    input::set_menu_away();  // G40: the menu lets go of input but stays, and asks again when the focus comes back
+  }
   input::closed(input::messages().focus_lost(now));
   char32_t dropped[2];
   g_pairer.flush(dropped);
@@ -308,6 +322,9 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
                                          : 0;
       const Decision decision = rules.key(key, vk, down, system, repeat, now, modifiers);
       handled(decision);
+      if (decision.hotkey != 0) {
+        wake::signal(input::hotkeys().owner_of(decision.hotkey));  // its mod's poll has a press (D212)
+      }
       if (decision.to_holder) {
         push_key(key, vk, down, repeat);
       }
@@ -383,7 +400,9 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
       return out;
     case WM_MOUSEMOVE: {
       const Decision decision = rules.mouse_motion();
-      if (decision.to_holder) {
+      // While the mouse's own motion drives the pointer (D232), the cursor's position is the game's to set and not
+      // where the player points: a game that recentres its cursor would pull the pointer back with it.
+      if (decision.to_holder && !input::pointer_by_motion()) {
         push_mouse(HolderEvent::Type::mouse_move, 0, false, low_signed(lparam), high_signed(lparam));
       }
       out.route = decision.route;
@@ -438,11 +457,26 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
           out.device = device;
           out.passed = 4;
         }
+        if (device == grace::input::want_mouse) {
+          // The mouse's relative motion, for the pointer while a holder has the mouse (D232); an absolute device's
+          // (a tablet, a remote desktop) moves the cursor, which WM_MOUSEMOVE reports.
+          RAWINPUT raw{};
+          UINT raw_size = sizeof raw;
+          // SAFETY: as above; the input is copied into ours, at most sizeof raw bytes.
+          if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lparam), RID_INPUT, &raw, &raw_size, sizeof header) !=
+                  static_cast<UINT>(-1) &&
+              (raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0) {
+            input::relative_motion(input::MotionSource::raw_input, raw.data.mouse.lLastX, raw.data.mouse.lLastY);
+          }
+        }
       }
       return out;
     }
     case WM_KILLFOCUS:
       lost_focus(now);
+      return out;
+    case WM_SETFOCUS:
+      input::focus_back();  // the menu, if it was away, takes input again (G40)
       return out;
     case WM_ACTIVATEAPP:
       if (wparam == FALSE) {
@@ -540,6 +574,7 @@ void filter_device_state(IDirectInputDevice8W* device, DWORD size, void* data) n
         // SAFETY: DirectInput has just written `size` bytes at `data`: a DIMOUSESTATE or a DIMOUSESTATE2, whose first
         // `size` bytes DIMOUSESTATE2 shares.
         std::memcpy(&mouse, data, size);
+        input::relative_motion(input::MotionSource::direct_input, mouse.lX, mouse.lY);  // before it is blanked (D232)
         grace::input::MouseState view;
         view.x = mouse.lX;
         view.y = mouse.lY;
@@ -628,7 +663,11 @@ void filter_pad(DWORD user, XINPUT_STATE* state, DWORD result) noexcept {
         const std::uint16_t real = pad.buttons;
         input::pads().filter(user, packet, pad, input::capture(), now);
         // The mods' chords (D204): a chord's key held back while it resolves, its tap, both hidden after it fires.
-        input::chords().filter(user, real, pad.buttons, packet, input::chord_aside(), input::hotkeys(), now);
+        std::uint32_t fired = 0;
+        if (input::chords().filter(user, real, pad.buttons, packet, input::chord_aside(), input::hotkeys(), now,
+                                   &fired) == grace::input::ChordStep::fired) {
+          wake::signal(input::hotkeys().owner_of(fired));  // its mod's poll has a press (D212)
+        }
 #if defined(GRACEUI_TEST_EXPORTS)
         if (!(pad == before)) {
           counters::count_masked(counters::xinput, input::capture().holder().holds());

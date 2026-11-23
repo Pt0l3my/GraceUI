@@ -1,6 +1,6 @@
 # The in-game spikes S0-E and S4: GraceUI's part (D175)
 
-What GraceUI brings to the spike runs on the owner's PC, beside EldenNet's R1 session: S0-E (GraceUI's hooks beside
+What GraceUI brings to the spike runs on the owner's PC: S0-E (GraceUI's hooks beside
 EldenNet and beside another overlay, in both load orders) and S4 (input: nothing reaches the game while GraceUI's
 panel holds the controls). EldenNet's spike package carries these files and its own README gives each run's launcher
 command; this page says what each run is for and what to do in the game.
@@ -77,4 +77,18 @@ Send the files in `%APPDATA%\EldenNet\spikes\` as EldenNet's README says, with y
 We read the reports with `python3 -I tools/grace-spike/report.py <the spikes folder> --by-hand movement=yes` (and
 `steam_overlay=`, `steam_keyboard=`, `proton=` as you answer). A run passes when every rule it needs passes, is
 incomplete when one is not measured, and fails otherwise; a row "if you have one" never makes a run incomplete. Until
-EldenNet's recording can measure movement (after R1), the movement row is your answer.
+EldenNet's recording can measure movement (once EldenNet's start is ready, S10.1.m; R1 is retired, O106), the
+movement row is your answer. Since GraceUI 0.2.24 (D220) each state line also says how far GraceUI's start got
+(`init_step`), and a run whose hooks never went in names that step in its hooks row. Since GraceUI 0.2.27 (D230) each
+state line also says how far GraceUI's first frames got (`frame_step`, 1 to 11: a Present through GraceUI's detour,
+the swap chain bound, the queue found, the atlas asked, baked, the renderer's objects made, Dear ImGui's backends
+begun, the atlas's upload submitted, the atlas on the GPU, GraceUI's first frame submitted, the game's Present returned
+after it), the observer writes a state line at once whenever that step changes, and a run that drew nothing names the
+step in its drawing row. The observer also copies GraceUI's own log lines into `graceui-log.txt` beside the report,
+never into it (the report keeps to numbers and its own words): it is GraceUI's text, with no path and no name in it,
+so read it before you send it if you like. To place a crash more closely, set `GRACE_SPIKE_STATE_MS=200` in the run's
+environment (200 to 60000 ms between state lines; 5000 by default). Since GraceUI 0.2.28 (D231) the observer also
+records faults, never handling one: a `fault` line in the report for each access violation, illegal instruction, the
+heap's corruption or the like, with the faulting thread's frames as fixed words and offsets, and `graceui-faults.txt` beside it with the
+modules' file names; a run that fell has its last fault there. The game's own routine faults show up too, once each:
+`report.py` lists them and judges none.

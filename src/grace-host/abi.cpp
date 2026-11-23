@@ -355,7 +355,21 @@ std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capaci
 
 void test_set_recheck_ms(std::uint32_t ms) noexcept { spaces::test_set_recheck_ms(ms); }
 
+std::uint32_t test_pairing_code(char* out, std::uint32_t capacity) noexcept {
+  return spaces::test_pairing_code(out, capacity);
+}
+
+void test_set_network_addresses(const std::uint8_t* addresses, std::uint32_t count) noexcept {
+  spaces::test_set_network_addresses(addresses, count);
+}
+
 std::uint32_t test_menu_shows(const char* text) noexcept { return menu::test_shows(text) ? 1 : 0; }
+
+std::uint32_t test_init_step() noexcept { return state::init_step.load(std::memory_order_acquire); }
+
+std::uint32_t test_frame_step() noexcept { return state::frame_step.load(std::memory_order_acquire); }
+
+std::uint64_t test_log_count() noexcept { return log_count(); }
 
 std::uint32_t test_menu_bounds(const char* name, float* out) noexcept {
   float values[8] = {};
@@ -448,11 +462,9 @@ std::uint32_t test_copy_frame_costs(GraceUiTestFrameCost* out, std::uint32_t cap
   return static_cast<std::uint32_t>(wanted);
 }
 
-std::uint32_t test_copy_log_line(std::uint32_t index, char* out, std::uint32_t capacity) noexcept {
-  LogText line{};
-  if (capacity == 0 || !log_copy_line(index, line)) {
-    return 0;
-  }
+namespace {
+
+std::uint32_t copy_out(const LogText& line, char* out, std::uint32_t capacity) noexcept {
   std::uint32_t length = 0;
   while (length + 1 < capacity && length < line.size() && line[length] != '\0') {
     // SAFETY: length + 1 < capacity, the caller's size of `out`, which leaves room for the terminating NUL.
@@ -461,6 +473,18 @@ std::uint32_t test_copy_log_line(std::uint32_t index, char* out, std::uint32_t c
   }
   out[length] = '\0';
   return length;
+}
+
+}  // namespace
+
+std::uint32_t test_copy_log_line(std::uint32_t index, char* out, std::uint32_t capacity) noexcept {
+  LogText line{};
+  return capacity != 0 && log_copy_line(index, line) ? copy_out(line, out, capacity) : 0;
+}
+
+std::uint32_t test_copy_log_number(std::uint64_t number, char* out, std::uint32_t capacity) noexcept {
+  LogText line{};
+  return capacity != 0 && log_copy_number(number, line) ? copy_out(line, out, capacity) : 0;
 }
 
 namespace {

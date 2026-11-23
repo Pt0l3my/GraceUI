@@ -15,6 +15,8 @@
 // fires nothing (hotkeys stand aside). A press the game saw begin keeps reaching the game to its release.
 #pragma once
 
+#include <atomic>
+
 #include <cstdint>
 
 #include "grace/input/devices.h"
@@ -46,8 +48,9 @@ class MessageRules {
   MessageRules(const MessageRules&) = delete;
   MessageRules& operator=(const MessageRules&) = delete;
 
-  void set_menu_key(Key key) noexcept { menu_key_ = key; }
-  Key menu_key() const noexcept { return menu_key_; }
+  // Any thread: the player may move the menu's key while the window thread reads it (D208).
+  void set_menu_key(Key key) noexcept { menu_key_.store(key, std::memory_order_release); }
+  Key menu_key() const noexcept { return menu_key_.load(std::memory_order_acquire); }
   void set_hotkeys(Hotkeys* hotkeys) noexcept { hotkeys_ = hotkeys; }
 
   // WM_KEYDOWN, WM_KEYUP and their system forms. `repeat` is bit 30 of a key-down's lParam (the key was already down);
@@ -90,7 +93,7 @@ class MessageRules {
   const MouseLedger* mouse_;
   Hotkeys* hotkeys_ = nullptr;
   KeyBits hotkey_down_;    // a hotkey's press, from its press to its release: never the game's
-  Key menu_key_ = kF5;
+  std::atomic<Key> menu_key_{kF5};
   std::uint32_t followed_ = 0;  // the holder's generation the holder sets below belong to
 
   KeyBits game_down_;      // pressed with the game seeing it, not yet released

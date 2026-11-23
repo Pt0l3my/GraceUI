@@ -3,6 +3,7 @@
 // each backed by a test space on a thread of its own that answers from fixtures/demo/topics.json.
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <filesystem>
@@ -82,6 +83,9 @@ struct Fixture {
     bool from_memory = false;
     bool no_folder = false;      // the folder holds nothing
     bool spaces = true;
+    // The network listener's addresses, in place of the PC's own (G9's tests: 127.0.0.2, never a real one).
+    std::vector<std::array<std::uint8_t, 4>> network;
+    std::function<void()> paired_wake;
   };
   Fixture();
   explicit Fixture(Options options);

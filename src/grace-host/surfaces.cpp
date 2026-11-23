@@ -3,6 +3,7 @@
 // the world-state providers' claims. The rules are grace-abi's (panels.h, drawlist.h, registry.h, world.h); this file
 // applies them to the session and logs, once, what a mod is refused. Nothing here reads a mod's memory: the DLL's abi
 // files copy it, through the functions they pass.
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -25,6 +26,7 @@
 #include "session.h"
 #include "spaces.h"
 #include "state.h"
+#include "wake.h"
 
 namespace grace::host::abi1 {
 namespace {
@@ -494,6 +496,18 @@ grace::input::Key key_of_virtual(std::uint32_t vk) noexcept {
   return static_cast<grace::input::Key>((scan & 0x7Fu) | (extended ? 0x80u : 0u));
 }
 
+// The other way, for describe_hotkey (D210): a DirectInput code's virtual key, or 0.
+std::uint32_t virtual_of_key(grace::input::Key key) noexcept {
+  switch (key) {
+    case grace::input::kNoKey: return 0;
+    case 0xC5: return VK_PAUSE;
+    case 0x45: return VK_NUMLOCK;
+    default: break;
+  }
+  const UINT scan = (key & 0x80u) != 0 ? (0xE000u | (key & 0x7Fu)) : key;
+  return MapVirtualKeyW(scan, MAPVK_VSC_TO_VK_EX);
+}
+
 // An action's id within its mod: 1 to 32 of a-z, 0-9 and '-'.
 bool valid_action(std::string_view action) noexcept {
   if (action.empty() || action.size() > grace::input::kActionMax) {
@@ -508,6 +522,49 @@ bool valid_action(std::string_view action) noexcept {
 }
 
 }  // namespace
+
+GraceUiStatus wake_event(GraceUiConsumer consumer, void*& event) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  const std::uint32_t owner = admitted(consumer, status);
+  if (owner == 0) {
+    return status;
+  }
+  if (!wake::handle_for(owner, event)) {
+    log_line("a wait handle could not be made");
+    return GRACEUI_FAULT;
+  }
+  return GRACEUI_OK;
+}
+
+GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t id, GraceUiHotkeyBinding& out) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  const std::uint32_t owner = admitted(consumer, status);
+  if (owner == 0) {
+    return status;
+  }
+  try {
+    grace::input::Listed one;
+    if (!input::hotkeys().find(id, one) || one.owner != owner) {
+      refused("describe_hotkey", "a hotkey id that is not the mod's");
+      return GRACEUI_REFUSED;
+    }
+    out.bound = (one.key_bound ? GRACEUI_HOTKEY_KEY_BOUND : 0u) | (one.chord_bound ? GRACEUI_HOTKEY_CHORD_BOUND : 0u);
+    out.key = virtual_of_key(one.key);
+    out.modifiers = one.key == grace::input::kNoKey ? 0u : one.modifiers;
+    out.pad_chord = one.chord;
+    out.reserved = 0;
+    const std::string key = one.key == grace::input::kNoKey ? std::string() : grace::input::key_text(one.key, one.modifiers);
+    const std::string chord = one.chord == 0 ? std::string() : grace::input::chord_text(one.chord);
+    std::memset(out.key_text, 0, sizeof out.key_text);
+    std::memset(out.chord_text, 0, sizeof out.chord_text);
+    std::memcpy(out.key_text, key.data(), std::min(key.size(), sizeof out.key_text - 1));
+    std::memcpy(out.chord_text, chord.data(), std::min(chord.size(), sizeof out.chord_text - 1));
+    return GRACEUI_OK;
+  } catch (...) {
+    fault("describe_hotkey");
+    return GRACEUI_FAULT;
+  }
+}
 
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::uint32_t modifiers,
                               std::uint32_t pad_chord, std::string_view action, std::string_view name,
@@ -533,14 +590,20 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
   }
   std::uint32_t added_id = 0;
   grace::input::Binding binding;
+  // The player's binding of this action, kept from an earlier change, over the mod's defaults (G37, D208).
+  grace::input::Chosen chosen;
+  grace::abi::ConsumerInfo mod;
+  const bool kept = session::consumers().info_of(owner, mod) &&
+                    input::kept_bindings().find(std::string_view(mod.id), action, chosen);
   const grace::input::Added added = input::hotkeys().add(static_cast<std::uint16_t>(owner), action, place,
                                                          static_cast<std::uint8_t>(modifiers), pad_chord,
-                                                         input::menu_key(), added_id, &binding);
+                                                         input::menu_key(), added_id, &binding, name,
+                                                         kept ? &chosen : nullptr);
   switch (added) {
     case grace::input::Added::bound:
       break;
     case grace::input::Added::unbound:
-      if ((key != 0 && !binding.key) || (pad_chord != 0 && !binding.chord)) {
+      if (!kept && ((key != 0 && !binding.key) || (pad_chord != 0 && !binding.chord))) {
         char mod_id[GRACEUI_ID_MAX + 1];
         id_of(owner, mod_id);
         const char* what = key != 0 && !binding.key && pad_chord != 0 && !binding.chord ? "its default key and chord are"
@@ -562,6 +625,7 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
     return GRACEUI_NOT_CONNECTED;
   }
   id = added_id;
+  hooks::wake();  // the Hotkeys page lists it (D206)
   return added == grace::input::Added::unbound ? GRACEUI_UNBOUND : GRACEUI_OK;  // D164: the mod learns which
 }
 
@@ -573,7 +637,8 @@ void display_at_connect(GraceUiConnectAnswer& out) noexcept {
   out.display_height = now.height;
 }
 
-GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder, bool display_ok) noexcept {
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder, bool display_ok,
+                   bool files) noexcept {
   GraceUiStatus status = GRACEUI_OK;
   const std::uint32_t owner = admitted(consumer, status);
   if (owner == 0) {
@@ -609,6 +674,16 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, b
     out.count = press.count;
     return GRACEUI_OK;
   }
+  // The player changed one of its hotkeys (D210): to a mod built for ABI 1.4 or later, which knows the kind.
+  if (grace::abi::ConsumerInfo info; session::consumers().info_of(owner, info) && info.abi_minor >= 4) {
+    std::uint32_t changed = 0;
+    if (input::hotkeys().take_changed(static_cast<std::uint16_t>(owner), changed)) {
+      out.kind = GRACEUI_EVENT_HOTKEY_CHANGED;
+      out.hotkey_id = changed;
+      out.count = 0;
+      return GRACEUI_OK;
+    }
+  }
   out.kind = GRACEUI_EVENT_NONE;
   if (!protocol) {
     return GRACEUI_OK;  // a 0.1 mod's event: hotkeys alone
@@ -617,11 +692,16 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, b
     grace::spaces::EventKind kind = grace::spaces::EventKind::none;
     std::uint64_t reply = 0;
     std::uint64_t length = 0;
+    grace::spaces::FileOut file;
+    file.buffer = out.file;
+    file.capacity = out.file_capacity;
+    file.takes = files;
     const grace::spaces::Status polled =
-        spaces::registry().poll(consumer, out.frame, out.frame_capacity, kind, reply, length);
+        spaces::registry().poll(consumer, out.frame, out.frame_capacity, kind, reply, length, file);
     out.kind = static_cast<std::uint32_t>(kind);
     out.reply = reply;
     out.frame_length = length;
+    out.file_length = file.length;
     return polled == grace::spaces::Status::full ? GRACEUI_FULL : GRACEUI_OK;
   } catch (...) {
     fault("poll");
@@ -664,6 +744,8 @@ GraceUiStatus register_pages(GraceUiConsumer consumer, std::uint32_t views, std:
     registration.increment = std::string(increment);
     registration.pages = pages;
     registration.settings = settings;
+    grace::abi::ConsumerInfo info;
+    registration.takes_files = session::consumers().info_of(owner, info) && info.abi_minor >= 6;  // D226
     std::string why;
     const grace::spaces::Status added = spaces::registry().add(consumer, mod_id, registration, why);
     if (added != grace::spaces::Status::ok) {
@@ -732,6 +814,7 @@ void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept {
   session::registry().retire_owner(consumer);
   spaces::registry().remove_owner(consumer);  // its space leaves the browser view, its commands' replies dropped
   input::hotkeys().remove_owner(static_cast<std::uint16_t>(owner));
+  wake::forget(owner);  // its event stays, unset, for the number's next mod (D212)
   apply_world(session::world().remove(consumer));
 }
 

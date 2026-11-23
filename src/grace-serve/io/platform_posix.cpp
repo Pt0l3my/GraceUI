@@ -6,6 +6,8 @@
 #include <cstring>
 
 #include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <pthread.h>
@@ -53,6 +55,8 @@ void peer_of(const Address& address, Accepted& out) noexcept {
     const std::uint32_t host = ntohl(v4.sin_addr.s_addr);
     out.loopback = (host >> 24) == 127;
     out.exact = host == 0x7F000001u;
+    out.home = (host >> 24) == 10 || (host >> 20) == 0xAC1u || (host >> 16) == 0xC0A8u || (host >> 16) == 0xA9FEu;
+    out.ipv4 = host;
   } else if (family == AF_INET6) {
     sockaddr_in6 v6{};
     std::memcpy(&v6, &address, sizeof v6);
@@ -123,6 +127,45 @@ Socket listen_loopback(bool ipv6, std::uint16_t port, BindError& error) noexcept
     return {};
   }
   return socket;
+}
+
+Socket listen_ipv4(std::array<std::uint8_t, 4> ip, std::uint16_t port, BindError& error) noexcept {
+  error = BindError::none;
+  Socket socket(::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
+  if (!socket.open()) {
+    error = bind_error(errno);
+    return {};
+  }
+  Address address{};
+  address.v4.sin_family = AF_INET;
+  address.v4.sin_port = htons(port);
+  std::memcpy(&address.v4.sin_addr.s_addr, ip.data(), 4);  // already in network order
+  if (::bind(socket.handle(), &address.any, sizeof address.v4) != 0 || ::listen(socket.handle(), 64) != 0) {
+    error = bind_error(errno);
+    return {};
+  }
+  return socket;
+}
+
+std::size_t local_ipv4_addresses(std::span<std::array<std::uint8_t, 4>> out) noexcept {
+  ifaddrs* list = nullptr;
+  if (::getifaddrs(&list) != 0) {
+    return 0;
+  }
+  std::size_t count = 0;
+  for (const ifaddrs* at = list; at != nullptr && count < out.size(); at = at->ifa_next) {
+    if (at->ifa_addr == nullptr || at->ifa_addr->sa_family != AF_INET || (at->ifa_flags & IFF_UP) == 0) {
+      continue;
+    }
+    sockaddr_in v4{};
+    std::memcpy(&v4, at->ifa_addr, sizeof v4);
+    if (v4.sin_addr.s_addr == 0) {
+      continue;  // no address yet (0.0.0.0)
+    }
+    std::memcpy(out[count++].data(), &v4.sin_addr.s_addr, 4);
+  }
+  ::freeifaddrs(list);
+  return count;
 }
 
 Io accept_one(const Socket& listener, Accepted& out) noexcept {

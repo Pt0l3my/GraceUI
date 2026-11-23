@@ -36,8 +36,12 @@ export interface Transport {
   /** Watches a topic of a space `welcome` named; returns the subscription's id. */
   subscribe(space: string, topic: string, since?: number): number;
   unsubscribe(space: string, id: number, topic: string): void;
-  /** Sends one command to its space; resolves with its answer, never rejects. */
-  command(space: string, name: string, args: JsonObject): Promise<Answer>;
+  /** Sends one command to its space; resolves with its answer, never rejects. A slow one (D216) is waited for longer. */
+  command(space: string, name: string, args: JsonObject, slow?: boolean): Promise<Answer>;
+  /** Sends one file with a file command of a space's (G28, D226): its one-use ticket asked over the connection, then
+   * its bytes by POST /upload on this page's own origin. Resolves with the command's answer, never rejects; the file's
+   * name is never sent. */
+  upload(space: string, name: string, args: JsonObject, file: Blob): Promise<Answer>;
   close(): void;
 }
 

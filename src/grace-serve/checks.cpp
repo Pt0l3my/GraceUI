@@ -151,6 +151,10 @@ bool content_type_is_json(const RequestHead& head) noexcept {
   return semicolon == npos || iequals(trim_ows(value.substr(semicolon + 1)), "charset=utf-8");
 }
 
+bool content_type_is_octets(const RequestHead& head) noexcept {
+  return head.content_type && iequals(trim_ows(*head.content_type), "application/octet-stream");
+}
+
 bool valid_token(std::string_view token) noexcept {
   if (token.size() != kTokenChars) {
     return false;

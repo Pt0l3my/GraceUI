@@ -112,6 +112,8 @@ class HeadParser {
 
   // Ready for another head, as new.
   void reset() noexcept;
+  // The same, under other rules: a connection of the network listener's, or of the loopback's (G9).
+  void reset(const HeadRules& rules) noexcept;
 
  private:
   void refuse(Refusal refusal) noexcept;

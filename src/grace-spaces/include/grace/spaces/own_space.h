@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <map>
 #include <memory>
 #include <string>
@@ -29,6 +30,9 @@ class OwnSpace {
     std::function<void()> disconnect;  // dashboard.disconnect: renew the session (the server's renew_session)
     // GraceUI's other declared commands (D181): the host's answer, its one entry point for each (invariant 3).
     std::function<pages::Outcome(const protocol::Cmd&)> command;
+    // A setting's own rules past its description's, checked before a settings.set takes it (hotkeys.menu, D208):
+    // refused with its words when the host says so.
+    std::function<std::optional<pages::Outcome>(const protocol::Cmd&)> check;
   };
 
   // GraceUI's own space as grace-pages compiled it: false with `why` if it does not load (never, for the built-in one).

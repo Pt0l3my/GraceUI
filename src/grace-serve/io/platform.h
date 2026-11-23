@@ -3,6 +3,7 @@
 // server includes a system header for sockets, threads' names or random bytes.
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -52,10 +53,21 @@ enum class BindError : std::uint8_t {
 // never SO_REUSEADDR, non-inheritable and non-blocking (item 24).
 Socket listen_loopback(bool ipv6, std::uint16_t port, BindError& error) noexcept;
 
+// A listening socket on one IPv4 address of this PC at `port` (the network listener, G9, §7.2 item 16): bound by that
+// address, never the wildcard, with the same options as the loopback's.
+Socket listen_ipv4(std::array<std::uint8_t, 4> address, std::uint16_t port, BindError& error) noexcept;
+
+// The IPv4 addresses of this PC's interfaces that are up, in the order the system lists them, at most out.size(), never
+// 0.0.0.0 (an adapter with none yet, as Wine lists them); the
+// caller keeps the private ones (pairing.h). Through Winsock on Windows (no import of its own), getifaddrs elsewhere.
+std::size_t local_ipv4_addresses(std::span<std::array<std::uint8_t, 4>> out) noexcept;
+
 struct Accepted {
   Socket socket;
   bool loopback = false;  // the peer is a loopback address (127.0.0.0/8 or ::1)
   bool exact = false;     // the peer is exactly 127.0.0.1 or ::1 (item 3)
+  bool home = false;      // a private (RFC 1918) or link-local (169.254/16) IPv4 peer: another device at home (item 25)
+  std::uint32_t ipv4 = 0;  // an IPv4 peer's address as a number (0 for IPv6): a pairing code's tries per peer (G9)
 };
 
 enum class Io : std::uint8_t { done, would_block, closed, failed };

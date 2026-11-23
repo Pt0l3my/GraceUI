@@ -59,7 +59,7 @@ text    ink.mute      693, 844  456x30   clip1 glyphs 38 "The menu's key, and ev
 text    gold         1178, 841   11x33   clip1 glyphs 1 "→"
 line    rule          438, 901  764x1    clip1
 text    ink.hi        438, 907  135x33   clip1 glyphs 11 "Browser view"
-text    ink.mute      693, 910  456x30   clip1 glyphs 36 "The menu in a browser on this PC: its address and the browsers connected."
+text    ink.mute      693, 910  456x30   clip1 glyphs 35 "The menu in a browser on this PC and on devices at home: its address, the browsers connected and the devices paired."
 text    gold         1178, 907   11x33   clip1 glyphs 1 "→"
 line    rule          360, 746  920x1   
 text    ink.faint     408, 758  577x30   glyphs 34 "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back"

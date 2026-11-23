@@ -12,6 +12,7 @@
 #include "grace/input/holder.h"
 #include "grace/input/holder_mail.h"
 #include "grace/input/hotkeys.h"
+#include "grace/input/kept_bindings.h"
 #include "grace/input/chords.h"
 #include "grace/input/messages.h"
 
@@ -28,6 +29,10 @@ std::int64_t now_ms() noexcept;  // the rules' clock: GetTickCount64
 
 // The menu key (§5.1): F5 until GraceUI's own settings can rebind it (D115). Always masked from the game.
 grace::input::Key menu_key() noexcept;
+// The player moved it (hotkeys.menu, D208): the window procedure and DirectInput's view use the new key at once.
+void set_menu_key(grace::input::Key key) noexcept;
+// The player's hotkey bindings, kept between sessions and applied at each registration (G37, D208).
+grace::input::KeptBindings& kept_bindings() noexcept;
 grace::input::Hotkeys& hotkeys() noexcept;  // the mods' hotkeys (D155)
 grace::input::PadChords& chords() noexcept;  // their pad chords, in XInput's reads (D204)
 // Whether chords stand aside now: a holder has input, or request_input would answer not_now (D204).
@@ -71,6 +76,28 @@ bool window_filtered() noexcept;
 bool window_unicode() noexcept;
 void set_client_size(std::int32_t width, std::int32_t height) noexcept;
 void window_moved() noexcept;  // WM_SIZE or WM_MOVE: the cursor's confinement follows the window
+
+// ---- The pointer by the mouse's own motion while a holder has the mouse (D232). A game that turns its camera by the
+// mouse puts the system cursor back at its centre (SetCursorPos, ClipCursor) whatever holds input, so the cursor's
+// position, which WM_MOUSEMOVE reports, is pulled back too. While raw input or DirectInput gives the mouse's relative
+// motion, GraceUI moves its own pointer by it, within the client area, and leaves the system cursor to the game.
+enum class MotionSource : std::uint8_t { raw_input, direct_input };
+
+// ---- The menu across the game's loss of focus (G40). At an Alt+Tab the menu lets go of input as any holder does
+// (capture released, every key forgotten), but it is kept open, away: its page, row, confirmation, field and sheet
+// as they were. When the game's window has the focus again it asks for input again; granted, it goes on where it was
+// (the keys held then do nothing until released, invariant 8); refused, or if danger or loading came meanwhile
+// (invariant 9), it closes as any close would.
+void set_menu_away() noexcept;   // the window's thread, at the focus's loss, before the menu's close
+bool menu_away() noexcept;
+void focus_back() noexcept;      // the window's thread, at WM_SETFOCUS: the next frames ask again, if it was away
+void focus_gone() noexcept;      // the window's thread, at any loss of the focus: a return not yet taken is off
+// Any thread (the window's for raw input, the game's reading thread for DirectInput), while a holder has the mouse:
+// motion of the mouse, in counts. Raw input is preferred where both come, so that nothing counts twice.
+void relative_motion(MotionSource source, std::int32_t dx, std::int32_t dy) noexcept;
+// Whether the mouse's motion drives the pointer now (some came within the last second): WM_MOUSEMOVE's position is
+// then left out.
+bool pointer_by_motion() noexcept;
 // The code page an ANSI window's characters are read in: its keyboard layout's (WM_INPUTLANGCHANGE), unless a test set one.
 void set_keyboard_code_page(std::uint32_t code_page) noexcept;
 std::uint32_t code_page() noexcept;

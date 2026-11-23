@@ -32,11 +32,25 @@ void Engine::take_hub(Clock::time_point now) {
   std::deque<Outgoing> items;
   bool renewing = false;
   bool removed = false;
+  std::optional<bool> network;
+  std::optional<std::vector<DeviceKey>> devices;
   {
     std::lock_guard lock(hub_->mutex);
     items.swap(hub_->inbox);
     renewing = std::exchange(hub_->renew, false);
     removed = std::exchange(hub_->spaces_removed, false);
+    if (std::exchange(hub_->network_changed, false)) {
+      network = hub_->network_on;
+    }
+    if (std::exchange(hub_->devices_changed, false)) {
+      devices = hub_->devices;
+    }
+  }
+  if (devices) {
+    apply_devices(std::move(*devices), now);  // a device forgotten in game is disconnected at once (G9)
+  }
+  if (network) {
+    apply_network(*network, now);  // dashboard.lan switched: its listeners open, or close with every connection
   }
   if (removed) {
     // A space withdrawn: every subscription to it ends; its topics and commands are unknown from now on (D81).
@@ -69,6 +83,9 @@ void Engine::dispatch(Outgoing& item) {
   }
   if (item.topic >= port.topics.size() || port.topics[item.topic].watchers == 0) {
     return;  // nobody watches it: nothing is kept (§2.4)
+  }
+  if (item.topic >= port.declared && port.topics[item.topic].generation != item.generation) {
+    return;  // a member's state, its slot since given to another member (D215)
   }
   if (item.kind == Outgoing::Kind::state) {
     TopicCache& cache = port.topics[item.topic];
@@ -226,11 +243,15 @@ void Engine::send_error(Connection& c, const PortState* space, protocol::ErrorCo
   send_message(c, protocol::Message{std::move(error)});
 }
 
-void Engine::send_result_error(Connection& c, const PortState& space, std::uint32_t id, protocol::ErrorCode code) {
+void Engine::send_result_error(Connection& c, const PortState& space, std::uint32_t id, protocol::ErrorCode code,
+                               std::string detail) {
   protocol::Result result;
   result.space = space.description.info.id;
   result.id = id;
   result.error = code;
+  if (!detail.empty()) {
+    result.detail = std::move(detail);
+  }
   send_message(c, protocol::Message{std::move(result)});
 }
 
@@ -260,6 +281,7 @@ void Engine::close_socket(Connection& c, std::optional<protocol::ByeReason> bye,
 }
 
 void Engine::release(Connection& c) noexcept {
+  release_uploads(c);  // a POST's file let go, a session's ticket with it (G28)
   for (const Subscription& sub : c.subs) {
     if (!sub.port->registered.load()) {
       continue;
@@ -273,8 +295,35 @@ void Engine::release(Connection& c) noexcept {
 }
 
 void Engine::unwatch(PortState& port, std::size_t topic) noexcept {
+  const std::uint64_t generation = port.topics[topic].generation;  // a member's slot keeps whose it is (D215)
   port.topics[topic] = TopicCache{};
+  port.topics[topic].generation = generation;
   set_watched(port, topic, false);
+}
+
+std::size_t Engine::take_member(PortState& port, std::string_view id) noexcept {
+  try {
+    std::lock_guard lock(port.mutex);
+    if (const std::size_t held = port.member_slot_locked(id); held != npos) {
+      port.topics[held].generation = port.members[held - port.declared].generation;
+      return held;
+    }
+    // A free slot: never taken, or watched by nobody and its unwatch already told to the space, so that the space
+    // hears each member's watch and unwatch under its own id.
+    for (std::size_t i = 0; i < port.members.size(); ++i) {
+      const std::size_t slot = port.declared + i;
+      PortState::Member& member = port.members[i];
+      if (member.id.empty() || (port.topics[slot].watchers == 0 && port.watched[slot] == 0 && port.reported[slot] == 0)) {
+        member.id = std::string(id);
+        member.generation = port.next_generation++;
+        port.topics[slot] = TopicCache{};
+        port.topics[slot].generation = member.generation;
+        return slot;
+      }
+    }
+  } catch (...) {
+  }
+  return npos;
 }
 
 void Engine::set_watched(PortState& port, std::size_t topic, bool on) noexcept {
@@ -406,6 +455,8 @@ void Engine::message(Connection& c, bool text, std::span<const std::uint8_t> pay
     unsubscribe(c, *unsub);
   } else if (auto* cmd = std::get_if<protocol::Cmd>(&parsed)) {
     command(c, *cmd);
+  } else if (auto* upload = std::get_if<protocol::Upload>(&parsed)) {
+    upload_request(c, *upload, now);  // an upload's ticket (G28)
   } else if (std::holds_alternative<protocol::Ping>(parsed)) {
     send_message(c, protocol::Message{protocol::Pong{}});
   } else if (std::holds_alternative<protocol::Pong>(parsed)) {
@@ -441,7 +492,9 @@ void Engine::hello(Connection& c, const protocol::Hello& hello, Clock::time_poin
       const bool same =
           ticket.live && constant_time_equal(std::string_view(ticket.token.data(), ticket.token.size()), *hello.ticket);
       if (same) {
-        valid = now - ticket.issued < config_.timings.ticket;
+        // A ticket opens a WebSocket on the listener that issued it, and a device's only that device's (G9).
+        const bool here = ticket.network == c.network && (!c.network || ticket.device == c.device);
+        valid = here && now - ticket.issued < config_.timings.ticket;
         ticket = Ticket{};
       }
     }
@@ -470,6 +523,8 @@ void Engine::hello(Connection& c, const protocol::Hello& hello, Clock::time_poin
   welcome.caps = config_.caps;
   welcome.graceui = config_.graceui_version;
   welcome.session = std::string(session.data(), session.size());
+  // Which view this is (1.9, D226): this PC's browser, or a paired device, for what the page offers (a file's upload).
+  welcome.view = c.network ? protocol::CommandView::device : protocol::CommandView::browser;
   {
     // The spaces this view may show: those registered now (D81).
     std::lock_guard lock(hub_->mutex);
@@ -484,11 +539,15 @@ void Engine::hello(Connection& c, const protocol::Hello& hello, Clock::time_poin
   c.phase = Connection::Phase::open;
   c.pings_out = 0;
   c.next_ping = now + config_.timings.ping;
-  // §6.8: a third view, once its ticket is shown, supersedes the oldest.
-  if (Connection* oldest = oldest_websocket(Connection::Phase::open, &c);
-      oldest != nullptr && count_websockets(Connection::Phase::open) > kMaxWebSockets) {
-    log(LogLevel::info, "A third WebSocket superseded the oldest.");
-    close_socket(*oldest, protocol::ByeReason::superseded, 1000, now);
+  // §6.8: a third view, once its ticket is shown, supersedes the oldest; a device's never this PC's (G9).
+  if (count_websockets(Connection::Phase::open) > kMaxWebSockets) {
+    if (Connection* oldest = displaced(Connection::Phase::open, c); oldest != nullptr) {
+      log(LogLevel::info, "A third WebSocket superseded the oldest.");
+      close_socket(*oldest, protocol::ByeReason::superseded, 1000, now);
+    } else {
+      log(LogLevel::info, "A device's WebSocket was closed: this PC's views hold every place.");
+      close_socket(c, protocol::ByeReason::superseded, 1000, now);
+    }
   }
 }
 
@@ -509,12 +568,25 @@ void Engine::subscribe(Connection& c, const protocol::Sub& sub) {
     send_message(c, state);
     return;
   }
-  const std::size_t topic = port->topic_index(sub.topic);
+  std::size_t topic = port->topic_index(sub.topic);
+  if (topic != npos && port->description.topics[topic].family.value_or(false)) {
+    send_error(c, port.get(), protocol::ErrorCode::unknown_topic,
+               numbered("sub", sub.id, "a family: a view watches one of its members"));
+    return;
+  }
+  if (topic == npos && port->is_member(sub.topic)) {
+    topic = take_member(*port, sub.topic);  // a family's member (D215): its slot
+    if (topic == npos) {
+      send_error(c, port.get(), protocol::ErrorCode::not_now,
+                 numbered("sub", sub.id, "as many of this space's members are watched as may be"));
+      return;
+    }
+  }
   if (topic == npos) {
     send_error(c, port.get(), protocol::ErrorCode::unknown_topic, numbered("sub", sub.id, "not a topic of this space"));
     return;
   }
-  const bool stream = port->description.topics[topic].shape == protocol::TopicShape::stream;
+  const bool stream = topic < port->declared && port->description.topics[topic].shape == protocol::TopicShape::stream;
   for (Subscription& held : c.subs) {
     if (held.port == port && held.topic == topic) {
       // Watched already: the newest state again, or the stream from where the view now asks.
@@ -551,7 +623,11 @@ void Engine::unsubscribe(Connection& c, const protocol::Unsub& unsub) {
       port->topic_index(unsub.topic) == npos) {
     return;  // the framework's own topic: sent once, nothing held
   }
-  const std::size_t topic = port != nullptr ? port->topic_index(unsub.topic) : npos;
+  std::size_t topic = port != nullptr ? port->topic_index(unsub.topic) : npos;
+  if (port != nullptr && topic == npos && port->is_member(unsub.topic)) {
+    std::lock_guard lock(port->mutex);
+    topic = port->member_slot_locked(unsub.topic);
+  }
   if (topic == npos) {
     send_error(c, port.get(), protocol::ErrorCode::unknown_topic,
                numbered("unsub", unsub.id,
@@ -581,6 +657,17 @@ void Engine::command(Connection& c, protocol::Cmd& cmd) {
     send_result_error(c, *port, cmd.id, protocol::ErrorCode::unknown_command);
     return;
   }
+  if (c.network && sensitive_command(port->description, cmd.name, cmd.args)) {
+    // A paired device never sets a secret or a provider, nor what its space marks sensitive (§7.2 item 16, D81): told
+    // so before any confirmation is asked of it, which would change nothing.
+    send_result_error(c, *port, cmd.id, protocol::ErrorCode::not_now, "Only on the PC the game runs on.");
+    return;
+  }
+  if (file_command(port->description, cmd.name)) {
+    // A file command comes with its file, by the upload route alone (D226).
+    send_result_error(c, *port, cmd.id, protocol::ErrorCode::invalid_value, "This takes a file: add it with its button.");
+    return;
+  }
   if (!confirmed(port->description, cmd.name, cmd.args)) {
     send_result_error(c, *port, cmd.id, protocol::ErrorCode::confirm_required);  // §7.3, D173
     return;
@@ -595,6 +682,7 @@ void Engine::command(Connection& c, protocol::Cmd& cmd) {
       event.kind = SpaceEvent::Kind::command;
       event.command = cmd.name;
       event.args = std::move(cmd.args);
+      event.view = c.network ? protocol::CommandView::device : protocol::CommandView::browser;  // never the view's word
       event.reply = CommandRef{c.serial, cmd.id,
                                std::find(port->description.secret.begin(), port->description.secret.end(), cmd.name) !=
                                    port->description.secret.end()};

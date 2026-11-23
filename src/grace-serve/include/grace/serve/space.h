@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -42,6 +43,19 @@ struct SpaceDescription {
   // The commands a table's row secret sends (D194): their value is never logged or echoed, and the server drops any
   // body from their result, so that only ok or a refusal's words come back (invariant 5).
   std::vector<std::string> secret;
+  // The commands the space names slow (D216): their answer may take up to kSlowAnswerDeadline, not kAnswerDeadline.
+  std::vector<std::string> slow;
+  // What a paired device may never do (D221, §7.2 item 16): the commands the space names sensitive, and its settings
+  // marked sensitive or holding a secret, each with its home page (for a reset of a page, or of all).
+  std::vector<std::string> sensitive;
+  struct SensitiveKey {
+    std::string key;
+    std::string home;
+  };
+  std::vector<SensitiveKey> sensitive_keys;
+  // The commands that take one file by the upload route (D226, §7.2 item 18), each declared and sensitive: never sent
+  // as a plain cmd, and never from a paired device.
+  std::vector<std::string> files;
   // The space's page data (space_pages), which the framework's own topic "pages" carries to a view that subscribes to
   // it: the server answers that sub itself, from this, and the space never sees it (D166, D169). Null: no such topic.
   protocol::Json pages;
@@ -49,6 +63,13 @@ struct SpaceDescription {
 
 // The framework's topic that carries a space's page data to a view (D166): every space has it, answered by the server.
 inline constexpr std::string_view kPagesTopic = "pages";
+
+// Whether `topic` is a member of a family `description` declares (D215): "<family>/<key>", the family a state topic
+// marked as one, the key not empty and with no '/'. A view watches a member, and a space publishes it, as a state.
+bool family_member(const SpaceDescription& description, std::string_view topic) noexcept;
+
+// Whether `command` takes a file by the upload route (D226).
+bool file_command(const SpaceDescription& description, std::string_view command) noexcept;
 
 // A description from a space's page data and settings description, as grace-pages and a mod's register_pages give them.
 SpaceDescription describe_space(const protocol::SpacePages& pages, const protocol::SettingsDescription& settings,
@@ -58,11 +79,32 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
 // (§7.3, D173). Every view's commands are held to it, the in-game menu's too.
 bool confirmed(const SpaceDescription& description, std::string_view command, const protocol::Json& args) noexcept;
 
+// Whether a command is one a paired device may never send (D221, §7.2 item 16): one the space names sensitive, a row
+// secret's (D194), settings.set of a sensitive key, or settings.reset of a sensitive key, of a page that homes one, or
+// of all while the space has one. The server refuses it from the network listener; the space never sees it.
+bool sensitive_command(const SpaceDescription& description, std::string_view command,
+                       const protocol::Json& args) noexcept;
+
 // Where a command's result goes: the connection that sent it (never taken from a payload, §7.2 item 11) and its id.
 struct CommandRef {
   std::uint64_t connection = 0;
   std::uint32_t id = 0;
   bool secret = false;  // a row secret's command (D194): its result goes back without a body
+};
+
+// An uploaded file's bytes (G28, D226, §7.2 item 18), handed to the space with its command: zeroed when the last holder
+// lets go, so that nothing of the file stays in GraceUI's memory once the space has taken it.
+class FileBytes {
+ public:
+  explicit FileBytes(std::size_t size) : bytes_(size) {}
+  ~FileBytes();
+  FileBytes(const FileBytes&) = delete;
+  FileBytes& operator=(const FileBytes&) = delete;
+  std::span<std::uint8_t> bytes() noexcept { return bytes_; }
+  std::span<const std::uint8_t> bytes() const noexcept { return bytes_; }
+
+ private:
+  std::vector<std::uint8_t> bytes_;
 };
 
 struct SpaceEvent {
@@ -77,6 +119,10 @@ struct SpaceEvent {
   std::string command;
   protocol::Json args;
   CommandRef reply;
+  // With command: the view that sent it, from the channel it came on (§7.3, D224): this PC's browser or a paired device.
+  protocol::CommandView view = protocol::CommandView::browser;
+  // With a file command (D226): the file, its SHA-256 checked against the ticket's; null for any other command.
+  std::shared_ptr<const FileBytes> file;
 };
 
 namespace detail {

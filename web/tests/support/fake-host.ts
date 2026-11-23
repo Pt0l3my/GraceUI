@@ -4,7 +4,9 @@
 // files the build wrote, the session cookie on a page load, a ticket by a same-origin POST that carries it, and one
 // WebSocket at /api/ws whose first frame must be hello with that ticket; then it plays the fixture spaces as the fixture
 // transport does, with the same FixtureSpace. It checks Host, Origin and Fetch Metadata as the server does, and records
-// every request and frame for the tests. Loopback only.
+// every request and frame for the tests. An upload (G28) gets its one-use ticket over the socket and its bytes by POST
+// /upload, checked as the server checks them (Origin, Fetch Metadata, the cookie, the media type, the ticket, the size
+// and the SHA-256), and its answer back on the socket by the command's id. Loopback only.
 import { createHash, randomBytes } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
@@ -44,6 +46,12 @@ export interface FakeHost {
   spaces: Map<string, FixtureSpace>;
   /** Makes the next answers to a command refused with a code (the tests' refusals). */
   refuse: Map<string, string>;
+  /** Fields added to an accepted command's answer body (a space's own answer, such as a save's chosen row, D218). */
+  bodies: Map<string, JsonObject>;
+  /** Every upload's bytes as the space received them (G28), with its command. */
+  uploads: { name: string; bytes: Buffer }[];
+  /** The view welcome names from the next connection on (1.9): this PC's browser, or a paired device. */
+  setView(view: "browser" | "device"): void;
   close(): Promise<void>;
 }
 
@@ -114,13 +122,21 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
   const files = listFiles(root);
   const cookie = token();
   const tickets = new Set<string>();
+  interface Pending {
+    space: FixtureSpace; id: unknown; name: string; args: JsonObject; size: number; sha256: string;
+    send: (frame: object) => void;
+  }
+  const uploadTickets = new Map<string, Pending>();
+  const uploads: { name: string; bytes: Buffer }[] = [];
   const requests: string[] = [];
   const received: Frame[] = [];
   const spaces = new Map(data.map((d) => [d.pages.space, new FixtureSpace(d)]));
   const refuse = new Map<string, string>();
+  const bodies = new Map<string, JsonObject>();
   const sockets = new Set<Socket>();
   let origin = "";
   let host = "";
+  let view: "browser" | "device" = "browser";
 
   const hasCookie = (req: IncomingMessage) =>
     (req.headers.cookie ?? "").split(";").some((part) => part.trim() === `en_session=${cookie}`);
@@ -166,6 +182,42 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
       const ticket = token();
       tickets.add(ticket);
       answer(res, 200, JSON.stringify({ ticket }), "application/json", { "Cache-Control": "no-store" });
+      return;
+    }
+    if (req.method === "POST" && path === "/upload") {
+      const site = req.headers["sec-fetch-site"];
+      const ticket = req.headers["grace-upload-ticket"];
+      const pending = typeof ticket === "string" ? uploadTickets.get(ticket) : undefined;
+      if (req.headers.origin !== origin || (site !== undefined && site !== "same-origin") || !hasCookie(req) ||
+          req.headers["content-type"] !== "application/octet-stream" || pending === undefined ||
+          typeof ticket !== "string") {
+        req.resume();
+        answer(res, 403, "The file was refused.", "text/plain; charset=utf-8", { "Cache-Control": "no-store" });
+        return;
+      }
+      uploadTickets.delete(ticket);  // used once
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => {
+        const bytes = Buffer.concat(chunks);
+        if (bytes.length !== pending.size) {
+          answer(res, 400, "The file's size differs from the one declared.", "text/plain; charset=utf-8",
+                 { "Cache-Control": "no-store" });
+          return;
+        }
+        if (createHash("sha256").update(bytes).digest("hex") !== pending.sha256) {
+          answer(res, 400, "The file changed on its way.", "text/plain; charset=utf-8", { "Cache-Control": "no-store" });
+          return;
+        }
+        answer(res, 202, "", "text/plain; charset=utf-8", { "Cache-Control": "no-store" });
+        uploads.push({ name: pending.name, bytes });
+        const outcome = pending.space.handleFile(pending.name, pending.args, bytes.toString("utf8"));
+        const body = outcome.answer.body !== undefined ? { body: outcome.answer.body } : {};
+        pending.send(outcome.answer.ok
+          ? { v: 1, t: "result", space: pending.space.id, id: pending.id, ok: true, ...body }
+          : { v: 1, t: "result", space: pending.space.id, id: pending.id, error: outcome.answer.error, ...body,
+              ...(outcome.answer.detail !== undefined ? { detail: outcome.answer.detail } : {}) });
+      });
       return;
     }
     answer(res, 405, "Method not allowed", "text/plain; charset=utf-8", { Allow: "GET, POST" });
@@ -226,8 +278,8 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
           }
           clearTimeout(helloTimer);
           welcomed = true;
-          send({ v: 1, t: "welcome", protocol: "1.3", caps: [], graceui: "0.2.0",
-                 spaces: [...spaces.values()].map((s) => s.info()), session: "fake-host" });
+          send({ v: 1, t: "welcome", protocol: "1.9", caps: [], graceui: "0.2.0",
+                 spaces: [...spaces.values()].map((s) => s.info()), session: "fake-host", view });
           continue;
         }
         const space = typeof frame.space === "string" ? spaces.get(frame.space) : undefined;
@@ -250,11 +302,26 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
             continue;
           }
           const outcome = space.handle(frame.name, (frame.args ?? {}) as JsonObject);
+          const extra = outcome.answer.ok ? bodies.get(frame.name) : undefined;
+          const merged = extra !== undefined ? { ...(outcome.answer.body ?? {}), ...extra } : outcome.answer.body;
+          const body = merged !== undefined ? { body: merged } : {};  // D169: to the one view
           const result = outcome.answer.ok
-            ? { v: 1, t: "result", space: space.id, id: frame.id, ok: true }
-            : { v: 1, t: "result", space: space.id, id: frame.id, error: outcome.answer.error };
+            ? { v: 1, t: "result", space: space.id, id: frame.id, ok: true, ...body }
+            : { v: 1, t: "result", space: space.id, id: frame.id, error: outcome.answer.error, ...body,
+                ...(outcome.answer.detail !== undefined ? { detail: outcome.answer.detail } : {}) };
           send(result);
           publish(space.id, outcome.publish);
+        } else if (frame.t === "upload" && space && typeof frame.name === "string" && typeof frame.size === "number" &&
+                   typeof frame.sha256 === "string") {
+          const forced = refuse.get(frame.name);
+          if (forced) {
+            send({ v: 1, t: "result", space: space.id, id: frame.id, error: forced });
+            continue;
+          }
+          const ticket = token();
+          uploadTickets.set(ticket, { space, id: frame.id, name: frame.name, args: (frame.args ?? {}) as JsonObject,
+                                      size: frame.size, sha256: frame.sha256, send });
+          send({ v: 1, t: "upload_ticket", space: space.id, id: frame.id, ticket });
         }
       }
     });
@@ -266,7 +333,10 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
   host = `127.0.0.1:${port}`;
   origin = `http://${host}`;
   return {
-    origin, requests, received, spaces, refuse,
+    origin, requests, received, spaces, refuse, bodies, uploads,
+    setView: (v) => {
+      view = v;
+    },
     close: () => new Promise<void>((resolve) => {
       for (const socket of sockets) {
         socket.destroy();

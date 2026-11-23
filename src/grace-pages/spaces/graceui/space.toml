@@ -6,7 +6,12 @@
 id = "graceui"
 name = "GraceUI"
 settings_schema = 1
-commands = ["settings.set", "settings.reset", "menu.close", "dashboard.disconnect", "mods.notices"]
+commands = ["settings.set", "settings.reset", "menu.close", "dashboard.disconnect", "dashboard.pair",
+            "dashboard.forget_device", "mods.notices", "hotkeys.key", "hotkeys.chord", "hotkeys.reset", "hotkeys.reset_all"]
+# Never from a paired device on the home network (G9, §7.2 item 16): the browser view's own controls, the hotkeys and
+# whose notices show stay this PC's (D221's review).
+sensitive_commands = ["dashboard.disconnect", "dashboard.pair", "dashboard.forget_device", "mods.notices", "hotkeys.key",
+                      "hotkeys.chord", "hotkeys.reset", "hotkeys.reset_all"]
 
 [[topic]]
 id = "settings"
@@ -26,6 +31,10 @@ shape = "state"
 
 [[topic]]
 id = "graceui.notices"
+shape = "state"
+
+[[topic]]
+id = "graceui.devices"
 shape = "state"
 
 [[topic]]
@@ -102,6 +111,7 @@ synonyms = ["menu key", "open", "shortcut"]
 home = "graceui.hotkeys"
 effect = "now"
 availability = "live"
+sensitive = true
 
 [[setting]]
 key = "dashboard.enabled"
@@ -113,6 +123,7 @@ synonyms = ["dashboard", "browser", "web"]
 home = "graceui.browser"
 effect = "now"
 availability = "live"
+sensitive = true
 
 [[setting]]
 key = "dashboard.port"
@@ -127,18 +138,19 @@ synonyms = ["address", "port number"]
 home = "graceui.browser"
 effect = "next_launch"
 availability = "live"
+sensitive = true
 
 [[setting]]
 key = "dashboard.lan"
 type = "bool"
 default = false
 label = "Other devices on your home network"
-help = "Lets a phone or another computer at home open the browser view, each once paired with a code shown in game."
-synonyms = ["phone", "tablet", "network", "lan", "pairing"]
+help = "Lets a phone or another computer at home open the browser view, each paired once with a code shown in game. The first time, Windows asks whether the game may accept connections on private networks: allowing needs an administrator, and dismissing it blocks other devices until that rule is changed in Windows Defender Firewall."
+synonyms = ["phone", "tablet", "network", "lan", "pairing", "devices"]
 home = "graceui.browser"
 effect = "now"
-availability = "later"
-locked = true
+availability = "live"
+sensitive = true
 
 # ---- Pages (D79, D115).
 
@@ -167,30 +179,41 @@ id = "graceui.hotkeys"
 category = "graceui"
 name = "Hotkeys"
 description = "The menu's key, and every mod's hotkeys with their conflicts."
-increment = "0.6"
+increment = "0.2"
 related = ["graceui.menu", "graceui.mods"]
 help.purpose = "See every hotkey GraceUI watches for, and which mod each belongs to."
-help.steps = ["Choose the key that opens the menu.", "Look down the list for a hotkey marked unbound: another took its key first.", "Change a mod's hotkey on that mod's own page."]
+help.steps = ["Choose the key that opens the menu: no Ctrl, Shift or Alt with it.", "Look down the list: every mod's hotkeys, with their keys, pad chords and states.", "Change a hotkey's key or pad chord on its row; a key another hotkey has is asked about first, then moved.", "Reset puts a hotkey back to its mod's own keys, where they are free."]
 
 [[page.sections]]
 id = "menu-key"
 title = "The menu"
 blocks = [{ kind = "settings", keys = ["hotkeys.menu"] }]
 
+[[page.actions]]
+id = "reset-all"
+label = "Reset every hotkey"
+command = "hotkeys.reset_all"
+tone = "destructive"
+confirm = "Every mod's hotkeys go back to their own keys and pad chords, where they are free. The menu's key stays."
+
 [[page.sections]]
 id = "every-hotkey"
 title = "Every mod's hotkeys"
-blocks = [{ kind = "component", component = "table", topic = "graceui.hotkeys" }]
+blocks = [{ kind = "component", component = "table", topic = "graceui.hotkeys", row_actions = [
+  { id = "key", label = "Change key", command = "hotkeys.key", key = "id", tone = "secondary", capture = "key" },
+  { id = "chord", label = "Change pad chord", command = "hotkeys.chord", key = "id", tone = "secondary", capture = "chord" },
+  { id = "reset", label = "Reset", command = "hotkeys.reset", key = "id", tone = "secondary" },
+] }]
 
 [[page]]
 id = "graceui.browser"
 category = "graceui"
 name = "Browser view"
-description = "The menu in a browser on this PC: its address and the browsers connected."
+description = "The menu in a browser on this PC and on devices at home: its address, the browsers connected and the devices paired."
 increment = "0.2"
 related = ["graceui.menu", "graceui.about"]
-help.purpose = "Open GraceUI's pages in a browser while the game runs, on this PC alone."
-help.steps = ["Leave Browser view on, and open the address shown here in a browser on this PC.", "Change the port only if another program holds it.", "Disconnect every browser to end their sessions; each must load the page again."]
+help.purpose = "Open GraceUI's pages in a browser while the game runs: on this PC, and on devices at home once paired."
+help.steps = ["Leave Browser view on, and open the address shown here in a browser on this PC.", "Change the port only if another program holds it.", "For a phone or another computer at home, turn on Other devices, then choose Pair a device in game and follow what it shows.", "Forget a device to revoke it at once; Disconnect every browser to end every session."]
 
 [[page.actions]]
 id = "disconnect"
@@ -207,8 +230,9 @@ blocks = [{ kind = "settings", keys = ["dashboard.enabled", "dashboard.port"] },
 [[page.sections]]
 id = "other-devices"
 title = "Other devices"
-description = "A later version lets devices on your home network open the browser view, each paired once."
-blocks = [{ kind = "settings", keys = ["dashboard.lan"] }]
+description = "A phone or another computer at home opens the browser view once paired with a code shown in game, never in a browser. A paired device cannot change these settings, pair or forget devices, or set a mod's secrets."
+blocks = [{ kind = "settings", keys = ["dashboard.lan"] }, { kind = "component", component = "table", topic = "graceui.devices", props = { empty = "No device is paired." }, row_actions = [{ id = "forget", label = "Forget", command = "dashboard.forget_device", key = "id", tone = "destructive", confirm = "The device is revoked at once and disconnected; it must be paired again to open the browser view." }] }]
+actions = [{ id = "pair", label = "Pair a device", command = "dashboard.pair", tone = "primary" }]
 
 [[page]]
 id = "graceui.mods"

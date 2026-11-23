@@ -11,9 +11,17 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 3 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 9 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
-                                     # 1.3 (G36): a section's chip, live status and actions (D202)
+                                     # 1.3 (G36): a section's chip, live status and actions (D202).
+                                     # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
+                                     # 1.5 (G38): topic families, and a page's master list (D215)
+                                     # 1.6 (G38): slow commands, answered within 90 s (D216)
+                                     # 1.7 (G38): the editor block and the conflict code (D217)
+                                     # 1.8 (G9): sensitive commands and settings, refused from paired devices (D221);
+                                     # the view that sent a command, named to its space (D224)
+                                     # 1.9 (G28): a space's file commands, the upload block, the upload's ticket,
+                                     # and the welcome's view (D226)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -22,12 +30,14 @@ commands_per_second = 20      # per connection
 subscriptions = 32            # per connection
 rows_per_batch = 100          # a stream batch
 command_queue = 32            # each space's
+upload_max = 33554432         # bytes of one uploaded file, 32 MiB (EST; §7.2 item 18, G28)
+upload_ticket_seconds = 60    # an upload's ticket lives this long, and is used once
 ping_seconds = 15             # liveness; two missed pongs close the socket
 bad_messages_before_close = 3
 
 [enums.error_code]
 values = ["bad_message", "unknown_topic", "unknown_command", "unknown_key", "invalid_value", "locked", "not_now", "busy",
-          "confirm_required", "unauthorised", "rate_limited", "version", "internal"]
+          "confirm_required", "unauthorised", "rate_limited", "version", "internal", "conflict"]  # conflict: 1.7 (D217), a save against a revision no longer the newest
 
 [enums.bye_reason]
 values = ["shutdown", "superseded", "unauthorised", "version", "fault"]
@@ -46,6 +56,9 @@ values = ["auto", "inherit"]
 [enums.reset_scope_kind]
 values = ["key", "page", "all"]
 
+[enums.command_view]  # 1.8 (D224, §7.3): the in-game menu, a browser on this PC, or a paired device at home
+values = ["game", "browser", "device"]
+
 [enums.topic_shape]
 values = ["state", "stream"]
 
@@ -57,10 +70,13 @@ values = ["stat_tiles", "filter_bar", "table", "master_detail", "card_grid", "se
           "action_button", "wizard_steps", "key_value_list"]
 
 [enums.block_kind]
-values = ["settings", "shortcuts", "component", "form"]
+values = ["settings", "shortcuts", "component", "form", "editor", "upload"]  # upload: 1.9 (D226)
 
 [enums.action_tone]
 values = ["primary", "secondary", "destructive"]
+
+[enums.row_capture]
+values = ["key", "chord"]
 
 [enums.page_tag]
 values = ["wip", "later"]
@@ -111,6 +127,7 @@ fields = [
   { name = "effect", type = "enum.setting_effect" },
   { name = "availability", type = "string", max = 128 },
   { name = "locked", type = "bool" },
+  { name = "sensitive", type = "bool", optional = true },  # 1.8 (D221): set or reset from this PC alone, never a paired device
 ]
 
 [types.inherited_value]
@@ -143,11 +160,12 @@ fields = [
 ]
 
 [types.topic_info]
-doc = "A topic a space publishes: its shape, and for a stream its ring's size"
+doc = "A topic a space publishes: its shape, and for a stream its ring's size; a family (1.5, D215), whose members <id>/<key> are state topics a view watches one by one"
 fields = [
   { name = "id", type = "id" },
   { name = "shape", type = "enum.topic_shape" },
   { name = "ring", type = "u32", optional = true },
+  { name = "family", type = "bool", optional = true },  # 1.5 (D215): its members are watched and published, never it
 ]
 
 [types.page_action]
@@ -161,7 +179,7 @@ fields = [
 ]
 
 [types.row_action]
-doc = "A button on each row of a table (D192): its command gets the row's key, a destructive one only after its confirmation"
+doc = "A button on each row of a table (D192): its command gets the row's key, a destructive one only after its confirmation; one that captures (D209) first takes a key or a pad chord from the player, sent as `value`, and a `confirm_required` answer with words is asked and sent again with `confirm`"
 fields = [
   { name = "id", type = "id" },
   { name = "label", type = "string", max = 64 },
@@ -169,6 +187,7 @@ fields = [
   { name = "key", type = "id" },
   { name = "tone", type = "enum.action_tone" },
   { name = "confirm", type = "string", max = 256, optional = true },
+  { name = "capture", type = "enum.row_capture", optional = true },  # 1.4 (D209): the view captures first, sent as "value"
 ]
 
 [types.row_secret]
@@ -187,6 +206,18 @@ fields = [
   { name = "max", type = "u32" },
 ]
 
+[types.editor_block]
+doc = "An editor block (1.7, D217): its document is its topic's body (a state topic, or a family's member on a master page); the commands it sends, each the space's own, and the draft's notes field"
+fields = [
+  { name = "save", type = "id" },
+  { name = "check", type = "id", optional = true },
+  { name = "reset", type = "id", optional = true },    # every field back to the space's own: asks first
+  { name = "restore", type = "id", optional = true },  # the version saved before the last
+  { name = "draft", type = "id", optional = true },    # a slow command (D216): a model's draft, shown beside the fields
+  { name = "notes_label", type = "string", max = 64, optional = true },
+  { name = "notes_max", type = "u32", optional = true },  # the notes' characters, 1 to 400
+]
+
 [types.page_block]
 doc = "A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, a component bound to a topic (a table with its row actions and row secret), or a small form"
 fields = [
@@ -200,6 +231,9 @@ fields = [
   { name = "command", type = "id", optional = true },
   { name = "fields", type = "list.type.form_field", max = 4, optional = true },
   { name = "submit", type = "string", max = 32, optional = true },
+  { name = "editor", type = "type.editor_block", optional = true },  # 1.7 (D217)
+  # 1.9 (D226): an upload block's file kinds, as the browser's picker takes them (".zip, .toml"); a hint, checked by the space
+  { name = "accept", type = "string", max = 128, optional = true },
 ]
 
 [types.section_status]
@@ -238,8 +272,19 @@ fields = [
   { name = "steps", type = "list.string", max = 5, item_max = 256 },
 ]
 
+[types.page_master]
+doc = "A page's master list (1.5, D215, D36): a table's state topic, the column of each row's key, and the family whose member that key names; the page's tabs and sections are its detail, and a block bound to the family draws the chosen row's member"
+fields = [
+  { name = "topic", type = "id" },
+  { name = "key", type = "id" },
+  { name = "detail", type = "id" },
+  { name = "label", type = "string", max = 64 },             # the list's own name, read by screen readers and in game
+  { name = "empty", type = "string", max = 160, optional = true },  # the list's words when it has no rows
+  { name = "none", type = "string", max = 160, optional = true },   # the detail's words while no row is chosen
+]
+
 [types.page]
-doc = "A page: its place, its header, its help, its Related links, and its tabs or its sections"
+doc = "A page: its place, its header, its help, its Related links, and its tabs or its sections; a master list, its tabs and sections then its detail (1.5)"
 fields = [
   { name = "id", type = "id" },
   { name = "category", type = "id" },
@@ -252,6 +297,7 @@ fields = [
   { name = "actions", type = "list.type.page_action", max = 4, optional = true },
   { name = "tabs", type = "list.type.page_tab", max = 8, optional = true },
   { name = "sections", type = "list.type.page_section", max = 32, optional = true },
+  { name = "master", type = "type.page_master", optional = true },  # 1.5 (D215)
 ]
 
 [types.category]
@@ -272,6 +318,9 @@ fields = [
   { name = "pages", type = "list.type.page", max = 128 },
   { name = "topics", type = "list.type.topic_info", max = 64 },
   { name = "commands", type = "list.id", max = 64 },
+  { name = "slow_commands", type = "list.id", max = 8, optional = true },  # 1.6 (D216): answered within 90 s, not 10
+  { name = "sensitive_commands", type = "list.id", max = 16, optional = true },  # 1.8 (D221): from this PC alone, never a paired device
+  { name = "file_commands", type = "list.id", max = 4, optional = true },  # 1.9 (D226): each takes one file by the upload route; each sensitive too
 ]
 
 # ---- Message kinds (§6.3). `from` is who sends it: page (a view: the browser or the in-game view), grace (GraceUI),
@@ -298,6 +347,8 @@ fields = [
   { name = "graceui", type = "string", max = 32 },
   { name = "spaces", type = "list.type.space_info", max = 32 },
   { name = "session", type = "string", max = 64 },
+  # 1.9 (D226): which view this is, from its channel: "browser" (this PC) or "device" (paired at home), for what it offers
+  { name = "view", type = "enum.command_view", optional = true },
 ]
 
 [messages.sub]
@@ -348,6 +399,29 @@ fields = [
   { name = "id", type = "u32" },
   { name = "name", type = "id" },
   { name = "args", type = "object", max = 16384 },
+  # 1.8 (D224, §7.3): which view sent it, as GraceUI saw the channel; set for the space, and a view's own never kept
+  { name = "view", type = "enum.command_view", optional = true },
+]
+
+[messages.upload]
+from = "page"
+space = true
+doc = "Ask for an upload's one-use ticket (1.9, D226, §7.2 item 18): for a file command of the space's, its args, and the file's size in bytes and SHA-256 (64 lowercase hex); the command's result comes back as for a cmd with the same id"
+fields = [
+  { name = "id", type = "u32" },
+  { name = "name", type = "id" },
+  { name = "args", type = "object", max = 16384 },
+  { name = "size", type = "u64" },
+  { name = "sha256", type = "string", max = 64 },
+]
+
+[messages.upload_ticket]
+from = "grace"
+space = true
+doc = "An upload's ticket (1.9, D226): sent with the file's bytes to POST /upload within 60 s, once, from this session alone"
+fields = [
+  { name = "id", type = "u32" },
+  { name = "ticket", type = "string", max = 128 },
 ]
 
 [messages.result]

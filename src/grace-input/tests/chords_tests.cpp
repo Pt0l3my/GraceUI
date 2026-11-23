@@ -85,8 +85,14 @@ TEST_CASE("a key 200 ms after the anchor is held back; at 0.4 s the hotkey fires
   CHECK(pads.read(kUp | kView, 400).buttons == kUp);
   CHECK(pads.read(kUp | kView, 599).buttons == kUp);
   CHECK(pads.presses() == 0);
-  const Read fired = pads.read(kUp | kView, 600);
-  CHECK(fired.step == ChordStep::fired);
+  std::uint32_t which = 0;
+  std::uint16_t seen = kUp | kView;
+  std::uint32_t packet = kPacket;
+  const ChordStep fired_step = pads.chords.filter(0, kUp | kView, seen, packet, Aside::none, pads.hotkeys,
+                                                  kStart + 600, &which);
+  CHECK(fired_step == ChordStep::fired);
+  CHECK(which == pads.id);  // the hotkey it fired, for its mod's wait handle (D212)
+  const Read fired{seen, packet, fired_step};
   CHECK(fired.buttons == 0);              // the anchor too, from now on
   CHECK(fired.packet == kPacket + 1);     // the change is read
   CHECK(pads.presses() == 1);
@@ -246,4 +252,14 @@ TEST_CASE("a chord another hotkey has is registered unbound; the key and the cho
   CHECK(hotkeys.chord_keys() == 0);
   CHECK(hotkeys.add(3, "wave", kNoKey, 0, kChord, kF5, third, &binding) == Added::bound);
   CHECK(hotkeys.pressed(third));  // a press through its chord, its key unbound
+}
+
+TEST_CASE("a chord reads as its two buttons, the anchor first (D206)") {
+  CHECK(chord_text(kChord) == "D-pad Up, then View");
+  CHECK(chord_text(kA | (std::uint32_t{kDown} << 16)) == "D-pad Down, then A");
+  CHECK(chord_text(kView | kUp).empty());
+  for (unsigned bit = 0; bit < 16; ++bit) {
+    const auto button = static_cast<std::uint16_t>(1u << bit);
+    CHECK(button_name(button).empty() == ((button & kChordButtons) == 0));
+  }
 }

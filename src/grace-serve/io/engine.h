@@ -58,6 +58,8 @@ struct Connection {
     open,      // a WebSocket after welcome
     closing,   // a WebSocket whose Close the server sent: waiting for the page's, within close_wait
     draining,  // the send side shut down: reading until the peer's end, within close_wait (item 24)
+    upload,    // reading an upload's body into its file, within timings.upload of its head (G28)
+    hashing,   // the worker checks the upload's SHA-256; then the file goes to its space, or is let go
   };
 
   explicit Connection(const HeadRules& rules) noexcept : parser(rules) {}
@@ -66,14 +68,21 @@ struct Connection {
   io::Socket socket;
   std::uint64_t serial = 0;  // never reused: what a command's result is routed by
   bool exact_peer = false;   // the peer is exactly 127.0.0.1 or ::1 (item 3)
+  std::uint32_t peer_ipv4 = 0;  // the peer's IPv4 address as a number, 0 for IPv6 (G9: a code's tries per peer)
   bool http = false;         // counted against kMaxHttpConnections
   bool websocket = false;    // counted against kMaxWebSockets (hello or open)
+  bool network = false;      // accepted by the network listener (G9): another device at home
+  bool paired = false;       // and a paired device's, by its cookie (for a WebSocket, its upgrade's)
+  std::array<char, kDeviceIdChars> device{};  // that device's id
+  enum class BodyFor : std::uint8_t { ticket, pair };
+  BodyFor body_for = BodyFor::ticket;
   Clock::time_point accepted{};
   Clock::time_point upgraded{};
   Clock::time_point deadline{};
 
   HeadParser parser;
   std::array<char, kMaxTicketBody> body{};  // the ticket's request body, then its response's
+  static_assert(kMaxPairBody <= kMaxTicketBody, "the code's request body is read into the same buffer (G9)");
   std::size_t body_size = 0;
   std::size_t body_need = 0;
   std::array<char, kMaxResponseHead + kMaxTarget> head{};
@@ -97,6 +106,11 @@ struct Connection {
   bool logged_bad = false;
   std::size_t pings_out = 0;
   Clock::time_point next_ping{};
+
+  // An upload's POST (G28): its file as it arrives, and its ticket's slot.
+  std::shared_ptr<FileBytes> upload;
+  std::size_t upload_got = 0;
+  std::size_t upload_slot = 0;
 
   void clear() noexcept;
 };
@@ -123,7 +137,7 @@ class Engine {
   void fault(Connection& c) noexcept;
 
   // Connections and HTTP (server.cpp).
-  void accept_from(const io::Socket& listener, Clock::time_point now);
+  void accept_from(const io::Socket& listener, bool network, Clock::time_point now);
   void readable(Connection& c, Clock::time_point now);
   void writable(Connection& c, Clock::time_point now);
   void timers(Connection& c, Clock::time_point now);
@@ -132,6 +146,33 @@ class Engine {
   void serve_get(Connection& c, Clock::time_point now);
   void ticket(Connection& c, std::string_view after, Clock::time_point now);
   void issue_ticket(Connection& c, Clock::time_point now);
+  // Other devices (G9): a network connection's routes, the code's request and its body, the pairing page's three files,
+  // the credential check for a device's ticket and upgrade, and the host's changes applied.
+  void route_network(Connection& c, std::string_view after, Clock::time_point now);
+  void pair(Connection& c, std::string_view after, Clock::time_point now);
+  void finish_pair(Connection& c, Clock::time_point now);
+  void serve_pairing(Connection& c, Clock::time_point now) noexcept;
+  Refusal check_device(const Connection& c) const noexcept;
+  void take_body(Connection& c, std::string_view after, Clock::time_point now);
+  void body_done(Connection& c, Clock::time_point now);
+  void apply_network(bool on, Clock::time_point now);
+
+  // Uploads (upload.cpp; G28, D226, §7.2 item 18).
+  void upload_request(Connection& c, protocol::Upload& request, Clock::time_point now);
+  void upload_post(Connection& c, std::string_view after, Clock::time_point now);
+  void upload_bytes(Connection& c, std::string_view data, Clock::time_point now);
+  void take_hashes(Clock::time_point now);
+  void expire_uploads(Clock::time_point now);
+  void release_uploads(const Connection& c) noexcept;
+  // Tells the session that asked, by its command's id, that its upload did not reach the space; frees the slot.
+  void upload_failed(std::size_t slot, protocol::ErrorCode code, std::string_view words, Clock::time_point now);
+  Connection* connection_of(std::uint64_t serial) noexcept;
+  // The PC's addresses the network listener may take: the test's own, else its private ones; deduplicated, at most
+  // kMaxNetworkAddresses, never 0.0.0.0, multicast or reserved.
+  std::vector<std::array<std::uint8_t, 4>> network_candidates() const;
+  // While the network listener is wanted, the PC's addresses again every 10 s; changed, it listens on the new ones.
+  void follow_addresses(Clock::time_point now);
+  void apply_devices(std::vector<DeviceKey> devices, Clock::time_point now);
   void upgrade(Connection& c, std::size_t after, Clock::time_point now);
   void respond(Connection& c, std::size_t head_size, std::string_view body,
                std::shared_ptr<const std::string> owner, Clock::time_point now) noexcept;
@@ -147,6 +188,9 @@ class Engine {
   // WebSockets in `phase` (hello: waiting for their ticket; open: welcomed views), and the oldest of them but `except`.
   std::size_t count_websockets(Connection::Phase phase) const noexcept;
   Connection* oldest_websocket(Connection::Phase phase, const Connection* except) noexcept;
+  // The one a new WebSocket past the cap closes (G9): a device's displaces a device's alone, never this PC's (then it
+  // is itself the one, and null comes back); this PC's displaces a device's first, else this PC's oldest.
+  Connection* displaced(Connection::Phase phase, const Connection& fresh) noexcept;
 
   // The bridge (bridge.cpp).
   void take_hub(Clock::time_point now);
@@ -162,13 +206,16 @@ class Engine {
   void send_replay(Connection& c, Subscription& sub, std::optional<std::uint64_t> since);
   void forward_rows(Connection& c, Subscription& sub, const Outgoing& item);
   void send_error(Connection& c, const PortState* space, protocol::ErrorCode code, std::string detail);
-  void send_result_error(Connection& c, const PortState& space, std::uint32_t id, protocol::ErrorCode code);
+  void send_result_error(Connection& c, const PortState& space, std::uint32_t id, protocol::ErrorCode code,
+                         std::string detail = {});
   bool send_message(Connection& c, const protocol::Message& message);
   bool enqueue(Connection& c, std::shared_ptr<const std::string> bytes) noexcept;
   void close_socket(Connection& c, std::optional<protocol::ByeReason> bye, std::uint16_t code,
                     Clock::time_point now);
   void release(Connection& c) noexcept;
   void unwatch(PortState& port, std::size_t topic) noexcept;
+  // A family member's slot (D215): the one it holds, or a free one taken for it; npos if every slot is in use.
+  std::size_t take_member(PortState& port, std::string_view id) noexcept;
   void set_watched(PortState& port, std::size_t topic, bool on) noexcept;
   std::shared_ptr<PortState> space_of(const Connection& c, std::string_view id) const noexcept;
   bool take_token(Connection& c, Clock::time_point now) noexcept;
@@ -179,6 +226,21 @@ class Engine {
 
   io::Wake wake_;
   std::array<io::Socket, 2> listeners_;
+  // The network listener's (G9): its sockets and their addresses as a Host names them, and each kind's head rules.
+  std::array<io::Socket, kMaxNetworkAddresses> network_;
+  std::array<std::string, kMaxNetworkAddresses> network_names_;
+  std::array<std::string_view, kMaxNetworkAddresses> network_views_;
+  Clock::time_point pair_logged_{};  // the code request's log line, at most once in 10 s (G9)
+  std::size_t pair_unlogged_ = 0;
+  bool network_wanted_ = false;
+  Clock::time_point next_address_check_{};
+  // The addresses the PC had at the last apply, sorted: a bind that failed is not tried again until they change.
+  std::vector<std::string> network_seen_;
+  std::vector<std::array<char, kDeviceIdChars>> connected_seen_;  // the devices with an open WebSocket, last published
+  Listener network_listener_;
+  HeadRules loopback_rules_;
+  HeadRules network_rules_;
+  std::vector<DeviceKey> devices_;  // the I/O thread's copy
   bool network_started_ = false;
   std::thread io_thread_;
   std::thread worker_thread_;
@@ -189,6 +251,32 @@ class Engine {
   std::condition_variable worker_wake_;
   bool worker_stop_ = false;                         // under worker_mutex_
   std::shared_ptr<const FileTable> files_pending_;   // under worker_mutex_
+  struct HashJob {
+    std::uint64_t serial = 0;  // the POST's connection
+    std::shared_ptr<const FileBytes> file;
+  };
+  struct HashDone {
+    std::uint64_t serial = 0;
+    std::array<std::uint8_t, 32> sha256{};
+  };
+  std::deque<HashJob> hash_jobs_;    // under worker_mutex_: the worker's (§7.6)
+  std::deque<HashDone> hash_done_;   // under worker_mutex_: the I/O thread's
+  // An upload's ticket (G28): bound to the session that asked (its WebSocket), the space, the command and its args, and
+  // the file's size and SHA-256; used once, within timings.upload_ticket.
+  struct UploadTicket {
+    bool live = false;  // issued, not yet used
+    bool busy = false;  // used: its file on its way, being checked, or handed over
+    std::array<char, kTokenChars> token{};
+    std::uint64_t session = 0;  // the WebSocket's serial: where the command's result goes
+    std::shared_ptr<PortState> port;
+    std::string command;
+    protocol::Json args;
+    std::uint32_t id = 0;
+    std::uint64_t size = 0;
+    std::array<std::uint8_t, 32> sha256{};
+    Clock::time_point issued{};
+  };
+  std::array<UploadTicket, kMaxUploads> uploads_;
 
   // The I/O thread's alone.
   std::vector<std::unique_ptr<Connection>> pool_;
@@ -198,6 +286,8 @@ class Engine {
     std::array<char, kTokenChars> token{};
     Clock::time_point issued{};
     bool live = false;
+    bool network = false;                       // fetched on the network listener, by a paired device (G9)
+    std::array<char, kDeviceIdChars> device{};  // which: its WebSocket must be that device's
   };
   std::array<Ticket, kMaxTickets> tickets_{};
   std::uint64_t next_serial_ = 1;
@@ -217,6 +307,9 @@ class Engine {
   std::atomic<bool> files_ready_{false};
   std::atomic<bool> files_ok_{false};
   std::atomic<std::size_t> stat_faults_{0};
+  std::atomic<std::size_t> stat_network_{0};
+  std::atomic<std::size_t> stat_devices_{0};
+  std::atomic<std::size_t> stat_device_connections_{0};
 };
 
 // The pool: every plain HTTP connection, the welcomed views and as many waiting for their hello, and room for

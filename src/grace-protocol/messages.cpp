@@ -7,13 +7,13 @@
 namespace grace::protocol {
 
 std::string_view to_string(ErrorCode value) noexcept {
-  static constexpr std::array<std::string_view, 13> kNames = {"bad_message", "unknown_topic", "unknown_command", "unknown_key", "invalid_value", "locked", "not_now", "busy", "confirm_required", "unauthorised", "rate_limited", "version", "internal"};
+  static constexpr std::array<std::string_view, 14> kNames = {"bad_message", "unknown_topic", "unknown_command", "unknown_key", "invalid_value", "locked", "not_now", "busy", "confirm_required", "unauthorised", "rate_limited", "version", "internal", "conflict"};
   const auto index = static_cast<std::size_t>(value);
   return index < kNames.size() ? kNames[index] : std::string_view("");
 }
 
 bool from_string(std::string_view text, ErrorCode& out) noexcept {
-  static constexpr std::array<std::string_view, 13> kNames = {"bad_message", "unknown_topic", "unknown_command", "unknown_key", "invalid_value", "locked", "not_now", "busy", "confirm_required", "unauthorised", "rate_limited", "version", "internal"};
+  static constexpr std::array<std::string_view, 14> kNames = {"bad_message", "unknown_topic", "unknown_command", "unknown_key", "invalid_value", "locked", "not_now", "busy", "confirm_required", "unauthorised", "rate_limited", "version", "internal", "conflict"};
   for (std::size_t i = 0; i < kNames.size(); ++i) {
     if (kNames[i] == text) {
       out = static_cast<ErrorCode>(i);
@@ -108,6 +108,23 @@ bool from_string(std::string_view text, ResetScopeKind& out) noexcept {
   return false;
 }
 
+std::string_view to_string(CommandView value) noexcept {
+  static constexpr std::array<std::string_view, 3> kNames = {"game", "browser", "device"};
+  const auto index = static_cast<std::size_t>(value);
+  return index < kNames.size() ? kNames[index] : std::string_view("");
+}
+
+bool from_string(std::string_view text, CommandView& out) noexcept {
+  static constexpr std::array<std::string_view, 3> kNames = {"game", "browser", "device"};
+  for (std::size_t i = 0; i < kNames.size(); ++i) {
+    if (kNames[i] == text) {
+      out = static_cast<CommandView>(i);
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string_view to_string(TopicShape value) noexcept {
   static constexpr std::array<std::string_view, 2> kNames = {"state", "stream"};
   const auto index = static_cast<std::size_t>(value);
@@ -143,13 +160,13 @@ bool from_string(std::string_view text, Component& out) noexcept {
 }
 
 std::string_view to_string(BlockKind value) noexcept {
-  static constexpr std::array<std::string_view, 4> kNames = {"settings", "shortcuts", "component", "form"};
+  static constexpr std::array<std::string_view, 6> kNames = {"settings", "shortcuts", "component", "form", "editor", "upload"};
   const auto index = static_cast<std::size_t>(value);
   return index < kNames.size() ? kNames[index] : std::string_view("");
 }
 
 bool from_string(std::string_view text, BlockKind& out) noexcept {
-  static constexpr std::array<std::string_view, 4> kNames = {"settings", "shortcuts", "component", "form"};
+  static constexpr std::array<std::string_view, 6> kNames = {"settings", "shortcuts", "component", "form", "editor", "upload"};
   for (std::size_t i = 0; i < kNames.size(); ++i) {
     if (kNames[i] == text) {
       out = static_cast<BlockKind>(i);
@@ -170,6 +187,23 @@ bool from_string(std::string_view text, ActionTone& out) noexcept {
   for (std::size_t i = 0; i < kNames.size(); ++i) {
     if (kNames[i] == text) {
       out = static_cast<ActionTone>(i);
+      return true;
+    }
+  }
+  return false;
+}
+
+std::string_view to_string(RowCapture value) noexcept {
+  static constexpr std::array<std::string_view, 2> kNames = {"key", "chord"};
+  const auto index = static_cast<std::size_t>(value);
+  return index < kNames.size() ? kNames[index] : std::string_view("");
+}
+
+bool from_string(std::string_view text, RowCapture& out) noexcept {
+  static constexpr std::array<std::string_view, 2> kNames = {"key", "chord"};
+  for (std::size_t i = 0; i < kNames.size(); ++i) {
+    if (kNames[i] == text) {
+      out = static_cast<RowCapture>(i);
       return true;
     }
   }
@@ -458,6 +492,15 @@ bool decode(const Json& in, Setting& out, const std::string& path, DecodeError& 
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "sensitive", false, path, e)) {
+    const std::string p = path.empty() ? std::string("sensitive") : path + ".sensitive";
+    out.sensitive.emplace();
+    if (!read_bool(*v, *out.sensitive, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -496,6 +539,9 @@ Json encode(const Setting& in) {
   out["effect"] = Json(to_string(in.effect));
   out["availability"] = Json(in.availability);
   out["locked"] = Json(in.locked);
+  if (in.sensitive) {
+    out["sensitive"] = Json(*in.sensitive);
+  }
   return out;
 }
 
@@ -669,6 +715,15 @@ bool decode(const Json& in, TopicInfo& out, const std::string& path, DecodeError
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "family", false, path, e)) {
+    const std::string p = path.empty() ? std::string("family") : path + ".family";
+    out.family.emplace();
+    if (!read_bool(*v, *out.family, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -678,6 +733,9 @@ Json encode(const TopicInfo& in) {
   out["shape"] = Json(to_string(in.shape));
   if (in.ring) {
     out["ring"] = Json(*in.ring);
+  }
+  if (in.family) {
+    out["family"] = Json(*in.family);
   }
   return out;
 }
@@ -795,6 +853,15 @@ bool decode(const Json& in, RowAction& out, const std::string& path, DecodeError
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "capture", false, path, e)) {
+    const std::string p = path.empty() ? std::string("capture") : path + ".capture";
+    out.capture.emplace();
+    if (!read_enum(*v, *out.capture, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -807,6 +874,9 @@ Json encode(const RowAction& in) {
   out["tone"] = Json(to_string(in.tone));
   if (in.confirm) {
     out["confirm"] = Json(*in.confirm);
+  }
+  if (in.capture) {
+    out["capture"] = Json(to_string(*in.capture));
   }
   return out;
 }
@@ -886,6 +956,99 @@ Json encode(const FormField& in) {
   out["id"] = Json(in.id);
   out["label"] = Json(in.label);
   out["max"] = Json(in.max_);
+  return out;
+}
+
+bool decode(const Json& in, EditorBlock& out, const std::string& path, DecodeError& e) {
+  if (!in.is_object()) {
+    return fail(e, path, "not an object");
+  }
+  if (const Json* v = field(in, "save", true, path, e)) {
+    const std::string p = path.empty() ? std::string("save") : path + ".save";
+    if (!read_id(*v, out.save, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "check", false, path, e)) {
+    const std::string p = path.empty() ? std::string("check") : path + ".check";
+    out.check.emplace();
+    if (!read_id(*v, *out.check, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "reset", false, path, e)) {
+    const std::string p = path.empty() ? std::string("reset") : path + ".reset";
+    out.reset.emplace();
+    if (!read_id(*v, *out.reset, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "restore", false, path, e)) {
+    const std::string p = path.empty() ? std::string("restore") : path + ".restore";
+    out.restore.emplace();
+    if (!read_id(*v, *out.restore, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "draft", false, path, e)) {
+    const std::string p = path.empty() ? std::string("draft") : path + ".draft";
+    out.draft.emplace();
+    if (!read_id(*v, *out.draft, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "notes_label", false, path, e)) {
+    const std::string p = path.empty() ? std::string("notes_label") : path + ".notes_label";
+    out.notes_label.emplace();
+    if (!read_string(*v, 64, *out.notes_label, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "notes_max", false, path, e)) {
+    const std::string p = path.empty() ? std::string("notes_max") : path + ".notes_max";
+    out.notes_max.emplace();
+    if (!read_u32(*v, *out.notes_max, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  return true;
+}
+
+Json encode(const EditorBlock& in) {
+  Json out = Json::object();
+  out["save"] = Json(in.save);
+  if (in.check) {
+    out["check"] = Json(*in.check);
+  }
+  if (in.reset) {
+    out["reset"] = Json(*in.reset);
+  }
+  if (in.restore) {
+    out["restore"] = Json(*in.restore);
+  }
+  if (in.draft) {
+    out["draft"] = Json(*in.draft);
+  }
+  if (in.notes_label) {
+    out["notes_label"] = Json(*in.notes_label);
+  }
+  if (in.notes_max) {
+    out["notes_max"] = Json(*in.notes_max);
+  }
   return out;
 }
 
@@ -982,6 +1145,24 @@ bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "editor", false, path, e)) {
+    const std::string p = path.empty() ? std::string("editor") : path + ".editor";
+    out.editor.emplace();
+    if (!decode(*v, *out.editor, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "accept", false, path, e)) {
+    const std::string p = path.empty() ? std::string("accept") : path + ".accept";
+    out.accept.emplace();
+    if (!read_string(*v, 128, *out.accept, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -1014,6 +1195,12 @@ Json encode(const PageBlock& in) {
   }
   if (in.submit) {
     out["submit"] = Json(*in.submit);
+  }
+  if (in.editor) {
+    out["editor"] = encode(*in.editor);
+  }
+  if (in.accept) {
+    out["accept"] = Json(*in.accept);
   }
   return out;
 }
@@ -1231,6 +1418,78 @@ Json encode(const PageHelp& in) {
   return out;
 }
 
+bool decode(const Json& in, PageMaster& out, const std::string& path, DecodeError& e) {
+  if (!in.is_object()) {
+    return fail(e, path, "not an object");
+  }
+  if (const Json* v = field(in, "topic", true, path, e)) {
+    const std::string p = path.empty() ? std::string("topic") : path + ".topic";
+    if (!read_id(*v, out.topic, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "key", true, path, e)) {
+    const std::string p = path.empty() ? std::string("key") : path + ".key";
+    if (!read_id(*v, out.key, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "detail", true, path, e)) {
+    const std::string p = path.empty() ? std::string("detail") : path + ".detail";
+    if (!read_id(*v, out.detail, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "label", true, path, e)) {
+    const std::string p = path.empty() ? std::string("label") : path + ".label";
+    if (!read_string(*v, 64, out.label, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "empty", false, path, e)) {
+    const std::string p = path.empty() ? std::string("empty") : path + ".empty";
+    out.empty.emplace();
+    if (!read_string(*v, 160, *out.empty, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "none", false, path, e)) {
+    const std::string p = path.empty() ? std::string("none") : path + ".none";
+    out.none.emplace();
+    if (!read_string(*v, 160, *out.none, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  return true;
+}
+
+Json encode(const PageMaster& in) {
+  Json out = Json::object();
+  out["topic"] = Json(in.topic);
+  out["key"] = Json(in.key);
+  out["detail"] = Json(in.detail);
+  out["label"] = Json(in.label);
+  if (in.empty) {
+    out["empty"] = Json(*in.empty);
+  }
+  if (in.none) {
+    out["none"] = Json(*in.none);
+  }
+  return out;
+}
+
 bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e) {
   if (!in.is_object()) {
     return fail(e, path, "not an object");
@@ -1328,6 +1587,15 @@ bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e) 
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "master", false, path, e)) {
+    const std::string p = path.empty() ? std::string("master") : path + ".master";
+    out.master.emplace();
+    if (!decode(*v, *out.master, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -1353,6 +1621,9 @@ Json encode(const Page& in) {
   }
   if (in.sections) {
     out["sections"] = [&] { Json a = Json::array(); for (const auto& x : *in.sections) { a.push_back(encode(x)); } return a; }();
+  }
+  if (in.master) {
+    out["master"] = encode(*in.master);
   }
   return out;
 }
@@ -1456,6 +1727,33 @@ bool decode(const Json& in, SpacePages& out, const std::string& path, DecodeErro
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "slow_commands", false, path, e)) {
+    const std::string p = path.empty() ? std::string("slow_commands") : path + ".slow_commands";
+    out.slow_commands.emplace();
+    if (!read_list(*v, 8, *out.slow_commands, p, e, [&](const Json& v, std::string& o, const std::string& p, DecodeError& e) { return read_id(v, o, p, e); })) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "sensitive_commands", false, path, e)) {
+    const std::string p = path.empty() ? std::string("sensitive_commands") : path + ".sensitive_commands";
+    out.sensitive_commands.emplace();
+    if (!read_list(*v, 16, *out.sensitive_commands, p, e, [&](const Json& v, std::string& o, const std::string& p, DecodeError& e) { return read_id(v, o, p, e); })) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "file_commands", false, path, e)) {
+    const std::string p = path.empty() ? std::string("file_commands") : path + ".file_commands";
+    out.file_commands.emplace();
+    if (!read_list(*v, 4, *out.file_commands, p, e, [&](const Json& v, std::string& o, const std::string& p, DecodeError& e) { return read_id(v, o, p, e); })) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -1468,17 +1766,26 @@ Json encode(const SpacePages& in) {
   out["pages"] = [&] { Json a = Json::array(); for (const auto& x : in.pages) { a.push_back(encode(x)); } return a; }();
   out["topics"] = [&] { Json a = Json::array(); for (const auto& x : in.topics) { a.push_back(encode(x)); } return a; }();
   out["commands"] = [&] { Json a = Json::array(); for (const auto& x : in.commands) { a.push_back(Json(x)); } return a; }();
+  if (in.slow_commands) {
+    out["slow_commands"] = [&] { Json a = Json::array(); for (const auto& x : *in.slow_commands) { a.push_back(Json(x)); } return a; }();
+  }
+  if (in.sensitive_commands) {
+    out["sensitive_commands"] = [&] { Json a = Json::array(); for (const auto& x : *in.sensitive_commands) { a.push_back(Json(x)); } return a; }();
+  }
+  if (in.file_commands) {
+    out["file_commands"] = [&] { Json a = Json::array(); for (const auto& x : *in.file_commands) { a.push_back(Json(x)); } return a; }();
+  }
   return out;
 }
 
 std::string_view to_string(Kind value) noexcept {
-  static constexpr std::array<std::string_view, 12> kNames = {"hello", "welcome", "sub", "unsub", "state", "rows", "cmd", "result", "error", "bye", "ping", "pong"};
+  static constexpr std::array<std::string_view, 14> kNames = {"hello", "welcome", "sub", "unsub", "state", "rows", "cmd", "upload", "upload_ticket", "result", "error", "bye", "ping", "pong"};
   const auto index = static_cast<std::size_t>(value);
   return index < kNames.size() ? kNames[index] : std::string_view("");
 }
 
 bool from_string(std::string_view text, Kind& out) noexcept {
-  static constexpr std::array<std::string_view, 12> kNames = {"hello", "welcome", "sub", "unsub", "state", "rows", "cmd", "result", "error", "bye", "ping", "pong"};
+  static constexpr std::array<std::string_view, 14> kNames = {"hello", "welcome", "sub", "unsub", "state", "rows", "cmd", "upload", "upload_ticket", "result", "error", "bye", "ping", "pong"};
   for (std::size_t i = 0; i < kNames.size(); ++i) {
     if (kNames[i] == text) {
       out = static_cast<Kind>(i);
@@ -1497,6 +1804,8 @@ From from_of(Kind kind) noexcept {
     case Kind::state: return From::space;
     case Kind::rows: return From::space;
     case Kind::cmd: return From::page;
+    case Kind::upload: return From::page;
+    case Kind::upload_ticket: return From::grace;
     case Kind::result: return From::space;
     case Kind::error: return From::both;
     case Kind::bye: return From::grace;
@@ -1515,6 +1824,8 @@ int space_of(Kind kind) noexcept {
     case Kind::state: return 1;
     case Kind::rows: return 1;
     case Kind::cmd: return 1;
+    case Kind::upload: return 1;
+    case Kind::upload_ticket: return 1;
     case Kind::result: return 1;
     case Kind::error: return 2;
     case Kind::bye: return 0;
@@ -1599,6 +1910,15 @@ static bool decode_welcome(Json& in, Welcome& out, DecodeError& e) {
   if (const Json* v = field(in, "session", true, path, e)) {
     const std::string p = path.empty() ? std::string("session") : path + ".session";
     if (!read_string(*v, 64, out.session, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "view", false, path, e)) {
+    const std::string p = path.empty() ? std::string("view") : path + ".view";
+    out.view.emplace();
+    if (!read_enum(*v, *out.view, p, e)) {
       return false;
     }
   } else if (!e.field.empty()) {
@@ -1785,6 +2105,95 @@ static bool decode_cmd(Json& in, Cmd& out, DecodeError& e) {
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "view", false, path, e)) {
+    const std::string p = path.empty() ? std::string("view") : path + ".view";
+    out.view.emplace();
+    if (!read_enum(*v, *out.view, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  return true;
+}
+
+static bool decode_upload(Json& in, Upload& out, DecodeError& e) {
+  const std::string path;
+  if (const Json* v = field(in, "space", true, path, e)) {
+    if (!read_id(*v, out.space, "space", e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "id", true, path, e)) {
+    const std::string p = path.empty() ? std::string("id") : path + ".id";
+    if (!read_u32(*v, out.id, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "name", true, path, e)) {
+    const std::string p = path.empty() ? std::string("name") : path + ".name";
+    if (!read_id(*v, out.name, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "args", true, path, e)) {
+    const std::string p = path.empty() ? std::string("args") : path + ".args";
+    if (!read_json(*v, 16384u, true, out.args, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "size", true, path, e)) {
+    const std::string p = path.empty() ? std::string("size") : path + ".size";
+    if (!read_u64(*v, out.size, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "sha256", true, path, e)) {
+    const std::string p = path.empty() ? std::string("sha256") : path + ".sha256";
+    if (!read_string(*v, 64, out.sha256, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  return true;
+}
+
+static bool decode_upload_ticket(Json& in, UploadTicket& out, DecodeError& e) {
+  const std::string path;
+  if (const Json* v = field(in, "space", true, path, e)) {
+    if (!read_id(*v, out.space, "space", e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "id", true, path, e)) {
+    const std::string p = path.empty() ? std::string("id") : path + ".id";
+    if (!read_u32(*v, out.id, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "ticket", true, path, e)) {
+    const std::string p = path.empty() ? std::string("ticket") : path + ".ticket";
+    if (!read_string(*v, 128, out.ticket, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -1959,6 +2368,22 @@ bool decode_message(Kind kind, Json& in, Message& out, DecodeError& e) {
       out = std::move(m);
       return true;
     }
+    case Kind::upload: {
+      Upload m;
+      if (!decode_upload(in, m, e)) {
+        return false;
+      }
+      out = std::move(m);
+      return true;
+    }
+    case Kind::upload_ticket: {
+      UploadTicket m;
+      if (!decode_upload_ticket(in, m, e)) {
+        return false;
+      }
+      out = std::move(m);
+      return true;
+    }
     case Kind::result: {
       Result m;
       if (!decode_result(in, m, e)) {
@@ -2023,6 +2448,9 @@ Json encode_message(const Message& message) {
       out["graceui"] = Json(in.graceui);
       out["spaces"] = [&] { Json a = Json::array(); for (const auto& x : in.spaces) { a.push_back(encode(x)); } return a; }();
       out["session"] = Json(in.session);
+      if (in.view) {
+        out["view"] = Json(to_string(*in.view));
+      }
     } else if constexpr (std::is_same_v<T, Sub>) {
       out["t"] = "sub";
       out["space"] = in.space;
@@ -2055,6 +2483,22 @@ Json encode_message(const Message& message) {
       out["id"] = Json(in.id);
       out["name"] = Json(in.name);
       out["args"] = Json(in.args);
+      if (in.view) {
+        out["view"] = Json(to_string(*in.view));
+      }
+    } else if constexpr (std::is_same_v<T, Upload>) {
+      out["t"] = "upload";
+      out["space"] = in.space;
+      out["id"] = Json(in.id);
+      out["name"] = Json(in.name);
+      out["args"] = Json(in.args);
+      out["size"] = Json(in.size);
+      out["sha256"] = Json(in.sha256);
+    } else if constexpr (std::is_same_v<T, UploadTicket>) {
+      out["t"] = "upload_ticket";
+      out["space"] = in.space;
+      out["id"] = Json(in.id);
+      out["ticket"] = Json(in.ticket);
     } else if constexpr (std::is_same_v<T, Result>) {
       out["t"] = "result";
       out["space"] = in.space;
@@ -2134,6 +2578,9 @@ void encode_text(const Message& message, std::string& out) {
       }
       out += ']';
       append_field(out, "session", Json(in.session));
+      if (in.view) {
+        append_field(out, "view", Json(to_string(*in.view)));
+      }
     } else if constexpr (std::is_same_v<T, Sub>) {
       out += ",\"t\":\"sub\"";
       append_field(out, "space", Json(in.space));
@@ -2173,6 +2620,22 @@ void encode_text(const Message& message, std::string& out) {
       append_field(out, "id", Json(in.id));
       append_field(out, "name", Json(in.name));
       append_field(out, "args", in.args);
+      if (in.view) {
+        append_field(out, "view", Json(to_string(*in.view)));
+      }
+    } else if constexpr (std::is_same_v<T, Upload>) {
+      out += ",\"t\":\"upload\"";
+      append_field(out, "space", Json(in.space));
+      append_field(out, "id", Json(in.id));
+      append_field(out, "name", Json(in.name));
+      append_field(out, "args", in.args);
+      append_field(out, "size", Json(in.size));
+      append_field(out, "sha256", Json(in.sha256));
+    } else if constexpr (std::is_same_v<T, UploadTicket>) {
+      out += ",\"t\":\"upload_ticket\"";
+      append_field(out, "space", Json(in.space));
+      append_field(out, "id", Json(in.id));
+      append_field(out, "ticket", Json(in.ticket));
     } else if constexpr (std::is_same_v<T, Result>) {
       out += ",\"t\":\"result\"";
       append_field(out, "space", Json(in.space));

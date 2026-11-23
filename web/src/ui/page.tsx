@@ -3,19 +3,26 @@
 // Related), the header actions (a destructive one behind its confirmation), the tabs, the section cards with their
 // Advanced disclosures, the blocks (settings rows, shortcut rows, components) and the Related card. Everything drawn is
 // in the page's description (invariant 12); nothing absent is hinted at (invariant 2).
-import { useContext, useState } from "preact/hooks";
+import { useContext, useEffect, useState } from "preact/hooks";
 import type { Json, Page, PageAction, PageBlock, PageSection } from "../protocol.ts";
 import { pageById, parseLink, sectionsOf } from "../model/layout.ts";
 import { refusalWords } from "../model/session.ts";
 import type { TopicData } from "../model/session.ts";
-import { GreyedContext, useSession } from "./context.ts";
+import { GreyedContext, MasterContext, useSession } from "./context.ts";
 import { ComponentBlock, useTopic } from "./components.tsx";
 import { Arrow, Chevron, Cross, HelpMark, Lozenge, Warning } from "./icons.tsx";
 import { focusHeading } from "./navigate.ts";
 import { SettingRow } from "./row.tsx";
-import { advancedOpen, domId, isCollapsed, sectionId, toggleAdvanced, toggleSection } from "./view-state.ts";
+import {
+  advancedOpen, choose, chooseByHand, chosen, domId, expected, forgetExpected, isCollapsed, rowToShow, sectionId,
+  toggleAdvanced, toggleSection,
+} from "./view-state.ts";
+import type { PageMaster } from "../protocol.ts";
 import { ConfirmDialog, Modal } from "./modal.tsx";
 import { FormBlock } from "./form.tsx";
+import { EditorBlockView } from "./editor.tsx";
+import { UploadBlock } from "./upload.tsx";
+import { dropDrafts } from "../model/editor.ts";
 
 // The framework topic a space's greyed pages come on (D188): {"greyed": {page: words}, "inactive": words}.
 const SPACE_STATE = "space.state";
@@ -58,6 +65,10 @@ function Blocks({ space, blocks }: { space: string; blocks: PageBlock[] }) {
         ? <div class="block block--component" key={`c${i}`}><ComponentBlock space={space} block={block} /></div>
         : block.kind === "form"
         ? <div class="block block--form" key={`f${i}`}><FormBlock space={space} block={block} /></div>
+        : block.kind === "editor"
+        ? <div class="block block--editor" key={`e${i}`}><EditorBlockView space={space} block={block} /></div>
+        : block.kind === "upload"
+        ? <div class="block block--upload" key={`u${i}`}><UploadBlock space={space} block={block} /></div>
         : (
           <div class="block block--rows" key={`r${i}`}>
             {(block.keys ?? []).map((key) => (
@@ -246,6 +257,85 @@ function HelpDialog({ space, page, open, onClose }: { space: string; page: Page;
   );
 }
 
+// A row's key as a member's (D215): the id characters but '/', the member's whole id at most 64 bytes.
+function memberKey(family: string, key: string): boolean {
+  return key.length > 0 && family.length + 1 + key.length <= 64 && /^[a-z0-9._-]+$/.test(key);
+}
+
+function cellText(row: { [key: string]: Json }, column: string | undefined): string {
+  if (column === undefined) {
+    return "";
+  }
+  const value = row[column];
+  return typeof value === "string" ? value : typeof value === "number" ? String(value) : "";
+}
+
+/** The rows of a master list's body that name a member, each with its key, in the list's order. */
+function masterRows(master: PageMaster, data: TopicData | undefined): { key: string; row: { [key: string]: Json } }[] {
+  if (data?.kind !== "state" || !Array.isArray(data.body.rows)) {
+    return [];
+  }
+  const out: { key: string; row: { [key: string]: Json } }[] = [];
+  for (const row of data.body.rows) {
+    if (typeof row === "object" && row !== null && !Array.isArray(row)) {
+      const key = cellText(row, master.key);
+      if (memberKey(master.detail, key)) {
+        out.push({ key, row });
+      }
+    }
+  }
+  return out;
+}
+
+/** A page's master list (D215, D36): a listbox of its rows, each by its first column's words and its second's; ↑ ↓,
+ * Home and End move the choice, → or Enter go into the detail. */
+function MasterList({ space, page, master, data, current }: { space: string; page: Page; master: PageMaster;
+                                                              data: TopicData | undefined; current: string | null }) {
+  const rows = masterRows(master, data);
+  const columns = data?.kind === "state" && Array.isArray(data.body.columns) ? data.body.columns : [];
+  const ids = columns.flatMap((c) => (typeof c === "object" && c !== null && !Array.isArray(c) && typeof c.id === "string"
+    ? [c.id] : []));
+  const optionId = (key: string) => domId("option", space, page.id, key);
+  const move = (to: number) => {
+    const target = rows[Math.max(0, Math.min(rows.length - 1, to))];
+    if (target !== undefined) {
+      chooseByHand(space, page.id, target.key);
+      document.getElementById(optionId(target.key))?.focus();
+    }
+  };
+  const at = rows.findIndex((r) => r.key === current);
+  return (
+    <nav class="master" aria-label={master.label}>
+      <h2 class="master__label">{master.label}</h2>
+      {rows.length === 0
+        ? <p class="master__empty">{data !== undefined && master.empty !== undefined ? master.empty : "Nothing to show yet."}</p>
+        : (
+          <ul class="master__list" role="listbox" aria-label={master.label}>
+            {rows.map(({ key, row }, i) => (
+              <li key={key} id={optionId(key)} role="option" class="master__row" aria-selected={key === current}
+                  data-key={key} tabIndex={key === current || (at < 0 && i === 0) ? 0 : -1}
+                  onClick={() => chooseByHand(space, page.id, key)}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
+                      e.preventDefault();
+                      move(e.key === "Home" ? 0 : e.key === "End" ? rows.length - 1 : i + (e.key === "ArrowDown" ? 1 : -1));
+                    } else if (e.key === "ArrowRight" || e.key === "Enter") {
+                      e.preventDefault();
+                      chooseByHand(space, page.id, key);
+                      const detail = document.getElementById(domId("detail", space, page.id));
+                      detail?.querySelector<HTMLElement>("button, [href], input, select, [tabindex='0']")?.focus();
+                    }
+                  }}>
+                <span class="master__name">{cellText(row, ids[0]) || key}</span>
+                {ids[1] !== undefined && <span class="master__more">{cellText(row, ids[1])}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+    </nav>
+  );
+}
+
 export function PageView() {
   const session = useSession();
   const [helpOpen, setHelpOpen] = useState(false);
@@ -257,6 +347,24 @@ export function PageView() {
   // The space's greyed pages (D188), watched with every page of a space that declares space.state.
   const declaresState = (pages?.topics ?? []).some((t) => t.id === SPACE_STATE && t.shape === "state");
   const stateData = useTopic(route?.space ?? "", route && declaresState ? SPACE_STATE : undefined);
+  // A master list (D215): its rows, and the chosen one (the first, as soon as the list has one).
+  const master = page?.master;
+  const masterData = useTopic(route?.space ?? "", master?.topic);
+  const masterKeys = master ? masterRows(master, masterData).map((r) => r.key) : [];
+  const held = route && page ? chosen.value.get(`${route.space}/${page.id}`) : undefined;
+  const wanted = route && page ? expected.value.get(`${route.space}/${page.id}`) : undefined;
+  const current = master ? rowToShow(masterKeys, held, wanted) : null;
+  useEffect(() => dropDrafts(), [route?.space, page?.id]);  // a draft lives while its page is open (D217)
+  useEffect(() => {
+    if (route && page && master && current !== null) {
+      if (current === wanted) {
+        forgetExpected(route.space, page.id);  // a save's choice, its row listed now (D218)
+      }
+      if (held !== current) {
+        choose(route.space, page.id, current);  // or the first row, or the first since the chosen one went (D215)
+      }
+    }
+  }, [route?.space, page?.id, current, held, wanted]);
   if (!route || !page) {
     return null;
   }
@@ -310,7 +418,17 @@ export function PageView() {
           <p class="page__notice" role="alert"><Warning /> {notice.text}</p>
         )}
       </header>
-      {tabs.length > 0 && (
+      <div class={master ? "master-detail" : "single"}>
+      {master && <MasterList space={space} page={page} master={master} data={masterData} current={current} />}
+      <div class="detail" id={domId("detail", space, page.id)}>
+      {master && current === null && (
+        <p class="detail__none" role="status">{master.none ?? "Choose one in the list."}</p>
+      )}
+      <MasterContext.Provider value={master ? {
+        family: master.detail, member: current !== null ? `${master.detail}/${current}` : null, key: current,
+        families: (pages?.topics ?? []).filter((t) => t.family === true).map((t) => t.id),
+      } : null}>
+      {(!master || current !== null) && tabs.length > 0 && (
         <div class="tabs" role="tablist" aria-label={page.name}>
           {tabs.map((tab, i) => (
             <button type="button" role="tab" key={tab.id} id={domId("tab", space, page.id, tab.id)} class="tab"
@@ -333,8 +451,12 @@ export function PageView() {
       )}
       <div class="page__body" id={panelId} role={tabs.length > 0 ? "tabpanel" : undefined}
            aria-labelledby={tabs.length > 0 ? domId("tab", space, page.id, tabs[route.tab]?.id ?? "") : undefined}>
-        {sections.map((section) => <SectionCard key={section.id} space={space} page={page} section={section} />)}
+        {(!master || current !== null) &&
+          sections.map((section) => <SectionCard key={section.id} space={space} page={page} section={section} />)}
         <RelatedCard space={space} page={page} />
+      </div>
+      </MasterContext.Provider>
+      </div>
       </div>
       <HelpDialog space={space} page={page} open={helpOpen} onClose={() => setHelpOpen(false)} />
       <ConfirmDialog space={space} action={confirming} onClose={() => setConfirming(null)}

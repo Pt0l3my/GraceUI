@@ -82,8 +82,14 @@ void log_drain() noexcept {
 bool log_copy_line(std::uint32_t index, LogText& out) noexcept {
   const std::uint64_t next = g_next.load(std::memory_order_acquire);
   const std::uint64_t oldest = next > kLines ? next - kLines : 0;
-  const std::uint64_t number = oldest + index;
-  if (number >= next) {
+  return log_copy_number(oldest + index, out);
+}
+
+std::uint64_t log_count() noexcept { return g_next.load(std::memory_order_acquire); }
+
+bool log_copy_number(std::uint64_t number, LogText& out) noexcept {
+  const std::uint64_t next = g_next.load(std::memory_order_acquire);
+  if (number >= next || (next > kLines && number < next - kLines)) {
     return false;
   }
   const Line& line = g_lines[number % kLines];

@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace grace::spaces {
 class OwnSpace;
@@ -28,6 +29,8 @@ grace::spaces::OwnSpace* loaded_own() noexcept;
 // GraceUI's thread, after a change of its settings from either view: writes them to user\settings.json for the next
 // session (D84, D179), once a revision.
 void keep_own_settings() noexcept;
+// hotkeys.menu as the store holds it, applied at once (D208): after a change from either view.
+void publish_menu_key(const grace::spaces::OwnSpace& own) noexcept;
 // ui.scale and its default, as the own space holds them, to the display's values (D180).
 void publish_ui_scale(const grace::spaces::OwnSpace& own) noexcept;
 
@@ -46,6 +49,30 @@ void close_for_anti_cheat(const char* source) noexcept;
 // dashboard.disconnect, from the menu: a new session cookie, every browser connection closed (§7.2 item 17).
 void disconnect_browsers() noexcept;
 
+// ---- Other devices at home (G9, §7.2 item 16). GraceUI's own thread only.
+
+// Pair a device, from the menu: a six-digit code the server takes for two minutes, once, and only while the sheet that
+// shows it stays open (D113). Refused, with the reason in words, while Other devices is off, the browser view is not
+// served, the PC has no home network address, or sixteen devices are paired.
+struct PairingStart {
+  bool ok = false;
+  std::string words;
+};
+PairingStart start_pairing() noexcept;
+// The sheet closed, or the menu with it: the code is void at once.
+void cancel_pairing() noexcept;
+// What the sheet shows now: the code with its time and the addresses to open, then the device paired, or why it ended.
+struct PairingView {
+  enum class State : std::uint8_t { none, showing, paired, ended };
+  State state = State::none;
+  std::string code;                    // six digits, while showing
+  std::uint32_t seconds = 0;           // left, while showing
+  std::vector<std::string> addresses;  // "http://ADDRESS:PORT/" for each the server listens on, while showing
+  std::string paired_name;             // the name the device gave, once paired
+  std::string why;                     // in words, once ended
+};
+PairingView pairing_view() noexcept;
+
 #if defined(GRACEUI_TEST_EXPORTS)
 struct TestView {
   std::uint32_t running;   // 1 while the server runs
@@ -57,6 +84,10 @@ struct TestView {
 void test_view(TestView& out) noexcept;
 // The module re-check's interval, for a test: 0 keeps 60 s.
 void test_set_recheck_ms(std::uint32_t ms) noexcept;
+// The code the pairing sheet shows (G9), as GraceUI_Test_GetPairingCode reads it: its length, 0 while none shows.
+std::uint32_t test_pairing_code(char* out, std::uint32_t capacity) noexcept;
+// The network listener's addresses for a test (127.0.0.2), taken at the server's next start.
+void test_set_network_addresses(const std::uint8_t* addresses, std::uint32_t count) noexcept;
 // One of GraceUI's own topics as JSON text (GraceUI_Test_GetTopic): its length, 0 for none or if it does not fit.
 std::uint32_t test_topic(const char* topic, char* out, std::uint32_t capacity) noexcept;
 #endif

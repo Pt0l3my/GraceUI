@@ -7,6 +7,7 @@
 #include "ascii.h"
 #include "grace/serve/checks.h"
 #include "grace/serve/codec.h"
+#include "grace/serve/pairing.h"
 
 namespace grace::serve {
 namespace {
@@ -93,12 +94,15 @@ std::string_view reason_phrase(std::uint16_t status) noexcept {
   switch (status) {
     case 101: return "Switching Protocols";
     case 200: return "OK";
+    case 202: return "Accepted";  // an upload handed to its space (G28)
     case 307: return "Temporary Redirect";
     case 400: return "Bad Request";
     case 403: return "Forbidden";
     case 404: return "Not Found";
     case 405: return "Method Not Allowed";
     case 408: return "Request Timeout";
+    case 409: return "Conflict";         // an upload whose session went away (G28)
+    case 411: return "Length Required";  // an upload without its Content-Length (G28)
     case 413: return "Content Too Large";
     case 414: return "URI Too Long";
     case 415: return "Unsupported Media Type";
@@ -123,7 +127,8 @@ std::size_t write_response_head(const Response& response, std::span<char> out) n
   if (!media_type_ok(response.content_type) || (response.content_length != 0 && response.content_type.empty())) {
     return 0;
   }
-  if (!response.session_cookie.empty() && !valid_token(response.session_cookie)) {
+  if ((!response.session_cookie.empty() && !valid_token(response.session_cookie)) ||
+      (!response.device_cookie.empty() && !valid_token(response.device_cookie))) {
     return 0;
   }
   Writer writer(out);
@@ -158,6 +163,15 @@ std::size_t write_response_head(const Response& response, std::span<char> out) n
     writer.put("=");
     writer.put(response.session_cookie);
     writer.put("; Path=/; HttpOnly; SameSite=Strict\r\n");
+  }
+  if (!response.device_cookie.empty()) {
+    writer.put("Set-Cookie: ");
+    writer.put(kDeviceCookie);
+    writer.put("=");
+    writer.put(response.device_cookie);
+    writer.put("; Path=/; Max-Age=");
+    writer.number(kDeviceCookieSeconds);
+    writer.put("; HttpOnly; SameSite=Strict\r\n");
   }
   writer.put(kSecurityHeaders);
   writer.put("\r\n");

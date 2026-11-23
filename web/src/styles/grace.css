@@ -1262,6 +1262,26 @@ ul, ol {
   color: var(--gold-hi);
 }
 
+/* A row action's capture (D209): the key field across the dialog, and a chord's two pickers. */
+.keycap--wide {
+  width: 100%;
+  min-height: 44px;
+  margin: var(--space-8) 0;
+}
+
+.keycap--wide:focus-visible {
+  border-color: var(--gold-hi);
+  color: var(--gold-hi);
+}
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  margin: var(--space-8) 0;
+}
+
 /* Buttons (§3.8): 36 px, Noto Sans 15 600, sentence case. */
 .button {
   display: inline-flex;
@@ -1484,6 +1504,43 @@ ul, ol {
   padding-top: var(--space-12);
 }
 
+/* An upload block (G28, D226): a drop zone with its button; its status and a refusal's words under it. */
+.upload {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-8);
+  padding: var(--space-16);
+  border: var(--size-edge-width) dashed var(--rule-strong);
+  border-radius: var(--radius-card);
+  background: var(--ground-well);
+  transition: border-color var(--dur-state) ease-out, background-color var(--dur-state) ease-out;
+}
+
+.upload--over {
+  border-color: var(--gold-hi);
+  background: var(--tint-select);
+}
+
+.upload[aria-disabled="true"] {
+  opacity: 0.6;
+}
+
+.upload--off {
+  border-style: solid;
+  border-color: var(--rule);
+}
+
+.upload__hint, .upload__off, .upload__status {
+  margin: 0;
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+  color: var(--ink-body);
+}
+
+.upload__status:empty {
+  display: none;
+}
+
 /* A picker (D193): a list of the space's choices; while it has none, the value and a faint line. */
 .picker {
   cursor: pointer;
@@ -1666,4 +1723,263 @@ ul, ol {
   .rail:not([data-collapsed]) {
     width: 260px;
   }
+}
+
+/* ---- Master and detail (D215, D36): the list at the left, the chosen row's detail at the right; stacked when
+   narrow. The chosen row has the gold edge and the select tint, as the rail's open page has. */
+.master-detail {
+  display: grid;
+  grid-template-columns: minmax(14rem, 34%) minmax(0, 1fr);
+  gap: var(--space-24);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .master-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.master {
+  padding: var(--space-12) var(--space-8);
+  background: var(--ground-2);
+  border: var(--size-edge-width) solid var(--rule);
+  border-radius: var(--radius-card);
+}
+
+.master__label {
+  margin: 0 var(--space-12) var(--space-8);
+  font-family: var(--stack-sans);
+  font-size: var(--type-eyebrow-size);
+  line-height: var(--type-eyebrow-line);
+  font-weight: var(--type-eyebrow-weight);
+  letter-spacing: var(--type-eyebrow-tracking);
+  text-transform: var(--type-eyebrow-case);
+  color: var(--gold);
+}
+
+.master__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.master__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-8) var(--space-12);
+  border-left: 2px solid transparent;
+  cursor: pointer;
+}
+
+.master__row:hover {
+  background: var(--tint-hover);
+}
+
+.master__row[aria-selected="true"] {
+  background: var(--tint-select);
+  border-left-color: var(--gold);
+}
+
+.master__name {
+  color: var(--ink-hi);
+}
+
+.master__row[aria-selected="true"] .master__name {
+  color: var(--gold-hi);
+}
+
+.master__more, .master__empty, .detail__none {
+  color: var(--ink-mute);
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+}
+
+.master__empty {
+  margin: 0 var(--space-12);
+}
+
+.detail__none {
+  margin: 0;
+  padding: var(--space-20);
+  background: var(--ground-2);
+  border: var(--size-edge-width) solid var(--rule);
+  border-radius: var(--radius-card);
+}
+
+/* The editor block (D217): its state and buttons, the draft's notes, then each field with its count, help, reference,
+   messages and a draft's proposal. Nothing loops (invariant 14). */
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.editor__head, .editor__actions, .editor__draft-line, .editor__label-line, .editor__proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+}
+
+.editor__state, .editor__state-line, .editor__help, .editor__reference, .editor__locked, .editor__none,
+.editor__count, .editor__why, .editor__top, .editor__notice {
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+}
+
+.editor__state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--ink-body);
+}
+
+.editor__state-line, .editor__help, .editor__reference, .editor__locked, .editor__none {
+  color: var(--ink-mute);
+  margin: 0;
+}
+
+.editor__unsaved {
+  margin-left: auto;
+  color: var(--ember);
+  font-size: var(--type-ui-sm-size);
+}
+
+.editor__label-line .editor__unsaved {
+  margin-left: 0;
+}
+
+.editor__count {
+  margin-left: auto;
+  color: var(--ink-faint);
+}
+
+.editor__count--over {
+  color: var(--ember);
+}
+
+.editor__why {
+  color: var(--ink-body);
+}
+
+.editor__top, .editor__notice {
+  margin: 0;
+  color: var(--ink-body);
+}
+
+.editor__top--error {
+  color: var(--rot);
+}
+
+.editor__notice {
+  color: var(--ember);
+}
+
+.editor__conflict {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding: var(--space-8) var(--space-12);
+  background: var(--rot-fill);
+  border-radius: var(--radius-control);
+  color: var(--ink-hi);
+}
+
+.editor__conflict p {
+  margin: 0;
+}
+
+.editor__draft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--rule);
+}
+
+.editor__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--rule);
+}
+
+.editor__label {
+  color: var(--ink-hi);
+  font-size: var(--type-ui-size);
+}
+
+.editor__shown {
+  margin: 0;
+  color: var(--ink-body);
+}
+
+.field--prose {
+  height: auto;
+  min-height: 4.5em;
+  padding: var(--space-4) var(--space-8);
+  resize: vertical;
+  font-family: inherit;
+}
+
+.editor__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.editor__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+}
+
+.editor__item:not(:has(select)) {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
+.editor__item .editor__locked, .editor__item .editor__messages {
+  grid-column: 1 / -1;
+}
+
+.editor__messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--type-ui-sm-size);
+}
+
+.editor__message--error {
+  color: var(--rot);
+}
+
+.editor__message--warning {
+  color: var(--ember);
+}
+
+.editor__proposal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-12);
+  background: var(--tint-select);
+  border-radius: var(--radius-control);
+}
+
+.editor__proposal-title {
+  margin: 0;
+  color: var(--gold);
+  font-size: var(--type-eyebrow-size);
+  letter-spacing: var(--type-eyebrow-tracking);
+  text-transform: var(--type-eyebrow-case);
+}
+
+.editor__proposal-words {
+  margin: 0;
+  color: var(--ink-body);
 }

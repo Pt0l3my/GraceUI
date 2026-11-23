@@ -36,7 +36,30 @@ or "Not needed", and takes a row's changed mark from the mod. **GraceUI 0.2.10**
 sections serve as cards, each with a chip, a live status and buttons of its own (protocol 1.3); **0.2.13**'s browser
 view paces every frame it sends, so a page with many topics loses none. **GraceUI 0.2.14** gives a mod's hotkey a
 pad chord (ABI 1.3): a button held, then another, as EldenNet's D-pad Up then View opens its chat box, with the game
-losing no press of its own; checked with a simulated pad, the timings to be confirmed on testers' pads. Hotkeys and the log are declared for the increments
+losing no press of its own; checked with a simulated pad, the timings to be confirmed on testers' pads. **GraceUI
+0.2.15** lists every mod's hotkeys on its Hotkeys page, with their keys, chords and conflicts, and never loses
+a holder's end when its mod's events pile up. **GraceUI 0.2.16** lets the player change any mod's hotkey there, its key
+or its pad chord, and the menu's own key, kept between sessions; a mod can read its hotkey's key to name it (ABI 1.4). **GraceUI
+0.2.17** gives each mod a wait handle that GraceUI sets whenever something waits for its poll (ABI 1.5). **GraceUI 0.2.18**
+brings GraceUI's own text field to the menu in game: text and secret settings, forms, row secrets and search are typed
+there now, with the clipboard and the IME, rather than in the browser view alone. **GraceUI 0.2.19** gives a page a
+list and its detail, in both views, the detail drawing a topic for the chosen row alone (protocol 1.5). **GraceUI 0.2.20**
+lets a space name commands that may take up to 90 s, such as a model's draft (protocol 1.6). **GraceUI 0.2.21** adds an
+editor to both views: a document a space publishes, edited field by field, its unsaved edits kept for the session, then
+checked, saved, reset, restored or drafted by the space's own commands (protocol 1.7). **GraceUI 0.2.22** lets a save
+choose the list's next row, as when a profile written for a character becomes the player's own. **GraceUI 0.2.23**
+lets the menu's search in game find every mod's settings, as the browser view's already did. **GraceUI 0.2.24** records
+how far its start-up got, so that a test run that stalls says where. **GraceUI 0.2.25** lets a phone or another
+computer at home open the browser view once the player switches Other devices on and pairs it with a six-digit code
+shown in game; each paired device is listed with Forget, and none may change the browser view, set a mod's secrets or do
+anything else a mod marks sensitive (protocol 1.8). **GraceUI 0.2.26** lets a mod take a file from the browser view on
+this PC: a drop zone on its page sends one file, at most 32 MiB, checked on arrival and handed to the mod, which GraceUI
+keeps nothing of (protocol 1.9, ABI 1.6). **GraceUI 0.2.27** records, in its test build, how far its first frames got,
+so that a game that stops there says where; **GraceUI 0.2.28**'s test observer records the faults a run meets and the
+code that met them. **GraceUI 0.2.29** moves the menu's pointer by the mouse's own motion, so that a game that keeps its
+cursor at the centre for its camera no longer pulls the pointer back. **GraceUI 0.2.30** keeps the menu open across an
+Alt+Tab, letting go of the mouse and keys while the player is away and taking them again on return, and Tab no longer
+moves between elements in game. Hotkeys and the log are declared for the increments
 that build them. Before it hooks anything,
 GraceUI checks for anti-cheat, and on a hit shows notices only; a second copy loaded from another folder idles and is
 named in a notice. All of it is checked by a Direct3D 12 harness under Wine, with two example mods of our own, and the
@@ -87,7 +110,7 @@ see the dashboard.
 | `docs/DESIGN.md` | The design |
 | `docs/research/` | The studies behind it, in our own words |
 | `docs/eldennet-changes.md` | What EldenNet's design needs to change for GraceUI |
-| `docs/proposals/` | Proposals put to the owner: the framework (0001), the map (0002), a holder's events (0003), the display (0004), pad chords (0005), additions for mods' pages (0006), row actions, live pickers, row secrets and forms (0007), and sections as cards (0008) |
+| `docs/proposals/` | Proposals put to the owner: the framework (0001), the map (0002), a holder's events (0003), the display (0004), pad chords (0005), additions for mods' pages (0006), row actions, live pickers, row secrets and forms (0007), sections as cards (0008), and rebinding hotkeys (0009) |
 | `src/grace-protocol` | The bridge protocol's types (C++; they and the web app's TypeScript types are generated from one schema) |
 | `src/grace-input` | The input holder's rules: capture, masking, the player's exit and characters made whole, without Win32 |
 | `src/grace-view` | The menu's structure, focus and input rules, without a renderer |

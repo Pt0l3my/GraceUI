@@ -10,8 +10,9 @@ import type { Signal } from "@preact/signals";
 import type { Json, JsonObject, PageBlock, RowAction, RowSecret } from "../protocol.ts";
 import type { TopicData } from "../model/session.ts";
 import { refusalWords } from "../model/session.ts";
-import { GreyedContext, useSession } from "./context.ts";
+import { GreyedContext, MasterContext, topicFor, useSession } from "./context.ts";
 import { Warning } from "./icons.tsx";
+import { CaptureDialog } from "./capture.tsx";
 import { ConfirmDialog } from "./modal.tsx";
 
 function text(value: Json | undefined): string | null {
@@ -38,16 +39,17 @@ function Empty({ own }: { own?: string | null }) {
 
 export function useTopic(space: string, topic: string | undefined): TopicData | undefined {
   const session = useSession();
-  const [watched, setWatched] = useState<Signal<TopicData | undefined> | null>(null);
+  const [watched, setWatched] = useState<{ id: string; data: Signal<TopicData | undefined> } | null>(null);
   useEffect(() => {
     if (topic === undefined) {
       return undefined;
     }
     const handle = session.watch(space, topic);
-    setWatched(handle.data);
+    setWatched({ id: `${space}\u0000${topic}`, data: handle.data });
     return () => handle.release();
   }, [space, topic]);
-  return watched?.value;
+  // Only the topic asked for: never the last one's body for a render after it changes (a master's new row, D215).
+  return watched !== null && watched.id === `${space}\u0000${topic ?? ""}` ? watched.data.value : undefined;
 }
 
 function StatTiles({ body, empty }: { body: JsonObject; empty: JSX.Element }) {
@@ -190,7 +192,9 @@ function Table({ space, block, body, empty }: { space: string; block: PageBlock;
   const session = useSession();
   const [busy, setBusy] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const [asking, setAsking] = useState<{ action: RowAction; row: JsonObject } | null>(null);
+  // A row action asking first: a destructive one's second press, or the space's question before a move (D209).
+  const [asking, setAsking] = useState<{ action: RowAction; row: JsonObject; value?: string | number } | null>(null);
+  const [capturing, setCapturing] = useState<{ action: RowAction; row: JsonObject } | null>(null);
   const greyed = useContext(GreyedContext);
   const inert = greyed.words(greyed.page) !== null;  // a greyed page's switches do nothing (D188)
   const columns = objects(body.columns).filter((c) => text(c.id) !== null && text(c.label) !== null);
@@ -201,9 +205,14 @@ function Table({ space, block, body, empty }: { space: string; block: PageBlock;
   const first = columns.find((c) => switchOf(c) === null && c.numeric !== true);
   const actions = block.row_actions ?? [];
   const secret = block.row_secret ?? null;
-  const act = async (a: RowAction, row: JsonObject, confirmed: boolean) => {
+  const act = async (a: RowAction, row: JsonObject, confirmed: boolean, value?: string | number) => {
     const name = row[a.key];
     if (!named(name) || busy !== null || inert) {
+      return;
+    }
+    if (a.capture !== undefined && value === undefined) {
+      setRefusal(null);
+      setCapturing({ action: a, row });  // a key or a pad chord first (D209)
       return;
     }
     if ((a.tone === "destructive" || a.confirm !== undefined) && !confirmed) {
@@ -213,12 +222,18 @@ function Table({ space, block, body, empty }: { space: string; block: PageBlock;
     setRefusal(null);
     setBusy(String(name));
     const args: JsonObject = { [a.key]: name };
-    if (a.tone === "destructive") {
+    if (value !== undefined) {
+      args.value = value;
+    }
+    if (a.tone === "destructive" || (value !== undefined && confirmed)) {
       args.confirm = true;
     }
     const answer = await session.command(space, a.command, args);
     setBusy(null);
-    if (!answer.ok) {
+    if (!answer.ok && answer.error === "confirm_required" && value !== undefined && !confirmed) {
+      // The space asks first (another hotkey has it, D208): its words, then the same again with "confirm".
+      setAsking({ action: { ...a, confirm: answer.detail ?? "Use it here?" }, row, value });
+    } else if (!answer.ok) {
       setRefusal(refusalWords(answer));
     }
   };
@@ -292,7 +307,7 @@ function Table({ space, block, body, empty }: { space: string; block: PageBlock;
               })}
               {actions.length > 0 && (
                 <td class="table__actions">
-                  {actions.map((a) => {
+                  {actions.filter((a) => named(r[a.key]) && r[a.key] !== "").map((a) => {  // no key, no actions (D209)
                     const rowName = first ? text(r[text(first.id) ?? ""]) : null;
                     return (
                       <button type="button" key={a.id}
@@ -315,11 +330,33 @@ function Table({ space, block, body, empty }: { space: string; block: PageBlock;
                      onConfirm={(a) => {
                        const row = asking?.row;
                        if (row) {
-                         void act(a, row, true);
+                         void act(a, row, true, asking?.value);
+                       }
+                     }} />
+      <CaptureDialog space={space} id={capturing?.action.id ?? "none"} kind={capturing?.action.capture ?? null}
+                     title={capturing ? captureTitle(capturing.action, capturing.row, columns) : ""}
+                     onClose={() => setCapturing(null)}
+                     onPick={(value) => {
+                       const held = capturing;
+                       setCapturing(null);
+                       if (held) {
+                         void act(held.action, held.row, false, value);
                        }
                      }} />
     </>
   );
+}
+
+// "Change key: Tide Charts, Show the tide table": the action's label and the row's first two columns, as in game (D209).
+function captureTitle(a: RowAction, row: JsonObject, columns: JsonObject[]): string {
+  const words: string[] = [];
+  for (const c of columns) {
+    const cell = text(row[text(c.id) ?? ""]);
+    if (cell !== null && cell !== "" && switchOf(c) === null && c.numeric !== true && words.length < 2) {
+      words.push(cell);
+    }
+  }
+  return words.length > 0 ? `${a.label}: ${words.join(", ")}` : a.label;
 }
 
 const CHECK_WORDS: { [state: string]: string } = { pass: "Passed", warn: "Warning", fail: "Failed", wait: "Waiting" };
@@ -347,7 +384,10 @@ function CheckList({ body, empty }: { body: JsonObject; empty: JSX.Element }) {
 
 /** A component block: its topic watched while it is shown, its body drawn by its kind. */
 export function ComponentBlock({ space, block }: { space: string; block: PageBlock }) {
-  const data = useTopic(space, block.component === "statement" ? undefined : block.topic);
+  // A block bound to the page's master family draws the chosen row's member (D215).
+  const master = useContext(MasterContext);
+  const topic = topicFor(master, block.topic);  // since D217, any family the page's blocks name
+  const data = useTopic(space, block.component === "statement" ? undefined : topic);
   const props = block.props ?? {};
   // D185: one topic feeding several blocks, each drawing the member its props.field names.
   const field = typeof props.field === "string" ? props.field : undefined;

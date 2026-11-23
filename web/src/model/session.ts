@@ -566,7 +566,20 @@ export class Session {
     if (!this.transport) {
       return { ok: false, error: "not_now", local: "Not connected to the game." };
     }
-    return this.transport.command(space, name, args);
+    return this.transport.command(space, name, args, this.slow(space, name));
+  }
+
+  /** Sends a file with one of a space's file commands (G28): its answer, as for a command. */
+  async upload(space: string, name: string, args: JsonObject, file: Blob): Promise<Answer> {
+    if (!this.transport) {
+      return { ok: false, error: "not_now", local: "Not connected to the game." };
+    }
+    return this.transport.upload(space, name, args, file);
+  }
+
+  /** Whether a space names a command slow (D216): its answer is waited for up to 95 s. */
+  slow(space: string, name: string): boolean {
+    return (this.space(space)?.pages.value?.slow_commands ?? []).includes(name);
   }
 
   /** A header action's command (its confirmation, if it has one, already given). */
@@ -575,6 +588,7 @@ export class Session {
       return { ok: false, error: "not_now", local: "Not connected to the game." };
     }
     // A destructive action's command carries its confirmation, given by its second press (§7.3, D173).
-    return this.transport.command(space, action.command, action.tone === "destructive" ? { confirm: true } : {});
+    return this.transport.command(space, action.command, action.tone === "destructive" ? { confirm: true } : {},
+                                  this.slow(space, action.command));
   }
 }

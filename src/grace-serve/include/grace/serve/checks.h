@@ -59,6 +59,8 @@ Refusal check_api_request(const RequestHead& head, const Listener& listener, std
 
 // A body that must be JSON (item 9): Content-Type application/json, without case, and no parameter but charset=utf-8.
 bool content_type_is_json(const RequestHead& head) noexcept;
+// An upload's body (G28): Content-Type application/octet-stream, with no parameter.
+bool content_type_is_octets(const RequestHead& head) noexcept;
 
 // The session cookie's and a ticket's shape: kTokenChars of base64url without padding, the encoding of kTokenBytes.
 bool valid_token(std::string_view token) noexcept;

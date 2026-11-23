@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 3,
+  "minor": 9,
   "categories": [
     {
       "id": "lanterns",
@@ -17,7 +17,8 @@
       "name": "Records",
       "pages": [
         "demo.log",
-        "demo.festival"
+        "demo.festival",
+        "demo.lamps"
       ]
     }
   ],
@@ -265,7 +266,8 @@
         "steps": [
           "Read the roster: each keeper's post, and whether their ward word is set.",
           "Set a keeper's ward word on their row, or dismiss them; dismissing asks first.",
-          "Hire a keeper with the form, and choose the oil from what the store holds."
+          "Hire a keeper with the form, or bring several from a roster file in the browser view on this PC.",
+          "Choose the oil from what the store holds."
         ]
       },
       "related": [
@@ -359,8 +361,120 @@
               "tone": "secondary"
             }
           ]
+        },
+        {
+          "id": "roster_file",
+          "title": "From a roster file",
+          "description": "A harbour roster lists several keepers at once; each keeper it names joins the roster.",
+          "blocks": [
+            {
+              "kind": "upload",
+              "command": "keepers.import",
+              "submit": "Add a roster file",
+              "accept": ".toml, .txt"
+            }
+          ]
         }
       ]
+    },
+    {
+      "id": "demo.lamps",
+      "category": "records",
+      "name": "Lamps",
+      "description": "Every lamp on the harbour wall, and how each one burns.",
+      "help": {
+        "purpose": "Look over the harbour wall's lamps, one at a time.",
+        "steps": [
+          "Choose a lamp in the list.",
+          "Read how it burns on the Lamp tab, and its keeper's notes on the Notes tab.",
+          "Write your own notes on a lamp on the Your notes tab: check them, then save."
+        ]
+      },
+      "related": [
+        "demo.overview",
+        "demo.log"
+      ],
+      "increment": "0.2",
+      "tabs": [
+        {
+          "id": "lamp",
+          "name": "Lamp",
+          "sections": [
+            {
+              "id": "burning",
+              "title": "Burning",
+              "blocks": [
+                {
+                  "kind": "component",
+                  "component": "stat_tiles",
+                  "topic": "lantern.lamp"
+                },
+                {
+                  "kind": "component",
+                  "component": "key_value_list",
+                  "topic": "lantern.lamp",
+                  "props": {
+                    "field": "facts"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "notes",
+          "name": "Notes",
+          "sections": [
+            {
+              "id": "notes",
+              "title": "Keeper's notes",
+              "blocks": [
+                {
+                  "kind": "component",
+                  "component": "computed_sentence",
+                  "topic": "lantern.lamp",
+                  "props": {
+                    "empty": "No note for this lamp yet."
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "yours",
+          "name": "Your notes",
+          "sections": [
+            {
+              "id": "your_notes",
+              "title": "Your notes",
+              "blocks": [
+                {
+                  "kind": "editor",
+                  "topic": "lantern.note",
+                  "editor": {
+                    "save": "note.save",
+                    "check": "note.check",
+                    "reset": "note.reset",
+                    "restore": "note.restore",
+                    "draft": "note.draft",
+                    "notes_label": "Your rough notes",
+                    "notes_max": 400
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "master": {
+        "topic": "lantern.lamps",
+        "key": "id",
+        "detail": "lantern.lamp",
+        "label": "Lamps",
+        "empty": "No lamp is lit on the wall yet.",
+        "none": "Choose a lamp to see how it burns."
+      }
     }
   ],
   "topics": [
@@ -379,6 +493,20 @@
     {
       "id": "lantern.oils",
       "shape": "state"
+    },
+    {
+      "id": "lantern.lamps",
+      "shape": "state"
+    },
+    {
+      "id": "lantern.lamp",
+      "shape": "state",
+      "family": true
+    },
+    {
+      "id": "lantern.note",
+      "shape": "state",
+      "family": true
     },
     {
       "id": "lantern.log",
@@ -400,6 +528,22 @@
     "keepers.ward",
     "keepers.hire",
     "keepers.dismiss_all",
-    "oil.order"
+    "oil.order",
+    "note.check",
+    "note.save",
+    "note.reset",
+    "note.restore",
+    "note.draft",
+    "keepers.import"
+  ],
+  "slow_commands": [
+    "oil.order",
+    "note.draft"
+  ],
+  "sensitive_commands": [
+    "keepers.import"
+  ],
+  "file_commands": [
+    "keepers.import"
   ]
 }

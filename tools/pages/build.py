@@ -55,9 +55,9 @@ NUMERIC = {"integer", "number", "duration_s"}
 TRI_THIRDS = ("auto", "inherit")
 AVAILABILITY = re.compile(r"live|later|inert|check:[a-z0-9._-]{1,48}|version:\d+\.\d+|requires:[a-z0-9._/-]{1,64}")
 PAGE_FIELDS = ("id", "category", "name", "description", "help", "related", "increment", "tag", "actions", "tabs",
-               "sections")
+               "sections", "master")
 SETTING_FIELDS = ("key", "type", "default", "min", "max", "step", "unit", "choices", "choices_from", "third", "label", "help", "synonyms",
-                  "home", "effect", "availability", "locked")
+                  "home", "effect", "availability", "locked", "sensitive")
 
 
 class PagesError(Exception):
@@ -87,6 +87,12 @@ def documents(path, schema):
         "topics": source.get("topic", []),
         "commands": space.get("commands", []),
     }
+    if "slow_commands" in space:
+        space_pages["slow_commands"] = space["slow_commands"]  # D216
+    if "sensitive_commands" in space:
+        space_pages["sensitive_commands"] = space["sensitive_commands"]  # D221
+    if "file_commands" in space:
+        space_pages["file_commands"] = space["file_commands"]  # D226
     settings = []
     for entry in source.get("setting", []):
         unknown = set(entry) - set(SETTING_FIELDS)
@@ -172,11 +178,50 @@ def lint(space_pages, description, fixtures, known_spaces):
     unique("category", [c["id"] for c in space_pages["categories"]], space)
     unique("topic", list(t["id"] for t in space_pages["topics"]), space)
     unique("setting", [s["key"] for s in description["settings"]], space)
+    for name in space_pages.get("slow_commands", []):
+        if name not in commands or name in ("settings.set", "settings.reset"):
+            failures.append(f"{space}: slow command {name} is a command of the space's own, not a settings command "
+                            "(D216)")
+    unique("slow command", space_pages.get("slow_commands", []), space)
+    for name in space_pages.get("sensitive_commands", []):
+        if name not in commands or name in ("settings.set", "settings.reset"):
+            failures.append(f"{space}: sensitive command {name} is a command of the space's own, not a settings "
+                            "command: a setting is marked sensitive itself (D221)")
+    unique("sensitive command", space_pages.get("sensitive_commands", []), space)
+    for name in space_pages.get("file_commands", []):
+        if name not in commands or name in ("settings.set", "settings.reset"):
+            failures.append(f"{space}: file command {name} is a command of the space's own, not a settings command (D226)")
+        if name not in space_pages.get("sensitive_commands", []):
+            failures.append(f"{space}: file command {name} is marked sensitive too: never from a paired device (D226)")
+        if name in space_pages.get("slow_commands", []):
+            failures.append(f"{space}: file command {name} is not a slow command: its bytes are not held 90 s (D226)")
+    unique("file command", space_pages.get("file_commands", []), space)
+    files = set(space_pages.get("file_commands", []))
+
+    def file_uses(node, where):
+        # A file command is sent only by an upload block (D229): never by an action, a row's, a form or an editor.
+        if isinstance(node, dict):
+            named = [node.get("command")] if node.get("kind") != "upload" else []
+            named += [node.get(part) for part in ("save", "check", "reset", "restore", "draft")]
+            for name in named:
+                if isinstance(name, str) and name in files:
+                    failures.append(f"{where}: {name} is a file command, sent only by an upload block (D229)")
+            where = f"{space}: {node['id']}" if isinstance(node.get("id"), str) and "category" in node else where
+            for value in node.values():
+                file_uses(value, where)
+        elif isinstance(node, list):
+            for value in node:
+                file_uses(value, where)
+
+    file_uses(space_pages.get("pages", []), space)
     for t in space_pages["topics"]:
         if (t["shape"] == "stream") != ("ring" in t):
             failures.append(f"{space}: topic {t['id']}: a stream names its ring, a state does not")
         if t["id"] == SPACE_STATE and t["shape"] != "state":
             failures.append(f"{space}: topic {SPACE_STATE} is a state topic (D188)")
+        if t.get("family") and (t["shape"] != "state" or t["id"] in ("settings", SPACE_STATE)):
+            failures.append(f"{space}: topic {t['id']}: a family is a state topic of the space's own (D215)")
+    families = {tid for tid, t in topics.items() if t.get("family")}
 
     # 2. The rail.
     placed = {}
@@ -213,6 +258,19 @@ def lint(space_pages, description, fixtures, known_spaces):
         sections = list(p.get("sections", []))
         for tab in p.get("tabs", []):
             sections += tab["sections"]
+        master = p.get("master")  # a master list, its detail the page's own tabs and sections (D215)
+        if master is not None:
+            mt = master.get("topic")
+            if mt not in topics or topics[mt]["shape"] != "state" or mt in families or mt in ("settings", SPACE_STATE):
+                failures.append(f"{where}: its master list's topic is a state topic of the space's own, not a family")
+            if master.get("detail") not in families:
+                failures.append(f"{where}: its master list's detail is a family the space declares (D215)")
+            if not FIELD_NAME.match(master.get("key", "")) or not master.get("label"):
+                failures.append(f"{where}: its master list has a key column (a name) and a label")
+            for words in ("empty", "none"):
+                if words in master and not 1 <= len(master[words]) <= 160:
+                    failures.append(f"{where}: its master list's {words} is 1 to 160 characters")
+        # (A block may draw any family on a page with a master list: the chosen row's key names its member, D215.)
         unique("tab", [t["id"] for t in p.get("tabs", [])], where)
         unique("section", [s["id"] for s in sections], where)
         unique("action", [a["id"] for a in p.get("actions", [])], where)
@@ -223,7 +281,8 @@ def lint(space_pages, description, fixtures, known_spaces):
             status = section.get("status")
             if status is not None:
                 topic = status.get("topic")
-                if (topic not in topics or topics[topic]["shape"] != "state" or topic in ("settings", SPACE_STATE)):
+                if (topic not in topics or topics[topic]["shape"] != "state" or topic in ("settings", SPACE_STATE) or
+                        topic in families):
                     failures.append(f"{swhere}: its status names a state topic of the space's own")
                 if "field" in status and not FIELD_NAME.match(status["field"]):
                     failures.append(f"{swhere}: its status field is a name (a-z, 0-9, _; 1 to 32)")
@@ -242,8 +301,42 @@ def lint(space_pages, description, fixtures, known_spaces):
             for block in section["blocks"] + section.get("advanced", []):
                 kind = block["kind"]
                 bwhere = f"{where}, section {section['id']}"
-                if kind != "form" and any(k in block for k in ("command", "fields", "submit")):
+                if kind not in ("form", "upload") and any(k in block for k in ("command", "fields", "submit")):
                     failures.append(f"{bwhere}: command, fields and submit belong to a form block (D195)")
+                if kind != "upload" and "accept" in block:
+                    failures.append(f"{bwhere}: accept belongs to an upload block (D226)")
+                if kind == "upload":
+                    accept = block.get("accept", "")
+                    if (block.get("command") not in space_pages.get("file_commands", []) or not block.get("submit") or
+                            any(k in block for k in ("keys", "component", "topic", "props", "fields", "row_actions",
+                                                     "row_secret", "editor"))):
+                        failures.append(f"{bwhere}: an upload block has a file command of the space's, a submit label "
+                                        "and an optional accept, and nothing else (D226)")
+                    if accept and not all(re.fullmatch(r"\.[a-z0-9]{1,8}", part.strip()) for part in accept.split(",")):
+                        failures.append(f"{bwhere}: an upload block's accept lists extensions such as \".zip, .toml\"")
+                    continue
+                if kind != "editor" and "editor" in block:
+                    failures.append(f"{bwhere}: editor belongs to an editor block (D217)")
+                if kind == "editor":
+                    ed = block.get("editor") or {}
+                    topic = block.get("topic")
+                    if (not ed or any(k in block for k in ("keys", "component", "props", "row_actions", "row_secret"))):
+                        failures.append(f"{bwhere}: an editor block has its topic and its editor, and nothing else (D217)")
+                    if (topic not in topics or topics[topic]["shape"] != "state" or
+                            topic in ("settings", SPACE_STATE)):
+                        failures.append(f"{bwhere}: an editor's topic is a state topic or a family of the space's own")
+                    elif topic in families and master is None:
+                        failures.append(f"{bwhere}: an editor draws family {topic} on a page with no master list (D215)")
+                    for part in ("save", "check", "reset", "restore", "draft"):
+                        if part in ed and ed[part] not in commands:
+                            failures.append(f"{bwhere}: the editor's {part} sends {ed[part]}, not a command of the space")
+                    if "save" not in ed:
+                        failures.append(f"{bwhere}: an editor has a save command")
+                    if "draft" in ed and ed["draft"] not in space_pages.get("slow_commands", []):
+                        failures.append(f"{bwhere}: the editor's draft is a slow command (D216)")
+                    if "notes_max" in ed and not 1 <= ed["notes_max"] <= 400:
+                        failures.append(f"{bwhere}: the editor's notes_max is 1 to 400")
+                    continue
                 if (("row_actions" in block or "row_secret" in block) and
                         (kind != "component" or block.get("component") != "table")):
                     failures.append(f"{bwhere}: row actions and a row secret go on a table (D192, D194)")
@@ -285,6 +378,9 @@ def lint(space_pages, description, fixtures, known_spaces):
                         failures.append(f"{bwhere}: {component} cannot draw {topics[topic]['shape']} topic {topic}")
                     elif topic == SPACE_STATE:
                         failures.append(f"{bwhere}: {SPACE_STATE} is the framework's topic, drawn by no component")
+                    elif topic in families and master is None:
+                        failures.append(f"{bwhere}: {component} draws family {topic} on a page with no master list, "
+                                        "whose chosen row names its member (D215)")
                     props = block.get("props") or {}
                     if "field" in props and (component in STREAM_COMPONENTS or topic is None or
                                              not isinstance(props["field"], str) or
@@ -310,7 +406,8 @@ def lint(space_pages, description, fixtures, known_spaces):
         lint_setting(space, s, failures)
         source = s.get("choices_from")
         if source is not None and (s["type"] != "text" or "choices" in s or source not in topics or
-                                   topics[source]["shape"] != "state" or source in ("settings", SPACE_STATE)):
+                                   topics[source]["shape"] != "state" or source in ("settings", SPACE_STATE) or
+                                   source in families):
             failures.append(f"{space}: setting {key}: choices_from is on a text setting, naming a state topic of "
                             "the space's own (D193)")
         if source is not None and len(str(s["default"]).encode("utf-8")) > 200:
@@ -327,6 +424,14 @@ def lint(space_pages, description, fixtures, known_spaces):
         for tid, t in topics.items():
             if tid == "settings":
                 continue
+            if tid in families:
+                members = [k for k in fixtures if k.startswith(tid + "/")]
+                if not members:
+                    failures.append(f"{space}: family {tid} has no member's fixture")
+                for k in members:
+                    if "/" in k[len(tid) + 1:] or not isinstance(fixtures[k], dict):
+                        failures.append(f"{space}: fixture {k} is not an object for one member of {tid}")
+                continue
             body = fixtures.get(tid)
             if body is None:
                 failures.append(f"{space}: topic {tid} has no fixture")
@@ -338,8 +443,8 @@ def lint(space_pages, description, fixtures, known_spaces):
                         any(not isinstance(q, int) for q in seqs) or seqs != sorted(set(seqs)):
                     failures.append(f"{space}: fixture {tid} is not a list of rows with rising seq numbers")
         for tid in fixtures:
-            if tid not in topics:
-                failures.append(f"{space}: fixture {tid} is for no declared topic")
+            if tid not in topics and tid.rpartition("/")[0] not in families:
+                failures.append(f"{space}: fixture {tid} is for no declared topic or family")
     return failures
 
 

@@ -229,7 +229,8 @@ bool has_cap(std::string_view name) noexcept {
   return name == GRACEUI_CAP_NOTICES || name == GRACEUI_CAP_PANELS || name == GRACEUI_CAP_TEXTURES ||
          name == GRACEUI_CAP_FACES || name == GRACEUI_CAP_INPUT || name == GRACEUI_CAP_WORLD_STATE ||
          name == GRACEUI_CAP_HOTKEYS || name == GRACEUI_CAP_PAGES || name == GRACEUI_CAP_HOLDER_EVENTS ||
-         name == GRACEUI_CAP_DISPLAY || name == GRACEUI_CAP_PAD_CHORDS;
+         name == GRACEUI_CAP_DISPLAY || name == GRACEUI_CAP_PAD_CHORDS || name == GRACEUI_CAP_HOTKEY_BINDINGS ||
+         name == GRACEUI_CAP_WAKE;
 }
 
 grace::abi::ConnectResult connect(const grace::abi::ConnectRequest& request) noexcept {

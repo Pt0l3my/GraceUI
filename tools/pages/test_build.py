@@ -219,6 +219,82 @@ class Seeded(unittest.TestCase):
         keepers(sp)[2]["actions"][0]["command"] = "oil.steal"
         self.expect("action order has a label and sends a command of the space", sp, desc, fx)
 
+    def test_families_and_master_lists(self):  # G38, D215
+        def topic(sp, tid):
+            return next(t for t in sp["topics"] if t["id"] == tid)
+        sp, desc, fx = demo()
+        topic(sp, "lantern.lamp")["shape"] = "stream"
+        topic(sp, "lantern.lamp")["ring"] = 10
+        self.expect("a family is a state topic of the space's own", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.lamps")["master"]["detail"] = "lantern.lamps"
+        self.expect("its master list's detail is a family the space declares", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.lamps")["master"]["topic"] = "lantern.lamp"
+        self.expect("its master list's topic is a state topic of the space's own, not a family", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.lamps")["master"]["key"] = "lamp.id"
+        self.expect("its master list has a key column (a name) and a label", sp, desc, fx)
+        sp, desc, fx = demo()
+        del page(sp, "demo.lamps")["master"]
+        self.expect("draws family lantern.lamp on a page with no master list", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.keepers")["sections"][2]["status"] = {"topic": "lantern.lamp"}
+        self.expect("its status names a state topic of the space's own", sp, desc, fx)
+        sp, desc, fx = demo()
+        for k in [k for k in fx if k.startswith("lantern.lamp/")]:
+            del fx[k]
+        self.expect("family lantern.lamp has no member's fixture", sp, desc, fx)
+        sp, desc, fx = demo()
+        fx["lantern.lamp/a/b"] = {}
+        self.expect("is not an object for one member of lantern.lamp", sp, desc, fx)
+
+    def test_slow_commands(self):  # D216
+        sp, desc, fx = demo()
+        sp["slow_commands"] = ["oil.steal"]
+        self.expect("slow command oil.steal is a command of the space's own", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["slow_commands"] = ["settings.set"]
+        self.expect("slow command settings.set is a command of the space's own, not a settings command", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["slow_commands"] = ["oil.order", "oil.order"]
+        self.expect("slow command oil.order twice", sp, desc, fx)
+
+    def test_file_commands_and_upload_blocks(self):  # D226
+        def roster_block(sp):
+            section = next(s for s in page(sp, "demo.keepers")["sections"] if s["id"] == "roster_file")
+            return section["blocks"][0]
+        sp, desc, fx = demo()
+        sp["sensitive_commands"] = []
+        self.expect("file command keepers.import is marked sensitive too", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["file_commands"] = ["keepers.import", "settings.set"]
+        self.expect("file command settings.set is a command of the space's own, not a settings command", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["slow_commands"].append("keepers.import")
+        self.expect("file command keepers.import is not a slow command", sp, desc, fx)
+        sp, desc, fx = demo()
+        roster_block(sp)["command"] = "keepers.hire"
+        self.expect("an upload block has a file command of the space's", sp, desc, fx)
+        sp, desc, fx = demo()
+        del roster_block(sp)["submit"]
+        self.expect("an upload block has a file command of the space's", sp, desc, fx)
+        sp, desc, fx = demo()
+        roster_block(sp)["accept"] = "zip"
+        self.expect("an upload block's accept lists extensions", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.keepers")["sections"][1]["blocks"][0]["accept"] = ".zip"
+        self.expect("accept belongs to an upload block", sp, desc, fx)
+        # Sent only by an upload block (D229): never by a form, a row action or a page's action.
+        sp, desc, fx = demo()
+        form = next(b for s in page(sp, "demo.keepers")["sections"] for b in s["blocks"] if b.get("kind") == "form")
+        form["command"] = "keepers.import"
+        self.expect("keepers.import is a file command, sent only by an upload block", sp, desc, fx)
+        sp, desc, fx = demo()
+        table = next(b for s in page(sp, "demo.keepers")["sections"] for b in s["blocks"] if b.get("row_actions"))
+        table["row_actions"][0]["command"] = "keepers.import"
+        self.expect("keepers.import is a file command, sent only by an upload block", sp, desc, fx)
+
     def test_setting_descriptions(self):
         cases = [
             ("lantern.oil_token", "default", "hunter2", "a secret's default is empty"),

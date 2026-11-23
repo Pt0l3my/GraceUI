@@ -5,12 +5,16 @@
 // in-game menu through one store.
 #include <doctest/doctest.h>
 
+#include <atomic>
+
 #include <chrono>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "client.h"
 #include "grace/pages/builtin.h"
+#include "grace/serve/codec.h"
 #include "grace/spaces/own_space.h"
 #include "grace/spaces/registry.h"
 #include "harness.h"
@@ -230,7 +234,7 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
   std::string why;
   REQUIRE_MESSAGE(own.load(why), why);
   int disconnects = 0;
-  own.attach(fixture.server, "0.2.0", spaces::OwnSpace::Hooks{[&] { ++disconnects; }, {}});
+  own.attach(fixture.server, "0.2.0", spaces::OwnSpace::Hooks{[&] { ++disconnects; }, {}, {}});
   REQUIRE(fixture.wait_files());
   auto view = fixture.join();
   REQUIRE(view != nullptr);
@@ -279,11 +283,17 @@ TEST_CASE("GraceUI's own space: the settings topic and its commands, one store f
 
   // A refusal carries the store's code and words; menu.close has no menu in the browser; disconnect renews.
   REQUIRE(view->send_json(frame("cmd", {{"space", "graceui"}, {"id", 10}, {"name", "settings.set"},
-                                        {"args", {{"key", "dashboard.lan"}, {"value", true}}}})));
+                                        {"args", {{"key", "ui.scale"}, {"value", 9.0}}}})));
   result = serve_until("result");
   REQUIRE(result);
-  CHECK((*result)["error"] == "locked");
-  CHECK((*result)["detail"] == "Only in a later version.");
+  CHECK((*result)["error"] == "invalid_value");
+  CHECK((*result).contains("detail"));
+  // dashboard.pair has no code to show in a browser (D66); Forget needs a paired device's id.
+  REQUIRE(view->send_json(frame("cmd", {{"space", "graceui"}, {"id", 13}, {"name", "dashboard.pair"},
+                                        {"args", Json::object()}})));
+  result = serve_until("result");
+  REQUIRE(result);
+  CHECK((*result)["error"] != nullptr);
   REQUIRE(view->send_json(frame("cmd", {{"space", "graceui"}, {"id", 11}, {"name", "menu.close"},
                                         {"args", Json::object()}})));
   result = serve_until("result");
@@ -386,7 +396,7 @@ TEST_CASE("the menu's side, with no server: the space listed, a watch, its state
   REQUIRE(listed.size() == 1);
   CHECK(listed[0].id == "demo");
   CHECK(listed[0].name == "Demo space");
-  CHECK(listed[0].pages->pages.size() == 5);
+  CHECK(listed[0].pages->pages.size() == 6);
   CHECK(listed[0].settings->settings.size() == 13);
 
   registry.game_watch("demo", "settings", true);
@@ -425,6 +435,7 @@ TEST_CASE("the menu's side, with no server: the space listed, a watch, its state
   const Polled command = poll(registry);
   REQUIRE(command.kind == EventKind::command);
   CHECK(Json::parse(command.frame)["name"] == "settings.set");
+  CHECK(Json::parse(command.frame)["view"] == "game");  // the in-game menu's (§7.3, D224)
   CHECK(registry.answer(kMod, command.reply,
                         R"({"v":1,"t":"result","space":"demo","id":0,"error":"invalid_value","detail":"No."})",
                         why) == Status::ok);
@@ -438,6 +449,61 @@ TEST_CASE("the menu's side, with no server: the space listed, a watch, its state
   registry.game_watch("demo", "settings", false);
   CHECK(poll(registry).kind == EventKind::unwatched);
   CHECK_FALSE(registry.game_state("demo", "settings", 0, body, rev));  // forgotten with the watch
+}
+
+TEST_CASE("a family's member through the registry: watched by the menu, published, kept; the family itself refused (D215)") {
+  spaces::Registry registry;
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame), why) == Status::ok);
+  registry.game_watch("demo", "lantern.lamp/fish-steps", true);
+  const Polled watched = poll(registry);
+  REQUIRE(watched.kind == EventKind::watched);
+  CHECK(Json::parse(watched.frame)["topic"] == "lantern.lamp/fish-steps");
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.lamp/fish-steps","rev":2,"body":{"sentence":"Low."}})",
+                         why) == Status::ok);
+  Json body;
+  std::uint64_t rev = 0;
+  REQUIRE(registry.game_state("demo", "lantern.lamp/fish-steps", 0, body, rev));
+  CHECK(body["sentence"] == "Low.");
+  // A member nobody watches: taken, and dropped; the family itself, a stream's member and a key with '/': refused.
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.lamp/old-crane","rev":1,"body":{}})",
+                         why) == Status::ok);
+  CHECK_FALSE(registry.game_state("demo", "lantern.lamp/old-crane", 0, body, rev));
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.lamp","rev":1,"body":{}})",
+                         why) == Status::refused);
+  CHECK(why == "a family: its members are published, each as <family>/<key>");
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.log/one","rev":1,"body":{}})",
+                         why) == Status::refused);
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"state","space":"demo","topic":"lantern.lamp/a/b","rev":1,"body":{}})",
+                         why) == Status::refused);
+  registry.game_watch("demo", "lantern.lamp/fish-steps", false);
+  CHECK(poll(registry).kind == EventKind::unwatched);
+  CHECK_FALSE(registry.game_state("demo", "lantern.lamp/fish-steps", 0, body, rev));
+}
+
+TEST_CASE("a slow command waits 90 s for its answer, any other 10 s (D216)") {
+  spaces::Registry registry;
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame), why) == Status::ok);
+  std::uint64_t slow = 0;
+  std::uint64_t quick = 0;
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 1, "oil.order", Json::object()}, slow));
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 2, "lantern.trim", Json::object()}, quick));
+  const auto now = std::chrono::steady_clock::now();
+  CHECK(registry.expire(now + std::chrono::seconds(11)) == 1);  // the trim alone
+  auto results = registry.take_game_results();
+  REQUIRE(results.size() == 1);
+  CHECK(results[0].ticket == quick);
+  CHECK(registry.expire(now + std::chrono::seconds(60)) == 0);
+  CHECK(registry.expire(now + std::chrono::seconds(91)) == 1);
+  results = registry.take_game_results();
+  REQUIRE(results.size() == 1);
+  CHECK(results[0].ticket == slow);
+  CHECK(results[0].result.error == protocol::ErrorCode::internal);
 }
 
 TEST_CASE("the menu's watch and the browser's merge: one WATCHED, one UNWATCHED, whichever comes first") {
@@ -566,6 +632,13 @@ TEST_CASE("G34's parts are checked at registration: row actions, a row secret, a
   pages = demo;
   keepers(pages)[2]["blocks"][0]["command"] = "keepers.hire";
   refused(pages, described, "a form block, and only a form block");
+  // A file command is sent only by an upload block (D229).
+  pages = demo;
+  keepers(pages)[1]["blocks"][0]["command"] = "keepers.import";
+  refused(pages, described, "keepers.import is a file command, which only an upload block sends");
+  pages = demo;
+  keepers(pages)[0]["blocks"][0]["row_actions"][0]["command"] = "keepers.import";
+  refused(pages, described, "keepers.import is a file command, which only an upload block sends");
   Json settings = described;
   for (Json& s : settings["settings"]) {
     if (s["key"] == "lantern.oil_kind") {
@@ -616,10 +689,12 @@ TEST_CASE("a row secret's command reaches its space; its result comes back with 
   REQUIRE(result);
   CHECK((*result)["ok"] == true);
   CHECK_FALSE(result->contains("body"));
-  // Another command's body is passed as before.
-  REQUIRE(view->send_json(frame("cmd", {{"space", "demo"}, {"id", 6}, {"name", "lantern.trim"}, {"args", Json::object()}})));
+  // Another command's body is passed as before. A view that names itself the game is not believed (§7.3, D224).
+  REQUIRE(view->send_json(frame("cmd", {{"space", "demo"}, {"id", 6}, {"name", "lantern.trim"}, {"args", Json::object()},
+                                        {"view", "game"}})));
   const Polled trim = wait_event(registry);
   REQUIRE(trim.kind == EventKind::command);
+  CHECK(Json::parse(trim.frame)["view"] == "browser");
   CHECK(registry.answer(kMod, trim.reply, R"({"v":1,"t":"result","space":"demo","id":6,"ok":true,"body":{"trimmed":1}})",
                         why) == Status::ok);
   const auto kept = view->next_of("result");
@@ -663,4 +738,206 @@ TEST_CASE("a section's own actions and status are checked at registration; a des
   const auto results = registry.take_game_results();
   REQUIRE(results.size() == 1);
   CHECK(results[0].result.error == protocol::ErrorCode::confirm_required);
+}
+
+namespace {
+std::atomic<int> g_owner_wakes{0};
+std::atomic<std::uint64_t> g_woken_owner{0};
+void owner_woken(std::uint64_t owner) noexcept {
+  g_owner_wakes.fetch_add(1);
+  g_woken_owner.store(owner);
+}
+}  // namespace
+
+TEST_CASE("the menu's watch, unwatch and command wake the space's owner, for its mod's wait handle (D212)") {
+  spaces::Registry registry;
+  registry.set_owner_wake(&owner_woken);
+  g_owner_wakes.store(0);
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame), why) == Status::ok);
+  registry.game_watch("demo", "settings", true);
+  CHECK(g_owner_wakes.load() == 1);
+  CHECK(g_woken_owner.load() == kMod);
+  registry.game_watch("demo", "settings", true);  // already watched: no event, no wake
+  CHECK(g_owner_wakes.load() == 1);
+  std::uint64_t ticket = 0;
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 3, "settings.set",
+                                                      Json::object({{"key", "lantern.enabled"}, {"value", false}})},
+                                ticket));
+  CHECK(g_owner_wakes.load() == 2);
+  registry.game_watch("demo", "settings", false);
+  CHECK(g_owner_wakes.load() == 3);
+}
+
+namespace {
+
+std::string sha256_hex(std::string_view bytes) {
+  serve::Sha256 sha;
+  sha.update(bytes);
+  const std::array<std::uint8_t, 32> digest = sha.finish();
+  constexpr std::string_view kHex = "0123456789abcdef";
+  std::string out;
+  for (const std::uint8_t b : digest) {
+    out += kHex[b >> 4];
+    out += kHex[b & 0xF];
+  }
+  return out;
+}
+
+// A browser's upload of `file` for keepers.import: its ticket over the WebSocket, then the POST. The POST's status.
+int upload(Fixture& fixture, WsClient& view, std::uint32_t id, const std::string& file) {
+  REQUIRE(view.send_json(frame("upload", {{"space", "demo"}, {"id", id}, {"name", "keepers.import"},
+                                          {"args", Json::object()}, {"size", file.size()},
+                                          {"sha256", sha256_hex(file)}})));
+  const std::optional<Json> ticket = view.next_of("upload_ticket");
+  REQUIRE(ticket.has_value());
+  const std::string cookie = fixture.cookie();
+  const std::string head = "POST /upload HTTP/1.1\r\nHost: " + host_of(fixture.port) + "\r\nOrigin: " +
+                           origin_of(fixture.port) +
+                           "\r\nSec-Fetch-Site: same-origin\r\nContent-Type: application/octet-stream\r\n"
+                           "Cookie: en_session=" + cookie + "\r\nGrace-Upload-Ticket: " +
+                           (*ticket)["ticket"].get<std::string>() + "\r\nContent-Length: " +
+                           std::to_string(file.size()) + "\r\n\r\n";
+  return request(fixture.port, head + file, 10s).status;
+}
+
+}  // namespace
+
+TEST_CASE("a file command's file reaches the mod beside its frame, once, by ABI 1.6's poll (D226)") {
+  Fixture fixture(no_spaces());
+  REQUIRE(fixture.started == serve::StartResult::ok);
+  spaces::Registry registry;
+  registry.attach(fixture.server);
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(demo_pages(), demo_settings()), why) == Status::ok);
+  REQUIRE(fixture.wait_files());
+  auto view = fixture.join(nullptr);
+  REQUIRE(view != nullptr);
+  const std::string file(70000, 'r');
+  REQUIRE(upload(fixture, *view, 5, file) == 202);
+  // A file buffer too small: full, both lengths set, the event kept.
+  std::string frame_buffer(16384, '\0');
+  std::vector<std::uint8_t> small(1024);
+  spaces::FileOut out;
+  out.buffer = small.data();
+  out.capacity = small.size();
+  out.takes = true;
+  EventKind kind = EventKind::none;
+  std::uint64_t reply = 0;
+  std::uint64_t length = 0;
+  Status status = Status::ok;
+  for (int i = 0; i < 200 && kind == EventKind::none; ++i) {
+    status = registry.poll(kMod, frame_buffer.data(), frame_buffer.size(), kind, reply, length, out);
+    if (kind == EventKind::none) {
+      std::this_thread::sleep_for(10ms);
+    }
+  }
+  CHECK(status == Status::full);
+  CHECK(kind == EventKind::command);
+  CHECK(out.length == file.size());
+  // Room for it: the frame and the file, once.
+  std::vector<std::uint8_t> room(file.size());
+  out.buffer = room.data();
+  out.capacity = room.size();
+  status = registry.poll(kMod, frame_buffer.data(), frame_buffer.size(), kind, reply, length, out);
+  REQUIRE(status == Status::ok);
+  CHECK(kind == EventKind::command);
+  CHECK(out.length == file.size());
+  CHECK(std::string(room.begin(), room.end()) == file);
+  const Json cmd = Json::parse(frame_buffer.substr(0, length));
+  CHECK(cmd["name"] == "keepers.import");
+  CHECK(cmd["view"] == "browser");
+  CHECK(registry.answer(kMod, reply, R"({"v":1,"t":"result","space":"demo","id":0,"ok":true})", why) == Status::ok);
+  const std::optional<Json> result = view->next_of("result");
+  REQUIRE(result.has_value());
+  CHECK((*result)["id"] == 5);
+  CHECK((*result)["ok"] == true);
+  // A mod whose event takes no file: GraceUI answers the command for it, and the mod never sees it.
+  REQUIRE(upload(fixture, *view, 6, file) == 202);
+  spaces::FileOut none;
+  kind = EventKind::none;
+  for (int i = 0; i < 100 && kind == EventKind::none; ++i) {
+    registry.poll(kMod, frame_buffer.data(), frame_buffer.size(), kind, reply, length, none);
+    std::this_thread::sleep_for(10ms);
+  }
+  CHECK(kind == EventKind::none);
+  const std::optional<Json> refused = view->next_of("result");
+  REQUIRE(refused.has_value());
+  CHECK((*refused)["id"] == 6);
+  CHECK((*refused)["error"] == "not_now");
+}
+
+TEST_CASE("a file held on FULL past its deadline is let go, never delivered after the view was answered (D229)") {
+  Fixture fixture(no_spaces());
+  REQUIRE(fixture.started == serve::StartResult::ok);
+  spaces::Registry registry;
+  registry.attach(fixture.server);
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(demo_pages(), demo_settings()), why) == Status::ok);
+  REQUIRE(fixture.wait_files());
+  auto view = fixture.join(nullptr);
+  REQUIRE(view != nullptr);
+  const std::string file(4096, 'h');
+  REQUIRE(upload(fixture, *view, 8, file) == 202);
+  std::string frame_buffer(16384, '\0');
+  std::vector<std::uint8_t> small(16);
+  spaces::FileOut out;
+  out.buffer = small.data();
+  out.capacity = small.size();
+  out.takes = true;
+  EventKind kind = EventKind::none;
+  std::uint64_t reply = 0;
+  std::uint64_t length = 0;
+  Status status = Status::ok;
+  for (int i = 0; i < 200 && kind == EventKind::none; ++i) {
+    status = registry.poll(kMod, frame_buffer.data(), frame_buffer.size(), kind, reply, length, out);
+    if (kind == EventKind::none) {
+      std::this_thread::sleep_for(10ms);
+    }
+  }
+  REQUIRE(status == Status::full);
+  // The mod never comes back with room in time: the view is answered, and the held file goes with its deadline.
+  CHECK(registry.expire(std::chrono::steady_clock::now() + 200s) == 1);
+  const std::optional<Json> late = view->next_of("result");
+  REQUIRE(late.has_value());
+  CHECK((*late)["id"] == 8);
+  CHECK((*late)["error"] == "internal");
+  std::vector<std::uint8_t> room(file.size());
+  out.buffer = room.data();
+  out.capacity = room.size();
+  status = registry.poll(kMod, frame_buffer.data(), frame_buffer.size(), kind, reply, length, out);
+  CHECK(status == Status::ok);
+  CHECK(kind == EventKind::none);  // nothing delivered a second time
+  CHECK(out.length == 0);
+}
+
+TEST_CASE("the menu never sends a file command: only the upload route does (D229)") {
+  spaces::Registry registry;
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame), why) == Status::ok);
+  std::uint64_t ticket = 0;
+  REQUIRE(registry.game_command("demo", protocol::Cmd{"demo", 1, "keepers.import", Json::object()}, ticket));
+  CHECK(poll(registry).kind == EventKind::none);  // the mod never sees it
+  const auto results = registry.take_game_results();
+  REQUIRE(results.size() == 1);
+  CHECK(results[0].ticket == ticket);
+  CHECK(results[0].result.error == protocol::ErrorCode::invalid_value);
+  CHECK(results[0].result.detail == "This takes a file: add it in the browser view on this PC.");
+}
+
+TEST_CASE("a space with file commands needs a mod built for ABI 1.6 (D226)") {
+  spaces::Registry registry;
+  std::string why;
+  const std::string pages = demo_pages();  // the registration's views point into these
+  const std::string settings = demo_settings();
+  spaces::Registration older = demo_registration(pages, settings, spaces::kViewGame);
+  older.takes_files = false;
+  CHECK(registry.add(kMod, "demo", older, why) == Status::refused);
+  CHECK(why.find("ABI 1.6") != std::string::npos);
+  older.takes_files = true;
+  CHECK(registry.add(kMod, "demo", older, why) == Status::ok);
 }

@@ -85,6 +85,10 @@ bool check_fixtures(const SpaceData& space, std::string& why) {
       why = where + ": the settings topic comes from settings.json and the settings store, not from a fixture";
       return false;
     }
+    if (topic->family.value_or(false) && topic->id == id) {
+      why = where + ": a family has no fixture of its own; each member's is <family>/<key> (D215)";
+      return false;
+    }
     if (topic->shape == protocol::TopicShape::state) {
       if (!it.value().is_object()) {
         why = where + ": a state topic's fixture is an object, its body";
@@ -213,6 +217,16 @@ bool finish(SpaceData& space, std::string& why) {
 const protocol::TopicInfo* SpaceData::topic(std::string_view id) const noexcept {
   for (const protocol::TopicInfo& t : pages.topics) {
     if (t.id == id) {
+      return &t;
+    }
+  }
+  // A family's member (D215): the family's own description, a state.
+  const std::size_t slash = id.rfind('/');
+  if (slash == std::string_view::npos || slash == 0 || slash + 1 >= id.size()) {
+    return nullptr;
+  }
+  for (const protocol::TopicInfo& t : pages.topics) {
+    if (t.id == id.substr(0, slash) && t.family.value_or(false)) {
       return &t;
     }
   }

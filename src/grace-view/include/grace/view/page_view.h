@@ -10,12 +10,15 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include "grace/protocol/messages.h"
 #include "grace/view/display.h"
+#include "grace/view/editor.h"
 #include "grace/view/text.h"
+#include "grace/view/text_field.h"
 
 namespace grace::view {
 
@@ -26,9 +29,10 @@ struct Viewport {
 };
 
 // What the host makes of a key or a button (§5.3, §5.4): ↑ ↓ and the d-pad; ← →; Tab and Shift+Tab; Enter, Space and A;
-// Esc and B; Q, E, LB and RB; Page Up, Page Down, LT and RT; R and X. `shift` is Shift held (a slider's ten steps).
+// Esc and B; Q, E, LB and RB; Page Up, Page Down, LT and RT; R and X; `/` and Ctrl+F, search (§4.3). `shift` is Shift
+// held (a slider's ten steps).
 enum class Key : std::uint8_t {
-  up, down, left, right, next, previous, activate, back, previous_tab, next_tab, previous_page, next_page, reset,
+  up, down, left, right, next, previous, activate, back, previous_tab, next_tab, previous_page, next_page, reset, search,
 };
 
 struct Input {
@@ -54,11 +58,13 @@ struct Action {
     opened_page,  // the view moved to `page`
     close,        // back from the rail: the menu closes (the host runs its close routine)
     switch_space, // a link on the rail to another space's page: the host opens `page` of `space` (D79, D171)
+    sheet_closed, // the sheet's Close (G9): the host ends what it showed (a pairing code)
   };
   Kind kind = Kind::none;
   protocol::Cmd command{};
   std::string page;
   std::string space;  // with switch_space
+  std::string key;    // with switch_space from a search hit: the setting whose row the host then reveals (D219)
 };
 
 // A link on the rail to a page of another space (D79, D171): drawn as a category row (or a page row, indented), and
@@ -86,6 +92,9 @@ struct SearchHit {
   std::string key;
   std::string page;  // the setting's home
   std::string label;
+  std::string where;       // its home page's name
+  std::string space;       // another space's id (D219); empty for the view's own space
+  std::string space_name;  // that space's name
 };
 
 class PageView {
@@ -122,6 +131,32 @@ class PageView {
   Action pointer(const Pointer& pointer);
   // A command the space refused: the reason, in words, under its control, focus back on it (§5.7).
   void refused(std::string_view key, std::string_view reason);
+
+  // ---- Capture (G37, D209). A row action that captures (protocol 1.4), or a key's setting (hotkeys.menu), opens a
+  // small modal over the page. A key capture waits for the next key press, which the host gives by its name with its
+  // modifiers ("Ctrl+K"), never as a key of the menu's own; Escape (Key::back) cancels, and on a row's capture
+  // Backspace leaves it with no key. A chord capture has two pickers, the button held first and the one pressed then,
+  // moved with ↑ ↓ and changed with ← →; Enter uses them, R leaves no chord. The command it makes is answered through
+  // capture_answered: done, it closes; `confirm_required` shows the space's words and Enter sends it again with
+  // "confirm"; any other refusal shows its words and waits again.
+  bool capture_open() const noexcept { return capture_.kind != CaptureKind::none; }
+
+  // ---- A sheet (G9): a modal of the host's own words over the page, such as Pair a device's code. The host sets it,
+  // and sets it again whenever its words change (a countdown). Enter, Escape, A, B or a press on its Close closes it and
+  // answers sheet_closed, which the host takes as the end of what it showed; close_sheet, the host's own close (the
+  // menu's close routine), answers nothing. While it is open the page under it takes no key, character or pointer.
+  struct Sheet {
+    std::string title;
+    std::string figure;              // drawn large and centred, such as a code; empty for none
+    std::vector<std::string> lines;  // each wrapped to the card
+    bool operator==(const Sheet&) const = default;
+  };
+  void show_sheet(Sheet sheet);
+  void close_sheet() noexcept;
+  bool sheet_open() const noexcept { return sheet_open_; }
+  bool awaiting_key() const noexcept { return capture_.kind == CaptureKind::key && capture_.stage == CaptureStage::waiting; }
+  Action captured(std::string_view key);
+  void capture_answered(bool ok, bool confirm_required, std::string_view words);
   // A setting's value as the space last gave it, after a refusal: `value`, or its default if null (D171).
   void restore(std::string_view key, const protocol::Json& value);
   // The rail's other spaces (D79, D171): the host sets them whenever the spaces or the open one change.
@@ -140,10 +175,82 @@ class PageView {
 
   // The menu's close routine (§5.1): a destructive action waiting for its second press asks again at the next open; the
   // page, tab and focused row stay for the next open in the session.
-  void cancel_confirmation() noexcept { confirming_.clear(); }
+  // An edit ends as Escape ends it (G38 (2)).
+  void cancel_confirmation() noexcept;
 
   // Settings whose label, synonyms or key hold `query`, without case (§4.3's settings part).
   std::vector<SearchHit> search(std::string_view query) const;
+  // Search across spaces (D219): the other spaces the menu shows, whose settings the search field finds too, each hit
+  // named by its space; opening one answers switch_space with the hit's page and key. The host keeps them current, and
+  // each view outlives its use here (it is relinked whenever the spaces change).
+  struct SearchOther {
+    std::string id;
+    std::string name;
+    const PageView* view = nullptr;
+  };
+  void set_search_others(std::vector<SearchOther> others);
+  // This space's hits, then every other space's, sorted by label and then by space; at most `limit`.
+  std::vector<SearchHit> search_all(std::string_view query, std::size_t limit) const;
+  // A setting's row focused on its home page, its tab chosen and its section and Advanced opened (a search hit from
+  // another space, once the host has switched to it).
+  void reveal(std::string_view key);
+
+  // ---- Text entry (§5.6, D57, G38 (a)): GraceUI's own field, for a text setting with no choices, a secret setting
+  // (masked, write-only: it starts empty, and is sent and forgotten), a form's fields (D195), a table's row secret
+  // (D194, masked likewise) and search (§4.3, this space's settings). Enter, A or a click starts editing the focused
+  // one; while it edits, the host gives it characters (typed()), its editing keys (edit()) and the clipboard's text
+  // (pasted()), and every other key is the field's. Enter keeps the text (a setting's is sent, a form field's moves on
+  // to the next field, a row secret's is sent, search opens the chosen setting's row); Tab keeps it and moves on;
+  // Escape leaves (a setting's and a secret's edit is dropped, a form field keeps its text, search empties). The
+  // menu's close routine ends an edit as Escape does, a form's fields staying for the next open (G38 (2)).
+  enum class EditKey : std::uint8_t {
+    left, right, up, down, home, end, backspace, erase, enter, escape, tab, select_all, copy, cut,
+  };
+  struct EditInput {
+    EditKey key = EditKey::enter;
+    bool shift = false;
+    bool ctrl = false;  // by word (← → Backspace Delete)
+  };
+  bool editing() const noexcept { return edit_.kind != EditKind::none; }
+  Action edit(const EditInput& in);
+  Action typed(char32_t code_point);
+  Action pasted(std::string_view utf8);
+  // The text Ctrl+C or Ctrl+X put aside for the clipboard, taken once; never a masked field's.
+  bool take_clipboard(std::string& out);
+  // The edited field's caret as the last layout drew it (the IME's place, §5.6); empty while nothing is edited.
+  Rect caret() const noexcept { return caret_rect_; }
+  // A command the space accepted, by where its refusal's words would have gone: a form's fields clear (D195).
+  void accepted(std::string_view where);
+  // A form field's text as the view holds it (tests).
+  std::string form_value(std::string_view field) const;
+
+  // ---- Master and detail (D215, D36). A page with a master list draws its rows at the left, each by its first
+  // column's words and its second's, and its tabs and sections at the right as their detail: a block bound to the
+  // master's family draws the chosen row's member (<family>/<key>), which the host watches as one of the page's
+  // component topics. Focus on a row chooses it; ↑ ↓ move along the list, → or Enter go into the detail, and ← or Esc
+  // in the detail come back to the chosen row. The first row is chosen as soon as the list has one, and a page keeps its
+  // chosen row for the session. Nothing of the row's key goes into a log or an address (§3.6 of proposal 0010).
+  std::string chosen() const;  // the open page's chosen row's key, or empty
+
+  // ---- Slow commands (D216). A command the space names slow (a model's draft) may take up to 90 s: the control that
+  // sent it reads "Working…" and takes no press until the host says its answer came (finished(), with the command's
+  // name, whatever the answer was), the oldest of its name first.
+  void finished(std::string_view command);
+  bool running(std::string_view element) const;  // an element, named as focused() names it, waits for its answer
+
+  // ---- The editor block (D217, proposal 0010 §3.3 and §7). Its document is its topic's body; the player's edits over
+  // it are kept in the view for the session (G38 (2)), whatever page is open and whether the menu is open or not, by the
+  // document's topic. Its focus stops are named "editor:<section>/<n>/<part>": save, check, reset, restore, reload,
+  // notes, draft, use_all; f/<field> a field; i/<field>/<n> a list's item; add/<field>; use/<field> and keep/<field> a
+  // draft's proposal. Enter on a text field or an item edits it in GraceUI's own field (one paragraph; a prose field
+  // wraps, ↑ ↓ moving by line), ← → change a choice, a pick, a number or a switch, and an item's choice; Shift+↑ ↓ move an
+  // item; R undoes a field's edit, or leaves a field that may be unset to the space ("not set here"), or removes an item.
+  // A command's answer comes back through editor_answer(), by the element that sent it: a check's messages, a save's
+  // (or its conflict), a draft's proposals. A save's answer may name the row the page's master list should choose
+  // (`chosen`, D218), taken once the list has it.
+  void editor_answer(std::string_view where, const protocol::Result& result);
+  // An editor's state, by its document's topic (tests).
+  const EditorState* editor_state(std::string_view topic) const;
 
   std::string_view page() const noexcept;
   Scope scope() const noexcept { return scope_; }
@@ -168,14 +275,15 @@ class PageView {
 
  private:
   enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related, cell, row_action,
-                                        section_action };
+                                        section_action, form_field, form_submit, row_secret, master_row, editor };
   struct Focus {
     FocusKind kind;
     std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
                         // row action's topic/key/action
     std::size_t index;  // into page().actions, tabs, sections; a setting's index; a cell's or a row action's row
-    const protocol::PageBlock* block = nullptr;  // a row action's table (D192)
-    std::size_t sub = 0;                         // a row action's index in its table's row_actions
+    const protocol::PageBlock* block = nullptr;  // a row action's table (D192), an editor's block (D217)
+    std::size_t sub = 0;                         // a row action's index in its table's row_actions; a list's item
+    std::uint8_t part = 0;                       // an editor's element (EditorPart)
   };
   struct RailEntry {
     enum class Kind : std::uint8_t { category, page, head, foot, switcher };
@@ -235,6 +343,102 @@ class PageView {
   std::size_t rail_index_of_page() const;
   void focus_first_control();
 
+  // A form block's id (D195): its section's and its place among the section's blocks ("hire/0", "hire/a0" in Advanced).
+  static std::string form_id(const protocol::PageSection& section, std::size_t index, bool advanced);
+  // A table's row secret's id (D194): its cell base and the row's key, or the row's index.
+  static std::string secret_id(const protocol::PageBlock& block, const protocol::Json& row, std::size_t r);
+
+  enum class EditKind : std::uint8_t { none, setting, form_field, row_secret, search, editor_text, editor_notes };
+  struct Edit {
+    EditKind kind = EditKind::none;
+    std::string id;                              // a setting's key, a form field's or a row secret's focus id
+    TextField field;
+    bool masked = false;                         // a secret: drawn as discs, never copied, never kept
+    std::size_t offset = 0;                      // the first byte drawn, so that the caret stays in view
+    const protocol::PageBlock* block = nullptr;  // a form's or a row secret's
+    protocol::Json row_key;                      // a row secret's row
+    std::string topic;                           // an editor's document's topic
+    std::string editor_field;                    // an editor's field
+    std::size_t item = static_cast<std::size_t>(-1);  // a list's item, or none
+    bool prose = false;                          // wraps; ↑ ↓ move by line
+  };
+  Edit edit_;
+  void start_edit(EditKind kind, std::string id, std::string_view text, std::size_t max, bool masked,
+                  const protocol::PageBlock* block = nullptr, protocol::Json row_key = {});
+  Action finish_edit(bool keep, int move_on);  // move_on: +1 Enter (a form's next field), 0 Tab (G41) or neither
+  void end_edit();  // the field gone, a masked one's text overwritten first
+  void edited();    // after a change: a form field's or an editor's text kept, search's hits found again
+  void editor_store();  // the edited editor text into its document's edits (or the draft's notes)
+  std::map<std::string, std::string, std::less<>> form_values_;  // a form field's text, by its focus id
+  std::string search_query_;
+  std::vector<SearchHit> search_hits_;
+  std::vector<SearchOther> search_others_;
+  std::size_t search_pick_ = 0;
+  Action open_hit(const SearchHit& hit);
+  // A setting's row focused on the open page: its tab chosen, its section opened, its Advanced disclosure open.
+  void focus_setting(std::string_view key);
+
+  // Master and detail (D215).
+  const protocol::PageMaster* master() const;
+  // The master's rows that name a member: each row's key and the row, in the list's order.
+  std::vector<std::pair<std::string, const protocol::Json*>> master_rows() const;
+  // The topic a block draws: its own, or for a block bound to the master's family the chosen row's member (empty if none).
+  std::string topic_of(const protocol::PageBlock& block) const;
+  // After a key or the pointer: focus on a row chooses it; a list with rows and none chosen chooses its first.
+  void follow_master();
+  void choose(const std::string& key);
+  void focus_master_on_open();  // after an open: focus on the chosen row, or the first, or once the list has one
+  Action input_body(const Input& in);
+  Action pointer_body(const Pointer& in);
+  std::map<std::string, std::string, std::less<>> chosen_;  // a page's chosen row's key, by the page's id
+  bool master_focus_pending_ = false;  // a master page opened before its list had rows: focus goes to the first one
+  // A row a save's answer named (D218), by the page's id: chosen once the page's list has it, unless the player chooses
+  // a row by hand first.
+  std::map<std::string, std::string, std::less<>> expected_;
+  // The element focus was on when a new row's choice took it away, until the new member's state draws it again (and no
+  // key or press has moved focus since): so that Save, say, keeps focus across a save's choice (D218).
+  std::string refocus_name_;
+  void settle_expected();
+  bool on_master_row() const;
+  std::map<std::string, std::vector<std::string>, std::less<>> running_;  // a slow command's senders, oldest first
+  void note_running(const Action& action, const std::string& sender);
+
+  // The editor block (D217).
+  enum class EditorPart : std::uint8_t { save, check, reset, restore, reload, notes, draft, use_all, field, item, add,
+                                         use, keep };
+  std::map<std::string, EditorState, std::less<>> editors_;      // by the document's topic
+  struct EditorSent {
+    std::string topic;  // the document's
+    std::string page;   // the page its editor is on
+  };
+  std::map<std::string, EditorSent, std::less<>> editor_sent_;  // a command's sender: what it was for
+  struct EditorAt {
+    const protocol::PageBlock* block = nullptr;
+    std::string topic;
+    EditorDocument doc;
+    EditorState* state = nullptr;
+    std::string eid;
+  };
+  // The editor a focus stop belongs to: its block, its document's topic, its document and its state; false if its topic
+  // has published no document.
+  bool editor_of(const Focus& f, EditorAt& out);
+  Action editor_input(const Focus& f, const Input& in, bool& handled);
+  Action editor_command(EditorAt& at, EditorPart part, const std::string& sender);
+  void editor_set(EditorAt& at, const EditorField& field, protocol::Json value);
+  static std::string editor_part_name(EditorPart part);
+  std::string editor_hints(const Focus& f);  // the focused editor element's keys
+  // An edit of an editor's text: a field, a list's item (item) or the draft's notes (an empty field), capped in
+  // characters (0: none) as well as bytes.
+  void start_editor_edit(EditKind kind, std::string id, std::string_view text, std::size_t chars,
+                         const EditorAt& at, std::string field, std::size_t item, bool prose);
+  std::vector<std::tuple<std::size_t, float, float>> prose_stops_;  // the edited prose's boundaries: offset, x, line top
+  float prose_line_ = 0;                                            // its lines' height
+  Rect caret_rect_{};
+  Rect edit_box_{};                                         // the edited field, as the last layout drew it
+  std::vector<std::pair<std::size_t, float>> edit_stops_;   // its drawn boundaries: a byte offset and its x
+  std::string clipboard_;
+  bool has_clipboard_ = false;
+
   protocol::SpacePages pages_;
   std::vector<protocol::Setting> settings_;
   std::map<std::string, std::size_t, std::less<>> by_key_;
@@ -257,6 +461,29 @@ class PageView {
   std::size_t rail_focus_ = 0;
   std::size_t page_focus_ = 0;
   std::string confirming_;  // a destructive action's id, waiting for its second press
+
+  enum class CaptureKind : std::uint8_t { none, key, chord };
+  enum class CaptureStage : std::uint8_t { waiting, sent, asking };
+  struct Capture {
+    CaptureKind kind = CaptureKind::none;
+    CaptureStage stage = CaptureStage::waiting;
+    bool row = false;               // a row action's (Backspace: no key), or a setting's
+    std::string command;            // the row action's command, or settings.set
+    std::string key_field;          // the row action's key column, or "key"
+    protocol::Json key_value;       // the row's key, or the setting's
+    std::string title;              // "Change key: Tide Charts, Show the tide table"
+    std::string words;              // a refusal's, or the question before a move
+    protocol::Json value;           // what it sends: a key's name, or a chord
+    std::size_t anchor = 0;         // the chord's pickers: indexes into the fourteen buttons
+    std::size_t key = 12;
+    std::size_t picker = 0;         // which of the two is focused
+  };
+  Capture capture_;
+  Sheet sheet_;
+  bool sheet_open_ = false;
+  Rect sheet_close_{};  // its Close, as the last layout drew it
+  Action capture_command(bool confirm) const;
+  Action capture_input(const Input& in);
   float scroll_ = 0;
   bool follow_ = true;          // keep focus in view; false once the wheel has scrolled, until a key moves focus
   float scale_ = 1;             // the last layout's effective scale

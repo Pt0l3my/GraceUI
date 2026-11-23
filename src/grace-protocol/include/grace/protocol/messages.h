@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 3;
-inline constexpr std::string_view kProtocolVersion = "1.3";
+inline constexpr std::uint32_t kProtocolMinor = 9;
+inline constexpr std::string_view kProtocolVersion = "1.9";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -26,6 +26,8 @@ inline constexpr std::size_t kCommandsPerSecond = 20;
 inline constexpr std::size_t kSubscriptions = 32;
 inline constexpr std::size_t kRowsPerBatch = 100;
 inline constexpr std::size_t kCommandQueue = 32;
+inline constexpr std::size_t kUploadMax = 33554432;
+inline constexpr std::size_t kUploadTicketSeconds = 60;
 inline constexpr std::size_t kPingSeconds = 15;
 inline constexpr std::size_t kBadMessagesBeforeClose = 3;
 
@@ -43,6 +45,7 @@ enum class ErrorCode : std::uint8_t {
   rate_limited,
   version,
   internal,
+  conflict,
 };
 std::string_view to_string(ErrorCode value) noexcept;
 bool from_string(std::string_view text, ErrorCode& out) noexcept;
@@ -95,6 +98,14 @@ enum class ResetScopeKind : std::uint8_t {
 std::string_view to_string(ResetScopeKind value) noexcept;
 bool from_string(std::string_view text, ResetScopeKind& out) noexcept;
 
+enum class CommandView : std::uint8_t {
+  game,
+  browser,
+  device,
+};
+std::string_view to_string(CommandView value) noexcept;
+bool from_string(std::string_view text, CommandView& out) noexcept;
+
 enum class TopicShape : std::uint8_t {
   state,
   stream,
@@ -129,6 +140,8 @@ enum class BlockKind : std::uint8_t {
   shortcuts,
   component,
   form,
+  editor,
+  upload,
 };
 std::string_view to_string(BlockKind value) noexcept;
 bool from_string(std::string_view text, BlockKind& out) noexcept;
@@ -140,6 +153,13 @@ enum class ActionTone : std::uint8_t {
 };
 std::string_view to_string(ActionTone value) noexcept;
 bool from_string(std::string_view text, ActionTone& out) noexcept;
+
+enum class RowCapture : std::uint8_t {
+  key,
+  chord,
+};
+std::string_view to_string(RowCapture value) noexcept;
+bool from_string(std::string_view text, RowCapture& out) noexcept;
 
 enum class PageTag : std::uint8_t {
   wip,
@@ -206,6 +226,7 @@ struct Setting {
   SettingEffect effect{};
   std::string availability{};
   bool locked{};
+  std::optional<bool> sensitive{};
   bool operator==(const Setting&) const = default;
 };
 bool decode(const Json& in, Setting& out, const std::string& path, DecodeError& e);
@@ -243,11 +264,12 @@ struct SettingsDescription {
 bool decode(const Json& in, SettingsDescription& out, const std::string& path, DecodeError& e);
 Json encode(const SettingsDescription& in);
 
-// A topic a space publishes: its shape, and for a stream its ring's size.
+// A topic a space publishes: its shape, and for a stream its ring's size; a family (1.5, D215), whose members <id>/<key> are state topics a view watches one by one.
 struct TopicInfo {
   std::string id{};
   TopicShape shape{};
   std::optional<std::uint32_t> ring{};
+  std::optional<bool> family{};
   bool operator==(const TopicInfo&) const = default;
 };
 bool decode(const Json& in, TopicInfo& out, const std::string& path, DecodeError& e);
@@ -265,7 +287,7 @@ struct PageAction {
 bool decode(const Json& in, PageAction& out, const std::string& path, DecodeError& e);
 Json encode(const PageAction& in);
 
-// A button on each row of a table (D192): its command gets the row's key, a destructive one only after its confirmation.
+// A button on each row of a table (D192): its command gets the row's key, a destructive one only after its confirmation; one that captures (D209) first takes a key or a pad chord from the player, sent as `value`, and a `confirm_required` answer with words is asked and sent again with `confirm`.
 struct RowAction {
   std::string id{};
   std::string label{};
@@ -273,6 +295,7 @@ struct RowAction {
   std::string key{};
   ActionTone tone{};
   std::optional<std::string> confirm{};
+  std::optional<RowCapture> capture{};
   bool operator==(const RowAction&) const = default;
 };
 bool decode(const Json& in, RowAction& out, const std::string& path, DecodeError& e);
@@ -298,6 +321,20 @@ struct FormField {
 bool decode(const Json& in, FormField& out, const std::string& path, DecodeError& e);
 Json encode(const FormField& in);
 
+// An editor block (1.7, D217): its document is its topic's body (a state topic, or a family's member on a master page); the commands it sends, each the space's own, and the draft's notes field.
+struct EditorBlock {
+  std::string save{};
+  std::optional<std::string> check{};
+  std::optional<std::string> reset{};
+  std::optional<std::string> restore{};
+  std::optional<std::string> draft{};
+  std::optional<std::string> notes_label{};
+  std::optional<std::uint32_t> notes_max{};
+  bool operator==(const EditorBlock&) const = default;
+};
+bool decode(const Json& in, EditorBlock& out, const std::string& path, DecodeError& e);
+Json encode(const EditorBlock& in);
+
 // A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, a component bound to a topic (a table with its row actions and row secret), or a small form.
 struct PageBlock {
   BlockKind kind{};
@@ -310,6 +347,8 @@ struct PageBlock {
   std::optional<std::string> command{};
   std::optional<std::vector<FormField>> fields{};
   std::optional<std::string> submit{};
+  std::optional<EditorBlock> editor{};
+  std::optional<std::string> accept{};
   bool operator==(const PageBlock&) const = default;
 };
 bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError& e);
@@ -359,7 +398,20 @@ struct PageHelp {
 bool decode(const Json& in, PageHelp& out, const std::string& path, DecodeError& e);
 Json encode(const PageHelp& in);
 
-// A page: its place, its header, its help, its Related links, and its tabs or its sections.
+// A page's master list (1.5, D215, D36): a table's state topic, the column of each row's key, and the family whose member that key names; the page's tabs and sections are its detail, and a block bound to the family draws the chosen row's member.
+struct PageMaster {
+  std::string topic{};
+  std::string key{};
+  std::string detail{};
+  std::string label{};
+  std::optional<std::string> empty{};
+  std::optional<std::string> none{};
+  bool operator==(const PageMaster&) const = default;
+};
+bool decode(const Json& in, PageMaster& out, const std::string& path, DecodeError& e);
+Json encode(const PageMaster& in);
+
+// A page: its place, its header, its help, its Related links, and its tabs or its sections; a master list, its tabs and sections then its detail (1.5).
 struct Page {
   std::string id{};
   std::string category{};
@@ -372,6 +424,7 @@ struct Page {
   std::optional<std::vector<PageAction>> actions{};
   std::optional<std::vector<PageTab>> tabs{};
   std::optional<std::vector<PageSection>> sections{};
+  std::optional<PageMaster> master{};
   bool operator==(const Page&) const = default;
 };
 bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e);
@@ -396,6 +449,9 @@ struct SpacePages {
   std::vector<Page> pages{};
   std::vector<TopicInfo> topics{};
   std::vector<std::string> commands{};
+  std::optional<std::vector<std::string>> slow_commands{};
+  std::optional<std::vector<std::string>> sensitive_commands{};
+  std::optional<std::vector<std::string>> file_commands{};
   bool operator==(const SpacePages&) const = default;
 };
 bool decode(const Json& in, SpacePages& out, const std::string& path, DecodeError& e);
@@ -411,6 +467,8 @@ enum class Kind : std::uint8_t {
   state,
   rows,
   cmd,
+  upload,
+  upload_ticket,
   result,
   error,
   bye,
@@ -441,6 +499,7 @@ struct Welcome {
   std::string graceui{};
   std::vector<SpaceInfo> spaces{};
   std::string session{};
+  std::optional<CommandView> view{};
   bool operator==(const Welcome&) const = default;
 };
 // Watch a topic; for a stream, from a sequence number.
@@ -481,7 +540,25 @@ struct Cmd {
   std::uint32_t id{};
   std::string name{};
   Json args{};
+  std::optional<CommandView> view{};
   bool operator==(const Cmd&) const = default;
+};
+// Ask for an upload's one-use ticket (1.9, D226, §7.2 item 18): for a file command of the space's, its args, and the file's size in bytes and SHA-256 (64 lowercase hex); the command's result comes back as for a cmd with the same id.
+struct Upload {
+  std::string space{};
+  std::uint32_t id{};
+  std::string name{};
+  Json args{};
+  std::uint64_t size{};
+  std::string sha256{};
+  bool operator==(const Upload&) const = default;
+};
+// An upload's ticket (1.9, D226): sent with the file's bytes to POST /upload within 60 s, once, from this session alone.
+struct UploadTicket {
+  std::string space{};
+  std::uint32_t id{};
+  std::string ticket{};
+  bool operator==(const UploadTicket&) const = default;
 };
 // The answer to one command: ok, or an error with its reason in words a player reads (detail, 1.1).
 struct Result {
@@ -514,7 +591,7 @@ struct Pong {
   bool operator==(const Pong&) const = default;
 };
 
-using Message = std::variant<Hello, Welcome, Sub, Unsub, State, Rows, Cmd, Result, Error, Bye, Ping, Pong>;
+using Message = std::variant<Hello, Welcome, Sub, Unsub, State, Rows, Cmd, Upload, UploadTicket, Result, Error, Bye, Ping, Pong>;
 
 // A message's fields from a frame's object (its v and t already read): false, with the error set, for a field
 // that is missing, of the wrong type or past its bound. Fields the schema does not name are ignored (§6.4).

@@ -9,6 +9,7 @@ add_library(grace_serve_core STATIC
   frames.cpp
   handshake.cpp
   head.cpp
+  pairing.cpp
   refusal.cpp
   response.cpp)
 target_include_directories(grace_serve_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -24,7 +25,8 @@ add_library(grace_serve STATIC
   io/bridge.cpp
   io/files.cpp
   io/server.cpp
-  io/space.cpp)
+  io/space.cpp
+  io/upload.cpp)
 if(WIN32)
   target_sources(grace_serve PRIVATE io/platform_win32.cpp)
   target_link_libraries(grace_serve PRIVATE ws2_32 bcrypt)
@@ -47,6 +49,7 @@ if(GRACEUI_UNIT_TESTS)
     tests/frames_tests.cpp
     tests/handshake_tests.cpp
     tests/head_tests.cpp
+    tests/pairing_tests.cpp
     tests/response_tests.cpp
     # grace-abi's counting operator new, for the parser's and the decoder's no-allocation tests.
     ${CMAKE_SOURCE_DIR}/src/grace-abi/tests/alloc_counter.cpp)
@@ -66,7 +69,9 @@ if(GRACEUI_UNIT_TESTS OR (WIN32 AND GRACEUI_TEST_EXPORTS))
     io/tests/client.cpp
     io/tests/harness.cpp
     io/tests/http_tests.cpp
-    io/tests/lifecycle_tests.cpp)
+    io/tests/lifecycle_tests.cpp
+    io/tests/network_tests.cpp
+    io/tests/upload_tests.cpp)
   target_link_libraries(grace_serve_io_tests PRIVATE grace_serve grace_pages gu_doctest)
   if(WIN32)
     target_link_libraries(grace_serve_io_tests PRIVATE ws2_32)

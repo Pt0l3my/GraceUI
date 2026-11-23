@@ -39,6 +39,7 @@ struct Registry::Space {
   std::string held_frame;                  // an event the mod's buffer was too small for, kept for its next poll
   EventKind held_kind = EventKind::none;
   std::uint64_t held_reply = 0;
+  std::shared_ptr<const serve::FileBytes> held_file;  // a file command's file, with its held frame (D226)
   protocol::Json described;                // its settings description as it registered it, encoded once
   bool secret_masked = false;              // a secret's value was masked once already (logged once)
 };
@@ -49,12 +50,17 @@ struct Registry::Pending {
   serve::CommandRef ref;
   std::chrono::steady_clock::time_point deadline;
   bool game = false;    // the menu's: its result waits in game_results_
+  bool slow = false;    // one the space names slow (D216): its deadline is kSlowAnswerDeadline
   std::uint32_t id = 0; // the command's id, as its view numbered it
 };
 
 namespace {
 
 bool view_flags(std::uint32_t views) noexcept { return views != 0 && (views & ~(kViewGame | kViewBrowser)) == 0; }
+
+bool slow_command(const serve::SpaceDescription& description, std::string_view name) {
+  return std::find(description.slow.begin(), description.slow.end(), name) != description.slow.end();
+}
 
 template <class T>
 bool decode_json(std::string_view text, T& out, std::string& why, const char* what) {
@@ -117,6 +123,10 @@ Status Registry::add(std::uint64_t owner, std::string_view mod_id, const Registr
     why = "graceui is GraceUI's own space's id";  // one space an id, in both views (invariant 3, D81)
     return Status::refused;
   }
+  if (!in.takes_files && pages.file_commands && !pages.file_commands->empty()) {
+    why = "its file commands need ABI 1.6, which hands a file to the mod (D226)";
+    return Status::refused;
+  }
   for (const protocol::TopicInfo& topic : pages.topics) {
     if (topic.id == "pages") {
       why = "pages is the framework's own topic";  // the server sends a space's page data as it registered them (D169)
@@ -162,7 +172,7 @@ Status Registry::add(std::uint64_t owner, std::string_view mod_id, const Registr
     return Status::full;
   }
   if (server_ != nullptr && (space->views & kViewBrowser) != 0) {
-    space->port = server_->add_space(space->description);
+    space->port = server_->add_space(space->description, wake_of(owner));
     if (space->port == nullptr) {
       why = "the browser view's server does not take it";
       return Status::refused;
@@ -215,7 +225,7 @@ void Registry::attach(serve::Server& server) {
   server_ = &server;
   for (const auto& space : spaces_) {
     if ((space->views & kViewBrowser) != 0 && space->port == nullptr) {
-      space->port = server.add_space(space->description);
+      space->port = server.add_space(space->description, wake_of(space->owner));
     }
   }
 }
@@ -259,8 +269,14 @@ Status Registry::publish(std::uint64_t owner, std::string_view frame, std::strin
     const auto declared = std::find_if(topics.begin(), topics.end(), [&](const protocol::TopicInfo& t) {
       return t.id == *topic;
     });
-    if (declared == topics.end() || declared->shape != shape) {
+    const bool member = declared == topics.end() && shape == protocol::TopicShape::state &&
+                        serve::family_member(space->description, *topic);  // a family's member (D215)
+    if (!member && (declared == topics.end() || declared->shape != shape)) {
       why = declared == topics.end() ? "not a topic the space declares" : "not the topic's shape";
+      return Status::refused;
+    }
+    if (declared != topics.end() && declared->family.value_or(false)) {
+      why = "a family: its members are published, each as <family>/<key>";
       return Status::refused;
     }
     if (shape == protocol::TopicShape::state && *topic == "settings") {
@@ -332,9 +348,16 @@ Status Registry::publish(std::uint64_t owner, std::string_view frame, std::strin
 
 Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity, EventKind& kind,
                       std::uint64_t& reply, std::uint64_t& length) {
+  FileOut none;
+  return poll(owner, buffer, capacity, kind, reply, length, none);
+}
+
+Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity, EventKind& kind,
+                      std::uint64_t& reply, std::uint64_t& length, FileOut& file) {
   kind = EventKind::none;
   reply = 0;
   length = 0;
+  file.length = 0;
   std::lock_guard<std::mutex> lock(mutex_);
   Space* space = find(owner);
   if (space == nullptr) {
@@ -381,14 +404,26 @@ Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity,
           space->port->answer(event.reply, std::move(busy));
           continue;
         }
-        message = protocol::Cmd{space->id, event.reply.id, event.command, std::move(event.args)};
+        if (event.file != nullptr && !file.takes) {
+          // A mod whose event has no room for a file never gets its command: GraceUI answers it (D226).
+          protocol::Result refused;
+          refused.space = space->id;
+          refused.id = event.reply.id;
+          refused.error = protocol::ErrorCode::not_now;
+          refused.detail = "This mod takes no file through GraceUI yet: it needs ABI 1.6.";
+          space->port->answer(event.reply, std::move(refused));
+          continue;
+        }
+        space->held_file = std::move(event.file);
+        message = protocol::Cmd{space->id, event.reply.id, event.command, std::move(event.args), event.view};  // D224
         space->held_kind = EventKind::command;
         space->held_reply = next_reply_++;
         Pending pending;
         pending.reply = space->held_reply;
         pending.owner = owner;
         pending.ref = event.reply;
-        pending.deadline = std::chrono::steady_clock::now() + kAnswerDeadline;
+        pending.slow = slow_command(space->description, event.command);
+        pending.deadline = std::chrono::steady_clock::now() + (pending.slow ? kSlowAnswerDeadline : kAnswerDeadline);
         pending.id = event.reply.id;
         pending_.push_back(pending);
         break;
@@ -402,13 +437,19 @@ Status Registry::poll(std::uint64_t owner, char* buffer, std::uint64_t capacity,
   length = space->held_frame.size();
   kind = space->held_kind;
   reply = space->held_reply;
-  if (buffer == nullptr || capacity < length) {
+  const std::uint64_t file_size = space->held_file != nullptr ? space->held_file->bytes().size() : 0;
+  file.length = file_size;
+  if (buffer == nullptr || capacity < length || (file_size != 0 && (file.buffer == nullptr || file.capacity < file_size))) {
     return Status::full;
   }
   std::memcpy(buffer, space->held_frame.data(), space->held_frame.size());
+  if (file_size != 0) {
+    std::memcpy(file.buffer, space->held_file->bytes().data(), file_size);
+  }
   space->held_kind = EventKind::none;
   space->held_reply = 0;
   space->held_frame.clear();
+  space->held_file.reset();  // GraceUI's copy is let go: zeroed with its last holder (D226)
   return Status::ok;
 }
 
@@ -458,6 +499,7 @@ Status Registry::answer(std::uint64_t owner, std::uint64_t reply, std::string_vi
 std::size_t Registry::expire(std::chrono::steady_clock::time_point now) {
   std::vector<std::pair<std::shared_ptr<serve::SpacePort>, Pending>> late;
   std::vector<std::string> names;
+  // (A slow command's deadline is its own, set when it was polled or sent: kSlowAnswerDeadline, D216.)
   {
     std::lock_guard<std::mutex> lock(mutex_);
     for (auto it = pending_.begin(); it != pending_.end();) {
@@ -465,7 +507,15 @@ std::size_t Registry::expire(std::chrono::steady_clock::time_point now) {
         ++it;
         continue;
       }
-      const Space* space = find(it->owner);
+      Space* space = find(it->owner);
+      if (space != nullptr && space->held_kind != EventKind::none && space->held_reply == it->reply) {
+        // Held on FULL past its deadline (D229): the view has its answer, so the event, and any file with it, is let
+        // go rather than delivered later, a second time if the player tries again.
+        space->held_kind = EventKind::none;
+        space->held_reply = 0;
+        space->held_frame.clear();
+        space->held_file.reset();
+      }
       late.emplace_back(space != nullptr ? space->port : nullptr, *it);
       names.push_back(space != nullptr ? space->id : std::string());
       it = pending_.erase(it);
@@ -485,7 +535,8 @@ std::size_t Registry::expire(std::chrono::steady_clock::time_point now) {
       late[i].first->answer(late[i].second.ref, std::move(result));
     }
     if (log_) {
-      log_("space " + names[i] + " left a command unanswered for 10 s: answered internal");
+      log_("space " + names[i] + " left a command unanswered for " + (late[i].second.slow ? "90" : "10") +
+           " s: answered internal");
     }
   }
   if (game) {
@@ -546,12 +597,14 @@ void Registry::game_watch(std::string_view space_id, std::string_view topic, boo
       std::string frame;
       protocol::encode_text(protocol::Message(protocol::Sub{space->id, 0, name, std::nullopt}), frame);
       space->internal.push_back(Space::Internal{EventKind::watched, std::move(frame), 0});
+      wake_owner(space->owner);
     } else if (!on && space->game_watched.erase(name) != 0) {
       if (!browser) {
         space->game_states.erase(name);
         std::string frame;
         protocol::encode_text(protocol::Message(protocol::Unsub{space->id, 0, name}), frame);
         space->internal.push_back(Space::Internal{EventKind::unwatched, std::move(frame), 0});
+        wake_owner(space->owner);
       }
     }
     return;
@@ -586,11 +639,19 @@ bool Registry::game_command(std::string_view space_id, protocol::Cmd command, st
       }
       const auto& declared = space->description.commands;
       const bool known = std::find(declared.begin(), declared.end(), command.name) != declared.end();
-      if (!known || !serve::confirmed(space->description, command.name, command.args)) {
+      // A file command comes only with its file, by the upload route (D229): from the menu, as from a view's cmd, it is
+      // refused before the mod sees it.
+      const bool file = known && serve::file_command(space->description, command.name);
+      if (!known || file || !serve::confirmed(space->description, command.name, command.args)) {
         protocol::Result refused;  // as the server answers a view's (invariant 3, §7.3): the mod never sees it
         refused.space = space->id;
         refused.id = command.id;
-        refused.error = known ? protocol::ErrorCode::confirm_required : protocol::ErrorCode::unknown_command;
+        refused.error = !known ? protocol::ErrorCode::unknown_command
+                        : file ? protocol::ErrorCode::invalid_value
+                               : protocol::ErrorCode::confirm_required;
+        if (file) {
+          refused.detail = "This takes a file: add it in the browser view on this PC.";
+        }
         ticket = next_reply_++;
         game_results_.push_back(GameResult{ticket, std::move(refused)});
         answered = true;
@@ -600,16 +661,19 @@ bool Registry::game_command(std::string_view space_id, protocol::Cmd command, st
         return false;
       }
       command.space = space->id;
+      command.view = protocol::CommandView::game;  // the in-game menu's (§7.3, D224)
       Pending pending;
       pending.reply = next_reply_++;
       pending.owner = space->owner;
-      pending.deadline = std::chrono::steady_clock::now() + kAnswerDeadline;
+      pending.slow = slow_command(space->description, command.name);
+      pending.deadline = std::chrono::steady_clock::now() + (pending.slow ? kSlowAnswerDeadline : kAnswerDeadline);
       pending.game = true;
       pending.id = command.id;
       pending_.push_back(pending);
       std::string frame;
       protocol::encode_text(protocol::Message(std::move(command)), frame);
       space->internal.push_back(Space::Internal{EventKind::command, std::move(frame), pending.reply});
+      wake_owner(space->owner);
       ticket = pending.reply;
       return true;
     }

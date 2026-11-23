@@ -2,6 +2,7 @@
 // window procedure's filter and the input detours that feed them are hooks_input.cpp's.
 #include "input.h"
 
+#include <algorithm>
 #include <atomic>
 
 #include "counters.h"
@@ -14,6 +15,7 @@
 #include "menu.h"
 #include "session.h"
 #include "state.h"
+#include "wake.h"
 
 // Dear ImGui's Win32 backend maps a key message to an ImGuiKey with this function, which it leaves non-static for
 // others to use; GraceUI calls it on the present thread with the virtual key and the scan code the message carried.
@@ -32,6 +34,7 @@ constinit grace::input::MouseLedger g_mouse;
 constinit grace::input::PadLedger g_pads;
 constinit grace::input::Hotkeys g_hotkeys;
 constinit grace::input::PadChords g_chords;
+constinit grace::input::KeptBindings g_kept_bindings;
 constinit grace::input::MessageRules g_messages{g_capture, g_keyboard, g_mouse, &g_hotkeys};
 constinit grace::input::SpscRing<HolderEvent, 256> g_events;
 
@@ -56,6 +59,23 @@ constinit std::atomic<std::uint16_t> g_caret_owner{0};  // the mod whose caret i
 constinit std::atomic<grace::input::HolderMail*> g_mail{nullptr};
 constinit std::atomic<float> g_pointer_x{0.0f};  // the pointer's last position, in the back buffer's pixels (D176)
 constinit std::atomic<float> g_pointer_y{0.0f};
+
+// The mouse's motion while a holder has it (D232): counts gathered by source on the threads that see them, taken by the
+// present thread once a frame; when each source last gave some; and the pointer they move, in client pixels (the
+// present thread's alone; -1 until a holder's start or a position places it).
+constinit std::atomic<std::int32_t> g_motion_raw_x{0};
+constinit std::atomic<std::int32_t> g_motion_raw_y{0};
+constinit std::atomic<std::int32_t> g_motion_dinput_x{0};
+constinit std::atomic<std::int32_t> g_motion_dinput_y{0};
+constinit std::atomic<std::int64_t> g_motion_raw_at{-1000000};
+constinit std::atomic<std::int64_t> g_motion_dinput_at{-1000000};
+constexpr std::int64_t kMotionLiveMs = 1000;
+
+constinit std::atomic<bool> g_menu_away{false};        // G40: let go at the focus's loss, kept for its return
+constinit std::atomic<std::int64_t> g_menu_return{0};  // when the focus came back while away; 0 while it has not
+constexpr std::int64_t kMenuReturnMs = 5000;           // the frames the menu waits for to take input again (EST)
+float g_motion_x = -1.0f;
+float g_motion_y = -1.0f;
 
 // The world-state providers' claims (D78) are read where they are kept, the session's World, whose combined word is
 // written under its lock: never a copy, so that the last provider to report decides, whatever order their threads run
@@ -368,7 +388,11 @@ grace::input::KeyBits hidden_keys() noexcept {
 
 std::int64_t now_ms() noexcept { return static_cast<std::int64_t>(GetTickCount64()); }
 
-grace::input::Key menu_key() noexcept { return grace::input::kF5; }
+grace::input::Key menu_key() noexcept { return g_messages.menu_key(); }
+
+void set_menu_key(grace::input::Key key) noexcept { g_messages.set_menu_key(key); }
+
+grace::input::KeptBindings& kept_bindings() noexcept { return g_kept_bindings; }
 
 namespace {
 
@@ -420,6 +444,32 @@ grace::input::Mail mail_of(const HolderEvent& event) noexcept {
 
 }  // namespace
 
+void relative_motion(MotionSource source, std::int32_t dx, std::int32_t dy) noexcept {
+  if (dx == 0 && dy == 0) {
+    return;
+  }
+  const Holder holder = g_capture.holder();
+  if (holder.phase != Phase::active || !holder.takes(grace::input::want_mouse)) {
+    return;  // the game's motion: GraceUI counts the mouse's only while a holder has it
+  }
+  const std::int64_t now = now_ms();
+  if (source == MotionSource::raw_input) {
+    g_motion_raw_x.fetch_add(dx, std::memory_order_relaxed);
+    g_motion_raw_y.fetch_add(dy, std::memory_order_relaxed);
+    g_motion_raw_at.store(now, std::memory_order_relaxed);
+  } else if (now - g_motion_raw_at.load(std::memory_order_relaxed) >= kMotionLiveMs) {
+    g_motion_dinput_x.fetch_add(dx, std::memory_order_relaxed);
+    g_motion_dinput_y.fetch_add(dy, std::memory_order_relaxed);
+    g_motion_dinput_at.store(now, std::memory_order_relaxed);
+  }
+}
+
+bool pointer_by_motion() noexcept {
+  const std::int64_t now = now_ms();
+  return now - g_motion_raw_at.load(std::memory_order_relaxed) < kMotionLiveMs ||
+         now - g_motion_dinput_at.load(std::memory_order_relaxed) < kMotionLiveMs;
+}
+
 void push_event(HolderEvent event) noexcept {
   if (!g_events.push(event) && g_events.dropped() == 1) {
     log_line("the holder's input came faster than its frames: some was dropped");
@@ -433,9 +483,13 @@ void push_event(HolderEvent event) noexcept {
   }
 }
 
+void notify_mail(std::uint16_t owner) noexcept { wake::signal(owner); }  // its mod's poll has a holder's event (D212)
+
 void make_holder_mail() {
   if (g_mail.load(std::memory_order_acquire) == nullptr) {
-    g_mail.store(new grace::input::HolderMail(), std::memory_order_release);  // never freed: GraceUI never unloads
+    auto* mail = new grace::input::HolderMail();  // never freed: GraceUI never unloads
+    mail->set_notify(&notify_mail);
+    g_mail.store(mail, std::memory_order_release);
   }
 }
 
@@ -597,7 +651,64 @@ void closed(const Holder& holder) noexcept {
   }
 }
 
-void tick() noexcept { closed(g_capture.tick(now_ms())); }
+namespace {
+
+// The menu is away no longer: it closes as any close would (G40), its thread woken to do its part.
+void menu_back_closed(const char* why) noexcept {
+  g_menu_return.store(0, std::memory_order_relaxed);
+  if (g_menu_away.exchange(false, std::memory_order_acq_rel)) {
+    log_line("the menu closes while away: %s", why);
+    hooks::wake();
+  }
+}
+
+}  // namespace
+
+void tick() noexcept {
+  const std::int64_t now = now_ms();
+  closed(g_capture.tick(now));
+  if (!g_menu_away.load(std::memory_order_acquire)) {
+    return;
+  }
+  // Danger or loading while the menu is away closes it as it would have closed it there (invariant 9, G40).
+  if ((world_flags() & (GRACEUI_WORLD_DANGER | GRACEUI_WORLD_LOADING)) != 0) {
+    menu_back_closed("danger or loading");
+    return;
+  }
+  // The focus is back: the menu takes input again once GraceUI draws, as any holder is granted it (a game may draw
+  // nothing while in the background, so the return waits for its frames, at most kMenuReturnMs).
+  const std::int64_t back = g_menu_return.load(std::memory_order_relaxed);
+  if (back == 0) {
+    return;
+  }
+  const grace::input::Request again = request(0, Kind::menu, grace::input::want_all);
+  if (again.answer == grace::input::Answer::granted) {
+    g_menu_return.store(0, std::memory_order_relaxed);
+    if (g_menu_away.exchange(false, std::memory_order_acq_rel)) {
+      log_line("the game has the focus again: the menu takes input again where it was");
+      hooks::wake();  // the menu's thread goes on where it was
+    }
+  } else if (again.answer == grace::input::Answer::refused) {
+    menu_back_closed("another holder has input");
+  } else if (again.why != grace::input::NotNow::not_ready || now - back >= kMenuReturnMs) {
+    menu_back_closed(again.why == grace::input::NotNow::game_menu ? "a game menu is open" : "GraceUI is not drawing");
+  }
+}
+
+void set_menu_away() noexcept {
+  g_menu_return.store(0, std::memory_order_relaxed);
+  g_menu_away.store(true, std::memory_order_release);
+}
+
+bool menu_away() noexcept { return g_menu_away.load(std::memory_order_acquire); }
+
+void focus_back() noexcept {
+  if (g_menu_away.load(std::memory_order_acquire)) {
+    g_menu_return.store(std::max<std::int64_t>(now_ms(), 1), std::memory_order_relaxed);  // the next frames ask
+  }
+}
+
+void focus_gone() noexcept { g_menu_return.store(0, std::memory_order_relaxed); }  // gone again before the return
 
 void fault(const char* why) noexcept {
   if (!g_off.exchange(true, std::memory_order_acq_rel)) {
@@ -656,8 +767,17 @@ void before_imgui_frame(std::uint32_t width, std::uint32_t height) noexcept {
     const HWND target = g_window.load(std::memory_order_acquire);
     g_menu_x = -1.0f;  // a new holder: where the pointer is, the menu learns from its first move
     g_menu_y = -1.0f;
+    // The motion pointer starts where the cursor is, or at the client area's centre (D232); counts from before are
+    // the game's, never the new holder's.
+    g_motion_x = static_cast<float>(g_client_width.load(std::memory_order_relaxed)) / 2.0f;
+    g_motion_y = static_cast<float>(g_client_height.load(std::memory_order_relaxed)) / 2.0f;
+    for (std::atomic<std::int32_t>* counts : {&g_motion_raw_x, &g_motion_raw_y, &g_motion_dinput_x, &g_motion_dinput_y}) {
+      counts->store(0, std::memory_order_relaxed);
+    }
     if (active && holder.takes(grace::input::want_mouse) && target != nullptr && GetCursorPos(&cursor) &&
         ScreenToClient(target, &cursor)) {
+      g_motion_x = static_cast<float>(cursor.x);
+      g_motion_y = static_cast<float>(cursor.y);
       io.AddMousePosEvent(scaled(cursor.x, width, g_client_width.load(std::memory_order_relaxed)),
                           scaled(cursor.y, height, g_client_height.load(std::memory_order_relaxed)));
       if (menu_holds(holder)) {
@@ -689,6 +809,8 @@ void before_imgui_frame(std::uint32_t width, std::uint32_t height) noexcept {
     if (event.type == HolderEvent::Type::mouse_move) {
       move = event;
       moved = true;
+      g_motion_x = static_cast<float>(event.a);  // a position the window gave: the motion pointer goes on from it (D232)
+      g_motion_y = static_cast<float>(event.b);
       continue;
     }
     if (moved) {
@@ -708,6 +830,37 @@ void before_imgui_frame(std::uint32_t width, std::uint32_t height) noexcept {
     feed(io, move, width, height);
     if (menu_holds(holder)) {
       to_menu(move, width, height);
+    }
+  }
+  // The mouse's own motion (D232), once a frame: raw input's where it came lately, else DirectInput's.
+  if (holder.takes(grace::input::want_mouse)) {
+    const bool raw = now_ms() - g_motion_raw_at.load(std::memory_order_relaxed) < kMotionLiveMs;
+    std::atomic<std::int32_t>& source_x = raw ? g_motion_raw_x : g_motion_dinput_x;
+    std::atomic<std::int32_t>& source_y = raw ? g_motion_raw_y : g_motion_dinput_y;
+    const std::int32_t dx = source_x.exchange(0, std::memory_order_relaxed);
+    const std::int32_t dy = source_y.exchange(0, std::memory_order_relaxed);
+    if (raw) {
+      g_motion_dinput_x.store(0, std::memory_order_relaxed);  // what DirectInput gave meanwhile is the same motion
+      g_motion_dinput_y.store(0, std::memory_order_relaxed);
+    }
+    const std::int32_t client_width = g_client_width.load(std::memory_order_relaxed);
+    const std::int32_t client_height = g_client_height.load(std::memory_order_relaxed);
+    if ((dx != 0 || dy != 0) && client_width > 0 && client_height > 0) {
+      g_motion_x = std::clamp(g_motion_x + static_cast<float>(dx), 0.0f, static_cast<float>(client_width - 1));
+      g_motion_y = std::clamp(g_motion_y + static_cast<float>(dy), 0.0f, static_cast<float>(client_height - 1));
+      HolderEvent motion;
+      motion.type = HolderEvent::Type::mouse_move;
+      motion.a = static_cast<std::int32_t>(g_motion_x);
+      motion.b = static_cast<std::int32_t>(g_motion_y);
+      motion.generation = holder.generation;
+      feed(io, motion, width, height);
+      if (menu_holds(holder)) {
+        to_menu(motion, width, height);
+      }
+      grace::input::HolderMail* mail = g_mail.load(std::memory_order_acquire);
+      if (mail != nullptr && mail->active(motion.generation)) {
+        mail->post(mail_of(motion));  // a mod's holder learns its pointer's place as from a window's move (D176)
+      }
     }
   }
   if (holder.takes(grace::input::want_pad)) {

@@ -20,6 +20,33 @@ int bit_index(std::uint16_t bit) noexcept {
 
 }  // namespace
 
+std::string_view button_name(std::uint16_t button) noexcept {
+  switch (button) {
+    case 0x0001: return "D-pad Up";
+    case 0x0002: return "D-pad Down";
+    case 0x0004: return "D-pad Left";
+    case 0x0008: return "D-pad Right";
+    case 0x0010: return "Menu";
+    case 0x0020: return "View";
+    case 0x0040: return "LS";
+    case 0x0080: return "RS";
+    case 0x0100: return "LB";
+    case 0x0200: return "RB";
+    case 0x1000: return "A";
+    case 0x2000: return "B";
+    case 0x4000: return "X";
+    case 0x8000: return "Y";
+    default: return {};
+  }
+}
+
+std::string chord_text(std::uint32_t chord) {
+  if (!valid_chord(chord)) {
+    return {};
+  }
+  return std::string(button_name(chord_anchor(chord))) + ", then " + std::string(button_name(chord_key(chord)));
+}
+
 void PadChords::begin_tap(One& one, std::int64_t now_ms) noexcept {
   one.phase = Phase::tap;
   one.at = now_ms;
@@ -102,7 +129,7 @@ ChordStep PadChords::step(One& one, std::uint16_t real, Aside aside, Hotkeys& ho
 }
 
 ChordStep PadChords::filter(unsigned index, std::uint16_t real, std::uint16_t& buttons, std::uint32_t& packet,
-                            Aside aside, Hotkeys& hotkeys, std::int64_t now_ms) noexcept {
+                            Aside aside, Hotkeys& hotkeys, std::int64_t now_ms, std::uint32_t* fired) noexcept {
   if (index >= kPads) {
     return ChordStep::none;
   }
@@ -110,6 +137,9 @@ ChordStep PadChords::filter(unsigned index, std::uint16_t real, std::uint16_t& b
   ChordStep result = ChordStep::none;
   if (!one.busy.test_and_set(std::memory_order_acquire)) {
     result = step(one, real, aside, hotkeys, now_ms);
+    if (result == ChordStep::fired && fired != nullptr) {
+      *fired = one.id;
+    }
     one.busy.clear(std::memory_order_release);
   }
   const ChordView view = unpack(one.view.load(std::memory_order_acquire));

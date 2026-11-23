@@ -5,7 +5,7 @@
 # The "pages" scenario is a browser too: it reaches graceui.dll's server with the server suite's own test client.
 add_executable(grace_harness main.cpp ${CMAKE_SOURCE_DIR}/src/grace-serve/io/tests/client.cpp)
 set_target_properties(grace_harness PROPERTIES OUTPUT_NAME grace-harness)
-target_link_libraries(grace_harness PRIVATE grace_abi graceui_sys grace_pages grace_protocol d3d12 dxgi user32 dinput8
+target_link_libraries(grace_harness PRIVATE grace_abi graceui_sys grace_pages grace_protocol grace_serve_core d3d12 dxgi user32 dinput8
   dxguid imm32 ws2_32)
 target_include_directories(grace_harness PRIVATE ${CMAKE_SOURCE_DIR}/src/grace-serve/io/tests)
 target_compile_definitions(grace_harness PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE

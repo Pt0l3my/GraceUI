@@ -63,6 +63,11 @@ class HolderMail {
   // Any thread: an event of the holder `mail.generation`, kept only while that holder is the active one.
   void post(const Mail& mail) noexcept;
 
+  // Called with the owner whenever an event is kept for it, on the thread that kept it: the host sets the mod's wait
+  // handle (D212). It must never wait. Set once, before any holder.
+  using Notify = void (*)(std::uint16_t owner) noexcept;
+  void set_notify(Notify notify) noexcept { notify_.store(notify, std::memory_order_release); }
+
   // Any thread, at each XInput read: pad `user`'s buttons as the pad gave them. A change is posted (one event a button)
   // while the active holder is `generation` and takes the pad.
   void pad(std::uint32_t user, std::uint16_t buttons, std::uint32_t generation, bool takes_pad) noexcept;
@@ -82,6 +87,9 @@ class HolderMail {
     std::mutex taking;  // the mod's takes, against each other only
     bool held = false;  // under `taking`: an event read past a coalesced move, to give next
     Mail next{};
+    // An end the ring could not take even once emptied (another thread's pop still held its slot): its generation and
+    // why, 0 for none, given before anything in the ring (D207).
+    std::atomic<std::uint64_t> pending_end{0};
   };
 
   static std::uint64_t pack(std::uint16_t owner, std::uint32_t generation) noexcept {
@@ -94,6 +102,7 @@ class HolderMail {
   std::mutex making_;                      // a box's creation (the mods' threads)
   std::atomic<std::uint64_t> active_{0};   // the active holder: its owner and generation, 0 for none
   std::array<std::atomic<std::uint16_t>, kMailPads> pad_raw_{};
+  std::atomic<Notify> notify_{nullptr};
 };
 
 }  // namespace grace::input

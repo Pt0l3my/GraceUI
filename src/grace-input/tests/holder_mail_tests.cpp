@@ -174,10 +174,13 @@ TEST_CASE("posted from three threads while the mod takes from two: in order per 
       Mail one;
       std::uint32_t dropped = 0;
       for (;;) {
+        // Read before taking: the other taker may take the end between this take and its bookkeeping, so only a key
+        // taken once the end was already gone comes after it.
+        const bool end_gone = ended.load();
         if (mail.take(kOwner, kToken, one, dropped)) {
           if (one.kind == MailKind::ended) {
             ended.store(true);
-          } else if (ended.load()) {
+          } else if (end_gone) {
             after_end.store(true);
           }
           taken.fetch_add(1);
@@ -210,4 +213,31 @@ TEST_CASE("posted from three threads while the mod takes from two: in order per 
   }
   CHECK(ended.load());
   CHECK_FALSE(after_end.load());
+}
+
+namespace {
+std::atomic<int> g_notified{0};
+std::atomic<int> g_notified_owner{0};
+void notified(std::uint16_t owner) noexcept {
+  g_notified.fetch_add(1);
+  g_notified_owner.store(owner);
+}
+}  // namespace
+
+TEST_CASE("each event kept, and the end, tells the host whose it is, for the mod's wait handle (D212)") {
+  HolderMail mail;
+  mail.set_notify(&notified);
+  g_notified.store(0);
+  mail.post(key(5, 1));  // no holder asked yet: nothing kept, nothing told
+  CHECK(g_notified.load() == 0);
+  mail.enable(kOwner, kToken, 5);
+  mail.post(key(5, 2));
+  CHECK(g_notified.load() == 1);
+  CHECK(g_notified_owner.load() == kOwner);
+  mail.post(key(4, 3));  // an earlier holder's: not kept, not told
+  CHECK(g_notified.load() == 1);
+  mail.end(5, 1);
+  CHECK(g_notified.load() == 2);
+  mail.end(5, 1);  // its end was posted already
+  CHECK(g_notified.load() == 2);
 }

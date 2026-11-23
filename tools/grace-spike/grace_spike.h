@@ -8,6 +8,8 @@
 #define GRACE_SPIKE_ACTION "typing-test"
 #define GRACE_SPIKE_KEY 0x78 /* F9 */
 #define GRACE_SPIKE_FILE L"graceui-spike.jsonl"
+#define GRACE_SPIKE_LOG_FILE L"graceui-log.txt" /* GraceUI's own log lines, beside the report and never in it (D230) */
+#define GRACE_SPIKE_FAULT_FILE L"graceui-faults.txt" /* faults seen, with modules' file names, beside the report (D231) */
 #define GRACE_SPIKE_DIR_VARIABLE L"ELDENNET_SPIKE_DIR" /* EldenNet's launcher names the run's folder; unset, nothing */
 #define GRACE_SPIKE_BANNER_KEY 1
 #define GRACE_SPIKE_BANNER "GraceUI spike: recording. F9 opens the typing test."

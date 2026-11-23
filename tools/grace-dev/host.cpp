@@ -231,8 +231,17 @@ struct DevHost::Live {
   Live(DevHost& owner, const SpaceData& space, const Scenario* script) : host(owner), data(space), scenario(script) {
     std::string why;
     store.load(data.settings, why);  // checked when the space was loaded
+    for (auto it = data.fixtures.begin(); it != data.fixtures.end(); ++it) {
+      const protocol::TopicInfo* topic = data.topic(it.key());
+      if (topic != nullptr && topic->family.value_or(false) && topic->id != it.key()) {
+        StateTopic& member = states[it.key()];  // a family's member (D215), published when a view watches it
+        member.body = it.value();
+        member.fixture = it.value();
+        member.has_body = member.has_fixture = true;
+      }
+    }
     for (const protocol::TopicInfo& topic : data.pages.topics) {
-      if (topic.id == "settings") {
+      if (topic.id == "settings" || topic.family.value_or(false)) {
         continue;
       }
       const Json* fixture = data.fixtures.contains(topic.id) ? &data.fixtures[topic.id] : nullptr;
@@ -497,6 +506,10 @@ struct DevHost::Live {
       done = ", the scenario's reaction";
     } else {
       result.ok = true;  // a space's own command with no reaction: ok, and nothing changes
+    }
+    if (event.file != nullptr) {
+      // A file command's file (D226): its size alone is said, never a byte of it; it is let go with the event.
+      done += ", a file of " + std::to_string(event.file->bytes().size()) + " bytes";
     }
     const std::string answer = result.error.has_value() ? std::string(protocol::to_string(*result.error)) : "ok";
     if (!port->answer(event.reply, std::move(result))) {

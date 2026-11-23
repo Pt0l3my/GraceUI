@@ -176,6 +176,53 @@ GRACEUI_API void GraceUI_Test_SetAntiCheatRecheck(uint32_t ms) {
   }
 }
 
+GRACEUI_API uint32_t GraceUI_Test_GetPairingCode(char* out, uint32_t capacity) {
+  try {
+    return grace::host::test_pairing_code(out, capacity);
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API void GraceUI_Test_SetNetworkAddresses(const uint8_t* addresses, uint32_t count) {
+  try {
+    grace::host::test_set_network_addresses(addresses, count);
+  } catch (...) {
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_InitStep(void) {
+  try {
+    return grace::host::test_init_step();
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_FrameStep(void) {
+  try {
+    return grace::host::test_frame_step();
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint64_t GraceUI_Test_LogCount(void) {
+  try {
+    return grace::host::test_log_count();
+  } catch (...) {
+    return 0;
+  }
+}
+
+GRACEUI_API uint32_t GraceUI_Test_GetLogNumber(uint64_t number, char* out, uint32_t capacity) {
+  try {
+    return out == nullptr ? 0 : grace::host::test_copy_log_number(number, out, capacity);
+  } catch (...) {
+    return 0;
+  }
+}
+
 GRACEUI_API uint32_t GraceUI_Test_MenuShows(const char* text) {
   try {
     return grace::host::test_menu_shows(text);

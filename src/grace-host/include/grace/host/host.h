@@ -82,11 +82,18 @@ GraceUiStatus set_world_state(GraceUiConsumer consumer, std::uint32_t flags) noe
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::uint32_t modifiers,
                               std::uint32_t pad_chord, std::string_view action, std::string_view name,
                               std::uint32_t& id) noexcept;
+// One of the mod's hotkeys as the player has bound it (ABI 1.4, D210): GRACEUI_OK, or _REFUSED for an id not the mod's.
+GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t id, GraceUiHotkeyBinding& out) noexcept;
+// The mod's wait handle (ABI 1.5, D212): GRACEUI_OK with a handle of its own in `event`, or _FAULT.
+GraceUiStatus wake_event(GraceUiConsumer consumer, void*& event) noexcept;
 // The mod's next event (D155, D169, D176): with `holder` (the mod's event is ABI 1.1's), its holder's events first;
 // then hotkey presses; then, with `protocol` (the mod's event is large enough), its space's events, written into
 // out.frame (the mod's buffer, out.frame_capacity bytes); `out` is GraceUI's own, zeroed by the caller but for those
-// two. GRACEUI_FULL with out.frame_length the size needed when the buffer is too small.
-GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder, bool display) noexcept;
+// two. GRACEUI_FULL with out.frame_length the size needed when the buffer is too small. With `files` (the mod's event is
+// ABI 1.6's, D226), a file command's file goes into out.file (out.file_capacity bytes) beside its frame, and FULL sets
+// out.file_length to its size too; without it, GraceUI answers a file command not_now and the mod never sees it.
+GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder, bool display,
+                   bool files) noexcept;
 // connect's display fields (ABI 1.2, D180): ui.scale, its default and the back buffer's size as they stand.
 void display_at_connect(GraceUiConnectAnswer& out) noexcept;
 // The caret of the mod's field in its panel (D176), for the IME.
@@ -113,6 +120,8 @@ void test_fill_state(GraceUiTestState& out) noexcept;
 void test_reset_counters() noexcept;
 std::uint32_t test_copy_frame_costs(GraceUiTestFrameCost* out, std::uint32_t capacity) noexcept;
 std::uint32_t test_copy_log_line(std::uint32_t index, char* out, std::uint32_t capacity) noexcept;
+std::uint32_t test_copy_log_number(std::uint64_t number, char* out, std::uint32_t capacity) noexcept;  // D230
+std::uint64_t test_log_count() noexcept;                                                              // D230
 std::uint32_t test_copy_hook_name(std::uint32_t index, char* out, std::uint32_t capacity) noexcept;
 void test_request_input(std::uint32_t owner, std::uint32_t kind, std::uint32_t wants, GraceUiTestAnswer& out) noexcept;
 bool test_release_input(std::uint32_t owner) noexcept;
@@ -138,6 +147,10 @@ std::uint32_t test_copy_topic(const char* topic, char* out, std::uint32_t capaci
 std::uint32_t test_menu_bounds(const char* name, float* out) noexcept;
 std::uint32_t test_menu_shows(const char* text) noexcept;
 void test_set_recheck_ms(std::uint32_t ms) noexcept;
+std::uint32_t test_pairing_code(char* out, std::uint32_t capacity) noexcept;
+void test_set_network_addresses(const std::uint8_t* addresses, std::uint32_t count) noexcept;
+std::uint32_t test_init_step() noexcept;
+std::uint32_t test_frame_step() noexcept;  // D230
 void test_fill_server(GraceUiTestServer& out) noexcept;
 #endif
 
