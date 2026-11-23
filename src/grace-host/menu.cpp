@@ -197,6 +197,8 @@ std::vector<grace::view::RailLink> category_links(const grace::protocol::SpacePa
   return links;
 }
 
+void link_search(State& m);
+
 void load(State& m) {
   grace::spaces::OwnSpace& own = own_space();
   auto view = std::make_unique<SpaceView>();
@@ -215,6 +217,7 @@ void load(State& m) {
   m.spaces.push_back(std::move(view));
   m.active = 0;
   m.loaded = true;
+  link_search(m);
 }
 
 // The rails around each space (D79): a mod's space with GraceUI's at its foot, and from two mods' spaces a switcher;
@@ -299,6 +302,20 @@ void watch(State& m, bool on) {
   watch_topics(m);  // its open page's components with it
 }
 
+// Search across spaces (D219): each space's view finds every other space's settings too, linked anew whenever the
+// spaces change, so that no view keeps a link to one that has gone.
+void link_search(State& m) {
+  for (std::size_t i = 0; i < m.spaces.size(); ++i) {
+    std::vector<grace::view::PageView::SearchOther> others;
+    for (std::size_t j = 0; j < m.spaces.size(); ++j) {
+      if (j != i) {
+        others.push_back({m.spaces[j]->id, m.spaces[j]->name, &m.spaces[j]->view});
+      }
+    }
+    m.spaces[i]->view.set_search_others(std::move(others));
+  }
+}
+
 // The spaces that asked for the game's view, as the registry has them now: a new one gets a page view, open on its
 // first page; one that has gone is dropped, and if it was open, GraceUI's own is (D171).
 bool sync_spaces(State& m) {
@@ -341,6 +358,7 @@ bool sync_spaces(State& m) {
       m.active = i;
     }
   }
+  link_search(m);
   update_rails(m);
   return true;
 }
@@ -653,6 +671,9 @@ void act(State& m, const grace::view::Action& action) {
       break;
     case grace::view::Action::Kind::switch_space:
       activate(m, action.space, action.page, on_switcher ? From::switcher : From::link);  // another space (D79, D171)
+      if (!action.key.empty() && m.spaces[m.active]->id == action.space) {
+        m.spaces[m.active]->view.reveal(action.key);  // a search hit's row, on its home page (D219)
+      }
       break;
     case grace::view::Action::Kind::opened_page:
     case grace::view::Action::Kind::none:

@@ -63,6 +63,7 @@ struct Action {
   protocol::Cmd command{};
   std::string page;
   std::string space;  // with switch_space
+  std::string key;    // with switch_space from a search hit: the setting whose row the host then reveals (D219)
 };
 
 // A link on the rail to a page of another space (D79, D171): drawn as a category row (or a page row, indented), and
@@ -90,6 +91,9 @@ struct SearchHit {
   std::string key;
   std::string page;  // the setting's home
   std::string label;
+  std::string where;       // its home page's name
+  std::string space;       // another space's id (D219); empty for the view's own space
+  std::string space_name;  // that space's name
 };
 
 class PageView {
@@ -161,6 +165,20 @@ class PageView {
 
   // Settings whose label, synonyms or key hold `query`, without case (§4.3's settings part).
   std::vector<SearchHit> search(std::string_view query) const;
+  // Search across spaces (D219): the other spaces the menu shows, whose settings the search field finds too, each hit
+  // named by its space; opening one answers switch_space with the hit's page and key. The host keeps them current, and
+  // each view outlives its use here (it is relinked whenever the spaces change).
+  struct SearchOther {
+    std::string id;
+    std::string name;
+    const PageView* view = nullptr;
+  };
+  void set_search_others(std::vector<SearchOther> others);
+  // This space's hits, then every other space's, sorted by label and then by space; at most `limit`.
+  std::vector<SearchHit> search_all(std::string_view query, std::size_t limit) const;
+  // A setting's row focused on its home page, its tab chosen and its section and Advanced opened (a search hit from
+  // another space, once the host has switched to it).
+  void reveal(std::string_view key);
 
   // ---- Text entry (§5.6, D57, G38 (a)): GraceUI's own field, for a text setting with no choices, a secret setting
   // (masked, write-only: it starts empty, and is sent and forgotten), a form's fields (D195), a table's row secret
@@ -339,6 +357,7 @@ class PageView {
   std::map<std::string, std::string, std::less<>> form_values_;  // a form field's text, by its focus id
   std::string search_query_;
   std::vector<SearchHit> search_hits_;
+  std::vector<SearchOther> search_others_;
   std::size_t search_pick_ = 0;
   Action open_hit(const SearchHit& hit);
   // A setting's row focused on the open page: its tab chosen, its section opened, its Advanced disclosure open.

@@ -1956,3 +1956,36 @@ TEST_CASE("a save's answer names the row to choose; taken once the list has it, 
   view.set_topic("lantern.lamps", lamps);
   CHECK(view.chosen() == by_hand);
 }
+
+TEST_CASE("search across spaces in game: another space's settings found, named by it; opening one switches (D219)") {
+  PageView demo = loaded("demo", "demo.overview");
+  PageView own = loaded("graceui", "graceui.menu");
+  demo.set_search_others({{"graceui", "GraceUI", &own}});
+  own.set_search_others({{"demo", "The demo space", &demo}});
+  // GraceUI's Menu size, found from the demo space, with its space's name before its page's.
+  const auto hits = demo.search_all("menu size", 8);
+  REQUIRE(hits.size() == 1);
+  CHECK(hits[0].key == "ui.scale");
+  CHECK(hits[0].space == "graceui");
+  CHECK(hits[0].where == "Menu");
+  press(demo, Key::search);
+  type(demo, "menu size");
+  DisplayList list;
+  demo.layout(Viewport{}, test::fonts(), list);
+  CHECK(list.dump().find("\"GraceUI › Menu\"") != std::string::npos);
+  // Enter: the host is asked to switch, with the page and the row; the view's search closes.
+  const Action open = demo.edit(EditInput{EditKey::enter});
+  REQUIRE(open.kind == Action::Kind::switch_space);
+  CHECK(open.space == "graceui");
+  CHECK(open.page == "graceui.menu");
+  CHECK(open.key == "ui.scale");
+  CHECK_FALSE(demo.editing());
+  own.reveal("ui.scale");
+  CHECK(own.focused() == "setting:ui.scale");
+  // A label in both: the view's own first; the cap holds across spaces.
+  CHECK(demo.search_all("a", 3).size() == 3);
+  const auto both = own.search_all("e", 64);
+  for (std::size_t i = 1; i < both.size(); ++i) {
+    CHECK(both[i - 1].label <= both[i].label);
+  }
+}

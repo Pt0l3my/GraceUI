@@ -1603,12 +1603,66 @@ std::vector<SearchHit> PageView::search(std::string_view query) const {
     }
     if (match) {
       if (present(s.home)) {
-        hits.push_back({s.key, s.home, s.label});
+        SearchHit hit{s.key, s.home, s.label, std::string(), std::string(), std::string()};
+        for (const protocol::Page& p : pages_.pages) {
+          if (p.id == s.home) {
+            hit.where = p.name;
+          }
+        }
+        hits.push_back(std::move(hit));
       }
     }
   }
   std::sort(hits.begin(), hits.end(), [](const SearchHit& a, const SearchHit& b) { return a.label < b.label; });
   return hits;
+}
+
+void PageView::set_search_others(std::vector<SearchOther> others) {
+  search_others_ = std::move(others);
+  if (edit_.kind == EditKind::search) {
+    edited();  // results open while the spaces change: found again
+  }
+}
+
+std::vector<SearchHit> PageView::search_all(std::string_view query, std::size_t limit) const {
+  std::vector<SearchHit> hits = search(query);
+  for (const SearchOther& other : search_others_) {
+    if (other.view == nullptr || other.view == this) {
+      continue;
+    }
+    for (SearchHit hit : other.view->search(query)) {
+      hit.space = other.id;
+      hit.space_name = other.name;
+      hits.push_back(std::move(hit));
+    }
+  }
+  // By label, then the view's own space first, then by the other space's name: as the browser orders them (D219).
+  std::stable_sort(hits.begin(), hits.end(), [](const SearchHit& a, const SearchHit& b) {
+    if (a.label != b.label) {
+      return a.label < b.label;
+    }
+    return a.space.empty() != b.space.empty() ? a.space.empty() : a.space_name < b.space_name;
+  });
+  if (hits.size() > limit) {
+    hits.resize(limit);
+  }
+  return hits;
+}
+
+void PageView::reveal(std::string_view key) {
+  if (setting(key) == nullptr || !present(setting(key)->home)) {
+    return;
+  }
+  for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
+    if (pages_.pages[p].id == setting(key)->home) {
+      if (p != page_) {
+        open_index(p, Scope::page);
+      }
+      focus_setting(key);
+      scope_ = Scope::page;
+      return;
+    }
+  }
 }
 
 // ---- Master and detail (D215, D36).
@@ -2414,10 +2468,7 @@ void PageView::edited() {
     editor_store();  // kept at each change, so that no close path loses it (G38 (2))
   } else if (edit_.kind == EditKind::search) {
     search_query_ = edit_.field.text();
-    search_hits_ = search(search_query_);
-    if (search_hits_.size() > kSearchHits) {
-      search_hits_.resize(kSearchHits);
-    }
+    search_hits_ = search_all(search_query_, kSearchHits);  // every space's the menu shows (D219)
     search_pick_ = 0;
   }
 }
@@ -2536,6 +2587,16 @@ void PageView::focus_setting(std::string_view key) {
 }
 
 Action PageView::open_hit(const SearchHit& hit) {
+  if (!hit.space.empty()) {
+    // Another space's (D219): the host switches to it, opens the home page and reveals the row.
+    Action action;
+    action.kind = Action::Kind::switch_space;
+    action.space = hit.space;
+    action.page = hit.page;
+    action.key = hit.key;
+    scope_ = Scope::page;
+    return action;
+  }
   for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
     if (pages_.pages[p].id == hit.page && present(hit.page)) {
       Action action = open_index(p, Scope::page);
@@ -4714,12 +4775,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         }
         const float label_w = c.text(found.label, TypeRole::ui, row.x + pad,
                                      row.y + std::round((rh - line_height(TypeRole::ui, s)) / 2), row.w / 2, Colour::ink_hi);
-        std::string where;
-        for (const protocol::Page& p : pages_.pages) {
-          if (p.id == found.page) {
-            where = p.name;
-          }
-        }
+        // Its home page, and another space's name before it (D219).
+        const std::string where = found.space.empty() ? found.where : found.space_name + " \u203A " + found.where;
         c.text(where, TypeRole::ui_sm, row.x + pad + label_w + std::round(12 * s),
                row.y + std::round((rh - line_height(TypeRole::ui_sm, s)) / 2),
                std::max(0.0f, row.w - 2 * pad - label_w - std::round(12 * s)), Colour::ink_mute);

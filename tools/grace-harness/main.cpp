@@ -5985,6 +5985,27 @@ void run_typing(const std::wstring& dll) {
         search_open ? "yes" : "NO", found ? "the merchant's token" : "NOTHING", opened_on.c_str(),
         ctrl_f ? "yes" : "NO", closed ? "yes" : "NO");
 
+  // 7b. Search across spaces (D219): from the demo space, GraceUI's own Menu size, named "GraceUI › Menu"; Enter
+  // switches to GraceUI's space, on the Menu page, its row focused. Then back to the demo space for what follows.
+  post_text(window, L"/");
+  until_shows(game, grace, "↑ ↓  Choose    Enter  Open    Esc  Close");
+  post_text(window, L"menu size");
+  const bool across = until_shows(game, grace, "GraceUI \u203A Menu");
+  press(window, VK_RETURN, 0x1C);
+  const bool switched = until_focused(game, grace, "setting:ui.scale") &&
+                        std::strcmp(grace.menu().page, "graceui.menu") == 0;
+  const std::string switched_to = std::string(grace.menu().page) + ", " + grace.menu().focused;
+  post_text(window, L"/");
+  until_shows(game, grace, "↑ ↓  Choose    Enter  Open    Esc  Close");
+  post_text(window, L"token");
+  const bool from_own = until_shows(game, grace, "Demo space \u203A Behaviour");
+  press(window, VK_RETURN, 0x1C);
+  const bool back = until_focused(game, grace, "setting:lantern.oil_token") &&
+                    std::strcmp(grace.menu().page, "demo.behaviour") == 0;
+  check(across && switched && from_own && back, "typing: search across spaces",
+        "GraceUI's Menu size found from the demo space %s; Enter opened %s; the demo's token found from GraceUI's %s, "
+        "and opened %s", across ? "yes" : "NO", switched_to.c_str(), from_own ? "yes" : "NO", back ? "yes" : "NO");
+
   // 8. The close routine (G38 (2)): F5 while a form field edits; at the next open the field is not edited, and its
   // text is still there.
   press(window, VK_NEXT, 0x51);
