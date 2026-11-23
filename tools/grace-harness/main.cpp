@@ -7184,6 +7184,18 @@ std::string wait_code(Game& game, const GraceUi& grace) {
   return code;
 }
 
+// True once no pairing code is showing, waited for as long as wait_code waits for one.
+bool wait_no_code(Game& game, const GraceUi& grace) {
+  for (int i = 0; i < 150; ++i) {
+    if (grace.pairing_code().empty()) {
+      return true;
+    }
+    frames(game, 1);
+    Sleep(20);
+  }
+  return grace.pairing_code().empty();
+}
+
 bool wait_shows(Game& game, const GraceUi& grace, const std::string& text) {
   for (int i = 0; i < 150; ++i) {
     if (grace.menu_shows(text.c_str()) != 0) {
@@ -7369,16 +7381,19 @@ void run_pairing_write(const std::wstring& dll) {
         device_joined ? "joined" : "REFUSED", lan_off.c_str(), forget.c_str(), pair.c_str(), disconnect.c_str(),
         menu_key.c_str(), hotkeys.c_str(), notices.c_str(), scale.c_str());
 
-  // 6. The code lives only while its sheet is open (D113): Escape closes it, and closing the menu does too.
+  // 6. The code lives only while its sheet is open (D113): Escape closes it, and closing the menu does too. The lists
+  // are read afresh first: step 5's pairing and its device's ui.scale laid the menu out anew, so the snapshot from
+  // step 4 would let menu_after return before Escape is handled (a load-dependent failure, 2026-11-23); the code's
+  // end is then waited for itself, within wait_code's 3 s.
+  menu = grace.menu();
   press(window, VK_ESCAPE, kScanEscape);
   menu = menu_after(game, grace, menu.lists);
-  const bool gone_on_escape = grace.pairing_code().empty();
+  const bool gone_on_escape = wait_no_code(game, grace);
   press(window, VK_RETURN, 0x1C);  // focus is still on Pair a device
   menu = menu_after(game, grace, menu.lists);
   const std::string second = wait_code(game, grace);
   press(window, VK_F5, kScanF5);
-  frames(game, 3);
-  const bool gone_on_close = grace.pairing_code().empty();
+  const bool gone_on_close = wait_no_code(game, grace);
   const io::Reply stale = io::request_ipv4(
       kHomeAddress, port, home_post(port, "/api/pair", Json{{"code", second}, {"name", "Late phone"}}.dump()));
   check(gone_on_escape && second.size() == 6 && gone_on_close && stale.status == 403 &&
