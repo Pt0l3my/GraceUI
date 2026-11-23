@@ -57,6 +57,9 @@ Socket listen_loopback(bool ipv6, std::uint16_t port, BindError& error) noexcept
 // address, never the wildcard, with the same options as the loopback's.
 Socket listen_ipv4(std::array<std::uint8_t, 4> address, std::uint16_t port, BindError& error) noexcept;
 
+// The port a bound socket holds (the system's choice for one bound at port 0); 0 if it cannot be read.
+std::uint16_t local_port(const Socket& socket) noexcept;
+
 // The IPv4 addresses of this PC's interfaces that are up, in the order the system lists them, at most out.size(), never
 // 0.0.0.0 (an adapter with none yet, as Wine lists them); the
 // caller keeps the private ones (pairing.h). Through Winsock on Windows (no import of its own), getifaddrs elsewhere.

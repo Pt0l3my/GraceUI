@@ -1641,4 +1641,20 @@ void Server::renew_session() noexcept {
   hub_->signal_locked();
 }
 
+bool free_loopback_port(std::uint16_t& out) noexcept {
+  out = 0;
+  if (!io::start_network()) {
+    return false;
+  }
+  {
+    io::BindError error = io::BindError::none;
+    const io::Socket probe = io::listen_loopback(false, 0, error);  // the system's choice; closed as it goes
+    if (probe.open()) {
+      out = io::local_port(probe);
+    }
+  }
+  io::stop_network();
+  return out >= kLowestPort;
+}
+
 }  // namespace grace::serve

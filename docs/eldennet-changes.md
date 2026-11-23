@@ -1314,3 +1314,15 @@ that went to 0:
   it names third-party modules by file name, so the owner may read it first.
 - **Routine faults appear too**, once each site and at most 64 a run: the game, its anti-tamper or a driver may raise
   and handle their own. `report.py` lists them under each run and judges none; a run that fell has its last one there.
+
+## 64. A free port for your test runs, and grace-dev's dump of a master's detail (2026-11-23, D234; GraceUI 0.2.31)
+
+Two small things you asked for (your WHY§524 and §526):
+
+- **`GRACEUI_TEST_PORT=free`** in the environment of a process that loads GraceUI's test build serves the browser view
+  on a loopback port the system has free, instead of the settings' 8642; a number from 1024 to 65535 names one. The
+  settings file is never changed, so your editor's case need not write a port into GraceUI's `settings.json` any more.
+  Read the port in use from `GraceUI_Test_GetServer` (its `port`). A release build ignores the variable.
+- **grace-dev `--dump`** now draws a master list's chosen row's detail: it gives the page each topic it asks for until
+  none is new, so a block bound to the master's family shows the first row's member, as the menu does. Your Named
+  NPCs goldens should lose their "Nothing to show yet." lines once regenerated with this grace-dev.

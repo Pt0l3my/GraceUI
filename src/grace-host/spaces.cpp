@@ -8,7 +8,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <cwchar>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -118,6 +120,31 @@ bool wanted(const grace::spaces::OwnSpace& own) {
          enabled.is_boolean() && enabled.get<bool>();
 }
 
+#if defined(GRACEUI_TEST_EXPORTS)
+// A test build's port (D234): GRACEUI_TEST_PORT names one (1024 to 65535), or "free" asks the system for one, so that
+// two test runs on one machine need not share the settings' port. GraceUI's settings file is never changed by it.
+enum class TestPort { none, fixed, free };
+
+TestPort test_port(std::uint16_t& port) noexcept {
+  wchar_t text[16] = {};
+  const DWORD length = GetEnvironmentVariableW(L"GRACEUI_TEST_PORT", text, 16);
+  if (length == 0 || length >= 16) {
+    return TestPort::none;
+  }
+  if (std::wcscmp(text, L"free") == 0) {
+    return TestPort::free;
+  }
+  wchar_t* end = nullptr;
+  const unsigned long value = std::wcstoul(text, &end, 10);
+  if (end == text || *end != L'\0' || value < grace::serve::kLowestPort || value > 65535) {
+    log_line("GRACEUI_TEST_PORT is neither free nor a port from 1024 to 65535: the settings' port is used");
+    return TestPort::none;
+  }
+  port = static_cast<std::uint16_t>(value);
+  return TestPort::fixed;
+}
+#endif
+
 void start(const grace::spaces::OwnSpace& own) {
   std::wstring folder;
   if (!atlas::own_folder(folder)) {
@@ -137,7 +164,38 @@ void start(const grace::spaces::OwnSpace& own) {
   config.network_addresses.assign(g_test_addresses.begin(), g_test_addresses.begin() + g_test_address_count);
   g_test_pairing_lock.unlock();
 #endif
-  const grace::serve::StartResult result = g_server->start(config);
+  int tries = 1;
+#if defined(GRACEUI_TEST_EXPORTS)
+  std::uint16_t chosen = 0;
+  const TestPort asked = test_port(chosen);
+  if (asked == TestPort::fixed) {
+    config.port = chosen;
+  } else if (asked == TestPort::free) {
+    tries = 5;  // another program may take the port between the system's answer and the bind: ask again
+  }
+#endif
+  grace::serve::StartResult result = grace::serve::StartResult::port_taken;
+  for (int attempt = 0; attempt < tries; ++attempt) {
+#if defined(GRACEUI_TEST_EXPORTS)
+    if (asked == TestPort::free) {
+      if (!grace::serve::free_loopback_port(chosen)) {
+        log_line("GRACEUI_TEST_PORT is free, but the system gave no port");
+        break;
+      }
+      config.port = chosen;
+    }
+#endif
+    result = g_server->start(config);
+    if (result != grace::serve::StartResult::port_taken) {
+      break;
+    }
+  }
+#if defined(GRACEUI_TEST_EXPORTS)
+  if (asked != TestPort::none && result == grace::serve::StartResult::ok) {
+    log_line("a test build's port, as GRACEUI_TEST_PORT asks: %u (the settings unchanged)",
+             static_cast<unsigned>(config.port));
+  }
+#endif
   if (result != grace::serve::StartResult::ok) {
     g_start_failed.store(true, std::memory_order_relaxed);  // not tried again this session: the port's setting takes effect at the next launch
     const std::string_view why = grace::serve::to_string(result);

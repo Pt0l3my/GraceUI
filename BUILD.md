@@ -249,6 +249,12 @@ python3 -I tools/check_safety.py --exports build-cl-rel/bin/graceui.dll
 `src/grace-abi/include/graceui_test.h`), the counters behind them, the harness and `grace-harness-shield.dll`, an
 empty DLL of ours that stands in for an anti-cheat's module. A release build never has them.
 
+A test build also reads `GRACEUI_TEST_PORT` when its browser view starts (D234): `free` serves it on a loopback port
+the system has free (asked again, up to five times, if another program takes it first), a number from 1024 to 65535 on
+that port; unset, on the port in GraceUI's settings, as a release build does. GraceUI's settings file is never changed
+by it, and `GraceUI_Test_GetServer` gives the port in use, so that two trees running GraceUI's cases at once need not
+share 8642. The harness's free-port scenario checks it.
+
 ```sh
 cmake -S . -B build-cl-test -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/clang-cl-xwin.cmake -DCMAKE_BUILD_TYPE=Release \
   -DGRACEUI_TEST_EXPORTS=ON

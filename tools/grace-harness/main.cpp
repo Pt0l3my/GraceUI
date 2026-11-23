@@ -4298,6 +4298,49 @@ SpaceEvent wait_space(Game& game, const GraceUiApi1* table, GraceUiConsumer mod,
   return event;
 }
 
+// A test build's free port (D234): with GRACEUI_TEST_PORT=free the browser view is served on a port the system gave,
+// not the settings' 8642, and the page loads there; GraceUI's settings file is not changed.
+void run_free_port(const std::wstring& dll) {
+  namespace io = grace::serve::iotest;
+  SetEnvironmentVariableW(L"GRACEUI_TEST_PORT", L"free");
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+  const Connected demo = connect(table, request_for("demo", GRACEUI_VERSION_PACK(0, 1, 0), "The demo space", "notices"));
+  const grace::pages::BuiltinSpace& space = grace::pages::builtin_spaces()[1];
+  GraceUiSpaceDesc desc{};
+  desc.size = sizeof desc;
+  desc.views = GRACEUI_VIEW_GAME | GRACEUI_VIEW_BROWSER;
+  desc.version = GRACEUI_VERSION_PACK(1, 0, 0);
+  desc.pages = space.pages.data();
+  desc.pages_length = space.pages.size();
+  desc.settings = space.settings.data();
+  desc.settings_length = space.settings.size();
+  desc.increment = "0.2";
+  desc.increment_length = 3;
+  const GraceUiStatus registered = table->register_pages(demo.answer.consumer, &desc);
+  GraceUiTestServer server = grace.server();
+  for (int i = 0; i < 150 && server.running == 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+    server = grace.server();
+  }
+  io::start_client_network();
+  const auto port = static_cast<std::uint16_t>(server.port);
+  const io::Reply page = server.running != 0 ? io::request(port, io::page_load(port)) : io::Reply{};
+  const std::string kept = grace.setting("dashboard.port");
+  check(registered == GRACEUI_OK && server.running == 1 && server.port != 8642 && server.port >= 1024 &&
+            page.status == 200 && kept == "8642",
+        "free port: the browser view on a port of the system's",
+        "GRACEUI_TEST_PORT=free: the server %s on port %u; its page: %d; the settings' dashboard.port still %s",
+        server.running != 0 ? "runs" : "DOES NOT RUN", server.port, page.status, kept.c_str());
+  SetEnvironmentVariableW(L"GRACEUI_TEST_PORT", nullptr);
+}
+
 void run_pages(const std::wstring& dll) {
   namespace io = grace::serve::iotest;
   using grace::protocol::Json;
@@ -8796,6 +8839,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"settings-bad") {
     std::printf("-- scenario: a settings file that is not GraceUI's (D179)\n");
     run_settings_bad(dll);
+  } else if (scenario == L"free-port") {
+    std::printf("-- scenario: a test build's free port for the browser view (D234)\n");
+    run_free_port(dll);
   } else if (scenario == L"pairing") {
     std::printf("-- scenario: another device at home, paired with a code shown in game (G9)\n");
     run_pairing(dll);
@@ -8867,6 +8913,7 @@ int wmain(int argc, wchar_t** argv) {
       run(L"anti-cheat-flag", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
       run(L"anti-cheat-recheck", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
       run(L"pairing", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());  // G9: the app's page
+      run(L"free-port", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());  // D234
       DeleteFileW(settings_file_of(folder_of_this_program() + L"..\\GraceUI\\graceui.dll").c_str());  // D179: none left
       // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in
       // GraceUI\graceui.dll, which nothing else loads.
