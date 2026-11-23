@@ -1,6 +1,8 @@
 # Proposal 0011: One Escape for a mod after its box has closed
 
-**Status: proposal, 2026-11-23, put to the owner as G39 (EldenNet's roadmap S11.4.d, its WHY§437).** A bare § is a
+**Status: proposal, 2026-11-23, put to the owner as G39 (EldenNet's roadmap S11.4.d, its WHY§437). Declined the same
+day, answer (c): Esc and the pad act on a chat box only while it is open, and are the game's again once it closes, so
+nothing here is built and EldenNet drops its second Esc (G39).** A bare § is a
 section of [DESIGN.md](../DESIGN.md); NPC is EldenNet's `docs/design/npcs-and-dialogue.md`.
 
 ## 1. Why

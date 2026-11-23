@@ -906,7 +906,7 @@ questions was the owner's answers.
 
 ## G39
 
-**One Escape for a mod after its box has closed** · *Put 2026-11-23 with proposal 0011* · **Open**
+**One Escape for a mod after its box has closed** · *Put 2026-11-23 with proposal 0011; decided 2026-11-23*
 
 **Question.** EldenNet's rule for ending a conversation (its NPC §5.7) has two steps while a reply still paces: the
 first Esc closes the chat box and lets the reply finish; a second Esc ends it at once. The second press cannot reach
@@ -929,4 +929,18 @@ reply paces, ends the conversation on the press and shows the hint in its subtit
 EldenNet changes NPC §5.7. Under (2) (b): B masked while armed, checked on S4's second round by testers.
 
 **Follows from.** D77, D155, D176, D204, D205, D212; invariants 8, 9 and 17; EldenNet's NPC §5.7, WHY§437 and S11.4.d.
+
+**Decision (2026-11-23).** (1) (c): no armed Escape and no change in GraceUI. Esc and the pad's buttons act on a chat
+box only while it is open: Enter sends the line, Esc cancels and closes the box. Once the box has closed, or the reply
+is out, Esc and the pad are the game's again at once. No press stops a reply that is still pacing after its box has
+closed: the reply finishes. (2) Falls with (1): nothing is taken from the pad while the box is closed. While the box is
+open the pad may work as the keys do, as a holder's pad already does (D176). EldenNet's NPC §5.7 drops its second Esc,
+and its S11.4.d needs nothing of GraceUI's.
+
+**Owner's words.** In the question dialog, 2026-11-23, to (1): "what is this about? is it when the player enters
+something in the chatbox to speak with an NPC? esc should only work whilst the chatbox is open, press Enter to enter
+the written text. Press Esc to cancel and close down the chatbox. Once the reply is out or chatbox is closed, Esc
+function is immediately back to normal (game's function)"; to (2): "no need to stop reply, user either closes chatbox
+with Esc or enter reply with Enter. You can implement gamepad buttons to work as such too, but we only care about while
+the chatbox is open, if the chatbox is not open those keys are back to normal function."
 
