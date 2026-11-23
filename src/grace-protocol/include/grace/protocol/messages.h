@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 7;
-inline constexpr std::string_view kProtocolVersion = "1.7";
+inline constexpr std::uint32_t kProtocolMinor = 8;
+inline constexpr std::string_view kProtocolVersion = "1.8";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -215,6 +215,7 @@ struct Setting {
   SettingEffect effect{};
   std::string availability{};
   bool locked{};
+  std::optional<bool> sensitive{};
   bool operator==(const Setting&) const = default;
 };
 bool decode(const Json& in, Setting& out, const std::string& path, DecodeError& e);
@@ -437,6 +438,7 @@ struct SpacePages {
   std::vector<TopicInfo> topics{};
   std::vector<std::string> commands{};
   std::optional<std::vector<std::string>> slow_commands{};
+  std::optional<std::vector<std::string>> sensitive_commands{};
   bool operator==(const SpacePages&) const = default;
 };
 bool decode(const Json& in, SpacePages& out, const std::string& path, DecodeError& e);

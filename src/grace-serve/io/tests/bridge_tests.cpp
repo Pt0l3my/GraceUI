@@ -44,7 +44,7 @@ TEST_CASE("hello with a ticket: welcome names both spaces, the protocol and an o
   const std::string cookie = fixture.cookie();
   WsClient ws;
   REQUIRE(ws.join(fixture.port, cookie, fixture.ticket(cookie), &welcome));
-  CHECK(welcome["protocol"] == "1.7");
+  CHECK(welcome["protocol"] == "1.8");
   CHECK(welcome["graceui"] == "0.2.0");
   REQUIRE(welcome["spaces"].size() == 2);
   CHECK(welcome["spaces"][0]["id"] == "graceui");
@@ -711,4 +711,25 @@ TEST_CASE("a space withdrawn: its subscriptions end, and its topics and commands
   const std::unique_ptr<WsClient> later = fixture.join(&welcome);
   REQUIRE(welcome["spaces"].size() == 1);
   CHECK(welcome["spaces"][0]["id"] == "graceui");
+}
+
+TEST_CASE("a sensitive command, which a paired device may never send (D221)") {
+  using grace::protocol::Json;
+  SpaceDescription d;
+  d.commands = {"settings.set", "settings.reset", "secrets.set", "keepers.ward", "lamps.light"};
+  d.sensitive = {"secrets.set"};
+  d.secret = {"keepers.ward"};
+  d.sensitive_keys = {{"dashboard.lan", "graceui.browser"}, {"provider.key", "ai.providers"}};
+  CHECK(sensitive_command(d, "secrets.set", Json::object()));
+  CHECK(sensitive_command(d, "keepers.ward", Json::object()));  // a row secret's
+  CHECK_FALSE(sensitive_command(d, "lamps.light", Json::object()));
+  CHECK(sensitive_command(d, "settings.set", Json::parse(R"({"key": "dashboard.lan", "value": true})")));
+  CHECK_FALSE(sensitive_command(d, "settings.set", Json::parse(R"({"key": "ui.scale", "value": 1.2})")));
+  CHECK(sensitive_command(d, "settings.reset", Json::parse(R"({"scope": "key", "target": "provider.key"})")));
+  CHECK_FALSE(sensitive_command(d, "settings.reset", Json::parse(R"({"scope": "key", "target": "ui.scale"})")));
+  CHECK(sensitive_command(d, "settings.reset", Json::parse(R"({"scope": "page", "target": "graceui.browser"})")));
+  CHECK_FALSE(sensitive_command(d, "settings.reset", Json::parse(R"({"scope": "page", "target": "graceui.menu"})")));
+  CHECK(sensitive_command(d, "settings.reset", Json::parse(R"({"scope": "all", "confirm": true})")));
+  SpaceDescription plain;
+  CHECK_FALSE(sensitive_command(plain, "settings.reset", Json::parse(R"({"scope": "all", "confirm": true})")));
 }

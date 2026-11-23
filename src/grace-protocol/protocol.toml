@@ -11,13 +11,14 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 7 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 8 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
                                      # 1.5 (G38): topic families, and a page's master list (D215)
                                      # 1.6 (G38): slow commands, answered within 90 s (D216)
                                      # 1.7 (G38): the editor block and the conflict code (D217)
+                                     # 1.8 (G9): sensitive commands and settings, refused from paired devices (D221)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -118,6 +119,7 @@ fields = [
   { name = "effect", type = "enum.setting_effect" },
   { name = "availability", type = "string", max = 128 },
   { name = "locked", type = "bool" },
+  { name = "sensitive", type = "bool", optional = true },  # 1.8 (D221): set or reset from this PC alone, never a paired device
 ]
 
 [types.inherited_value]
@@ -307,6 +309,7 @@ fields = [
   { name = "topics", type = "list.type.topic_info", max = 64 },
   { name = "commands", type = "list.id", max = 64 },
   { name = "slow_commands", type = "list.id", max = 8, optional = true },  # 1.6 (D216): answered within 90 s, not 10
+  { name = "sensitive_commands", type = "list.id", max = 16, optional = true },  # 1.8 (D221): from this PC alone, never a paired device
 ]
 
 # ---- Message kinds (§6.3). `from` is who sends it: page (a view: the browser or the in-game view), grace (GraceUI),

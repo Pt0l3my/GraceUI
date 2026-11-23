@@ -475,6 +475,15 @@ bool decode(const Json& in, Setting& out, const std::string& path, DecodeError& 
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "sensitive", false, path, e)) {
+    const std::string p = path.empty() ? std::string("sensitive") : path + ".sensitive";
+    out.sensitive.emplace();
+    if (!read_bool(*v, *out.sensitive, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -513,6 +522,9 @@ Json encode(const Setting& in) {
   out["effect"] = Json(to_string(in.effect));
   out["availability"] = Json(in.availability);
   out["locked"] = Json(in.locked);
+  if (in.sensitive) {
+    out["sensitive"] = Json(*in.sensitive);
+  }
   return out;
 }
 
@@ -1695,6 +1707,15 @@ bool decode(const Json& in, SpacePages& out, const std::string& path, DecodeErro
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "sensitive_commands", false, path, e)) {
+    const std::string p = path.empty() ? std::string("sensitive_commands") : path + ".sensitive_commands";
+    out.sensitive_commands.emplace();
+    if (!read_list(*v, 16, *out.sensitive_commands, p, e, [&](const Json& v, std::string& o, const std::string& p, DecodeError& e) { return read_id(v, o, p, e); })) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -1709,6 +1730,9 @@ Json encode(const SpacePages& in) {
   out["commands"] = [&] { Json a = Json::array(); for (const auto& x : in.commands) { a.push_back(Json(x)); } return a; }();
   if (in.slow_commands) {
     out["slow_commands"] = [&] { Json a = Json::array(); for (const auto& x : *in.slow_commands) { a.push_back(Json(x)); } return a; }();
+  }
+  if (in.sensitive_commands) {
+    out["sensitive_commands"] = [&] { Json a = Json::array(); for (const auto& x : *in.sensitive_commands) { a.push_back(Json(x)); } return a; }();
   }
   return out;
 }

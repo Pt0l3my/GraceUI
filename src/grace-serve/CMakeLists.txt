@@ -9,6 +9,7 @@ add_library(grace_serve_core STATIC
   frames.cpp
   handshake.cpp
   head.cpp
+  pairing.cpp
   refusal.cpp
   response.cpp)
 target_include_directories(grace_serve_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -47,6 +48,7 @@ if(GRACEUI_UNIT_TESTS)
     tests/frames_tests.cpp
     tests/handshake_tests.cpp
     tests/head_tests.cpp
+    tests/pairing_tests.cpp
     tests/response_tests.cpp
     # grace-abi's counting operator new, for the parser's and the decoder's no-allocation tests.
     ${CMAKE_SOURCE_DIR}/src/grace-abi/tests/alloc_counter.cpp)

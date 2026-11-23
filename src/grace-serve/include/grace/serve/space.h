@@ -44,6 +44,14 @@ struct SpaceDescription {
   std::vector<std::string> secret;
   // The commands the space names slow (D216): their answer may take up to kSlowAnswerDeadline, not kAnswerDeadline.
   std::vector<std::string> slow;
+  // What a paired device may never do (D221, §7.2 item 16): the commands the space names sensitive, and its settings
+  // marked sensitive or holding a secret, each with its home page (for a reset of a page, or of all).
+  std::vector<std::string> sensitive;
+  struct SensitiveKey {
+    std::string key;
+    std::string home;
+  };
+  std::vector<SensitiveKey> sensitive_keys;
   // The space's page data (space_pages), which the framework's own topic "pages" carries to a view that subscribes to
   // it: the server answers that sub itself, from this, and the space never sees it (D166, D169). Null: no such topic.
   protocol::Json pages;
@@ -63,6 +71,12 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
 // Whether a command may reach its space: one no destructive action sends, or one whose args hold "confirm": true
 // (§7.3, D173). Every view's commands are held to it, the in-game menu's too.
 bool confirmed(const SpaceDescription& description, std::string_view command, const protocol::Json& args) noexcept;
+
+// Whether a command is one a paired device may never send (D221, §7.2 item 16): one the space names sensitive, a row
+// secret's (D194), settings.set of a sensitive key, or settings.reset of a sensitive key, of a page that homes one, or
+// of all while the space has one. The server refuses it from the network listener; the space never sees it.
+bool sensitive_command(const SpaceDescription& description, std::string_view command,
+                       const protocol::Json& args) noexcept;
 
 // Where a command's result goes: the connection that sent it (never taken from a payload, §7.2 item 11) and its id.
 struct CommandRef {

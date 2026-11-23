@@ -57,7 +57,7 @@ AVAILABILITY = re.compile(r"live|later|inert|check:[a-z0-9._-]{1,48}|version:\d+
 PAGE_FIELDS = ("id", "category", "name", "description", "help", "related", "increment", "tag", "actions", "tabs",
                "sections", "master")
 SETTING_FIELDS = ("key", "type", "default", "min", "max", "step", "unit", "choices", "choices_from", "third", "label", "help", "synonyms",
-                  "home", "effect", "availability", "locked")
+                  "home", "effect", "availability", "locked", "sensitive")
 
 
 class PagesError(Exception):
@@ -89,6 +89,8 @@ def documents(path, schema):
     }
     if "slow_commands" in space:
         space_pages["slow_commands"] = space["slow_commands"]  # D216
+    if "sensitive_commands" in space:
+        space_pages["sensitive_commands"] = space["sensitive_commands"]  # D221
     settings = []
     for entry in source.get("setting", []):
         unknown = set(entry) - set(SETTING_FIELDS)
@@ -179,6 +181,11 @@ def lint(space_pages, description, fixtures, known_spaces):
             failures.append(f"{space}: slow command {name} is a command of the space's own, not a settings command "
                             "(D216)")
     unique("slow command", space_pages.get("slow_commands", []), space)
+    for name in space_pages.get("sensitive_commands", []):
+        if name not in commands or name in ("settings.set", "settings.reset"):
+            failures.append(f"{space}: sensitive command {name} is a command of the space's own, not a settings "
+                            "command: a setting is marked sensitive itself (D221)")
+    unique("sensitive command", space_pages.get("sensitive_commands", []), space)
     for t in space_pages["topics"]:
         if (t["shape"] == "stream") != ("ring" in t):
             failures.append(f"{space}: topic {t['id']}: a stream names its ring, a state does not")

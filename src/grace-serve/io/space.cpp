@@ -135,6 +135,16 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
       blocks_of(tab.sections);
     }
   }
+  for (const std::string& name : pages.sensitive_commands.value_or(std::vector<std::string>{})) {
+    if (std::find(pages.commands.begin(), pages.commands.end(), name) != pages.commands.end()) {
+      add(description.sensitive, name);  // a declared command's alone (D221)
+    }
+  }
+  for (const protocol::Setting& setting : settings.settings) {
+    if (setting.sensitive.value_or(false) || setting.type == protocol::SettingType::secret) {
+      description.sensitive_keys.push_back({setting.key, setting.home});  // a secret is never set from a device
+    }
+  }
   description.pages = protocol::encode(pages);
   return description;
 }
@@ -146,6 +156,39 @@ bool confirmed(const SpaceDescription& description, std::string_view command, co
   }
   const auto it = args.is_object() ? args.find("confirm") : args.end();
   return args.is_object() && it != args.end() && it->is_boolean() && it->get<bool>();
+}
+
+bool sensitive_command(const SpaceDescription& description, std::string_view command,
+                       const protocol::Json& args) noexcept {
+  const auto listed = [&](const std::vector<std::string>& list) {
+    return std::find(list.begin(), list.end(), command) != list.end();
+  };
+  if (listed(description.sensitive) || listed(description.secret)) {
+    return true;
+  }
+  const auto text = [&](const char* name) -> std::string_view {
+    const auto it = args.is_object() ? args.find(name) : args.end();
+    return args.is_object() && it != args.end() && it->is_string() ? std::string_view(it->get_ref<const std::string&>())
+                                                                   : std::string_view();
+  };
+  const auto any = [&](auto&& match) {
+    return std::any_of(description.sensitive_keys.begin(), description.sensitive_keys.end(), match);
+  };
+  if (command == "settings.set") {
+    return any([&](const SpaceDescription::SensitiveKey& k) { return k.key == text("key"); });
+  }
+  if (command == "settings.reset") {
+    const std::string_view scope = text("scope");
+    const std::string_view target = text("target");
+    if (scope == "key") {
+      return any([&](const SpaceDescription::SensitiveKey& k) { return k.key == target; });
+    }
+    if (scope == "page") {
+      return any([&](const SpaceDescription::SensitiveKey& k) { return k.home == target; });
+    }
+    return !description.sensitive_keys.empty();  // all, or a scope the space will refuse anyway
+  }
+  return false;
 }
 
 SpacePort::SpacePort(std::shared_ptr<detail::Hub> hub, std::shared_ptr<detail::PortState> state) noexcept
