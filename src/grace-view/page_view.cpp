@@ -1342,6 +1342,13 @@ std::vector<std::string> PageView::component_topics() const {
           out.push_back(topic);
         }
       }
+      if (block.kind == protocol::BlockKind::document && block.topic) {
+        // A document block's chosen member (D251): the reader's body, watched as any member is.
+        if (const std::string topic = topic_of(block); !topic.empty() &&
+                                                       std::find(out.begin(), out.end(), topic) == out.end()) {
+          out.push_back(topic);
+        }
+      }
       if (block.kind == protocol::BlockKind::editor && block.topic) {
         // An editor's document (D217), and the topics its fields take their choices from, once it has come.
         const std::string topic = topic_of(block);
@@ -5607,12 +5614,37 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                              Colour::ink_mute);
                       const TypeRole role = code ? TypeRole::num : TypeRole::ui_sm;
                       const float lh = line_height(role, s);
+                      const float vw = inner_w - label_w;
                       std::string_view rest(value);
                       float fy = y + std::round(4 * s);
-                      while (true) {
-                        const std::size_t nl = code ? rest.find('\n') : std::string_view::npos;
-                        c.text(rest.substr(0, nl), role, inner_x + label_w, fy, inner_w - label_w, Colour::ink_body);
+                      const auto put = [&](std::string_view line) {
+                        c.text(line, role, inner_x + label_w, fy, vw, Colour::ink_body);
                         fy += lh;
+                      };
+                      while (true) {
+                        // Its line breaks kept; a code field's lines as they are, any other's words wrapped to its
+                        // column, so that every word of it shows (EldenNet's "What happened", up to 2000 characters).
+                        const std::size_t nl = rest.find('\n');
+                        const std::string_view line = rest.substr(0, nl);
+                        if (code) {
+                          put(line);
+                        } else {
+                          std::string run;
+                          std::size_t at = 0;
+                          while (at <= line.size()) {
+                            const std::size_t end = std::min(line.find(' ', at), line.size());
+                            const std::string_view word = line.substr(at, end - at);
+                            std::string tried = run.empty() ? std::string(word) : run + " " + std::string(word);
+                            if (!run.empty() && c.width(tried, role) > vw) {
+                              put(run);
+                              run = std::string(word);
+                            } else {
+                              run = std::move(tried);
+                            }
+                            at = end + 1;
+                          }
+                          put(run);
+                        }
                         if (nl == std::string_view::npos) {
                           break;
                         }

@@ -948,6 +948,9 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.equal(await page.locator(".preview__part.is-excluded").count(), 1);
       assert.match((await page.locator(".preview__part[data-part='log'] pre").textContent()) ?? "", /19:44.*\n19:48/s);
       assert.equal(await page.locator(".preview__part[data-part='summary'] [role=switch]").count(), 0);  // not optional
+      // A field's own line breaks kept, its words wrapped, as in game.
+      assert.equal(await page.locator(".preview__part[data-part='summary'] .kv__value").first()
+        .evaluate((e) => getComputedStyle(e).whiteSpace), "pre-line");
       const sent = () => host.received.filter((f) => f.t === "cmd" && f.name === "report.part");
       await page.locator(".preview__part[data-part='log'] [role=switch]").click();
       await page.waitForFunction(() => true);
