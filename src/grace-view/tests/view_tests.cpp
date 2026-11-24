@@ -794,6 +794,84 @@ TEST_CASE("a content space's rail with GraceUI's at its foot: the link answers s
   CHECK(foot_low);
 }
 
+TEST_CASE("a space's foot: its categories pinned to the rail's bottom under a rule, last in the rail's order (D248)") {
+  // The demo's Records is at its foot; Lanterns is not.
+  const auto text_at = [](const DisplayList& l, std::string_view words) -> const Item* {
+    for (const Item& item : l.items) {
+      if (item.shape == Shape::text && item.rect.x < 300 &&
+          std::string_view(l.text).substr(item.text_first, item.text_size) == words) {
+        return &item;
+      }
+    }
+    return nullptr;
+  };
+  PageView view = loaded("demo", "demo.overview");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  const Item* lanterns = text_at(list, "Lanterns");
+  const Item* records = text_at(list, "Records");
+  REQUIRE(lanterns != nullptr);
+  REQUIRE(records != nullptr);
+  CHECK(lanterns->rect.y < 200);
+  CHECK(records->rect.y > 1000);  // at the bottom of a 1080 rail, its padding below
+  // A rule just above it.
+  bool rule = false;
+  for (const Item& item : list.items) {
+    rule = rule || (item.shape == Shape::line && item.rect.x < 300 && item.rect.y <= records->rect.y &&
+                    records->rect.y - item.rect.y < 40);
+  }
+  CHECK(rule);
+  // In the rail's order it comes after Lanterns' pages.
+  press(view, Key::back);
+  std::vector<std::string> order;
+  for (int i = 0; i < 12 && (order.empty() || order.back() != view.focused()); ++i) {
+    order.push_back(view.focused());
+    press(view, Key::down);
+  }
+  const auto at = [&](const std::string& id) { return std::find(order.begin(), order.end(), id) - order.begin(); };
+  CHECK(at("rail:demo.keepers") < at("rail:records"));
+  CHECK(at("rail:records") < static_cast<std::ptrdiff_t>(order.size()));
+  // Open, its pages listed under it, the whole foot still pinned to the bottom.
+  REQUIRE(view.open("demo.log"));
+  DisplayList open;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), open);
+  const Item* records_open = text_at(open, "Records");
+  const Item* lamps = text_at(open, "Lamps");
+  REQUIRE(records_open != nullptr);
+  REQUIRE(lamps != nullptr);
+  CHECK(records_open->rect.y < records->rect.y);
+  CHECK(lamps->rect.y > 1000);
+  // Registration refuses a foot before a category that is not of it.
+  auto pages = test::decoded<grace::protocol::SpacePages>(test::space("demo").pages);
+  std::reverse(pages.categories.begin(), pages.categories.end());
+  PageView refused;
+  std::string why;
+  CHECK_FALSE(refused.load(pages, test::decoded<grace::protocol::SettingsDescription>(test::space("demo").settings), why));
+  CHECK(why.find("follows records, at the rail's foot") != std::string::npos);
+}
+
+TEST_CASE("GraceUI's space open under a content space: the content space's foot at GraceUI's foot (D248)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  RailContext context;
+  context.title = "Demo space";
+  context.head.push_back(RailLink{"Lanterns", "demo", "demo.overview", true});
+  context.foot.push_back(RailLink{"Records", "demo", "demo.log", true, true});
+  view.set_rail(context);
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  float lanterns = -1, records = -1;
+  for (const Item& item : list.items) {
+    const std::string_view words = std::string_view(list.text).substr(item.text_first, item.text_size);
+    if (item.shape == Shape::text && item.rect.x < 300) {
+      lanterns = words == "Lanterns" ? item.rect.y : lanterns;
+      records = words == "Records" ? item.rect.y : records;
+    }
+  }
+  CHECK(lanterns > 0);
+  CHECK(lanterns < 300);
+  CHECK(records > 1000);
+}
+
 TEST_CASE("GraceUI's space open under a content space: its categories first, the content space's wordmark") {
   PageView view = loaded("graceui", "graceui.menu");
   RailContext context;
@@ -913,7 +991,7 @@ TEST_CASE("a table in game (D181): its rows, a switch a row by its key, turned t
   // Without its body the table holds nothing yet (invariant 2), and no row takes focus.
   DisplayList before;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), before);
-  CHECK(before.dump().find("Nothing to show yet.") != std::string::npos);
+  CHECK(before.dump().find("Nothing to show.") != std::string::npos);
   CHECK(view.focused().rfind("cell:", 0) != 0);
 
   view.set_topic("graceui.mods", mods);
@@ -952,7 +1030,7 @@ TEST_CASE("a table in game (D181): its rows, a switch a row by its key, turned t
   view.set_topic("graceui.notices", Json{{"columns", Json::array()}, {"rows", Json::array()}});
   DisplayList empty;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), empty);
-  CHECK(empty.dump().find("Nothing to show yet.") != std::string::npos);
+  CHECK(empty.dump().find("Nothing to show.") != std::string::npos);
   // A refused switch: the space's reason under its row, focus on it; a new body of the table takes the line away.
   view.refused("graceui.mods/quiet-camp", "That mod is not connected now.");
   CHECK(view.focused() == "cell:graceui.mods/quiet-camp");
@@ -1109,7 +1187,8 @@ TEST_CASE("a space's state components in game (D184): a key-value list, a check 
   CHECK(about.component_topics() == std::vector<std::string>{"graceui.about"});
   DisplayList list;
   about.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
-  CHECK(list.dump().find("Nothing to show yet.") != std::string::npos);  // nothing published yet (invariant 2)
+  CHECK(list.dump().find("Nothing to show.") != std::string::npos);  // nothing published yet (invariant 2)
+  CHECK(list.dump().find("yet") == std::string::npos);  // and no promise of more to come (D249)
   about.set_topic("graceui.about", Json{{"items", Json::array({{{"label", "Version"}, {"value", "GraceUI 9.9.9"}},
                                                                {{"label", "Licence"}, {"value", "MIT"}},
                                                                {{"label", "No value"}}})}});
@@ -1118,7 +1197,7 @@ TEST_CASE("a space's state components in game (D184): a key-value list, a check 
   CHECK(dump.find("\"Version\"") != std::string::npos);
   CHECK(dump.find("\"GraceUI 9.9.9\"") != std::string::npos);
   CHECK(dump.find("\"No value\"") == std::string::npos);  // an item without its value is left out, as the browser does
-  CHECK(dump.find("Nothing to show yet.") == std::string::npos);
+  CHECK(dump.find("Nothing to show.") == std::string::npos);
 
   PageView compatibility = loaded("graceui", "graceui.compatibility");
   compatibility.set_topic("graceui.compatibility",
@@ -1174,7 +1253,7 @@ TEST_CASE("props.field and props.empty (D185, D186): a topic's member, and the s
       "demo.overview");
   DisplayList list;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
-  CHECK(list.dump().find("Nothing to show yet.") != std::string::npos);  // nothing published: never "All quiet."
+  CHECK(list.dump().find("Nothing to show.") != std::string::npos);  // nothing published: never "All quiet."
   CHECK(list.dump().find("All quiet.") == std::string::npos);
   view.set_topic("lantern.status", Json{{"now", {{"tiles", Json::array({{{"label", "Oil"}, {"value", "40%"}}})}}},
                                         {"sentence", "Low on oil."}});
@@ -1669,7 +1748,7 @@ TEST_CASE("master and detail in game: the list's rows, the first chosen, its mem
   CHECK_FALSE(watches(view, "lantern.lamp"));  // a family is never watched itself
   DisplayList before;
   view.layout(Viewport{}, test::fonts(), before);
-  CHECK(before.dump().find("Nothing to show yet.") != std::string::npos);
+  CHECK(before.dump().find("Nothing to show.") != std::string::npos);
   CHECK(before.dump().find("Choose a lamp to see how it burns.") != std::string::npos);
   // An empty list: the space's own words.
   view.set_topic("lantern.lamps", Json::parse(R"({"columns": [], "rows": []})"));

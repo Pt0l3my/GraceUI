@@ -31,7 +31,7 @@ function Empty({ own }: { own?: string | null }) {
   }
   return (
     <div class="empty">
-      <p class="empty__line">Nothing to show yet.</p>
+      <p class="empty__line">Nothing to show.</p>
       <p class="empty__hint">It appears here as soon as there is something to show.</p>
     </div>
   );

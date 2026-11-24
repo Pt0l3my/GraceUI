@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 9,
+  "minor": 10,
   "categories": [
     {
       "id": "lanterns",
@@ -19,7 +19,8 @@
         "demo.log",
         "demo.festival",
         "demo.lamps"
-      ]
+      ],
+      "foot": true
     }
   ],
   "pages": [

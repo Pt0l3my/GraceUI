@@ -4952,7 +4952,7 @@ void run_menu_space(const std::wstring& dll) {
 
   // 2b. The page's components (D184): the menu watches their topic while the page is open; the mod's state is drawn.
   const SpaceEvent status_watch = wait_kind(game, table, demo.answer.consumer, GRACEUI_EVENT_WATCHED);
-  const bool empty_before = grace.menu_shows("Nothing to show yet.") != 0;
+  const bool empty_before = grace.menu_shows("Nothing to show.") != 0;
   const std::string status_frame =
       R"({"v":1,"t":"state","space":"demo","topic":"lantern.status","rev":1,"body":{"tiles":[{"label":"Flame","value":"Low"}],"sentence":"The lantern gutters in the wind."}})";
   const GraceUiStatus status_published = table->publish(demo.answer.consumer, status_frame.data(), status_frame.size());

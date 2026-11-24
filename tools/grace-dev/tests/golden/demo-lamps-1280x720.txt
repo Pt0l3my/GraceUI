@@ -4,13 +4,13 @@ fill    ground.1        0,   0 1280x720
 fill    ground.0        0,   0  200x720 
 text    gold           20,  20   95x23   glyphs 9 "Demo space"
 text    ink.mute       20,  64   57x20   glyphs 8 "Lanterns"
-line    rule           20,  90  160x1   
-text    ink.hi         20,  97   50x20   glyphs 7 "Records"
-text    ink.mute       33, 128   17x17   glyphs 3 "Log"
-text    ink.mute       33, 155   45x17   glyphs 8 "Festival"
-fill    tint.select     0, 177  200x27  
-fill    gold            0, 177    2x27  
-text    gold.hi        33, 182   28x17   glyphs 5 "Lamps"
+line    rule           20, 586  160x1   
+text    ink.hi         20, 593   50x20   glyphs 7 "Records"
+text    ink.mute       33, 624   17x17   glyphs 3 "Log"
+text    ink.mute       33, 651   45x17   glyphs 8 "Festival"
+fill    tint.select     0, 673  200x27  
+fill    gold            0, 673    2x27  
+text    gold.hi        33, 678   28x17   glyphs 5 "Lamps"
 fill    ground.well   227,   7  233x24   r2
 text    ink.faint     235,  11   34x17   glyphs 6 "Search"
 text    ink.faint    1202,  10   51x17   glyphs 7 "F5  Close"

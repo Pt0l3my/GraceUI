@@ -175,7 +175,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       await page.locator("[data-section='journal'] .feed__row").first().waitFor();
       assert.equal(await page.locator("[data-section='journal'] .feed__row").count(), 2);
       await openFromRail(page, "graceui", "graceui.about");
-      assert.match((await page.locator("main .empty__line").textContent()) ?? "", /Nothing to show yet/);
+      assert.match((await page.locator("main .empty__line").textContent()) ?? "", /Nothing to show\./);
       await openFromRail(page, "records", "demo.festival");
       assert.match((await page.locator(".statement").textContent()) ?? "", /later version strings small lights/);
       assert.equal((await page.locator("#page-title + .tag").textContent())?.trim().startsWith("Later"), true);
@@ -890,6 +890,28 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.equal(await page.locator("[data-rail='page:graceui.about']").count(), 1);
       assert.equal(await page.locator("[data-rail='page:graceui.hotkeys']").count(), 1);  // 0.2 since D206
       assert.equal(await page.locator("[data-rail='page:graceui.compatibility']").count(), 0);  // ships in 0.6
+    } finally {
+      await close();
+    }
+  });
+
+  test("a space's foot categories sit at the rail's foot, under its rule, above GraceUI's own (D248)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await page.locator(".rail__foot [data-rail='category:records']").waitFor();
+      assert.equal(await page.locator(".rail__body [data-rail='category:records']").count(), 0);
+      assert.equal(await page.locator(".rail__body [data-rail='category:lanterns']").count(), 1);
+      // The space's foot first, then GraceUI's tree, each a tree of its own with one tab stop.
+      const labels = await page.locator(".rail__foot [role='tree']").evaluateAll(
+        (trees) => trees.map((t) => t.getAttribute("aria-label")));
+      assert.deepEqual(labels, ["Demo space, at the foot", "GraceUI"]);
+      assert.equal(await page.locator(".rail__foot [role='tree'] [tabindex='0']").count(), 2);
+      const body = await page.locator(".rail__body").boundingBox();
+      const foot = await page.locator(".rail__foot [data-rail='category:records']").boundingBox();
+      assert.ok(body && foot && foot.y >= body.y + body.height);
+      await page.locator(".rail__foot [data-rail='category:records']").click();
+      await page.locator("main[data-page='demo.log']").waitFor();
+      assert.equal(await page.locator(".rail__foot [data-rail='page:demo.lamps']").count(), 1);
     } finally {
       await close();
     }

@@ -13,7 +13,8 @@ description) and src/grace-pages/builtin.cpp, which compiles every built-in spac
 are checked against the protocol's schema as grace-protocol's decoders check them, then by the page lint:
 
   1. Ids: pages, categories, topics and settings unique in the space; tabs, sections and actions unique in their page.
-  2. The rail: every category's pages exist, and every page is in exactly the category it names.
+  2. The rail: every category's pages exist, and every page is in exactly the category it names; categories at the
+     rail's foot come after every other (D248).
   3. A page: tabs or sections, not both; an increment or a tag; help of three to five steps; Related links to pages
      that exist (this space's, or another built-in space's as "<space>/<page>"), never itself.
   4. Settings (invariant 12): every key on a settings block is the space's, homed on that page; every setting appears
@@ -235,6 +236,13 @@ def lint(space_pages, description, fixtures, known_spaces):
     for pid, p in pages.items():
         if placed.get(pid) != p["category"]:
             failures.append(f"{space}: page {pid} names category {p['category']}, but is not listed in it")
+    foot = None
+    for c in space_pages["categories"]:
+        if c.get("foot"):
+            foot = c["id"]
+        elif foot is not None:
+            failures.append(f"{space}: category {c['id']} follows {foot}, at the rail's foot; the foot's categories "
+                            f"come last (D248)")
 
     # 3 and 4: each page, its blocks and its settings.
     homed = {}

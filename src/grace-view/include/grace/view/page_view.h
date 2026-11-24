@@ -77,10 +77,12 @@ struct RailLink {
   std::string space;
   std::string page;
   bool category = true;
+  bool foot = false;  // a category of the space's own foot (D248): GraceUI's rail keeps it at its foot too
 };
 
 // The other spaces around this one on the rail (D79, D171): the content space's wordmark, its categories before
-// GraceUI's own when GraceUI's page is open, GraceUI's at the rail's foot when a content space's is, and from two
+// GraceUI's own when GraceUI's page is open (those of its foot at the foot, D248), GraceUI's at the rail's foot when a
+// content space's is, after the space's own foot, and from two
 // content spaces a switcher under the wordmark, whose ← and → open the previous and next one. Empty: this space alone.
 struct RailContext {
   std::string title;     // the wordmark; empty, this space's own name

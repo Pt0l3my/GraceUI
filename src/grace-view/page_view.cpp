@@ -662,6 +662,16 @@ bool PageView::load(const protocol::SpacePages& pages, const protocol::SettingsD
       }
     }
   }
+  // The rail's foot (D248): its categories after every other, so that the order given is the order drawn.
+  const std::string* foot = nullptr;
+  for (const protocol::Category& category : pages_.categories) {
+    if (category.foot.value_or(false)) {
+      foot = &category.id;
+    } else if (foot != nullptr) {
+      why = "category " + category.id + " follows " + *foot + ", at the rail's foot; the foot's categories come last";
+      return false;
+    }
+  }
   if (!check_parts(pages_, settings_, why)) {
     return false;
   }
@@ -943,7 +953,7 @@ PageView::Drawn PageView::drawn(const protocol::PageBlock& block) const {
 
 std::string PageView::empty_words(const protocol::PageBlock& block, bool published) const {
   const std::string own = prop_text(block, "empty");
-  return published && !own.empty() ? own : std::string("Nothing to show yet.");  // the space's words once it spoke (D186)
+  return published && !own.empty() ? own : std::string("Nothing to show.");  // the space's words once it spoke (D186)
 }
 
 // A row secret's status in words (D194, D197): set, refused (the key was sent but the provider refused it), none (none
@@ -3745,10 +3755,25 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     c.text(context_.title.empty() ? pages_.name : context_.title, TypeRole::display_md, menu_x + pad, y,
            rail_w - 2 * pad, Colour::gold);
     y += std::round(line_height(TypeRole::display_md, s) + 16 * s);
-    // GraceUI's links at the rail's foot, pinned to its bottom under a rule (§4.2.2's foot, D79).
+    // The rail's foot, pinned to its bottom under a rule (§4.2.2's foot): the space's own foot categories, with the open
+    // one's pages (D248), then GraceUI's links (D79); below the rest where the rail is too short to keep them apart.
+    const auto entry_h = [&](const RailEntry& e) {
+      const RailLink* other = e.kind == RailEntry::Kind::head   ? &context_.head[e.index]
+                              : e.kind == RailEntry::Kind::foot ? &context_.foot[e.index]
+                                                                : nullptr;
+      const bool is_page = e.own_page() || (other != nullptr && !other->category);
+      return std::round((is_page ? size::rail_page : size::rail_category) * s);
+    };
+    std::size_t first_foot = rail_.size();
+    for (std::size_t i = 0; i < rail_.size() && first_foot == rail_.size(); ++i) {
+      if (rail_[i].kind == RailEntry::Kind::foot ||
+          (rail_[i].category() && pages_.categories[rail_[i].index].foot.value_or(false))) {
+        first_foot = i;
+      }
+    }
     float foot_y = H - pad;
-    for (const RailLink& link : context_.foot) {
-      foot_y -= std::round((link.category ? size::rail_category : size::rail_page) * s);
+    for (std::size_t i = first_foot; i < rail_.size(); ++i) {
+      foot_y -= entry_h(rail_[i]);
     }
     for (std::size_t i = 0; i < rail_.size(); ++i) {
       const RailEntry& e = rail_[i];
@@ -3757,14 +3782,14 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                               : e.kind == RailEntry::Kind::foot ? &context_.foot[e.index]
                                                                 : nullptr;
       const bool is_page = e.own_page() || (other != nullptr && !other->category);
-      const float h = std::round((is_page ? size::rail_page : size::rail_category) * s);
-      if (e.kind == RailEntry::Kind::foot && (i == 0 || rail_[i - 1].kind != RailEntry::Kind::foot)) {
+      const float h = entry_h(e);
+      if (i == first_foot) {
         y = std::max(y, foot_y);
         c.line(menu_x + pad, y, rail_w - 2 * pad, Colour::rule);
       }
       const Rect row{menu_x, y, rail_w, h};
       hit(row, Scope::rail, i);
-      if ((e.category() || (link && other->category && e.kind == RailEntry::Kind::head)) && i != 0 &&
+      if ((e.category() || (link && other->category && e.kind == RailEntry::Kind::head)) && i != 0 && i != first_foot &&
           rail_[i - 1].kind != RailEntry::Kind::switcher) {
         c.line(menu_x + pad, y, rail_w - 2 * pad, Colour::rule);
       }
@@ -3945,7 +3970,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       if (rows.empty()) {
         // Its own words once its topic has spoken (D186), nothing else until then (invariant 2).
         const bool published = topics_.count(m->topic) != 0;
-        c.text(published && m->empty ? *m->empty : std::string("Nothing to show yet."), TypeRole::ui_sm, x0 + mpad,
+        c.text(published && m->empty ? *m->empty : std::string("Nothing to show."), TypeRole::ui_sm, x0 + mpad,
                my + std::round(4 * s), mw - 2 * mpad, Colour::ink_mute);
         my += std::round(line_height(TypeRole::ui_sm, s) + 12 * s);
       }

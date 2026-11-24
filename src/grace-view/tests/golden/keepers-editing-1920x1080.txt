@@ -8,8 +8,8 @@ text    ink.mute       40, 146   61x20   glyphs 9 "Behaviour"
 fill    tint.select     0, 172  240x32  
 fill    gold            0, 172    2x32  
 text    gold.hi        40, 178   47x20   glyphs 7 "Keepers"
-line    rule           24, 204  192x1   
-text    ink.mute       24, 212   60x24   glyphs 7 "Records"
+line    rule           24,1016  192x1   
+text    ink.mute       24,1024   60x24   glyphs 7 "Records"
 fill    ground.well   272,   8  280x28   r2
 text    ink.faint     282,  12   40x20   glyphs 6 "Search"
 text    ink.faint    1827,  12   61x20   glyphs 7 "F5  Close"

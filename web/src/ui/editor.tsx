@@ -339,7 +339,7 @@ export function EditorBlockView({ space, block }: { space: string; block: PageBl
   if (!doc) {
     return (
       <div class="empty">
-        <p class="empty__line">{data !== undefined && typeof block.props?.empty === "string" ? block.props.empty : "Nothing to show yet."}</p>
+        <p class="empty__line">{data !== undefined && typeof block.props?.empty === "string" ? block.props.empty : "Nothing to show."}</p>
       </div>
     );
   }

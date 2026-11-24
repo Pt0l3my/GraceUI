@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // rail.tsx: the rail (DESIGN §3.7, §3.8, §4.2.2; D79): the space's name as the wordmark, its build line and the
 // collapse button; the space switcher from two spaces; the space's categories as an accordion tree with their pages; and
-// GraceUI's own space at the foot. Under 1100 px of menu width it collapses to one mark a category, each opening a
+// at the foot, under a rule, the space's own foot categories (D248), then GraceUI's own space. Under 1100 px of menu width it collapses to one mark a category, each opening a
 // flyout of its pages. An ARIA tree with one tab stop: ↑ ↓ move, → opens a category or enters it, ← closes it or goes
 // back to it, Enter opens (a category its first page, as grace-view does).
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -33,7 +33,19 @@ function categoryPages(view: SpaceView, category: Category): Page[] {
   }) : [];
 }
 
-function RailTree({ view, label }: { view: SpaceView; label: string }) {
+/** Which of a space's categories a tree or a column of marks holds: those of the rail's foot (D248), the rest, or all. */
+type Part = "body" | "foot" | "all";
+
+function inPart(category: Category, part: Part): boolean {
+  return part === "all" || (category.foot === true) === (part === "foot");
+}
+
+/** Whether a space has categories at the rail's foot (D248). */
+function hasFoot(view: SpaceView): boolean {
+  return view.pages.value?.categories.some((c) => c.foot === true) ?? false;
+}
+
+function RailTree({ view, label, part = "all" }: { view: SpaceView; label: string; part?: Part }) {
   const session = useSession();
   const tree = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<string | null>(null);
@@ -45,9 +57,10 @@ function RailTree({ view, label }: { view: SpaceView; label: string }) {
   const route = session.route.value;
   const open = expanded.value;
   const items: Item[] = [];
-  pages.categories.forEach((category, c) => {
+  const categories = pages.categories.filter((category) => inPart(category, part));
+  categories.forEach((category, c) => {
     items.push({ key: `category:${category.id}`, kind: "category", category, level: 1, posinset: c + 1,
-                 setsize: pages.categories.length });
+                 setsize: categories.length });
     if (open === `${space}/${category.id}`) {
       const list = categoryPages(view, category);
       list.forEach((page, p) => items.push({ key: `page:${page.id}`, kind: "page", category, page, level: 2,
@@ -55,9 +68,11 @@ function RailTree({ view, label }: { view: SpaceView; label: string }) {
     }
   });
   const current = route && route.space === space ? `page:${route.page}` : null;
+  // The tab stop: the item last focused, the page shown, its category, or the first, among this tree's own items.
+  const routeCategory = route && route.space === space ? `category:${pageById(pages, route.page)?.category ?? ""}` : null;
   const stop = items.some((i) => i.key === active) ? active
     : items.some((i) => i.key === current) ? current
-    : route && route.space === space ? `category:${pageById(pages, route.page)?.category ?? ""}` : items[0]?.key ?? null;
+    : items.some((i) => i.key === routeCategory) ? routeCategory : items[0]?.key ?? null;
   const focusKey = (key: string | undefined) => {
     if (key === undefined) {
       return;
@@ -152,7 +167,7 @@ function RailTree({ view, label }: { view: SpaceView; label: string }) {
   );
 }
 
-function RailMarks({ view, label }: { view: SpaceView; label: string }) {
+function RailMarks({ view, label, part = "all" }: { view: SpaceView; label: string; part?: Part }) {
   const session = useSession();
   const [flyout, setFlyout] = useState<string | null>(null);
   const holder = useRef<HTMLUListElement>(null);
@@ -181,7 +196,7 @@ function RailMarks({ view, label }: { view: SpaceView; label: string }) {
   };
   return (
     <ul ref={holder} class="marks" aria-label={label}>
-      {pages.categories.map((category) => {
+      {pages.categories.filter((category) => inPart(category, part)).map((category) => {
         const list = categoryPages(view, category);
         const isCurrent = route?.space === space && pageById(pages, route.page)?.category === category.id;
         const flyId = domId("flyout", space, category.id);
@@ -313,11 +328,16 @@ export function Rail() {
       {!collapsed && <p class="rail__build">v{main.info.version}</p>}
       {content.length >= 2 && !collapsed && <Switcher spaces={content} current={main.info.id} />}
       <div class="rail__body">
-        {collapsed ? <RailMarks view={main} label={main.info.name} /> : <RailTree view={main} label={main.info.name} />}
+        {collapsed ? <RailMarks view={main} label={main.info.name} part="body" />
+          : <RailTree view={main} label={main.info.name} part="body" />}
       </div>
-      {foot && (
+      {(foot || hasFoot(main)) && (
         <div class="rail__foot">
-          {collapsed ? <RailMarks view={foot} label={foot.info.name} /> : <RailTree view={foot} label={foot.info.name} />}
+          {hasFoot(main) && (collapsed
+            ? <RailMarks view={main} label={`${main.info.name}, at the foot`} part="foot" />
+            : <RailTree view={main} label={`${main.info.name}, at the foot`} part="foot" />)}
+          {foot && (collapsed ? <RailMarks view={foot} label={foot.info.name} />
+            : <RailTree view={foot} label={foot.info.name} />)}
         </div>
       )}
     </nav>

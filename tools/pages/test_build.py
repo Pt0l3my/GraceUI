@@ -102,6 +102,12 @@ class Seeded(unittest.TestCase):
         sp["categories"][1]["pages"].append("demo.overview")
         self.expect("page demo.overview in two categories", sp, desc, fx)
 
+    def test_the_foot_comes_last(self):
+        sp, desc, fx = demo()
+        self.assertTrue(sp["categories"][-1].get("foot"))  # the demo's Records, at the rail's foot (D248)
+        sp["categories"].reverse()
+        self.expect("category lanterns follows records, at the rail's foot", sp, desc, fx)
+
     def test_tabs_and_sections(self):
         sp, desc, fx = demo()
         page(sp, "demo.behaviour")["sections"] = [{"id": "x", "title": "X", "blocks": []}]

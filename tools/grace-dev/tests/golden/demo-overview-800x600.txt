@@ -9,8 +9,8 @@ fill    gold            0,  76    1x22
 text    gold.hi        28,  80   38x14   glyphs 8 "Overview"
 text    ink.mute       28, 102   42x14   glyphs 9 "Behaviour"
 text    ink.mute       28, 124   33x14   glyphs 7 "Keepers"
-line    rule           17, 142  133x1   
-text    ink.mute       17, 148   41x17   glyphs 7 "Records"
+line    rule           17, 555  133x1   
+text    ink.mute       17, 561   41x17   glyphs 7 "Records"
 fill    ground.well   189,   6  194x20   r1
 text    ink.faint     196,   9   28x14   glyphs 6 "Search"
 text    ink.faint     736,   9   42x14   glyphs 7 "F5  Close"

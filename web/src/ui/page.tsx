@@ -308,7 +308,7 @@ function MasterList({ space, page, master, data, current }: { space: string; pag
     <nav class="master" aria-label={master.label}>
       <h2 class="master__label">{master.label}</h2>
       {rows.length === 0
-        ? <p class="master__empty">{data !== undefined && master.empty !== undefined ? master.empty : "Nothing to show yet."}</p>
+        ? <p class="master__empty">{data !== undefined && master.empty !== undefined ? master.empty : "Nothing to show."}</p>
         : (
           <ul class="master__list" role="listbox" aria-label={master.label}>
             {rows.map(({ key, row }, i) => (
