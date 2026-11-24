@@ -6588,15 +6588,26 @@ void run_typing(const std::wstring& dll) {
   post_text(window, L"Bell tower");
   until_shows(game, grace, "Bell tower");
   press(window, VK_RETURN, 0x1C);
+  // Notes: a prose field (D251), its several lines in the editor's prose well; Enter moves on from it too.
+  const bool on_notes = until_focused(game, grace, "field:hire/0/notes");
+  press(window, VK_RETURN, 0x1C);
+  const bool prose_open = until_shows(game, grace, "↑ ↓  Line    Enter  Next    Esc  Done    Ctrl+V  Paste");
+  post_text(window, L"Tidewise");
+  until_shows(game, grace, "Tidewise");
+  press(window, VK_RETURN, 0x1C);
   const bool on_hire = until_focused(game, grace, "submit:hire/0");
   press(window, VK_RETURN, 0x1C);
   const Json hire = take_command(game, table, mod);
-  const bool emptied = until_shows(game, grace, "Wren Hale", true) && grace.menu_shows("Bell tower") == 0;
-  check(on_name && moved_on && on_hire && hire.is_object() && hire["name"] == "keepers.hire" &&
-            hire["args"] == Json::object({{"name", "Wren Hale"}, {"post", "Bell tower"}}) && emptied,
-        "typing: a form", "on Name %s; Enter moved to Post %s, then to Hire %s; sent %s; its fields empty once taken %s",
-        on_name ? "yes" : "NO", moved_on ? "yes" : "NO", on_hire ? "yes" : "NO",
-        hire.is_object() ? hire.dump().c_str() : "NOTHING", emptied ? "yes" : "NO");
+  const bool emptied = until_shows(game, grace, "Wren Hale", true) && grace.menu_shows("Bell tower") == 0 &&
+                       grace.menu_shows("Tidewise") == 0;
+  check(on_name && moved_on && on_notes && prose_open && on_hire && hire.is_object() &&
+            hire["name"] == "keepers.hire" &&
+            hire["args"] == Json::object({{"name", "Wren Hale"}, {"post", "Bell tower"}, {"notes", "Tidewise"}}) &&
+            emptied,
+        "typing: a form", "on Name %s; Enter moved to Post %s, to Notes %s (its prose well %s), then to Hire %s; sent %s; "
+        "its fields empty once taken %s",
+        on_name ? "yes" : "NO", moved_on ? "yes" : "NO", on_notes ? "yes" : "NO", prose_open ? "open" : "NOT OPEN",
+        on_hire ? "yes" : "NO", hire.is_object() ? hire.dump().c_str() : "NOTHING", emptied ? "yes" : "NO");
 
   // 6. A row secret: Corin's ward word, masked, sent with the row's key.
   for (int i = 0; i < 16 && std::strcmp(grace.menu().focused, "secret:lantern.keepers/k1") != 0; ++i) {

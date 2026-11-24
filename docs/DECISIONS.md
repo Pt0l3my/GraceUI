@@ -1117,3 +1117,37 @@ relayed by that session and read in its transcript): "(a) All three (Recommended
 **Built** (2026-11-24) in GraceUI 0.2.44, protocol 1.12 (DESIGN D251). Documents are found by their list's own search
 on their titles and headings (G43's filter bar), as §1's "never a body" asks, rather than by the global search.
 
+
+## G45
+
+**The top bar's controls for a space, and tables read a page at a time** · *Open since 2026-11-24
+([proposal 0014](proposals/0014-top-bar-and-paging.md)) · Decided by the owner 2026-11-24, as recommended*
+
+**Question.** §4.2.3's Live updates, Journey and Quick switches are described as EldenNet's controls, but a mod's space
+has no way to declare them, and no table can show rows that a command answers a page at a time, as EldenNet's History
+reads its conversations and events (`history.page`). EldenNet's PAGES wants Quick switches (Pause AI, Conversation)
+and Live updates (Home, Requests) at 0.2, the Journey at 0.3, and paged History at 0.3 (Conversations) and 0.4
+(Events). **(a) All four, in two protocol minors** (recommended): first `quick` (shortcut rows and a space's session
+switches, by the power icon and pad Start) and a page's `live = true` (Live, every 5 s, Paused, holding only what moves
+by itself); then a space's `scope` with `scoped` pages (the chooser in the top bar, a family member per scope, a
+read-only scope greying the page's writing controls) and a table or master list read by a `page` command (cursor,
+filters, sort, search and scope sent; rows, `next` and `total` answered; Show more; the space's filtering; "New rows ·
+Show"). **(b) All four in one minor**, when EldenNet's 0.3 pages are built. **(c) Only the scope and paged tables.**
+**(d) None.**
+
+**Recommendation.** (a): the first two serve pages EldenNet builds now and are small; the second two are what its next
+increment's History pages cannot be built without, and their formats can be agreed with EldenNet meanwhile.
+
+**What each answer changes.** (a) and (b): protocol, the page lint, both views' top bars and tables, the demo space's
+examples and its handler, the tests and goldens; no change of the ABI. (c): the same without §1 and §2. (d): nothing;
+Start keeps waiting in game.
+
+**Follows from.** §4.2.3, §5.4, §6.5, §6.6; D15, D21, D41, D188, D215, D216, D219, D250; G16, G18, G20; EldenNet's
+PAGES §4.6.5 and §4.10.
+
+**Decision (2026-11-24).** (a), as recommended: all four, in two protocol minors. First the quick switches and a page's
+live updates, for EldenNet's 0.2 pages; then a space's scope and tables read a page at a time, for its 0.3 History, in
+formats agreed with EldenNet's session meanwhile (proposal 0014).
+
+**Owner's words.** Answering the question put to them in this session (its question dialog, 2026-11-24): "(a) All
+four, in two steps (Recommended)".
