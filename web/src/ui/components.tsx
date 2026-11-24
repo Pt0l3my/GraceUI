@@ -14,6 +14,7 @@ import { GreyedContext, MasterContext, topicFor, useSession } from "./context.ts
 import { Warning } from "./icons.tsx";
 import { CaptureDialog } from "./capture.tsx";
 import { ConfirmDialog } from "./modal.tsx";
+import { FilterBar, useFilterBar } from "./filter-bar.tsx";
 
 function text(value: Json | undefined): string | null {
   return typeof value === "string" ? value : typeof value === "number" ? String(value) : null;
@@ -199,6 +200,10 @@ function Table({ space, block, body, empty }: { space: string; block: PageBlock;
   const inert = greyed.words(greyed.page) !== null;  // a greyed page's switches do nothing (D188)
   const columns = objects(body.columns).filter((c) => text(c.id) !== null && text(c.label) !== null);
   const rows = objects(body.rows);
+  // Its filter bar (G43, D250): the rows that show, in the order they show, by their index in the space's rows.
+  const spec = block.filter_bar;
+  const field = typeof block.props?.field === "string" ? `#${block.props.field}` : "";
+  const bar = useFilterBar(`${space}/${block.topic ?? ""}${field}`, spec, rows);
   if (columns.length === 0 || rows.length === 0) {
     return empty;
   }
@@ -252,7 +257,8 @@ function Table({ space, block, body, empty }: { space: string; block: PageBlock;
   };
   return (
     <>
-      <table class="table">
+      {spec && <FilterBar spec={spec} rows={rows} state={bar.state} shown={bar.order.length} set={bar.set} label="" />}
+      {bar.order.length > 0 && <table class="table">
         <thead>
           <tr>
             {columns.map((c) => <th scope="col" key={text(c.id)} class={c.numeric === true ? "num" : undefined}>{text(c.label)}</th>)}
@@ -260,8 +266,8 @@ function Table({ space, block, body, empty }: { space: string; block: PageBlock;
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
+          {bar.order.map((i) => rows[i]!).map((r, n) => (
+            <tr key={bar.order[n]}>
               {columns.map((c) => {
                 const id = text(c.id) ?? "";
                 const sw = switchOf(c);
@@ -324,7 +330,7 @@ function Table({ space, block, body, empty }: { space: string; block: PageBlock;
             </tr>
           ))}
         </tbody>
-      </table>
+      </table>}
       {refusal !== null && <p class="table__notice" role="alert"><Warning /> {refusal}</p>}
       <ConfirmDialog space={space} action={asking?.action ?? null} onClose={() => setAsking(null)}
                      onConfirm={(a) => {
