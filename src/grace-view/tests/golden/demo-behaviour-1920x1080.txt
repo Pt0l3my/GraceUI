@@ -8,8 +8,8 @@ fill    tint.select     0, 140  240x32
 fill    gold            0, 140    2x32  
 text    gold.hi        40, 146   61x20   glyphs 9 "Behaviour"
 text    ink.mute       40, 178   47x20   glyphs 7 "Keepers"
-line    rule           24, 204  192x1   
-text    ink.mute       24, 212   60x24   glyphs 7 "Records"
+line    rule           24,1016  192x1   
+text    ink.mute       24,1024   60x24   glyphs 7 "Records"
 fill    ground.well   272,   8  280x28   r2
 text    ink.faint     282,  12   40x20   glyphs 6 "Search"
 text    ink.faint    1827,  12   61x20   glyphs 7 "F5  Close"
@@ -71,5 +71,16 @@ text    ink.hi        304, 635   60x22   clip1 glyphs 8 "Festival"
 text    ink.mute      812, 636  243x20   clip1 glyphs 31 "Festival lights, in a later version."
 text    gold         1824, 635    8x22   clip1 glyphs 1 "→"
 line    rule          240,1044 1680x1   
-text    ink.faint     272,1052  256x20   glyphs 24 "Enter  Toggle    R  Reset    Esc  Back"
+fill    ground.well   272,1051   47x22   r2
+stroke  edge          272,1051   47x22   r2 w1
+text    ink.body      278,1052   35x20   glyphs 5 "Enter"
+text    ink.faint     325,1052   40x20   glyphs 6 "Toggle"
+fill    ground.well   386,1051   19x22   r2
+stroke  edge          386,1051   19x22   r2 w1
+text    ink.body      392,1052    7x20   glyphs 1 "R"
+text    ink.faint     410,1052   34x20   glyphs 5 "Reset"
+fill    ground.well   464,1051   33x22   r2
+stroke  edge          464,1051   33x22   r2 w1
+text    ink.body      470,1052   21x20   glyphs 3 "Esc"
+text    ink.faint     503,1052   27x20   glyphs 4 "Back"
 stroke  gold.hi      1810, 263   44x26   r4 w2 clip1

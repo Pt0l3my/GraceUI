@@ -257,6 +257,33 @@ Stats tessellate(const view::DisplayList& list, const tokens::Palette& palette, 
         stroke_convex(w, points, 4, std::max(item.width, 1.0f), colour, clip);
         break;
       }
+      case Shape::triangle: {
+        // Clockwise on the display, as fill_convex's normals need.
+        switch (item.facing) {
+          case view::Facing::right:
+            points[0] = {r.x, r.y};
+            points[1] = {r.right(), r.y + r.h / 2};
+            points[2] = {r.x, r.bottom()};
+            break;
+          case view::Facing::down:
+            points[0] = {r.x, r.y};
+            points[1] = {r.right(), r.y};
+            points[2] = {r.x + r.w / 2, r.bottom()};
+            break;
+          case view::Facing::left:
+            points[0] = {r.right(), r.y};
+            points[1] = {r.right(), r.bottom()};
+            points[2] = {r.x, r.y + r.h / 2};
+            break;
+          case view::Facing::up:
+            points[0] = {r.x + r.w / 2, r.y};
+            points[1] = {r.right(), r.bottom()};
+            points[2] = {r.x, r.bottom()};
+            break;
+        }
+        fill_convex(w, points, 3, colour, clip);
+        break;
+      }
       case Shape::text: {
         for (std::uint32_t g = item.glyph_first; g < item.glyph_first + item.glyph_count && g < list.glyphs.size(); ++g) {
           const view::PlacedGlyph& q = list.glyphs[g];

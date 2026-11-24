@@ -207,7 +207,7 @@ std::vector<grace::view::RailLink> category_links(const grace::protocol::SpacePa
   for (const grace::protocol::Category& category : pages.categories) {
     for (const std::string& page : category.pages) {
       if (view.present(page)) {
-        links.push_back(grace::view::RailLink{category.name, pages.space, page, true});
+        links.push_back(grace::view::RailLink{category.name, pages.space, page, true, category.foot.value_or(false)});
         break;
       }
     }
@@ -239,7 +239,8 @@ void load(State& m) {
 }
 
 // The rails around each space (D79): a mod's space with GraceUI's at its foot, and from two mods' spaces a switcher;
-// GraceUI's own under the wordmark and the categories of the mod's space last open.
+// GraceUI's own under the wordmark and the categories of the mod's space last open, those of its foot at the foot
+// (D248).
 void update_rails(State& m) {
   std::vector<SpaceView*> content;
   for (auto& space : m.spaces) {
@@ -272,7 +273,9 @@ void update_rails(State& m) {
       }
     }
     own_context.title = last->name;
-    own_context.head = last->categories;
+    for (const grace::view::RailLink& link : last->categories) {  // its foot's at GraceUI's foot too (D248)
+      (link.foot ? own_context.foot : own_context.head).push_back(link);
+    }
   }
   own_view(m).view.set_rail(std::move(own_context));
 }

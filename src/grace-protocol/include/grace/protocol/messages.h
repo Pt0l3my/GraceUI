@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 9;
-inline constexpr std::string_view kProtocolVersion = "1.9";
+inline constexpr std::uint32_t kProtocolMinor = 10;
+inline constexpr std::string_view kProtocolVersion = "1.10";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -430,11 +430,12 @@ struct Page {
 bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e);
 Json encode(const Page& in);
 
-// A category of the rail and its pages, in order.
+// A category of the rail and its pages, in order; at the rail's foot, under a rule, if `foot` (1.10, D248).
 struct Category {
   std::string id{};
   std::string name{};
   std::vector<std::string> pages{};
+  std::optional<bool> foot{};
   bool operator==(const Category&) const = default;
 };
 bool decode(const Json& in, Category& out, const std::string& path, DecodeError& e);

@@ -3,13 +3,13 @@ fill    ground.1        0,   0 1920x1080
 fill    ground.0        0,   0  240x1080
 text    gold           24,  24  114x28   glyphs 9 "Demo space"
 text    ink.mute       24,  76   68x24   glyphs 8 "Lanterns"
-line    rule           24, 108  192x1   
-text    ink.hi         24, 116   60x24   glyphs 7 "Records"
-text    ink.mute       40, 154   20x20   glyphs 3 "Log"
-text    ink.mute       40, 186   54x20   glyphs 8 "Festival"
-fill    tint.select     0, 212  240x32  
-fill    gold            0, 212    2x32  
-text    gold.hi        40, 218   34x20   glyphs 5 "Lamps"
+line    rule           24, 920  192x1   
+text    ink.hi         24, 928   60x24   glyphs 7 "Records"
+text    ink.mute       40, 966   20x20   glyphs 3 "Log"
+text    ink.mute       40, 998   54x20   glyphs 8 "Festival"
+fill    tint.select     0,1024  240x32  
+fill    gold            0,1024    2x32  
+text    gold.hi        40,1030   34x20   glyphs 5 "Lamps"
 fill    ground.well   272,   8  280x28   r2
 text    ink.faint     282,  12   40x20   glyphs 6 "Search"
 text    ink.faint    1827,  12   61x20   glyphs 7 "F5  Close"
@@ -59,5 +59,20 @@ text    ink.hi        768, 507   22x22   clip1 glyphs 3 "Log"
 text    ink.mute     1121, 508  418x20   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
 text    gold         1824, 507    8x22   clip1 glyphs 1 "→"
 line    rule          240,1044 1680x1   
-text    ink.faint     272,1052  236x20   glyphs 20 "↑ ↓  Choose    →  Open    Esc  Back"
+fill    ground.well   272,1051   39x22   r2
+stroke  edge          272,1051   39x22   r2 w1
+fill    ink.body      282,1060    2x8   
+tri     ink.body      278,1056   10x5    ^
+fill    ink.body      299,1056    2x8   
+tri     ink.body      295,1063   10x5    v
+text    ink.faint     317,1052   40x20   glyphs 6 "Choose"
+fill    ground.well   378,1051   24x22   r2
+stroke  edge          378,1051   24x22   r2 w1
+fill    ink.body      384,1061    8x2   
+tri     ink.body      390,1057    5x10   >
+text    ink.faint     408,1052   27x20   glyphs 4 "Open"
+fill    ground.well   454,1051   33x22   r2
+stroke  edge          454,1051   33x22   r2 w1
+text    ink.body      460,1052   21x20   glyphs 3 "Esc"
+text    ink.faint     494,1052   27x20   glyphs 4 "Back"
 stroke  gold.hi       278, 199  428x60   r4 w2 clip1

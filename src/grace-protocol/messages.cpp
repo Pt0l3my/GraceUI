@@ -1656,6 +1656,15 @@ bool decode(const Json& in, Category& out, const std::string& path, DecodeError&
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "foot", false, path, e)) {
+    const std::string p = path.empty() ? std::string("foot") : path + ".foot";
+    out.foot.emplace();
+    if (!read_bool(*v, *out.foot, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -1664,6 +1673,9 @@ Json encode(const Category& in) {
   out["id"] = Json(in.id);
   out["name"] = Json(in.name);
   out["pages"] = [&] { Json a = Json::array(); for (const auto& x : in.pages) { a.push_back(Json(x)); } return a; }();
+  if (in.foot) {
+    out["foot"] = Json(*in.foot);
+  }
   return out;
 }
 

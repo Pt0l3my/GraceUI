@@ -71,7 +71,7 @@ TEST_CASE("--dump draws a master's chosen row: the demo's Lamps at 1280x720, the
                 " (run with GRACE_UPDATE_GOLDEN=1 to accept it)");
   CHECK(test::contains(result.text, "\"Harbour mouth\""));  // the chosen row
   CHECK(test::contains(result.text, "\"Tall\""));           // its member's flame
-  CHECK_FALSE(test::contains(result.text, "Nothing to show yet."));
+  CHECK_FALSE(test::contains(result.text, "Nothing to show."));
 }
 
 TEST_CASE("--dump draws what grace-view's own goldens hold: GraceUI's Menu page at 1920x1080, its default size") {

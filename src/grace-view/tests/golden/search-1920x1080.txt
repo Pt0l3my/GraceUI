@@ -8,8 +8,8 @@ text    ink.mute       40, 146   61x20   glyphs 9 "Behaviour"
 fill    tint.select     0, 172  240x32  
 fill    gold            0, 172    2x32  
 text    gold.hi        40, 178   47x20   glyphs 7 "Keepers"
-line    rule           24, 204  192x1   
-text    ink.mute       24, 212   60x24   glyphs 7 "Records"
+line    rule           24,1016  192x1   
+text    ink.mute       24,1024   60x24   glyphs 7 "Records"
 fill    ground.well   272,   8  280x28   r2
 stroke  gold          272,   8  280x28   r2 w1
 text    ink.hi        282,  12   27x20   glyphs 4 "keep"
@@ -98,7 +98,21 @@ text    ink.hi        304,1028   60x22   clip1 glyphs 8 "Overview"
 text    ink.mute      812,1029  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
 text    gold         1824,1028    8x22   clip1 glyphs 1 "→"
 line    rule          240,1044 1680x1   
-text    ink.faint     272,1052  270x20   glyphs 25 "↑ ↓  Choose    Enter  Open    Esc  Close"
+fill    ground.well   272,1051   39x22   r2
+stroke  edge          272,1051   39x22   r2 w1
+fill    ink.body      282,1060    2x8   
+tri     ink.body      278,1056   10x5    ^
+fill    ink.body      299,1056    2x8   
+tri     ink.body      295,1063   10x5    v
+text    ink.faint     317,1052   40x20   glyphs 6 "Choose"
+fill    ground.well   378,1051   47x22   r2
+stroke  edge          378,1051   47x22   r2 w1
+text    ink.body      384,1052   35x20   glyphs 5 "Enter"
+text    ink.faint     430,1052   27x20   glyphs 4 "Open"
+fill    ground.well   478,1051   33x22   r2
+stroke  edge          478,1051   33x22   r2 w1
+text    ink.body      484,1052   21x20   glyphs 3 "Esc"
+text    ink.faint     516,1052   34x20   glyphs 5 "Close"
 stroke  gold.hi       270,   6  284x32   r4 w2
 fill    ground.3      272,  42  560x52   r2
 stroke  edge          272,  42  560x52   r2 w1

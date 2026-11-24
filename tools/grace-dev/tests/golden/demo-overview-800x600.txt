@@ -9,8 +9,8 @@ fill    gold            0,  76    1x22
 text    gold.hi        28,  80   38x14   glyphs 8 "Overview"
 text    ink.mute       28, 102   42x14   glyphs 9 "Behaviour"
 text    ink.mute       28, 124   33x14   glyphs 7 "Keepers"
-line    rule           17, 142  133x1   
-text    ink.mute       17, 148   41x17   glyphs 7 "Records"
+line    rule           17, 555  133x1   
+text    ink.mute       17, 561   41x17   glyphs 7 "Records"
 fill    ground.well   189,   6  194x20   r1
 text    ink.faint     196,   9   28x14   glyphs 6 "Search"
 text    ink.faint     736,   9   42x14   glyphs 7 "F5  Close"
@@ -54,6 +54,13 @@ text    ink.hi        211, 354   16x15   clip1 glyphs 3 "Log"
 text    ink.mute      390, 355  291x14   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
 text    gold          745, 354    5x15   clip1 glyphs 1 "→"
 line    rule          167, 575  633x1   
-text    ink.faint     189, 581  112x14   glyphs 16 "Enter  Open    Esc  Back"
+fill    ground.well   189, 580   32x15   r1
+stroke  edge          189, 580   32x15   r1 w1
+text    ink.body      193, 581   24x14   glyphs 5 "Enter"
+text    ink.faint     225, 581   19x14   glyphs 4 "Open"
+fill    ground.well   258, 580   23x15   r1
+stroke  edge          258, 580   23x15   r1 w1
+text    ink.body      262, 581   15x14   glyphs 3 "Esc"
+text    ink.faint     285, 581   19x14   glyphs 4 "Back"
 stroke  gold.hi       687,  49   92x24   r3 w1 clip1
-# 57 items, 2052 vertices, 4218 indices, 4 commands; check_draw_list: passes
+# 64 items, 2196 vertices, 4854 indices, 4 commands; check_draw_list: passes

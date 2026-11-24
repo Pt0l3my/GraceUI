@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <optional>
 
 namespace grace::view {
 namespace {
@@ -112,6 +113,15 @@ struct Cursor {
     item.width = std::max(1.0f, std::round(s));
     out.items.push_back(item);
   }
+  void triangle(Rect r, Facing facing, Colour c) {
+    Item item;
+    item.shape = Shape::triangle;
+    item.colour = c;
+    item.clip = clip;
+    item.rect = r;
+    item.facing = facing;
+    out.items.push_back(item);
+  }
   float text(std::string_view t, TypeRole role, float x, float y, float max_width, Colour c, std::uint8_t alpha = 255) {
     return place_text(out, fonts, role, s, t, x, y, max_width, c, alpha, clip);
   }
@@ -162,8 +172,9 @@ PadGlyph pad_button_of(std::string_view keys, bool& dropped) noexcept {
   return PadGlyph::none;
 }
 
-// A hints line's parts; an entry with no two spaces in it is words alone ("Not available now").
-std::vector<HintPart> hint_parts(std::string_view hints) {
+// A hints line's parts; an entry with no two spaces in it is words alone ("Not available now"). For a pad, the hints it
+// has no button for are left out.
+std::vector<HintPart> hint_parts(std::string_view hints, bool pad) {
   std::vector<HintPart> parts;
   while (!hints.empty()) {
     const std::size_t end = hints.find("    ");
@@ -177,7 +188,7 @@ std::vector<HintPart> hint_parts(std::string_view hints) {
       part.keys = entry.substr(0, gap);
       part.label = entry.substr(gap + 2);
       bool dropped = false;
-      part.button = pad_button_of(part.keys, dropped);
+      part.button = pad ? pad_button_of(part.keys, dropped) : PadGlyph::none;
       if (dropped) {
         continue;
       }
@@ -210,7 +221,7 @@ std::string_view dpad_words(PadGlyph button) noexcept {
 // The words pad mode's footer stands for, as the tests and the dump read it: "A  Toggle    X  Reset    B  Back".
 std::string pad_words(std::string_view hints) {
   std::string out;
-  for (const HintPart& part : hint_parts(hints)) {
+  for (const HintPart& part : hint_parts(hints, true)) {
     out += out.empty() ? "" : "    ";
     const std::string_view name = !letter_of(part.button).empty() ? letter_of(part.button)
                                   : !dpad_words(part.button).empty() ? dpad_words(part.button)
@@ -265,21 +276,138 @@ void dpad(Cursor& c, Rect r, PadGlyph button) {
   }
 }
 
-// Pad mode's footer, left to right from `x` within `max_w`: each part's glyph (and a face button's letter), then its
-// label in the footer's ink; a part that would not fit is left out, with those after it.
-void pad_hints(Cursor& c, std::string_view hints, float x, float top, float height, float max_w) {
+// The arrow a key's name starts with at `at` (← ↑ → ↓, U+2190 to U+2193, three bytes in UTF-8), or none.
+std::optional<Facing> arrow_at(std::string_view keys, std::size_t at) noexcept {
+  if (at + 3 > keys.size() || keys[at] != '\xE2' || keys[at + 1] != '\x86') {
+    return std::nullopt;
+  }
+  switch (keys[at + 2]) {
+    case '\x90': return Facing::left;
+    case '\x91': return Facing::up;
+    case '\x92': return Facing::right;
+    case '\x93': return Facing::down;
+    default: return std::nullopt;
+  }
+}
+
+// A drawn arrow's shaft, as thick as the mono face's strokes about.
+float arrow_shaft(float s) noexcept { return std::max(1.0f, std::round(1.5f * s)); }
+
+// A drawn arrow's box (D247): 12 by 10 at a scale of 1 for ← and →, 10 by 12 for ↑ and ↓; its breadth a pixel more
+// where that centres the shaft on the head's point.
+Rect arrow_box(Facing facing, float s) noexcept {
+  const float along = std::round(12 * s);
+  float across = std::round(10 * s);
+  if (std::fmod(across - arrow_shaft(s), 2.0f) != 0) {
+    across += 1;
+  }
+  return facing == Facing::left || facing == Facing::right ? Rect{0, 0, along, across} : Rect{0, 0, across, along};
+}
+
+// An arrow (D247): a shaft and a head, the head as long as half the box is broad, its point a right angle.
+void arrow(Cursor& c, Rect r, Facing facing, Colour ink) {
+  const bool flat = facing == Facing::left || facing == Facing::right;
+  const float broad = flat ? r.h : r.w;
+  const float head = std::round(broad / 2);
+  const float t = arrow_shaft(c.s);
+  const float mid = std::round((broad - t) / 2);
+  const float shaft = (flat ? r.w : r.h) - head + 1;  // into the head by a pixel, so no seam shows between them
+  switch (facing) {
+    case Facing::right:
+      c.fill(Rect{r.x, r.y + mid, shaft, t}, ink);
+      c.triangle(Rect{r.right() - head, r.y, head, r.h}, facing, ink);
+      break;
+    case Facing::left:
+      c.fill(Rect{r.x + head - 1, r.y + mid, shaft, t}, ink);
+      c.triangle(Rect{r.x, r.y, head, r.h}, facing, ink);
+      break;
+    case Facing::down:
+      c.fill(Rect{r.x + mid, r.y, t, shaft}, ink);
+      c.triangle(Rect{r.x, r.bottom() - head, r.w, head}, facing, ink);
+      break;
+    case Facing::up:
+      c.fill(Rect{r.x + mid, r.y + head - 1, t, shaft}, ink);
+      c.triangle(Rect{r.x, r.y, r.w, head}, facing, ink);
+      break;
+  }
+}
+
+// The keys' names as a cap draws them (D247): runs of text in the mono face, and each arrow drawn in its box. Calls
+// `run(text, x)` and `drawn(facing, x)` from `x` left to right, if given; answers the width.
+template <typename Run, typename Drawn>
+float key_names(Cursor& c, std::string_view keys, float x, Run&& run, Drawn&& drawn) {
+  const float x0 = x;
+  const float join = std::round(2 * c.s);  // between an arrow and text with no space between them ("Shift+←")
+  std::size_t from = 0;
+  bool after_arrow = false;
+  for (std::size_t i = 0; i <= keys.size(); ++i) {
+    const std::optional<Facing> facing = i < keys.size() ? arrow_at(keys, i) : std::nullopt;
+    if (!facing && i < keys.size()) {
+      continue;
+    }
+    if (i > from) {
+      const std::string_view text = keys.substr(from, i - from);
+      x += after_arrow && text.front() != ' ' ? join : 0.0f;
+      run(text, x);
+      x += c.width(text, TypeRole::num);
+      after_arrow = false;
+    }
+    if (facing) {
+      x += i > from && keys[i - 1] != ' ' ? join : 0.0f;
+      after_arrow = true;
+      drawn(*facing, x);
+      x += arrow_box(*facing, c.s).w;
+      i += 2;
+      from = i + 1;
+    }
+  }
+  return x - x0;
+}
+
+float key_names_width(Cursor& c, std::string_view keys) {
+  return key_names(c, keys, 0, [](std::string_view, float) {}, [](Facing, float) {});
+}
+
+// A key cap (§3.8, D246): the keys' names in the mono face, its arrows drawn (D247), on ground.well in an edge border
+// with the control's radius, `h` high from `y`; answers its width.
+float key_cap(Cursor& c, std::string_view keys, float x, float y, float h) {
+  const float s = c.s;
+  const float pad = std::round(6 * s);
+  const float w = key_names_width(c, keys) + 2 * pad;
+  const Rect cap{x, y, w, h};
+  const float radius = std::round(tokens::radius::control * s);
+  c.fill(cap, Colour::ground_well, radius);
+  c.stroke(cap, Colour::edge, std::max(1.0f, std::round(tokens::kGrace.size.edge_width * s)), radius);
+  const float ty = y + std::round((h - line_height(TypeRole::num, s)) / 2);
+  key_names(
+      c, keys, x + pad, [&](std::string_view text, float at) { c.text(text, TypeRole::num, at, ty, w, Colour::ink_body); },
+      [&](Facing facing, float at) {
+        Rect box = arrow_box(facing, s);
+        box.x = at;
+        box.y = y + std::round((h - box.h) / 2);
+        arrow(c, box, facing, Colour::ink_body);
+      });
+  return w;
+}
+
+// The key hints, left to right from `x` within `max_w`, centred in `height` from `top` (§3.8): each part's keys in a key
+// cap, or in pad mode its glyph (and a face button's letter, D242), then its label in the hints' ink; words alone as
+// they are. A part that would not fit is left out, with those after it.
+void hints_line(Cursor& c, std::string_view hints, bool pad, float x, float top, float height, float max_w) {
   const float s = c.s;
   const float g = std::round(16 * s);
+  const float cap_h = std::round(22 * s);
   const float gy = top + std::round((height - g) / 2);
+  const float cy = top + std::round((height - cap_h) / 2);
   const float ty = top + std::round((height - line_height(TypeRole::ui_sm, s)) / 2);
   const float right = x + max_w;
   const float gap = std::round(6 * s);
-  for (const HintPart& part : hint_parts(hints)) {
+  for (const HintPart& part : hint_parts(hints, pad)) {
     const std::string_view letter = letter_of(part.button);
     const bool cross = !dpad_words(part.button).empty();
     const float lead = !letter.empty() ? g + std::round(3 * s) + c.width(letter, TypeRole::ui_sm) + gap
                        : cross         ? g + gap
-                       : !part.keys.empty() ? c.width(part.keys, TypeRole::ui_sm) + gap
+                       : !part.keys.empty() ? key_names_width(c, part.keys) + std::round(12 * s) + gap
                                             : 0.0f;
     if (x + lead + c.width(part.label, TypeRole::ui_sm) > right) {
       break;
@@ -290,7 +418,7 @@ void pad_hints(Cursor& c, std::string_view hints, float x, float top, float heig
     } else if (cross) {
       dpad(c, Rect{x, gy, g, g}, part.button);
     } else if (!part.keys.empty()) {
-      c.text(part.keys, TypeRole::ui_sm, x, ty, right - x, Colour::ink_mute);
+      key_cap(c, part.keys, x, cy, cap_h);
     }
     x += lead;
     x += c.text(part.label, TypeRole::ui_sm, x, ty, right - x, Colour::ink_faint) + std::round(20 * s);
@@ -532,6 +660,16 @@ bool PageView::load(const protocol::SpacePages& pages, const protocol::SettingsD
       if (!check_sections(tab.sections)) {
         return false;
       }
+    }
+  }
+  // The rail's foot (D248): its categories after every other, so that the order given is the order drawn.
+  const std::string* foot = nullptr;
+  for (const protocol::Category& category : pages_.categories) {
+    if (category.foot.value_or(false)) {
+      foot = &category.id;
+    } else if (foot != nullptr) {
+      why = "category " + category.id + " follows " + *foot + ", at the rail's foot; the foot's categories come last";
+      return false;
     }
   }
   if (!check_parts(pages_, settings_, why)) {
@@ -815,7 +953,7 @@ PageView::Drawn PageView::drawn(const protocol::PageBlock& block) const {
 
 std::string PageView::empty_words(const protocol::PageBlock& block, bool published) const {
   const std::string own = prop_text(block, "empty");
-  return published && !own.empty() ? own : std::string("Nothing to show yet.");  // the space's words once it spoke (D186)
+  return published && !own.empty() ? own : std::string("Nothing to show.");  // the space's words once it spoke (D186)
 }
 
 // A row secret's status in words (D194, D197): set, refused (the key was sent but the provider refused it), none (none
@@ -3617,10 +3755,25 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     c.text(context_.title.empty() ? pages_.name : context_.title, TypeRole::display_md, menu_x + pad, y,
            rail_w - 2 * pad, Colour::gold);
     y += std::round(line_height(TypeRole::display_md, s) + 16 * s);
-    // GraceUI's links at the rail's foot, pinned to its bottom under a rule (§4.2.2's foot, D79).
+    // The rail's foot, pinned to its bottom under a rule (§4.2.2's foot): the space's own foot categories, with the open
+    // one's pages (D248), then GraceUI's links (D79); below the rest where the rail is too short to keep them apart.
+    const auto entry_h = [&](const RailEntry& e) {
+      const RailLink* other = e.kind == RailEntry::Kind::head   ? &context_.head[e.index]
+                              : e.kind == RailEntry::Kind::foot ? &context_.foot[e.index]
+                                                                : nullptr;
+      const bool is_page = e.own_page() || (other != nullptr && !other->category);
+      return std::round((is_page ? size::rail_page : size::rail_category) * s);
+    };
+    std::size_t first_foot = rail_.size();
+    for (std::size_t i = 0; i < rail_.size() && first_foot == rail_.size(); ++i) {
+      if (rail_[i].kind == RailEntry::Kind::foot ||
+          (rail_[i].category() && pages_.categories[rail_[i].index].foot.value_or(false))) {
+        first_foot = i;
+      }
+    }
     float foot_y = H - pad;
-    for (const RailLink& link : context_.foot) {
-      foot_y -= std::round((link.category ? size::rail_category : size::rail_page) * s);
+    for (std::size_t i = first_foot; i < rail_.size(); ++i) {
+      foot_y -= entry_h(rail_[i]);
     }
     for (std::size_t i = 0; i < rail_.size(); ++i) {
       const RailEntry& e = rail_[i];
@@ -3629,14 +3782,14 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                               : e.kind == RailEntry::Kind::foot ? &context_.foot[e.index]
                                                                 : nullptr;
       const bool is_page = e.own_page() || (other != nullptr && !other->category);
-      const float h = std::round((is_page ? size::rail_page : size::rail_category) * s);
-      if (e.kind == RailEntry::Kind::foot && (i == 0 || rail_[i - 1].kind != RailEntry::Kind::foot)) {
+      const float h = entry_h(e);
+      if (i == first_foot) {
         y = std::max(y, foot_y);
         c.line(menu_x + pad, y, rail_w - 2 * pad, Colour::rule);
       }
       const Rect row{menu_x, y, rail_w, h};
       hit(row, Scope::rail, i);
-      if ((e.category() || (link && other->category && e.kind == RailEntry::Kind::head)) && i != 0 &&
+      if ((e.category() || (link && other->category && e.kind == RailEntry::Kind::head)) && i != 0 && i != first_foot &&
           rail_[i - 1].kind != RailEntry::Kind::switcher) {
         c.line(menu_x + pad, y, rail_w - 2 * pad, Colour::rule);
       }
@@ -3817,7 +3970,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       if (rows.empty()) {
         // Its own words once its topic has spoken (D186), nothing else until then (invariant 2).
         const bool published = topics_.count(m->topic) != 0;
-        c.text(published && m->empty ? *m->empty : std::string("Nothing to show yet."), TypeRole::ui_sm, x0 + mpad,
+        c.text(published && m->empty ? *m->empty : std::string("Nothing to show."), TypeRole::ui_sm, x0 + mpad,
                my + std::round(4 * s), mw - 2 * mpad, Colour::ink_mute);
         my += std::round(line_height(TypeRole::ui_sm, s) + 12 * s);
       }
@@ -5050,12 +5203,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                                                       : "Press a key    Esc  Cancel";
     }
     footer_ = !hints_shown_ ? std::string() : pad_mode_ ? pad_words(hints) : hints;
-    if (hints_shown_ && pad_mode_) {
-      pad_hints(c, hints, page_x + gutter, H - footer_h, footer_h, page_w - 2 * gutter);  // D242
-    } else if (hints_shown_) {
-      c.text(hints, TypeRole::ui_sm, page_x + gutter,
-             H - footer_h + std::round((footer_h - line_height(TypeRole::ui_sm, s)) / 2), page_w - 2 * gutter,
-             Colour::ink_faint);
+    if (hints_shown_) {
+      hints_line(c, hints, pad_mode_, page_x + gutter, H - footer_h, footer_h, page_w - 2 * gutter);  // D242, D246
     }
     if (c.focus_found && focus_shown_) {
       const float off = std::round(tokens::kGrace.size.focus_offset * s);
@@ -5143,7 +5292,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const float title_h = line_height(TypeRole::display_md, s);
       const float body_h = line_height(TypeRole::ui, s);
       const float picker_h = std::round(44 * s);
-      const float hints_h = line_height(TypeRole::ui_sm, s);
+      const float hints_h = std::round(24 * s);  // a key cap's line (D246)
       float card_h = pad * 2 + title_h * static_cast<float>(title_lines.size()) + std::round(12 * s) +
                      body_h * static_cast<float>(body_lines.size()) + std::round(20 * s) + hints_h;
       if (capture_.kind == CaptureKind::chord && capture_.stage == CaptureStage::waiting) {
@@ -5183,8 +5332,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
           cy += picker_h;
         }
       }
-      // Its keys, in the card where they can be read: the footer's are under its scrim.
-      c.text(hints, TypeRole::ui_sm, card.x + pad, cy + std::round(20 * s), inner, Colour::ink_faint);
+      // Its keys, in the card where they can be read: the footer's are under its scrim. Key caps, or the pad's glyphs.
+      hints_line(c, hints, pad_mode_, card.x + pad, cy + std::round(20 * s), hints_h, inner);
     }
     // The sheet (G9), over everything, as the capture's modal is: its title, its figure, its lines and its Close.
     if (sheet_open_) {

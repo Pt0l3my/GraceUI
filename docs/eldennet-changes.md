@@ -1444,3 +1444,37 @@ Your three points of 2026-11-24.
 
 For your goldens: any of your pages with a Related card moves by those rows' words alone (each label, description and
 arrow), in grace-dev's dumps as in GraceUI's own; regenerate them at 0.2.39. Nothing else moves.
+
+## 73. The menu's key hints as key caps (2026-11-24, D246; GraceUI 0.2.40)
+
+GraceUI's menu now draws its keyboard hints as §3.8's key caps: each key in a cap, its label beside it. So:
+
+1. **Your goldens' footers move** (grace-dev's dumps of your pages, and any of GraceUI's): regenerate them once, at
+   0.2.40, rather than at 0.2.39; with 0.2.39's Related rows, nothing else moves.
+2. **A test that looks for a whole hints line** on the screen (`GraceUI_Test_MenuShows("Enter  Save    Esc  Cancel")`)
+   no longer finds it in one text: read `GraceUiTestMenu.footer` instead, which holds the line's words as before. A
+   label alone ("Cancel") is still drawn as its own text.
+
+## 74. The key caps' arrows drawn (2026-11-24, D247; GraceUI 0.2.41)
+
+A key cap in the menu's footer now draws its arrows (← ↑ → ↓) as shapes, a shaft and a head centred in the cap,
+instead of the mono face's small, low glyphs. So:
+
+1. **Your goldens' footers move once more**, where a footer has an arrow in it ("← →  Change", "↑ ↓  Move"): each
+   arrow is now a `fill` and a `tri` line instead of part of a `text` line, and those caps are wider. Pin 0.2.41
+   rather than 0.2.40, and regenerate them once.
+2. **Nothing else changes**: `GraceUiTestMenu.footer` and the view's `footer()` hold the keyboard's hints line as
+   before, and the Related card's arrow and every other arrow in the menu's words stay text.
+
+## 75. The rail's foot, and empty words without "yet" (2026-11-24, D248, D249; GraceUI 0.2.42)
+
+Your two questions from Content packs. So:
+
+1. **Your foot categories** (Settings, Docs, Content packs) can say `"foot": true` in their `[[category]]`, at
+   protocol 1.10. They must come after every other category: the lint and registration refuse a foot category before
+   one that is not. Both views then pin them to the rail's bottom under a rule, above GraceUI's own link, and with
+   GraceUI's page open they are links at GraceUI's foot. Your goldens' rails move where you mark them.
+2. **The default empty words** are now "Nothing to show.", without "yet", in both views. Your blocks with words of
+   their own (`props.empty`) don't change.
+3. **The protocol is 1.10**: the welcome and hello say "1.10". A space built for 1.9 runs unchanged.
+

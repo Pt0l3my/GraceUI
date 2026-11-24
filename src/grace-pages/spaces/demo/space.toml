@@ -68,6 +68,7 @@ pages = ["demo.overview", "demo.behaviour", "demo.keepers"]
 id = "records"
 name = "Records"
 pages = ["demo.log", "demo.festival", "demo.lamps"]
+foot = true  # at the rail's foot, under a rule (D248)
 
 # ---- Settings: one of every type (§6.9).
 

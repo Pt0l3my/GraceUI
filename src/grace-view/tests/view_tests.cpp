@@ -167,7 +167,8 @@ TEST_CASE("View hides and shows the key hints, and the right stick scrolls the p
   };
   const std::string shown = laid(1080);
   CHECK(view.hints_shown());
-  CHECK(shown.find("Esc  Back") != std::string::npos);
+  CHECK(view.footer().find("Esc  Back") != std::string::npos);
+  CHECK(shown.find("\"Back\"") != std::string::npos);  // drawn: its label beside Esc's key cap (D246)
   view.input(Input{Key::toggle_hints, false, true});
   const std::string hidden = laid(1080);
   CHECK_FALSE(view.hints_shown());
@@ -251,6 +252,101 @@ TEST_CASE("the focus ring on the rail falls whole within it, and a related row's
   const float ring_width = std::round(3 * scale);
   CHECK(label.x - (related.x + ring_width) >= 10 * scale);
   CHECK(std::fabs((label.y + label.h / 2) - (related.y + related.h / 2)) <= 1.5f);
+}
+
+TEST_CASE("the keyboard's hints as key caps: each key in a cap on ground.well, its label beside it (§3.8, D246)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  const std::string dump = list.dump();
+  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back");
+  // Four caps, each a fill on ground.well under an edge border, with its keys in the mono face; arrows drawn (D247).
+  for (const char* keys : {"\"Shift+\"", "\"R\"", "\"Esc\""}) {
+    CHECK(dump.find(keys) != std::string::npos);
+  }
+  for (const char* label : {"\"Change\"", "\"By ten\"", "\"Reset\"", "\"Back\""}) {
+    CHECK(dump.find(label) != std::string::npos);
+  }
+  const DumpRect cap = dump_rect(dump, "fill    ground.well", "");
+  const DumpRect esc = dump_rect(dump, "text    ink.body", "\"Esc\"");
+  REQUIRE(esc.found);
+  CHECK(cap.found);
+  CHECK(dump.find("\"← →  Change") == std::string::npos);  // no longer one run of words
+}
+
+TEST_CASE("a key cap's arrows are drawn, each a shaft and a head centred in its cap (D247)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  const float scale = 1.25f;
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, scale}, test::fonts(), list);
+  const std::string dump = list.dump();
+  // No arrow is left to the mono face: "← →  Change" and "Shift+← →  By ten" have two each, drawn. (The Related card's
+  // arrow, in gold, is a word of its own and stays one.)
+  std::istringstream lines(dump);
+  int left = 0, right = 0;
+  std::vector<DumpRect> wells;
+  for (std::string line; std::getline(lines, line);) {
+    CHECK_FALSE((line.rfind("text    ink.body", 0) == 0 && (line.find("←") != std::string::npos ||
+                                                             line.find("→") != std::string::npos)));
+    left += line.rfind("tri     ink.body", 0) == 0 && line.find(" <") != std::string::npos;
+    right += line.rfind("tri     ink.body", 0) == 0 && line.find(" >") != std::string::npos;
+    if (line.rfind("fill    ground.well", 0) == 0) {
+      wells.push_back(dump_rect(line, "fill    ground.well"));
+    }
+  }
+  CHECK(left == 2);
+  CHECK(right == 2);
+  // "Shift+" and its arrow stand apart, as the keys' names' own space parts "← →".
+  const DumpRect shift = dump_rect(dump, "text    ink.body", "\"Shift+\"");
+  REQUIRE(shift.found);
+  std::istringstream again(dump);
+  float after_shift = -1;
+  for (std::string line; std::getline(again, line);) {
+    const DumpRect r = dump_rect(line, "tri     ink.body", " <");
+    if (r.found && r.x > shift.x) {
+      after_shift = r.x;
+      break;
+    }
+  }
+  CHECK(after_shift >= shift.x + shift.w + std::round(2 * scale));
+  // The first cap's first arrow: its head within the cap, its box's middle at the cap's middle, to a pixel.
+  const DumpRect head = dump_rect(dump, "tri     ink.body", " <");
+  REQUIRE(head.found);
+  DumpRect cap;
+  for (const DumpRect& well : wells) {
+    if (well.x <= head.x && head.x < well.x + well.w && well.y <= head.y && head.y < well.y + well.h) {
+      cap = well;
+    }
+  }
+  REQUIRE(cap.found);
+  CHECK(head.x >= cap.x);
+  CHECK(head.y >= cap.y);
+  CHECK(head.y + head.h <= cap.y + cap.h);
+  CHECK(std::abs((head.y + head.h / 2) - (cap.y + cap.h / 2)) <= 1.0f);
+  CHECK(head.h >= std::round(10 * scale));  // larger than the mono face's arrow, which stood at about half that
+  // Pad mode draws the D-pad for them instead: no drawn arrow.
+  Input pad;
+  pad.key = Key::down;
+  pad.pad = true;
+  view.input(pad);
+  DisplayList padded;
+  view.layout(Viewport{1920, 1080, scale}, test::fonts(), padded);
+  CHECK(padded.dump().find("tri ") == std::string::npos);
+}
+
+TEST_CASE("a triangle's dump names where it points (D247)") {
+  for (const Facing facing : {Facing::right, Facing::down, Facing::left, Facing::up}) {
+    DisplayList list;
+    list.clips.push_back(Rect{0, 0, 100, 100});
+    Item item;
+    item.shape = Shape::triangle;
+    item.colour = grace::tokens::Colour::ink_body;
+    item.rect = Rect{10, 20, 12, 10};
+    item.facing = facing;
+    list.items.push_back(item);
+    CHECK(list.dump().find(facing == Facing::right ? " >" : facing == Facing::down ? " v" : facing == Facing::left ? " <" : " ^") !=
+          std::string::npos);
+  }
 }
 
 TEST_CASE("back goes to the rail, and back again closes; the rail opens pages") {
@@ -698,6 +794,84 @@ TEST_CASE("a content space's rail with GraceUI's at its foot: the link answers s
   CHECK(foot_low);
 }
 
+TEST_CASE("a space's foot: its categories pinned to the rail's bottom under a rule, last in the rail's order (D248)") {
+  // The demo's Records is at its foot; Lanterns is not.
+  const auto text_at = [](const DisplayList& l, std::string_view words) -> const Item* {
+    for (const Item& item : l.items) {
+      if (item.shape == Shape::text && item.rect.x < 300 &&
+          std::string_view(l.text).substr(item.text_first, item.text_size) == words) {
+        return &item;
+      }
+    }
+    return nullptr;
+  };
+  PageView view = loaded("demo", "demo.overview");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  const Item* lanterns = text_at(list, "Lanterns");
+  const Item* records = text_at(list, "Records");
+  REQUIRE(lanterns != nullptr);
+  REQUIRE(records != nullptr);
+  CHECK(lanterns->rect.y < 200);
+  CHECK(records->rect.y > 1000);  // at the bottom of a 1080 rail, its padding below
+  // A rule just above it.
+  bool rule = false;
+  for (const Item& item : list.items) {
+    rule = rule || (item.shape == Shape::line && item.rect.x < 300 && item.rect.y <= records->rect.y &&
+                    records->rect.y - item.rect.y < 40);
+  }
+  CHECK(rule);
+  // In the rail's order it comes after Lanterns' pages.
+  press(view, Key::back);
+  std::vector<std::string> order;
+  for (int i = 0; i < 12 && (order.empty() || order.back() != view.focused()); ++i) {
+    order.push_back(view.focused());
+    press(view, Key::down);
+  }
+  const auto at = [&](const std::string& id) { return std::find(order.begin(), order.end(), id) - order.begin(); };
+  CHECK(at("rail:demo.keepers") < at("rail:records"));
+  CHECK(at("rail:records") < static_cast<std::ptrdiff_t>(order.size()));
+  // Open, its pages listed under it, the whole foot still pinned to the bottom.
+  REQUIRE(view.open("demo.log"));
+  DisplayList open;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), open);
+  const Item* records_open = text_at(open, "Records");
+  const Item* lamps = text_at(open, "Lamps");
+  REQUIRE(records_open != nullptr);
+  REQUIRE(lamps != nullptr);
+  CHECK(records_open->rect.y < records->rect.y);
+  CHECK(lamps->rect.y > 1000);
+  // Registration refuses a foot before a category that is not of it.
+  auto pages = test::decoded<grace::protocol::SpacePages>(test::space("demo").pages);
+  std::reverse(pages.categories.begin(), pages.categories.end());
+  PageView refused;
+  std::string why;
+  CHECK_FALSE(refused.load(pages, test::decoded<grace::protocol::SettingsDescription>(test::space("demo").settings), why));
+  CHECK(why.find("follows records, at the rail's foot") != std::string::npos);
+}
+
+TEST_CASE("GraceUI's space open under a content space: the content space's foot at GraceUI's foot (D248)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  RailContext context;
+  context.title = "Demo space";
+  context.head.push_back(RailLink{"Lanterns", "demo", "demo.overview", true});
+  context.foot.push_back(RailLink{"Records", "demo", "demo.log", true, true});
+  view.set_rail(context);
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  float lanterns = -1, records = -1;
+  for (const Item& item : list.items) {
+    const std::string_view words = std::string_view(list.text).substr(item.text_first, item.text_size);
+    if (item.shape == Shape::text && item.rect.x < 300) {
+      lanterns = words == "Lanterns" ? item.rect.y : lanterns;
+      records = words == "Records" ? item.rect.y : records;
+    }
+  }
+  CHECK(lanterns > 0);
+  CHECK(lanterns < 300);
+  CHECK(records > 1000);
+}
+
 TEST_CASE("GraceUI's space open under a content space: its categories first, the content space's wordmark") {
   PageView view = loaded("graceui", "graceui.menu");
   RailContext context;
@@ -817,7 +991,7 @@ TEST_CASE("a table in game (D181): its rows, a switch a row by its key, turned t
   // Without its body the table holds nothing yet (invariant 2), and no row takes focus.
   DisplayList before;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), before);
-  CHECK(before.dump().find("Nothing to show yet.") != std::string::npos);
+  CHECK(before.dump().find("Nothing to show.") != std::string::npos);
   CHECK(view.focused().rfind("cell:", 0) != 0);
 
   view.set_topic("graceui.mods", mods);
@@ -856,7 +1030,7 @@ TEST_CASE("a table in game (D181): its rows, a switch a row by its key, turned t
   view.set_topic("graceui.notices", Json{{"columns", Json::array()}, {"rows", Json::array()}});
   DisplayList empty;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), empty);
-  CHECK(empty.dump().find("Nothing to show yet.") != std::string::npos);
+  CHECK(empty.dump().find("Nothing to show.") != std::string::npos);
   // A refused switch: the space's reason under its row, focus on it; a new body of the table takes the line away.
   view.refused("graceui.mods/quiet-camp", "That mod is not connected now.");
   CHECK(view.focused() == "cell:graceui.mods/quiet-camp");
@@ -1013,7 +1187,8 @@ TEST_CASE("a space's state components in game (D184): a key-value list, a check 
   CHECK(about.component_topics() == std::vector<std::string>{"graceui.about"});
   DisplayList list;
   about.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
-  CHECK(list.dump().find("Nothing to show yet.") != std::string::npos);  // nothing published yet (invariant 2)
+  CHECK(list.dump().find("Nothing to show.") != std::string::npos);  // nothing published yet (invariant 2)
+  CHECK(list.dump().find("yet") == std::string::npos);  // and no promise of more to come (D249)
   about.set_topic("graceui.about", Json{{"items", Json::array({{{"label", "Version"}, {"value", "GraceUI 9.9.9"}},
                                                                {{"label", "Licence"}, {"value", "MIT"}},
                                                                {{"label", "No value"}}})}});
@@ -1022,7 +1197,7 @@ TEST_CASE("a space's state components in game (D184): a key-value list, a check 
   CHECK(dump.find("\"Version\"") != std::string::npos);
   CHECK(dump.find("\"GraceUI 9.9.9\"") != std::string::npos);
   CHECK(dump.find("\"No value\"") == std::string::npos);  // an item without its value is left out, as the browser does
-  CHECK(dump.find("Nothing to show yet.") == std::string::npos);
+  CHECK(dump.find("Nothing to show.") == std::string::npos);
 
   PageView compatibility = loaded("graceui", "graceui.compatibility");
   compatibility.set_topic("graceui.compatibility",
@@ -1078,7 +1253,7 @@ TEST_CASE("props.field and props.empty (D185, D186): a topic's member, and the s
       "demo.overview");
   DisplayList list;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
-  CHECK(list.dump().find("Nothing to show yet.") != std::string::npos);  // nothing published: never "All quiet."
+  CHECK(list.dump().find("Nothing to show.") != std::string::npos);  // nothing published: never "All quiet."
   CHECK(list.dump().find("All quiet.") == std::string::npos);
   view.set_topic("lantern.status", Json{{"now", {{"tiles", Json::array({{{"label", "Oil"}, {"value", "40%"}}})}}},
                                         {"sentence", "Low on oil."}});
@@ -1328,7 +1503,7 @@ TEST_CASE("a text setting in GraceUI's own field: Enter edits, Enter sends, Esca
   CHECK(view.editing());
   DisplayList open;
   view.layout(Viewport{}, test::fonts(), open);
-  CHECK(open.dump().find("Enter  Save    Esc  Cancel") != std::string::npos);
+  CHECK(view.footer() == "Enter  Save    Esc  Cancel    Ctrl+V  Paste");
   CHECK(view.caret().w > 0);  // the IME's place
   // Its text is the value; Ctrl+Backspace takes a word, then more is typed.
   view.edit(EditInput{EditKey::backspace, false, true});
@@ -1377,7 +1552,7 @@ TEST_CASE("a secret in GraceUI's own field: masked, empty at the start, sent onc
     ++discs;
   }
   CHECK(discs == 8);
-  CHECK(dump.find("Enter  Set    Esc  Cancel") != std::string::npos);
+  CHECK(view.footer().find("Enter  Set    Esc  Cancel") != std::string::npos);
   view.edit(EditInput{EditKey::select_all});
   view.edit(EditInput{EditKey::copy});
   std::string clipboard;
@@ -1477,7 +1652,7 @@ TEST_CASE("search in game: `/` or Ctrl+F opens it, its results as it is typed, E
   DisplayList list;
   view.layout(Viewport{}, test::fonts(), list);
   CHECK(list.dump().find("\"Oil merchant's token\"") != std::string::npos);
-  CHECK(list.dump().find("↑ ↓  Choose    Enter  Open    Esc  Close") != std::string::npos);
+  CHECK(view.footer() == "↑ ↓  Choose    Enter  Open    Esc  Close");
   Action opened = view.edit(EditInput{EditKey::enter});
   CHECK(opened.kind == Action::Kind::opened_page);
   CHECK(opened.page == "demo.behaviour");
@@ -1573,7 +1748,7 @@ TEST_CASE("master and detail in game: the list's rows, the first chosen, its mem
   CHECK_FALSE(watches(view, "lantern.lamp"));  // a family is never watched itself
   DisplayList before;
   view.layout(Viewport{}, test::fonts(), before);
-  CHECK(before.dump().find("Nothing to show yet.") != std::string::npos);
+  CHECK(before.dump().find("Nothing to show.") != std::string::npos);
   CHECK(before.dump().find("Choose a lamp to see how it burns.") != std::string::npos);
   // An empty list: the space's own words.
   view.set_topic("lantern.lamps", Json::parse(R"({"columns": [], "rows": []})"));
@@ -1792,7 +1967,8 @@ TEST_CASE("a row's key captured in game: the next key, sent with the row's key; 
   DisplayList asking;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), asking);
   CHECK(asking.dump().find("Quiet Camp's Pitch the tent") != std::string::npos);
-  CHECK(asking.dump().find("Enter  Use it here") != std::string::npos);
+  CHECK(view.footer().find("Enter  Use it here") != std::string::npos);
+  CHECK(asking.dump().find("\"Use it here\"") != std::string::npos);  // in the modal's card too, by its key cap
   golden("hotkeys-asking-1920x1080.txt", asking.dump());
   const Action moved = press(view, Key::activate);
   REQUIRE(moved.kind == Action::Kind::command);
