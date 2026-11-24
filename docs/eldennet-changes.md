@@ -1609,3 +1609,13 @@ Found by a review of 0.2.47's code; nothing changes on your side, and the protoc
    tone = "secondary", state = { topic = "status", field = "ai_paused" } }` (TOML on one line). It shows your
    `status.ai_paused`, "Not known yet" until it comes, and sends `{"on": ...}` flipped; not destructive, not
    confirmed, and not on a section. Page data using it is minor 15.
+
+## 83. Your streams in game, and a filter bar on a stream (2026-11-24, D257; GraceUI 0.2.50, protocol 1.16)
+
+1. **Logs, and any live feed or log tail of yours, show in game now**, where they said "Shown in the browser view.": each
+   row's `time` and `line`, the newest 200 rows. Nothing changes on your side: the topic is watched with its page, and
+   a new watcher gets the rows you send it as now. Your goldens of pages with a stream move.
+2. **A filter bar on a stream**: `filter_bar = { filters = [{ column = "level", label = "Level" }], search = { columns =
+   ["line"], label = "Find in the log" } }` on Logs' `log_tail`, with a `level` field on each row (`error`, `warning`,
+   `info`, `debug`, `trace`); no sort (the rows come in time's order). Both views filter what they hold. Page data with
+   it is minor 16.

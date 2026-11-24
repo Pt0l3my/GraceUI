@@ -335,6 +335,39 @@ Status Registry::publish(std::uint64_t owner, std::string_view frame, std::strin
       writable->game_states[*topic] = {state.rev, state.body};
       for_game = space->game_watched.count(*topic) != 0;
     }
+    // A stream's newest rows, the menu's copy (D257): kept as a state of its own, {"rows": [...]}, oldest first, each
+    // with its seq, at most kGameStreamRows; an empty batch past a gap clears it (protocol 1.1), as it clears a
+    // browser's. Kept while any view watches, as a state is, so that the menu has the rows already sent.
+    if (shape == protocol::TopicShape::stream &&
+        (space->game_watched.count(*topic) != 0 || space->browser_watched.count(*topic) != 0)) {
+      const auto& batch = std::get<protocol::Rows>(message);
+      Space* writable = find(owner);
+      auto& kept = writable->game_states[*topic];
+      if (!kept.second.is_object() || !kept.second.contains("rows") || !kept.second["rows"].is_array()) {
+        kept.second = protocol::Json::object({{"rows", protocol::Json::array()}});
+      }
+      protocol::Json& rows = kept.second["rows"];
+      const std::uint64_t next = rows.empty() || !rows.back().contains("seq") || !rows.back()["seq"].is_number_unsigned()
+                                     ? 0
+                                     : rows.back()["seq"].get<std::uint64_t>() + 1;
+      if (batch.rows.empty() && next != 0 && batch.from_seq > next) {
+        rows = protocol::Json::array();  // cleared
+      }
+      for (std::size_t i = 0; i < batch.rows.size(); ++i) {
+        protocol::Json row = batch.rows[i];
+        const std::uint64_t seq = batch.from_seq + i;
+        if (row.is_object() && (rows.empty() || next == 0 || seq >= next)) {
+          // (A row the menu holds already, sent again for a new watcher from the mod's oldest, is not added twice.)
+          row["seq"] = seq;
+          rows.push_back(std::move(row));
+        }
+      }
+      if (rows.size() > kGameStreamRows) {
+        rows.erase(rows.begin(), rows.begin() + static_cast<std::ptrdiff_t>(rows.size() - kGameStreamRows));
+      }
+      kept.first += 1;  // its revision: every batch is a change
+      for_game = space->game_watched.count(*topic) != 0;
+    }
   }
   if (for_game) {
     wake_game();

@@ -1226,11 +1226,12 @@ TEST_CASE("a space's state components in game (D184): a key-value list, a check 
   CHECK(dump.find("\"62 %\"") != std::string::npos);
   CHECK(dump.find("\"The lantern burns steady.\"") != std::string::npos);
   PageView log = loaded("demo", "demo.log");
-  // A live feed and a log tail: streams, the browser's for now; the lamp report's preview is drawn in game (D251).
-  // (And lantern.status on every page: the Quick switches' bell, D252.)
-  CHECK(log.component_topics() == std::vector<std::string>{"lantern.status", "lantern.report"});
+  // A live feed and a log tail, drawn in game since D257, and the lamp report's preview (D251). (And lantern.status on
+  // every page: the Quick switches' bell, D252.)
+  CHECK(log.component_topics() == std::vector<std::string>{"lantern.status", "lantern.log", "lantern.journal",
+                                                           "lantern.report"});
   log.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
-  CHECK(list.dump().find("Shown in the browser view.") != std::string::npos);
+  CHECK(list.dump().find("Shown in the browser view.") == std::string::npos);
 }
 
 namespace {
@@ -3155,4 +3156,38 @@ TEST_CASE("a table's row drawer: its columns off the row, opened with Enter unde
   press(view, Key::back);  // Esc closes the drawer first, and stays on the row
   CHECK(view.focused() == "drawer:lantern.keepers/k2");
   CHECK_FALSE(shows(laid_out(view), "New to the wall."));
+}
+
+TEST_CASE("a stream in game: its rows newest first, its time and line; its bar filters and searches what it holds (D257)") {
+  PageView view = loaded("demo", "demo.log");
+  CHECK(has(view.component_topics(), "lantern.log"));  // watched with the page now
+  std::string dump = laid_out(view);
+  CHECK_FALSE(shows(dump, "Shown in the browser view."));
+  view.set_topic("lantern.log", Json::parse(R"({"rows": [
+    {"seq": 1, "time": "19:02", "line": "The lantern was lit.", "level": "info"},
+    {"seq": 2, "time": "19:16", "line": "The wick was trimmed.", "level": "info"},
+    {"seq": 3, "time": "19:40", "line": "The flame guttered in a draught.", "level": "warning"}]})"));
+  dump = laid_out(view);
+  CHECK(shows(dump, "19:40"));
+  CHECK(shows(dump, "The flame guttered in a draught."));
+  CHECK(dump.find("The flame guttered") < dump.find("The lantern was lit."));  // a live feed: newest first
+  // Its Level filter: All, then the levels its rows hold; "info" leaves the warning out.
+  REQUIRE(move_to(view, "filter:lantern.log/f0"));
+  press(view, Key::right);
+  dump = laid_out(view);
+  CHECK(shows(dump, "The lantern was lit."));
+  CHECK_FALSE(shows(dump, "The flame guttered in a draught."));
+  press(view, Key::left);  // All again
+  // Its search over the line, as it is typed.
+  REQUIRE(move_to(view, "filter:lantern.log/search"));
+  press(view, Key::activate);
+  type(view, "wick");
+  press(view, Key::activate);
+  dump = laid_out(view);
+  CHECK(shows(dump, "The wick was trimmed."));
+  CHECK_FALSE(shows(dump, "The lantern was lit."));
+  press(view, Key::activate);
+  type(view, "zz");
+  press(view, Key::activate);
+  CHECK(shows(laid_out(view), "Nothing matches these filters."));
 }

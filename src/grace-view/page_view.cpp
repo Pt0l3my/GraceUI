@@ -585,8 +585,16 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
             "neither a settings, a file nor a slow command, and its changes topic a state topic of its own";
       return false;
     }
-    if (block.filter_bar && (!table || !bar_ok(*block.filter_bar, where, block.page.has_value()))) {
-      why = table ? why : where + "a filter bar goes on a table, or on a page's master list";
+    // A stream's bar (D257): its filters and a search over the rows it holds, never a sort (its order is time's).
+    const bool stream = block.kind == protocol::BlockKind::component &&
+                        (block.component == protocol::Component::log_tail ||
+                         block.component == protocol::Component::live_feed);
+    if (block.filter_bar && stream && block.filter_bar->sort && !block.filter_bar->sort->empty()) {
+      why = where + "a stream's filter bar has filters and a search, and no sort: its rows come in time's order";
+      return false;
+    }
+    if (block.filter_bar && ((!table && !stream) || !bar_ok(*block.filter_bar, where, block.page.has_value()))) {
+      why = table || stream ? why : where + "a filter bar goes on a table, a stream or a page's master list";
       return false;
     }
     if (block.kind == protocol::BlockKind::component && block.component == protocol::Component::filter_bar) {
@@ -1094,9 +1102,11 @@ bool PageView::drawn_in_game(protocol::Component component) {
     case protocol::Component::stat_tiles:
     case protocol::Component::computed_sentence:
     case protocol::Component::report_preview:  // D251
+    case protocol::Component::live_feed:       // the streams, their newest rows (D257)
+    case protocol::Component::log_tail:
       return true;
     default:
-      return false;  // the streams (a live feed, a log tail) and anything newer: the browser view's for now
+      return false;  // anything newer: the browser view's for now
   }
 }
 
@@ -1556,6 +1566,17 @@ const Json* PageView::table_of(const protocol::PageBlock& block) const {
 
 PageView::Bar PageView::bar_of_table(const protocol::PageBlock& block) const {
   Bar out;
+  if (block.filter_bar && is_stream(block)) {
+    // A stream's bar (D257): over the rows the menu holds of it, once it has some.
+    const Json* body = drawn(block).body;
+    if (body == nullptr || !body->contains("rows") || !(*body)["rows"].is_array() || (*body)["rows"].empty()) {
+      return out;
+    }
+    out.key = cell_base(block);
+    out.bar = &*block.filter_bar;
+    out.rows = &(*body)["rows"];
+    return out;
+  }
   const Json* table = block.filter_bar ? table_of(block) : nullptr;
   if (table == nullptr || ((*table)["rows"].empty() && !block.page)) {
     return out;  // (a table read a page at a time keeps its bar with no rows: its filters chose none, D254)
@@ -2027,6 +2048,10 @@ void PageView::rebuild() {
             focus_.push_back({FocusKind::form_field, form + "/" + (*block.fields)[k].id, k, &block});
           }
           focus_.push_back({FocusKind::form_submit, form, 0, &block});
+          continue;
+        }
+        if (is_stream(block)) {
+          push_bar(bar_of_table(block), &block);  // a stream's filter bar (D257): its rows themselves take no focus
           continue;
         }
         if (const Json* table = table_of(block); table != nullptr) {
@@ -3979,6 +4004,11 @@ std::vector<std::size_t> PageView::top_stops() const {
     stops.push_back(kTopQuick);
   }
   return stops;
+}
+
+bool PageView::is_stream(const protocol::PageBlock& block) {
+  return block.kind == protocol::BlockKind::component &&
+         (block.component == protocol::Component::live_feed || block.component == protocol::Component::log_tail);
 }
 
 bool PageView::has_drawer(const Json& table) {
@@ -6225,6 +6255,65 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             const Drawn shown = drawn(block);
             const Json* body = shown.body;
             const std::string none = empty_words(block, shown.published);  // D186
+            if (is_stream(block)) {
+              // A stream (D257): the newest rows the menu holds, each its time and its line, the line wrapped; a live
+              // feed newest first, a log tail so if it says so (D187); filtered by its bar, if it has one.
+              const Json* rows = body != nullptr && body->contains("rows") && (*body)["rows"].is_array()
+                                     ? &(*body)["rows"]
+                                     : nullptr;
+              const Bar stream_bar = bar_of_table(block);
+              if (stream_bar) {
+                y = draw_bar(stream_bar, inner_x, y + std::round(4 * s), inner_w);
+              }
+              std::vector<std::size_t> order;
+              if (rows != nullptr) {
+                for (const std::size_t r : shown_rows(block, *rows)) {
+                  if ((*rows)[r].is_object() && !cell_words((*rows)[r], "line").empty()) {
+                    order.push_back(r);
+                  }
+                }
+              }
+              const bool newest_first = block.component == protocol::Component::live_feed ||
+                                        (block.props && block.props->is_object() && block.props->contains("newest_first") &&
+                                         (*block.props)["newest_first"] == true);
+              if (newest_first) {
+                std::reverse(order.begin(), order.end());
+              }
+              if (order.empty()) {
+                const bool narrowed = stream_bar && rows != nullptr && !rows->empty();
+                one_line(narrowed ? std::string("Nothing matches these filters.") : none, Colour::ink_mute);
+                continue;
+              }
+              const float lh = std::round(line_height(TypeRole::ui_sm, s));
+              const float time_w = std::round(96 * s);
+              y += std::round(6 * s);
+              for (const std::size_t r : order) {
+                const Json& row = (*rows)[r];
+                c.text(cell_words(row, "time"), TypeRole::ui_sm, inner_x, y, time_w - std::round(8 * s), Colour::ink_faint);
+                const float lx = inner_x + time_w;
+                const float lw = inner_w - time_w;
+                const std::string line = cell_words(row, "line");
+                std::string run;
+                std::size_t at = 0;
+                while (at <= line.size()) {
+                  const std::size_t end = std::min(line.find(' ', at), line.size());
+                  const std::string_view word = std::string_view(line).substr(at, end - at);
+                  std::string tried = run.empty() ? std::string(word) : run + " " + std::string(word);
+                  if (!run.empty() && c.width(tried, TypeRole::ui_sm) > lw) {
+                    c.text(run, TypeRole::ui_sm, lx, y, lw, Colour::ink_body);
+                    y += lh;
+                    run = std::string(word);
+                  } else {
+                    run = std::move(tried);
+                  }
+                  at = end + 1;
+                }
+                c.text(run, TypeRole::ui_sm, lx, y, lw, Colour::ink_body);
+                y += lh + std::round(4 * s);
+              }
+              y += std::round(6 * s);
+              continue;
+            }
             if (block.component != protocol::Component::table) {
               // A component of a state topic (D184): what its topic's body holds, as the browser view draws it, or
               // the empty state while it holds nothing (invariant 2).

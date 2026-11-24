@@ -502,9 +502,14 @@ def lint(space_pages, description, fixtures, known_spaces):
                 if (("row_actions" in block or "row_secret" in block) and
                         (kind != "component" or block.get("component") != "table")):
                     failures.append(f"{bwhere}: row actions and a row secret go on a table (D192, D194)")
-                if "filter_bar" in block and (kind != "component" or block.get("component") != "table"):
-                    failures.append(f"{bwhere}: a filter bar goes on a table, or on a page's master list (D250)")
+                stream = kind == "component" and block.get("component") in ("log_tail", "live_feed")
+                if "filter_bar" in block and not stream and (kind != "component" or block.get("component") != "table"):
+                    failures.append(f"{bwhere}: a filter bar goes on a table, a stream or a page's master list (D250, "
+                                    "D257)")
                 elif "filter_bar" in block:
+                    if stream and block["filter_bar"].get("sort"):
+                        failures.append(f"{bwhere}: a stream's filter bar has filters and a search, and no sort: its "
+                                        "rows come in time's order (D257)")
                     filter_bar(block["filter_bar"], bwhere, paged="page" in block)
                 if "page" in block and (kind != "component" or block.get("component") != "table"):
                     failures.append(f"{bwhere}: a page source belongs to a table block (D254)")
