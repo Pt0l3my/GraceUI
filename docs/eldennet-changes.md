@@ -1444,3 +1444,13 @@ Your three points of 2026-11-24.
 
 For your goldens: any of your pages with a Related card moves by those rows' words alone (each label, description and
 arrow), in grace-dev's dumps as in GraceUI's own; regenerate them at 0.2.39. Nothing else moves.
+
+## 73. The menu's key hints as key caps (2026-11-24, D246; GraceUI 0.2.40)
+
+GraceUI's menu now draws its keyboard hints as §3.8's key caps: each key in a cap, its label beside it. So:
+
+1. **Your goldens' footers move** (grace-dev's dumps of your pages, and any of GraceUI's): regenerate them once, at
+   0.2.40, rather than at 0.2.39; with 0.2.39's Related rows, nothing else moves.
+2. **A test that looks for a whole hints line** on the screen (`GraceUI_Test_MenuShows("Enter  Save    Esc  Cancel")`)
+   no longer finds it in one text: read `GraceUiTestMenu.footer` instead, which holds the line's words as before. A
+   label alone ("Cancel") is still drawn as its own text.
