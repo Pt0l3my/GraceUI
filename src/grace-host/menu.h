@@ -65,6 +65,9 @@ struct TestView {
   char page[64];
   char focused[96];
   std::uint32_t focus_shown;    // 1 while the focus ring is drawn (G42)
+  std::uint32_t pad_mode;       // 1 while the key hints are the pad's (D242)
+  std::uint32_t hints_shown;    // 1 while they are drawn
+  char footer[160];             // the footer's words as drawn
 };
 void test_view(TestView& out) noexcept;
 // A setting of GraceUI's own space as JSON text (a secret's as its status); answers its length, 0 for none.

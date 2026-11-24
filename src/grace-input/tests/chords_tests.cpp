@@ -43,9 +43,15 @@ struct Pads {
     return out;
   }
 
+  std::uint8_t by = 0;  // what made the last presses taken (D243)
   std::uint32_t presses() {
     Press press;
-    return hotkeys.take(1, press) ? press.count : 0;
+    by = 0;
+    if (!hotkeys.take(1, press)) {
+      return 0;
+    }
+    by = press.by;
+    return press.count;
   }
 };
 
@@ -96,6 +102,7 @@ TEST_CASE("a key 200 ms after the anchor is held back; at 0.4 s the hotkey fires
   CHECK(fired.buttons == 0);              // the anchor too, from now on
   CHECK(fired.packet == kPacket + 1);     // the change is read
   CHECK(pads.presses() == 1);
+  CHECK(pads.by == kByChord);  // the chord pressed it, not the key (D243)
   CHECK(pads.read(kUp | kView, 2000).buttons == 0);  // a long hold reads as nothing, not a second spell switch
   CHECK(pads.read(kUp | kView, 2000).step == ChordStep::none);
   CHECK(pads.read(kUp, 2100).buttons == 0);  // View released: Up still hidden until it is released

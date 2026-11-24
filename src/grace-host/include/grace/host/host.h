@@ -129,6 +129,8 @@ void test_set_world(std::uint32_t flags) noexcept;
 void test_set_caret(std::int32_t x, std::int32_t y, std::int32_t height) noexcept;
 void test_set_code_page(std::uint32_t code_page) noexcept;
 void test_pad(std::uint32_t user, std::uint16_t buttons) noexcept;
+void test_pad_state(std::uint32_t user, std::uint16_t buttons, std::uint8_t left_trigger, std::uint8_t right_trigger,
+                    std::int16_t left_x, std::int16_t left_y, std::int16_t right_x, std::int16_t right_y) noexcept;
 std::uint16_t test_pad_read(std::uint32_t user, std::uint16_t buttons, std::uint32_t& packet) noexcept;
 void test_fill_input(GraceUiTestInput& out) noexcept;
 std::uint32_t test_copy_chars(std::uint32_t* out, std::uint32_t capacity) noexcept;
@@ -154,6 +156,7 @@ std::uint32_t test_frame_step() noexcept;  // D230
 void test_fill_server(GraceUiTestServer& out) noexcept;
 void test_fill_heap_guard(GraceUiTestHeapGuard& out) noexcept;                // D235
 std::uint32_t test_heap_guard_probe(std::uint32_t kind, std::uint32_t raise) noexcept;
+bool test_fill_hook_lead(std::uint32_t index, GraceUiTestHookLead& out) noexcept;     // D240
 #endif
 
 }  // namespace grace::host

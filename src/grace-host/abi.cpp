@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
+#include <cstddef>
 #include <cstring>
 #include <cwchar>
 #include <iterator>
@@ -226,6 +227,22 @@ bool relative_name(HMODULE module, char* out, int capacity) {
   return true;
 }
 
+// Whether a copy's relative name is GraceUI's own, GraceUI\graceui.dll in the game's folder (D72, D83), in any case.
+bool own_copy(std::string_view relative) noexcept {
+  constexpr std::string_view kOwn = "graceui\\graceui.dll";
+  if (relative.size() != kOwn.size()) {
+    return false;
+  }
+  for (std::size_t i = 0; i < kOwn.size(); ++i) {
+    char c = relative[i];
+    c = c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c == '/' ? '\\' : c;
+    if (c != kOwn[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 constexpr int kNamedCopies = 8;
 constinit HMODULE g_named[kNamedCopies] = {};
 constinit std::atomic<std::uint32_t> g_named_count{0};
@@ -245,9 +262,20 @@ void name_other_copies() noexcept {
       if (!named && count < kNamedCopies && relative_name(copy, name, sizeof name)) {
         g_named[count] = copy;
         g_named_count.store(count + 1, std::memory_order_release);
-        log_line("a second copy of GraceUI is loaded, and idle: %s", name);
-        session::own_notice(0, GRACEUI_TONE_WARNING,
-                            "A second copy of GraceUI was loaded from another folder and is idle: %s", name);
+        // GraceUI's own copy idles when another was asked first (D244): the notice then names the copy in use, which
+        // is the one to remove, rather than calling GraceUI's own the stray one.
+        char own[400];
+        if (own_copy(name) && relative_name(this_module(), own, sizeof own) && !own_copy(own)) {
+          log_line("GraceUI's own copy (%s) is loaded and idle; another copy, asked first, is in use: %s", name, own);
+          session::own_notice(0, GRACEUI_TONE_WARNING,
+                              "GraceUI's own copy is idle: another copy was started first and is in use, %s. Remove "
+                              "that copy to use GraceUI's own.",
+                              own);
+        } else {
+          log_line("a second copy of GraceUI is loaded, and idle: %s", name);
+          session::own_notice(0, GRACEUI_TONE_WARNING,
+                              "A second copy of GraceUI was loaded from another folder and is idle: %s", name);
+        }
       }
       FreeLibrary(copy);
     }
@@ -342,6 +370,11 @@ void test_fill_menu(GraceUiTestMenu& out) noexcept {
   std::memcpy(out.page, view.page, sizeof out.page);
   std::memcpy(out.focused, view.focused, sizeof out.focused);
   out.focus_shown = view.focus_shown;
+  if (out.size >= offsetof(GraceUiTestMenu, footer) + sizeof out.footer) {  // D242's fields, for a caller that knows them
+    out.pad_mode = view.pad_mode;
+    out.hints_shown = view.hints_shown;
+    std::memcpy(out.footer, view.footer, sizeof out.footer);
+  }
 }
 
 void test_fill_server(GraceUiTestServer& out) noexcept {
@@ -537,6 +570,22 @@ std::uint32_t test_copy_hook_name(std::uint32_t index, char* out, std::uint32_t 
   return length;
 }
 
+bool test_fill_hook_lead(std::uint32_t index, GraceUiTestHookLead& out) noexcept {
+  bool here = false;
+  std::uint32_t jumps = 0;
+  std::uintptr_t base = 0;
+  char module[GRACEUI_TEST_MODULE_NAME_MAX + 1] = {};
+  if (!hooks::hook_lead(index, here, jumps, base, module, sizeof module)) {
+    return false;
+  }
+  out.leads_here = here ? 1 : 0;
+  out.jumps = jumps;
+  out.reserved = 0;
+  out.module_base = base;
+  std::memcpy(out.module, module, sizeof module);
+  return true;
+}
+
 void test_request_input(std::uint32_t owner, std::uint32_t kind, std::uint32_t wants, GraceUiTestAnswer& out) noexcept {
   const grace::input::Request answer = input::request(static_cast<std::uint16_t>(owner),
                                                       static_cast<grace::input::Kind>(kind <= 3 ? kind : 0),
@@ -561,6 +610,10 @@ void test_set_caret(std::int32_t x, std::int32_t y, std::int32_t height) noexcep
 void test_set_code_page(std::uint32_t code_page) noexcept { input::test_set_code_page(code_page); }
 
 void test_pad(std::uint32_t user, std::uint16_t buttons) noexcept { hooks_input::test_pad(user, buttons); }
+void test_pad_state(std::uint32_t user, std::uint16_t buttons, std::uint8_t left_trigger, std::uint8_t right_trigger,
+                    std::int16_t left_x, std::int16_t left_y, std::int16_t right_x, std::int16_t right_y) noexcept {
+  hooks_input::test_pad_state(user, buttons, left_trigger, right_trigger, left_x, left_y, right_x, right_y);
+}
 std::uint16_t test_pad_read(std::uint32_t user, std::uint16_t buttons, std::uint32_t& packet) noexcept {
   return hooks_input::test_pad_read(user, buttons, packet);
 }
@@ -626,6 +679,25 @@ void test_fill_input(GraceUiTestInput& out) noexcept {
   out.free_dinput_buttons = downs(counters::dinput_button);
   out.free_window_keys = downs(counters::window_key);
   out.free_window_buttons = downs(counters::window_button);
+  // D239: the input detours' longest calls, and DirectInput's longest gaps between a thread's reads.
+  const auto us = [](std::uint64_t ns) { return static_cast<std::uint32_t>(std::min<std::uint64_t>(ns / 1000, 0xFFFFFFFFu)); };
+  out.window_max_us = us(counters::input_cost_max_ns[0].load(std::memory_order_relaxed));
+  out.dinput_max_us = us(counters::input_cost_max_ns[1].load(std::memory_order_relaxed));
+  out.xinput_max_us = us(counters::input_cost_max_ns[2].load(std::memory_order_relaxed));
+  out.window_over_2ms = counters::input_over_2ms[0].load(std::memory_order_relaxed);
+  out.dinput_over_2ms = counters::input_over_2ms[1].load(std::memory_order_relaxed);
+  out.xinput_over_2ms = counters::input_over_2ms[2].load(std::memory_order_relaxed);
+  out.window_over_8ms = counters::input_over_8ms[0].load(std::memory_order_relaxed);
+  out.dinput_over_8ms = counters::input_over_8ms[1].load(std::memory_order_relaxed);
+  out.xinput_over_8ms = counters::input_over_8ms[2].load(std::memory_order_relaxed);
+  const auto ms = [](std::uint64_t us_value) {
+    return static_cast<std::uint32_t>(std::min<std::uint64_t>(us_value / 1000, 0xFFFFFFFFu));
+  };
+  out.keyboard_gap_max_ms = ms(counters::poll_gap_max_us[counters::poll_keyboard].load(std::memory_order_relaxed));
+  out.mouse_gap_max_ms = ms(counters::poll_gap_max_us[counters::poll_mouse].load(std::memory_order_relaxed));
+  out.keyboard_gaps_over_100ms = counters::poll_gaps_over_100ms[counters::poll_keyboard].load(std::memory_order_relaxed);
+  out.mouse_gaps_over_100ms = counters::poll_gaps_over_100ms[counters::poll_mouse].load(std::memory_order_relaxed);
+  out.guard_in_detour_max_us = us(counters::guard_in_detour_max_ns.load(std::memory_order_relaxed));
 }
 
 std::uint32_t test_copy_chars(std::uint32_t* out, std::uint32_t capacity) noexcept {

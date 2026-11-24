@@ -9,9 +9,10 @@
 // With no scenario it runs "main", then itself again in a new process for each of the others: "two-queues" needs a
 // process in which the host has not found a present queue yet, "input" one whose XInput DLLs are loaded before GraceUI
 // starts, and "input-ansi" one whose game window is an ANSI window; "abi" (ABI 1's table, connect and notices, and the
-// example mod finding GraceUI by name), "copies" (two copies asked at once), "found-by-scan" and "found-by-path" (the
-// example finding a renamed copy, and GraceUI's own folder), "anti-cheat" and "anti-cheat-parent" (a simulated hit by
-// each clause) each need a process whose first GraceUI_RequestApi is theirs; "panels" (S10.4.c: panels and draw lists,
+// example mod finding GraceUI by name), "copies" (two copies asked at once), "copy-beside-mod" and
+// "copy-beside-mod-reversed" (a mod beside a second copy, each way round, D240), "found-by-scan" and "found-by-path"
+// (the example finding a renamed copy, and GraceUI's own folder), "anti-cheat" and "anti-cheat-parent" (a simulated hit
+// by each clause) each need a process whose first GraceUI_RequestApi is theirs; "panels" (S10.4.c: panels and draw lists,
 // textures, faces and glyph tables, input through ABI 1 and providers, with the second example mod) one whose
 // warm-up comes after its mods have registered their faces.
 #define DIRECTINPUT_VERSION 0x0800
@@ -763,12 +764,14 @@ struct GraceUi {
   decltype(&GraceUI_Test_GetFrameCosts) frame_costs = nullptr;
   decltype(&GraceUI_Test_GetLogLine) log_line = nullptr;
   decltype(&GraceUI_Test_GetHookName) hook_name = nullptr;
+  decltype(&GraceUI_Test_GetHookLead) get_hook_lead = nullptr;
   decltype(&GraceUI_Test_RequestInput) request_input = nullptr;
   decltype(&GraceUI_Test_ReleaseInput) release_input = nullptr;
   decltype(&GraceUI_Test_SetWorld) set_world = nullptr;
   decltype(&GraceUI_Test_SetCaret) set_caret = nullptr;
   decltype(&GraceUI_Test_SetCodePage) set_code_page = nullptr;
   decltype(&GraceUI_Test_Pad) pad = nullptr;
+  decltype(&GraceUI_Test_PadState) pad_state = nullptr;
   decltype(&GraceUI_Test_PadRead) pad_read = nullptr;
   decltype(&GraceUI_Test_GetInput) get_input = nullptr;
   decltype(&GraceUI_Test_GetChars) get_chars = nullptr;
@@ -813,12 +816,14 @@ struct GraceUi {
     frame_costs = function_of<decltype(frame_costs)>(module, "GraceUI_Test_GetFrameCosts");
     log_line = function_of<decltype(log_line)>(module, "GraceUI_Test_GetLogLine");
     hook_name = function_of<decltype(hook_name)>(module, "GraceUI_Test_GetHookName");
+    get_hook_lead = function_of<decltype(get_hook_lead)>(module, "GraceUI_Test_GetHookLead");
     request_input = function_of<decltype(request_input)>(module, "GraceUI_Test_RequestInput");
     release_input = function_of<decltype(release_input)>(module, "GraceUI_Test_ReleaseInput");
     set_world = function_of<decltype(set_world)>(module, "GraceUI_Test_SetWorld");
     set_caret = function_of<decltype(set_caret)>(module, "GraceUI_Test_SetCaret");
     set_code_page = function_of<decltype(set_code_page)>(module, "GraceUI_Test_SetCodePage");
     pad = function_of<decltype(pad)>(module, "GraceUI_Test_Pad");
+    pad_state = function_of<decltype(pad_state)>(module, "GraceUI_Test_PadState");
     pad_read = function_of<decltype(pad_read)>(module, "GraceUI_Test_PadRead");
     get_input = function_of<decltype(get_input)>(module, "GraceUI_Test_GetInput");
     get_chars = function_of<decltype(get_chars)>(module, "GraceUI_Test_GetChars");
@@ -844,7 +849,7 @@ struct GraceUi {
     heap_guard_probe = function_of<decltype(heap_guard_probe)>(module, "GraceUI_Test_HeapGuardProbe");
     get_pairing_code = function_of<decltype(get_pairing_code)>(module, "GraceUI_Test_GetPairingCode");
     set_network_addresses = function_of<decltype(set_network_addresses)>(module, "GraceUI_Test_SetNetworkAddresses");
-    return get_server != nullptr && get_heap_guard != nullptr && heap_guard_probe != nullptr && get_pairing_code != nullptr && set_network_addresses != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
+    return pad_state != nullptr && get_hook_lead != nullptr && get_server != nullptr && get_heap_guard != nullptr && heap_guard_probe != nullptr && get_pairing_code != nullptr && set_network_addresses != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
            get_menu_bounds != nullptr && set_anti_cheat_recheck != nullptr && menu_shows != nullptr && init_step != nullptr &&
            panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
@@ -961,6 +966,19 @@ struct GraceUi {
     return names;
   }
 
+  // Where each installed hook leads now, in the order of hooks() (D240).
+  std::vector<GraceUiTestHookLead> leads() const {
+    std::vector<GraceUiTestHookLead> out;
+    for (std::uint32_t i = 0;; ++i) {
+      GraceUiTestHookLead lead{};
+      lead.size = sizeof lead;
+      if (get_hook_lead(i, &lead) == 0) {
+        return out;
+      }
+      out.push_back(lead);
+    }
+  }
+
   // The code the pairing sheet shows (G9), or "" while none shows.
   std::string pairing_code() const {
     char code[16] = {};
@@ -1007,6 +1025,30 @@ bool hooks_published(const GraceUi& grace, std::string& text) {
   return ok;
 }
 
+// Every installed hook leads now into this copy's own detour, in this copy's module, and nowhere else (D240; invariant
+// 16): one hook holder in the process. `text` names any that lead elsewhere, and the jumps each took.
+bool hooks_lead_here(const GraceUi& grace, std::string& text) {
+  const std::vector<std::string> names = grace.hooks();
+  const std::vector<GraceUiTestHookLead> leads = grace.leads();
+  const auto self = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(grace.module));
+  bool ok = !leads.empty() && leads.size() == names.size();
+  std::string jumps;
+  std::string elsewhere;
+  for (std::size_t i = 0; i < leads.size() && i < names.size(); ++i) {
+    const bool here = leads[i].leads_here == 1 && leads[i].module_base == self;
+    ok = ok && here;
+    jumps += (jumps.empty() ? "" : ",") + std::to_string(leads[i].jumps);
+    if (!here) {
+      elsewhere += "; " + names[i] + " leads into " + (leads[i].module[0] != '\0' ? leads[i].module : "no module") +
+                   (leads[i].module_base == self ? " (this copy, not its detour)" : "");
+    }
+  }
+  text = std::to_string(leads.size()) + " of " + std::to_string(names.size()) + " hooks read, " +
+         (ok ? "each leading into this graceui.dll's own detour" : "NOT each leading here") + " (jumps " + jumps +
+         ")" + elsewhere;
+  return ok;
+}
+
 // The hooks this process should hold: the render half's five, GetDeviceState where DirectInput is loaded (one function
 // for the keyboard and the mouse under Wine), XInputGetState in each of the `xinput` XInput DLLs loaded before the
 // start, and the window procedure's filter; all of them in D102's list, installed in one run.
@@ -1022,8 +1064,10 @@ bool hooks_as_expected(const GraceUi& grace, std::uint32_t xinput, std::string& 
                 state.hooks_installed, state.hook_install_runs, input.render_hooks, input.dinput_hooks,
                 input.xinput_hooks, xinput, input.window_filter, published ? "all in D102's list" : "NOT all in D102's list",
                 names.c_str(), grace.init_step());
-  why = text;
-  return published && state.hook_install_runs == 1 && grace.init_step() == 7 && input.render_hooks == 5 &&
+  std::string lead;
+  const bool here = hooks_lead_here(grace, lead);
+  why = std::string(text) + "; " + lead;
+  return published && here && state.hook_install_runs == 1 && grace.init_step() == 7 && input.render_hooks == 5 &&
          input.dinput_hooks >= 1 &&
          input.dinput_hooks <= 2 && input.xinput_hooks == xinput && input.window_filter == 1 &&
          state.hooks_installed == input.render_hooks + input.dinput_hooks + input.xinput_hooks + input.window_filter;
@@ -1328,9 +1372,12 @@ void run_main(const std::wstring& dll) {
   const void* second_table = second.request_api(1);
   const void* second_again = second.request_api(1);
   const GraceUiTestState second_state = second.state();
+  const std::size_t second_leads = second.leads().size();
   for (int i = 0; i < 5; ++i) {
     frame = game.frame_and_read(kSecondCopy, PresentWith::present);
   }
+  std::string lead_why;
+  const bool first_leads = hooks_lead_here(grace, lead_why);
   ok = panel_drawn(frame, kSecondCopy, why, true);
   std::string notice_why;
   const bool notice_shown = notices_drawn(frame, kSecondCopy, {GRACEUI_TONE_WARNING}, true, notice_why);
@@ -1341,14 +1388,14 @@ void run_main(const std::wstring& dll) {
   state = grace.state();
   check(second.module != grace.module && second_table == nullptr && second_again == nullptr &&
             second_state.host == GRACEUI_TEST_HOST_IDLE_COPY && second_state.init_threads_started == 0 &&
-            second_state.hooks_installed == 0 && state.hooks_installed == hooks && state.hook_install_runs == 1 && ok &&
-            named_once && state.copies_named == 1 && notice_shown,
+            second_state.hooks_installed == 0 && second_leads == 0 && state.hooks_installed == hooks &&
+            state.hook_install_runs == 1 && first_leads && ok && named_once && state.copies_named == 1 && notice_shown,
         "second copy",
-        "another module (%s) answered null twice, idles (state %u) with %u init threads and %u hooks; the first keeps "
-        "its %u hooks and %s; it named %u copy in %zu notice: \"%s\"; %s",
+        "another module (%s) answered null twice, idles (state %u) with %u init threads and %u hooks (%zu to read); "
+        "the first keeps its %u hooks (%s) and %s; it named %u copy in %zu notice: \"%s\"; %s",
         second.module != grace.module ? "yes" : "no", second_state.host, second_state.init_threads_started,
-        second_state.hooks_installed, state.hooks_installed, why.c_str(), state.copies_named, named.size(),
-        named.empty() ? "" : named[0].text, notice_why.c_str());
+        second_state.hooks_installed, second_leads, state.hooks_installed, lead_why.c_str(), why.c_str(),
+        state.copies_named, named.size(), named.empty() ? "" : named[0].text, notice_why.c_str());
   second.print_log();
   grace.clear_notices();  // the frames read from here on hold the test panel alone
 
@@ -1613,6 +1660,24 @@ void post_key(HWND window, UINT vk, UINT scan, bool down, bool repeat) {
 
 using XInputGetStateFn = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
 
+// A second hook's detour, laid over GraceUI's on XInputGetState for a moment and never called (D240).
+DWORD WINAPI layered_get_state(DWORD, XINPUT_STATE*) { return ERROR_DEVICE_NOT_CONNECTED; }
+
+// Writes `bytes` over the code at `at`, keeping what was there in `saved` if it is given (12 bytes at most).
+bool write_code(void* at, const std::uint8_t* bytes, std::size_t size, std::uint8_t* saved) {
+  DWORD old = 0;
+  if (size > 12 || !VirtualProtect(at, size, PAGE_EXECUTE_READWRITE, &old)) {
+    return false;
+  }
+  if (saved != nullptr) {
+    std::memcpy(saved, at, size);
+  }
+  std::memcpy(at, bytes, size);
+  VirtualProtect(at, size, old, &old);
+  FlushInstructionCache(GetCurrentProcess(), at, size);
+  return true;
+}
+
 // Every pad's answer through every XInput DLL loaded, and the states they filled.
 std::vector<DWORD> read_pads(const std::vector<XInputGetStateFn>& pads) {
   std::vector<DWORD> answers;
@@ -1735,6 +1800,45 @@ void run_input(const std::wstring& dll) {
   std::string why;
   bool ok = hooks_as_expected(grace, static_cast<std::uint32_t>(pads.size()), why);
   check(ok, "input hooks", "%s", why.c_str());
+
+  // A second hook on one of GraceUI's functions, as invariant 16 forbids a consumer: a jump of the harness's own laid
+  // over xinput1_4.dll's XInputGetState, over GraceUI's, while nothing reads the pad; the lead then names the harness
+  // for that hook alone; taken off again, every hook leads here once more (D240).
+  {
+    const HMODULE xinput = GetModuleHandleW(L"xinput1_4.dll");
+    void* const target =
+        xinput != nullptr ? reinterpret_cast<void*>(GetProcAddress(xinput, "XInputGetState")) : nullptr;
+    const std::vector<std::string> names = grace.hooks();
+    std::size_t index = names.size();
+    for (std::size_t i = 0; i < names.size(); ++i) {
+      index = names[i] == "XInputGetState in xinput1_4.dll" ? i : index;
+    }
+    std::uint8_t jump[12] = {0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xE0};  // mov rax, imm64; jmp rax
+    const auto detour = reinterpret_cast<std::uintptr_t>(&layered_get_state);
+    std::memcpy(jump + 2, &detour, sizeof detour);
+    std::uint8_t saved[12] = {};
+    const bool laid = target != nullptr && index < names.size() && write_code(target, jump, sizeof jump, saved);
+    const std::vector<GraceUiTestHookLead> layered = grace.leads();
+    const bool restored = laid && write_code(target, saved, sizeof saved, nullptr);
+    const auto program = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr)));
+    const auto self = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(grace.module));
+    bool others_here = layered.size() == names.size();
+    for (std::size_t i = 0; i < layered.size(); ++i) {
+      others_here = others_here && (i == index || (layered[i].leads_here == 1 && layered[i].module_base == self));
+    }
+    const bool seen = index < layered.size() && layered[index].leads_here == 0 &&
+                      layered[index].module_base == program && layered[index].jumps == 1 &&
+                      std::strcmp(layered[index].module, "grace-harness.exe") == 0;
+    std::string after;
+    const bool back = hooks_lead_here(grace, after);
+    check(laid && restored && seen && others_here && back, "a hook over GraceUI's",
+          "a jump laid over XInputGetState in xinput1_4.dll (%s, hook %zu): it leads into \"%s\" (%s, %u jump), "
+          "every other hook still here (%s); taken off (%s): %s",
+          laid ? "laid" : "NOT LAID", index, index < layered.size() ? layered[index].module : "?",
+          index < layered.size() && layered[index].leads_here == 0 ? "not GraceUI's detour" : "STILL GRACEUI'S",
+          index < layered.size() ? layered[index].jumps : 0u, others_here ? "yes" : "NO", restored ? "yes" : "NO",
+          after.c_str());
+  }
 
   // 1. No holder: the game's reads pass untouched, but for the menu key, which never reaches the game (§5.1): it opens
   // GraceUI's menu, and a second press closes it (D167).
@@ -1889,6 +1993,16 @@ void run_input(const std::wstring& dll) {
         after_again.free_window_keys - before_again.free_window_keys,
         after_again.free_window_buttons - before_again.free_window_buttons,
         after_again.foreground == 1 ? "in front" : "NOT IN FRONT", after_again.has_focus == 1 ? "focused" : "NOT FOCUSED");
+  // D239: the detours' longest calls are kept, and the 300 ms between two of the harness's keyboard reads above is a
+  // gap over 100 ms.
+  check(after_again.window_max_us > 0 && after_again.dinput_max_us > 0 && after_again.keyboard_gap_max_ms >= 250 &&
+            after_again.keyboard_gaps_over_100ms >= 1 && after_again.mouse_gap_max_ms > 0,
+        "spike counters: the detours' longest calls and the reads' gaps (D239)",
+        "longest calls: window filter %u us, DirectInput %u us, XInput %u us (over 8 ms: %u, %u, %u); longest gaps "
+        "between reads: keyboard %u ms (%u over 100 ms), mouse %u ms",
+        after_again.window_max_us, after_again.dinput_max_us, after_again.xinput_max_us, after_again.window_over_8ms,
+        after_again.dinput_over_8ms, after_again.xinput_over_8ms, after_again.keyboard_gap_max_ms,
+        after_again.keyboard_gaps_over_100ms, after_again.mouse_gap_max_ms);
   check(closed && masked && still_masked && games_again && g_seen.key_down['A'] == 1 && g_seen.key_up['A'] == 1 &&
             input.last_close_reason == GRACEUI_TEST_CLOSED_RELEASED && input.holder_owner == 0,
         "closing press",
@@ -4362,15 +4476,16 @@ void run_heap_guard(const std::wstring& dll) {
     Sleep(20);
     on = grace.heap_guard();
   }
-  check(on.on == 1 && on.stats_read == 1 && on.check_period_ms == 200 && on.made > 0 && on.live_blocks > 0 && on.checks >= 2 &&
+  check(on.on == 1 && on.stats_read == 1 && on.check_period_ms == 200 && on.check_max_us > 0 && on.made > 0 && on.live_blocks > 0 && on.checks >= 2 &&
             on.blocks_checked > 0 && on.breaches == 0 && on.breach.breach == 0 && on.last_check_ms != 0,
         "heap guard: GraceUI's own blocks guarded and checked",
         "%llu blocks made, %llu live (%llu bytes), %llu kept after their free; %llu whole checks every %u ms, over "
-        "%llu blocks; %llu breaches",
+        "%llu blocks, the longest %llu us; %llu breaches",
         static_cast<unsigned long long>(on.made), static_cast<unsigned long long>(on.live_blocks),
         static_cast<unsigned long long>(on.live_bytes), static_cast<unsigned long long>(on.quarantined_blocks),
         static_cast<unsigned long long>(on.checks), on.check_period_ms,
-        static_cast<unsigned long long>(on.blocks_checked), static_cast<unsigned long long>(on.breaches));
+        static_cast<unsigned long long>(on.blocks_checked), static_cast<unsigned long long>(on.check_max_us),
+        static_cast<unsigned long long>(on.breaches));
 
   struct Kind {
     std::uint32_t kind;
@@ -4917,6 +5032,26 @@ void run_menu_space(const std::wstring& dll) {
   if (named != std::string::npos) {
     other_pages.replace(named, 12, "\"The second lantern\"");
   }
+  // Its Records category holds only pages of a later increment (0.6), so that GraceUI's links back to it leave the
+  // category out, as its own rail does (D173, D245).
+  {
+    grace::protocol::Json parsed = grace::protocol::Json::parse(other_pages, nullptr, false);
+    if (parsed.is_object() && parsed.contains("categories") && parsed.contains("pages")) {
+      for (const grace::protocol::Json& category : parsed["categories"]) {
+        if (category.value("id", std::string()) != "records") {
+          continue;
+        }
+        for (grace::protocol::Json& page : parsed["pages"]) {
+          for (const grace::protocol::Json& id : category["pages"]) {
+            if (page.value("id", std::string()) == id.get<std::string>()) {
+              page["increment"] = "0.6";
+            }
+          }
+        }
+      }
+      other_pages = parsed.dump();
+    }
+  }
   const Connected lantern = connect(table, request_for("lantern"));
   const GraceUiSpaceDesc other = game_space(other_pages, space.settings);
   const GraceUiStatus second = table->register_pages(lantern.answer.consumer, &other);
@@ -4950,6 +5085,8 @@ void run_menu_space(const std::wstring& dll) {
   menu = menu_after(game, grace, grace.menu().lists);
   const std::string own_page = menu.page;
   const std::string own_focus = menu.focused;
+  const bool lanterns_back = grace.menu_shows("Lanterns") != 0;
+  const bool records_back = grace.menu_shows("Records") != 0;
   for (int i = 0; i < 12; ++i) {
     press(window, VK_UP, 0x48);
   }
@@ -4961,12 +5098,13 @@ void run_menu_space(const std::wstring& dll) {
   check(foot.rfind("rail:graceui/", 0) == 0 && left_lantern.kind == GRACEUI_EVENT_UNWATCHED &&
             own_page.rfind("graceui.", 0) == 0 && own_focus == "rail:" + own_page &&
             head == "rail:lantern/demo.overview" && back.kind == GRACEUI_EVENT_WATCHED &&
-            std::strcmp(menu.page, "demo.overview") == 0,
+            std::strcmp(menu.page, "demo.overview") == 0 && lanterns_back && !records_back,
         "menu space: GraceUI's at the foot, the mod's at the head",
-        "↓ to %s, Enter: page %s, focus %s, the second mod polled %s; ↑ to %s, Enter: %s, the second mod polled %s",
+        "↓ to %s, Enter: page %s, focus %s, the second mod polled %s; the links back show Lanterns %s and Records "
+        "(no page in the space's increment) %s; ↑ to %s, Enter: %s, the second mod polled %s",
         foot.c_str(), own_page.c_str(), own_focus.c_str(),
-        left_lantern.kind == GRACEUI_EVENT_UNWATCHED ? "its unsub" : "NO UNSUB", head.c_str(), menu.page,
-        back.kind == GRACEUI_EVENT_WATCHED ? "its sub" : "NO SUB");
+        left_lantern.kind == GRACEUI_EVENT_UNWATCHED ? "its unsub" : "NO UNSUB", lanterns_back ? "yes" : "NO",
+        records_back ? "SHOWN" : "not", head.c_str(), menu.page, back.kind == GRACEUI_EVENT_WATCHED ? "its sub" : "NO SUB");
 
   // 6. F5 closes it: the mod hears the menu stop watching. Both mods go while it is closed, and F5 opens GraceUI's.
   press(window, VK_F5, kScanF5);
@@ -7035,6 +7173,173 @@ void run_menu_focus_ring(const std::wstring& dll) {
   frames(game, 2);
 }
 
+// ---- Pad mode (D242, §5.4): the menu by pad alone once F5 has opened it (D33: no pad chord opens it by default), the
+// pad-only walkthrough of v1.0's exit checks. The key hints become the pad's; LT and RT walk every page the keyboard's
+// Page Up and Page Down walk, in the same order; the D-pad changes a setting and X resets it; Y opens search and B
+// closes it; View hides and shows the hints; the right stick scrolls the page with focus kept; a key gives the keyboard's
+// hints back; B goes to the rail and closes the menu, and that B never reaches the game. 900 by 1080: narrow enough for
+// the Menu page's words to wrap past its display, so that there is something to scroll.
+void run_menu_pad(const std::wstring& dll) {
+  Game game(false, 900, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  const std::string first(menu.page);
+  const auto walk = [&](const std::function<void()>& step) {  // pages from here until the walk stops or comes round
+    std::vector<std::string> pages{std::string(menu.page)};
+    for (int i = 0; i < 40; ++i) {
+      step();
+      menu = menu_after(game, grace, menu.lists);
+      const std::string page(menu.page);
+      if (page == pages.back() || page == pages.front()) {
+        break;
+      }
+      pages.push_back(page);
+    }
+    return pages;
+  };
+  const auto pad_press = [&](std::uint32_t buttons, std::uint32_t left_trigger = 0, std::uint32_t right_trigger = 0) {
+    grace.pad_state(0, buttons, left_trigger, right_trigger, 0, 0, 0, 0);
+    frames(game, 2);
+    grace.pad_state(0, 0, 0, 0, 0, 0, 0, 0);
+    frames(game, 2);
+  };
+  const auto pad_menu = [&](std::uint32_t buttons, std::uint32_t left_trigger = 0, std::uint32_t right_trigger = 0) {
+    const std::uint64_t lists = grace.menu().lists;
+    pad_press(buttons, left_trigger, right_trigger);
+    menu = menu_after(game, grace, lists);
+  };
+  const std::vector<std::string> by_keys = walk([&] { press(window, VK_NEXT, 0x51); });
+  const std::string keyboard_footer(menu.footer);
+  const std::uint32_t pad_mode_with_keys = menu.pad_mode;
+  // The pad from here on. Its first look takes what is held (nothing) and does nothing (§5.2).
+  grace.pad_state(0, 0, 0, 0, 0, 0, 0, 0);
+  frames(game, 2);
+  std::vector<std::string> by_lt = walk([&] { pad_press(0, 255, 0); });
+  std::reverse(by_lt.begin(), by_lt.end());
+  const std::string pad_footer(menu.footer);
+  const std::uint32_t pad_mode = menu.pad_mode;
+  const std::uint32_t ring = menu.focus_shown;
+  save_shot(game.frame_and_read(kInputColour, PresentWith::present), "menu-pad.bmp");  // GRACE_SHOTS: the pad's hints
+  const std::vector<std::string> by_rt = walk([&] { pad_press(0, 0, 255); });
+  check(by_keys.size() >= 5 && by_rt == by_keys && by_lt == by_keys && pad_mode_with_keys == 0 && pad_mode == 1 &&
+            ring == 1 && keyboard_footer.find("Esc  ") != std::string::npos &&
+            pad_footer.find("B  ") != std::string::npos && pad_footer.find("Esc") == std::string::npos,
+        "menu by pad: every page",
+        "Page Down walked %zu pages from %s; LT walked them back (%s) and RT on again (%s); the hints with keys \"%s\" "
+        "(pad mode %u), with the pad \"%s\" (pad mode %u, the ring %s)",
+        by_keys.size(), first.c_str(), by_lt == by_keys ? "the same" : "NOT THE SAME",
+        by_rt == by_keys ? "the same" : "NOT THE SAME", keyboard_footer.c_str(), pad_mode_with_keys,
+        pad_footer.c_str(), pad_mode, ring != 0 ? "shown" : "HIDDEN");
+
+  // Back to the Menu page by LT; its first setting is Menu size (ui.scale): the D-pad changes it, X resets it.
+  for (int i = 0; i < 40 && std::string_view(menu.page) != "graceui.menu"; ++i) {
+    pad_menu(0, 255, 0);
+  }
+  const std::string scale_before = grace.setting("ui.scale");
+  const std::string focus(menu.focused);
+  pad_menu(XINPUT_GAMEPAD_DPAD_RIGHT);
+  const std::string scale_changed = grace.setting("ui.scale");
+  const std::string slider_footer(menu.footer);
+  pad_menu(XINPUT_GAMEPAD_X);
+  const std::string scale_reset = grace.setting("ui.scale");
+  check(std::string_view(menu.page) == "graceui.menu" && focus == "setting:ui.scale" && scale_before == "1.25" &&
+            std::fabs(std::stod(scale_changed.empty() ? "0" : scale_changed) - 1.3) < 0.001 &&
+            scale_reset == "1.25" && slider_footer == "D-pad ← →  Change    X  Reset    B  Back",
+        "menu by pad: a setting",
+        "on %s, %s: %s, the D-pad's → made it %s, X reset it to %s; the hints \"%s\"", menu.page, focus.c_str(),
+        scale_before.c_str(), scale_changed.c_str(), scale_reset.c_str(), slider_footer.c_str());
+
+  // Y: search, with the pad's hints for it; B closes it. View: the hints hidden, then shown.
+  pad_menu(XINPUT_GAMEPAD_Y);
+  const std::string search_focus(menu.focused);
+  const std::string search_footer(menu.footer);
+  pad_menu(XINPUT_GAMEPAD_B);
+  const std::string after_search_footer(menu.footer);
+  pad_menu(XINPUT_GAMEPAD_BACK);
+  const std::uint32_t hidden = menu.hints_shown;
+  const std::string hidden_footer(menu.footer);
+  pad_menu(XINPUT_GAMEPAD_BACK);
+  check(search_focus == "search" && search_footer == "D-pad ↑ ↓  Choose    A  Open    B  Close" &&
+            after_search_footer != search_footer && hidden == 0 && hidden_footer.empty() && menu.hints_shown == 1 &&
+            !std::string(menu.footer).empty(),
+        "menu by pad: search and the hints",
+        "Y: focus on %s, the hints \"%s\"; B: \"%s\"; View: the hints %s (\"%s\"); View again: %s (\"%s\")",
+        search_focus.c_str(), search_footer.c_str(), after_search_footer.c_str(), hidden == 0 ? "hidden" : "SHOWN",
+        hidden_footer.c_str(), menu.hints_shown != 0 ? "shown" : "HIDDEN", menu.footer);
+
+  // The right stick, held down for half a second, then up for longer: the page moves under the focus, which stays,
+  // and comes back to where it was. Menu size at its largest first (1.5), so that the page runs past its display.
+  for (int i = 0; i < 20 && std::string_view(menu.focused) != "setting:ui.scale"; ++i) {
+    pad_menu(XINPUT_GAMEPAD_DPAD_DOWN);  // from search back onto the page's first setting
+  }
+  for (int i = 0; i < 6; ++i) {
+    pad_menu(XINPUT_GAMEPAD_DPAD_RIGHT);
+  }
+  const std::string largest = grace.setting("ui.scale");
+  const std::string held(menu.focused);
+  const std::uint32_t inputs_before = menu.inputs;
+  const float y_before = menu_bounds(grace, held.c_str()).row[1];
+  const auto stick = [&](std::int32_t right_y, DWORD ms) {
+    const DWORD start = GetTickCount();
+    while (GetTickCount() - start < ms) {
+      grace.pad_state(0, 0, 0, 0, 0, 0, 0, right_y);
+      game.frame(kInputColour, PresentWith::present);
+      Sleep(10);
+    }
+    grace.pad_state(0, 0, 0, 0, 0, 0, 0, 0);
+    menu = menu_after(game, grace, grace.menu().lists);
+  };
+  stick(-32767, 500);
+  const float y_down = menu_bounds(grace, held.c_str()).row[1];
+  const std::string focus_down(menu.focused);
+  const std::uint32_t inputs_down = menu.inputs - inputs_before;
+  stick(32767, 1500);
+  const float y_back = menu_bounds(grace, held.c_str()).row[1];
+  pad_menu(XINPUT_GAMEPAD_X);  // Menu size back to its default
+  // The page moves as far as it runs past its display (the view bounds the scroll), here a little, by several steps.
+  check(inputs_down >= 3 && y_down < y_before - 10 && std::fabs(y_back - y_before) < 0.5f && focus_down == held &&
+            std::string(menu.focused) == held && grace.setting("ui.scale") == "1.25",
+        "menu by pad: the right stick scrolls",
+        "at Menu size %s, %s's row at y %.0f; the stick down for 0.5 s (%u steps taken): %.0f (focus %s); up for 1.5 s: "
+        "%.0f; Menu size reset to %s",
+        largest.c_str(), held.c_str(), y_before, inputs_down, y_down, focus_down == held ? "kept" : "MOVED", y_back,
+        grace.setting("ui.scale").c_str());
+
+  // A key: the keyboard's hints again. Then B to the rail and B again closes the menu: neither B reaches the game, nor
+  // the second while it is still held after the close; a new press after it does.
+  press(window, VK_DOWN, 0x50);
+  menu = menu_after(game, grace, menu.lists);
+  const std::uint32_t pad_after_key = menu.pad_mode;
+  const std::string key_footer(menu.footer);
+  pad_menu(XINPUT_GAMEPAD_B);
+  const std::string rail(menu.focused);
+  std::uint32_t packet = 1;
+  const std::uint32_t closing = grace.pad_read(0, XINPUT_GAMEPAD_B, &packet);
+  frames(game, 3);
+  const std::uint32_t held_after = grace.pad_read(0, XINPUT_GAMEPAD_B, &packet);
+  const bool closed = grace.menu().open == 0;
+  grace.pad_read(0, 0, &packet);
+  frames(game, 2);
+  const std::uint32_t new_press = grace.pad_read(0, XINPUT_GAMEPAD_B, &packet);
+  grace.pad_read(0, 0, &packet);
+  check(pad_after_key == 0 && key_footer.find("Esc  ") != std::string::npos && rail.rfind("rail:", 0) == 0 &&
+            closing == 0 && held_after == 0 && closed && new_press == XINPUT_GAMEPAD_B,
+        "menu by pad: back and close",
+        "a key: pad mode %u, the hints \"%s\"; B: focus on %s; B again: the menu %s, the game saw %#x, %#x while it was "
+        "held, then %#x for a new press",
+        pad_after_key, key_footer.c_str(), rail.c_str(), closed ? "closed" : "STILL OPEN", closing, held_after,
+        new_press);
+  DeleteFileW(settings_file_of(dll).c_str());  // nothing kept for the next scenario (D179)
+}
+
 void run_menu_recentred(const std::wstring& dll) {
   Game game(false, 1280, 720);
   const HWND window = game.window();
@@ -8365,6 +8670,185 @@ void run_wake(const std::wstring& dll) {
   CloseHandle(handle);  // the mod's own; GraceUI keeps its event
 }
 
+// ---- EldenNet's S10.3.d (D240): a mod of EldenNet's kind (a panel, a hotkey, an input holder and a world-state
+// provider) on the copy asked first, while the other is asked as a mod carrying a private copy would ask it. Two copies:
+// the game's folder's, and one from beside-copy\ loaded before it. In order, the game's folder's is asked first; reversed,
+// the other is, and the game's folder's idles. The idle one has no hooks and is named once; the mod's panel, holder,
+// danger close and hotkey carry on; graceui-sys asked afresh, both loaded, answers the active copy's table (reversed,
+// past the idle copy that holds the name graceui.dll); and every hook leads into the active copy.
+void run_copy_beside_mod(const std::wstring& dll, bool reversed) {
+  constexpr Colour kClear{18, 22, 30};
+  constexpr Colour kGround{150, 70, 40};
+  const std::wstring folder = folder_of_this_program() + L"beside-copy";
+  CreateDirectoryW(folder.c_str(), nullptr);
+  const std::wstring copy = folder + L"\\graceui.dll";
+  GraceUi beside;
+  if (!CopyFileW(dll.c_str(), copy.c_str(), FALSE) || !beside.load(copy)) {
+    fatal("the second copy of graceui.dll did not load");
+  }
+  Game game(false);
+  const HWND window = game.window();
+  cursor_into(window);
+  pump_messages();
+  // Reversed, the game's folder's copy is GraceUI's own, GraceUI\graceui.dll (D83), so that its notice says so (D244);
+  // the parent process takes the file away after this process ends (absent wants no GraceUI\ in the folder).
+  std::wstring own = dll;
+  if (reversed) {
+    own = folder_of_this_program() + L"GraceUI\\graceui.dll";
+    CreateDirectoryW((folder_of_this_program() + L"GraceUI").c_str(), nullptr);
+    if (!CopyFileW(dll.c_str(), own.c_str(), FALSE)) {
+      fatal("GraceUI\\graceui.dll could not be made in the harness's folder");
+    }
+  }
+  GraceUi canonical;
+  if (!canonical.load(own) || canonical.module == beside.module) {
+    fatal("graceui.dll did not load as a module of its own");
+  }
+  GraceUi& grace = reversed ? beside : canonical;  // the copy asked first, which holds the mutex
+  GraceUi& second = reversed ? canonical : beside;
+  const GraceUiApi1* table = grace.table();  // the process's first request
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  const Connected kin = connect(table, request_for("lantern-keeper", GRACEUI_VERSION_PACK(0, 2, 1), "Lantern Keeper",
+                                                   "panels textures input world-state hotkeys holder-events"));
+  HarnessMod mod{table, kin.answer.consumer, 0};
+  const std::uint32_t white_pixels[16] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                          0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                          0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
+  std::uint64_t box = 0;
+  std::uint32_t talk = 0;
+  const bool made = kin.status == GRACEUI_OK && mod.texture(4, 4, white_pixels, mod.white) == GRACEUI_OK &&
+                    mod.panel(GRACEUI_LAYER_MODAL, GRACEUI_ANCHOR_TOP_LEFT, 200, 100, 300, 120,
+                              GRACEUI_PANEL_TAKES_INPUT, box) == GRACEUI_OK &&
+                    hotkey_of(table, mod.me, "talk", "Talk", VK_F7, talk) == GRACEUI_OK;
+  mod.quad(box, 300, 120, kGround);
+  table->show_panel(mod.me, box);
+  start_host(game, grace);
+  frames(game, 30);
+  until_atlas(game, grace);
+
+  const auto drawn = [&](std::string& why) {
+    Frame frame;
+    for (int i = 0; i < 3; ++i) {
+      frame = game.frame_and_read(kClear, PresentWith::present);
+    }
+    return pixel_is(frame, 350, 160, kGround, "the mod's panel", why);
+  };
+  const auto presses = [&]() {
+    press(window, VK_F7, 0x41);
+    frames(game, 3);
+    std::uint32_t count = 0;
+    for (const GraceUiEvent& e : poll_holder(table, mod.me)) {
+      count += e.kind == GRACEUI_EVENT_HOTKEY && e.hotkey_id == talk ? e.count : 0;
+    }
+    return count;
+  };
+  const auto typed = [&]() {  // a key the holder gets as two events, which never reaches the game
+    g_seen = Seen{};
+    post_key(window, VK_LEFT, 0x4B, true, false);
+    post_key(window, VK_LEFT, 0x4B, false, false);
+    frames(game, 3);
+    std::uint32_t keys = 0;
+    for (const GraceUiEvent& e : poll_holder(table, mod.me)) {
+      keys += e.kind == GRACEUI_EVENT_KEY && e.key == VK_LEFT ? 1 : 0;
+    }
+    return keys == 2 && g_seen.key_down[VK_LEFT] == 0;
+  };
+
+  // 1. Before the second copy is asked: the panel drawn, the hotkey once, the holder granted and given a key.
+  std::string why_before;
+  const bool drawn_before = drawn(why_before);
+  const std::uint32_t pressed_before = presses();
+  GraceUiStatus status = GRACEUI_FAULT;
+  const GraceUiInputAnswer granted =
+      mod.request(box, GRACEUI_HOLDER_MODAL, status, GRACEUI_WANT_KEYBOARD, GRACEUI_INPUT_EVENTS);
+  frames(game, 2);
+  const bool typed_before = typed();
+  std::string hooks_before;
+  const bool hooks_ok_before = hooks_as_expected(grace, 0, hooks_before);
+  check(made && drawn_before && pressed_before == 1 && status == GRACEUI_OK &&
+            granted.answer == GRACEUI_INPUT_GRANTED && typed_before && hooks_ok_before,
+        reversed ? "beside a copy, reversed: the mod" : "beside a copy: the mod",
+        "a mod of EldenNet's kind connected (%s): its panel %s; its hotkey pressed %u time; its holder %s and given a "
+        "key (%s); %s",
+        made ? "yes" : "NO", why_before.c_str(), pressed_before, answer_name(granted.answer),
+        typed_before ? "yes, not the game" : "NO", hooks_before.c_str());
+
+  // 2. The second copy asked, as a mod with a private copy asks: null, twice; it idles, with no hooks, named once.
+  const void* asked = second.request_api(1);
+  const void* asked_again = second.request_api(1);
+  frames(game, 5);
+  const GraceUiTestState idle = second.state();
+  const std::size_t idle_leads = second.leads().size();
+  const GraceUiTestState active = grace.state();
+  const std::vector<GraceUiTestNotice> named = grace.notices();
+  // In order, the second copy is named as idle; reversed, GraceUI's own is said to idle and the copy in use is named,
+  // the one to remove (D244). Never a whole path.
+  const std::string_view text = named.empty() ? std::string_view() : std::string_view(named[0].text);
+  const bool words = reversed ? text.find("GraceUI's own copy is idle") != std::string_view::npos &&
+                                    text.find("in use, beside-copy\\graceui.dll.") != std::string_view::npos
+                              : text.find("is idle: beside-copy\\graceui.dll") != std::string_view::npos;
+  const bool named_once = named.size() == 1 && named[0].owner == 0 && named[0].tone == GRACEUI_TONE_WARNING && words &&
+                          text.find(":\\") == std::string_view::npos;
+  check(asked == nullptr && asked_again == nullptr && idle.host == GRACEUI_TEST_HOST_IDLE_COPY &&
+            idle.init_threads_started == 0 && idle.hook_install_runs == 0 && idle.hooks_installed == 0 &&
+            idle_leads == 0 && active.copies_named == 1 && named_once,
+        reversed ? "beside a copy, reversed: the other idles" : "beside a copy: the second idles",
+        "asked twice, it answered %s and %s; idles (state %u) with %u init threads, %u install runs, %u hooks (%zu to "
+        "read); the first named %u copy in %zu notice: \"%s\"",
+        asked == nullptr ? "null" : "A TABLE", asked_again == nullptr ? "null" : "A TABLE", idle.host,
+        idle.init_threads_started, idle.hook_install_runs, idle.hooks_installed, idle_leads, active.copies_named,
+        named.size(), named.empty() ? "" : named[0].text);
+
+  // 3. The mod carries on: its panel, its holder (a key, then danger ends it, and request_input answers not_now
+  // while danger lasts), then its hotkey; graceui-sys asked afresh answers the first's table; every hook leads there.
+  std::string why_after;
+  const bool drawn_after = drawn(why_after);
+  const bool still_held = grace.input().holder_owner != 0;
+  const bool typed_after = typed();
+  mod.world(GRACEUI_WORLD_DANGER);
+  frames(game, 2);
+  std::uint32_t ended = 0;
+  std::uint32_t ended_why = 0;
+  for (const GraceUiEvent& e : poll_holder(table, mod.me)) {
+    ended += e.kind == GRACEUI_EVENT_INPUT_ENDED ? 1 : 0;
+    ended_why = e.kind == GRACEUI_EVENT_INPUT_ENDED ? e.why : ended_why;
+  }
+  const GraceUiInputAnswer in_danger = mod.request(box, GRACEUI_HOLDER_MODAL, status, GRACEUI_WANT_KEYBOARD);
+  const bool none_held = grace.input().holder_owner == 0;
+  mod.world(0);
+  frames(game, 2);
+  const std::uint32_t pressed_after = presses();
+  GraceUiSysFound found{};
+  found.size = sizeof found;
+  const GraceUiApi1* refound = graceui_sys_find(0, 0, &found);
+  // Windows's GetModuleHandle may answer the idle copy for the name graceui.dll (Wine answered the active one): then
+  // graceui-sys's scan runs, past that copy, and must answer the active copy's table.
+  GraceUiSysFound scanned{};
+  scanned.size = sizeof scanned;
+  const GraceUiApi1* past_idle = graceui_sys_scan(second.module, &scanned);
+  std::string hooks_after;
+  const bool hooks_ok_after = hooks_as_expected(grace, 0, hooks_after);
+  check(drawn_after && still_held && typed_after && ended == 1 && ended_why == GRACEUI_CLOSED_DANGER && none_held &&
+            in_danger.answer == GRACEUI_INPUT_NOT_NOW && in_danger.why == GRACEUI_NOT_NOW_DANGER &&
+            pressed_after == 1 && refound == table && found.module == grace.module && past_idle == table &&
+            scanned.how == GRACEUI_SYS_BY_SCAN && scanned.module == grace.module && hooks_ok_after &&
+            second.leads().empty(),
+        reversed ? "beside a copy, reversed: the mod carries on" : "beside a copy: the mod carries on",
+        "its panel %s; its holder %s and given a key (%s); danger ended it %u time (why %u, %u for danger), none held "
+        "(%s), a request then %s (why %u); its hotkey pressed %u time after; graceui-sys found %s (how %u: %s), and its scan past the idle copy %s; %s",
+        why_after.c_str(), still_held ? "still held" : "NOT HELD", typed_after ? "yes, not the game" : "NO", ended,
+        ended_why, GRACEUI_CLOSED_DANGER, none_held ? "yes" : "NO", answer_name(in_danger.answer), in_danger.why,
+        pressed_after, refound == table ? "the active copy's table" : "ANOTHER TABLE", found.how,
+        found.how == GRACEUI_SYS_BY_NAME ? "by name" : found.how == GRACEUI_SYS_BY_SCAN ? "by its scan" : "by path",
+        past_idle == table && scanned.how == GRACEUI_SYS_BY_SCAN && scanned.module == grace.module
+            ? "the active copy's table"
+            : "NOT THE ACTIVE COPY'S TABLE",
+        hooks_after.c_str());
+  table->disconnect(mod.me);
+}
+
 // ---- Pad chords (D204, proposal 0005), through GraceUI_Test_PadRead (Wine has no pad): what the game's XInputGetState
 // returns read by read, and the mod's hotkey event. The times are the proposal's estimates, with margins for Wine's
 // clock; S4's second round confirms them on a pad.
@@ -8473,13 +8957,16 @@ void run_chords(const std::wstring& dll) {
     seen.buttons = grace.pad_read(0, buttons, &seen.packet);
     return seen;
   };
+  std::uint32_t last_by = 0;  // what pressed the hotkey, as the events presses() took said (ABI 1.7, D243)
   const auto presses = [&](GraceUiConsumer mod, std::uint32_t id) {
     std::uint32_t count = 0;
+    last_by = 0;
     GraceUiEvent event{};
     event.size = sizeof event;
     for (int i = 0; i < 16 && table->poll(mod, &event) == GRACEUI_OK && event.kind != GRACEUI_EVENT_NONE; ++i) {
       if (event.kind == GRACEUI_EVENT_HOTKEY && event.hotkey_id == id) {
         count += event.count;
+        last_by |= event.hotkey_by;
       }
     }
     return count;
@@ -8503,6 +8990,7 @@ void run_chords(const std::wstring& dll) {
   wait(400);
   const Seen fired = read(kUp | kView);
   const std::uint32_t fired_presses = presses(first.answer.consumer, talk);
+  const std::uint32_t fired_by = last_by;
   const Seen long_hold = read(kUp | kView);
   const Seen view_up = read(kUp);
   const Seen both_up = read(0);
@@ -8516,6 +9004,19 @@ void run_chords(const std::wstring& dll) {
         "hotkey %u time(s); held on %#x, View up %#x, both up %#x, Up afresh %#x",
         anchor.buttons, held.buttons, still.buttons, fired.buttons, still.packet, fired.packet, fired_presses,
         long_hold.buttons, view_up.buttons, both_up.buttons, fresh.buttons);
+
+  // What pressed it (ABI 1.7, D243): the chord, above; a key, the second mod's F9 here.
+  press(game.window(), VK_F9, 0x43);
+  frames(game, 3);
+  const std::uint32_t key_presses = presses(second.answer.consumer, shout);
+  const bool by_cap = table->has_cap(GRACEUI_CAP_HOTKEY_BY, std::strlen(GRACEUI_CAP_HOTKEY_BY)) != 0;
+  check(by_cap && table->abi_minor >= 7u && fired_by == GRACEUI_HOTKEY_BY_CHORD && key_presses == 1 &&
+            last_by == GRACEUI_HOTKEY_BY_KEY,
+        "chords: what pressed a hotkey",
+        "has_cap(\"%s\") %s, the table's minor %u; the chord's press said %u (%u for the chord); F9's %u press said %u "
+        "(%u for the key)",
+        GRACEUI_CAP_HOTKEY_BY, by_cap ? "yes" : "NO", table->abi_minor, fired_by, GRACEUI_HOTKEY_BY_CHORD, key_presses,
+        last_by, GRACEUI_HOTKEY_BY_KEY);
 
   // 2. A key released before 0.4 s: one tap, of two reads and 50 ms, the packet number changing at each step.
   const Seen up_again = read(kUp);
@@ -8636,6 +9137,14 @@ void run_display(const std::wstring& dll) {
   const GraceUiStatus scaled_status = face_of(table, first.answer.consumer, noto, 16, GRACEUI_FACE_SCALED, scaled_id);
   const GraceUiStatus plain_status = face_of(table, first.answer.consumer, noto, 16, 0, plain_id);
   const GraceUiStatus unknown_flag = face_of(table, older_answer.consumer, noto, 16, 2u, unknown_id);
+  // EB Garamond Italic from GraceUI's own fonts\ folder (D241), as a mod reads Regular there for its lines: scaled, at
+  // 30 px at 1080 lines, by a mod of its own (each mod but EldenNet has two faces).
+  const std::vector<unsigned char> italic = read_file(folder_of_this_program() + L"fonts\\EBGaramond-Italic.ttf");
+  const Connected verse = connect(table, request_for("verse-mod", GRACEUI_VERSION_PACK(0, 2, 2), "Verse mod",
+                                                     "faces display"));
+  std::uint32_t italic_id = 0;
+  const GraceUiStatus italic_status =
+      italic.empty() ? GRACEUI_FAULT : face_of(table, verse.answer.consumer, italic, 30, GRACEUI_FACE_SCALED, italic_id);
   const std::vector<GraceUiEvent> early = displays_of(table, first.answer.consumer);
   start_host(game, grace);
   for (int i = 0; i < 150 && grace.state().atlas_generation == 0; ++i) {
@@ -8669,6 +9178,19 @@ void run_display(const std::wstring& dll) {
         status_name(scaled_status), status_name(plain_status), status_name(unknown_flag), display_text(early).c_str(),
         display_text(warm).c_str(), display_text(again).c_str(), display_text(older_events).c_str(),
         scaled_table.pixel_height, plain_table.pixel_height);
+
+  GraceUiGlyphTable italic_table{};
+  italic_table.size = sizeof italic_table;
+  const GraceUiStatus italic_glyphs =
+      italic_status == GRACEUI_OK ? table->glyph_table(verse.answer.consumer, italic_id, &italic_table) : GRACEUI_FAULT;
+  check(!italic.empty() && verse.status == GRACEUI_OK && italic_status == GRACEUI_OK && italic_glyphs == GRACEUI_OK &&
+            std::fabs(italic_table.pixel_height - std::round(30.0f * 720.0f / 1080.0f)) < 0.05f &&
+            italic_table.glyph_count >= 95,
+        "display: the italic face",
+        "fonts\\EBGaramond-Italic.ttf beside graceui.dll (%zu bytes) registered as a scaled face of 30 px: %s; its glyph "
+        "table %s, %u glyphs baked at %.2f px",
+        italic.size(), status_name(italic_status), status_name(italic_glyphs), italic_table.glyph_count,
+        italic_table.pixel_height);
 
   // 4. ui.scale changed in the menu (1.25 to 1.30): one event, the faces' scale as they were baked.
   press(window, VK_F5, kScanF5);
@@ -9116,6 +9638,15 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"copies") {
     std::printf("-- scenario: two copies asked at once\n");
     run_copies(dll);
+  } else if (scenario == L"menu-pad") {
+    std::printf("-- scenario: the menu by pad alone (D242)\n");
+    run_menu_pad(dll);
+  } else if (scenario == L"copy-beside-mod") {
+    std::printf("-- scenario: a mod of EldenNet's kind beside a second copy\n");
+    run_copy_beside_mod(dll, false);
+  } else if (scenario == L"copy-beside-mod-reversed") {
+    std::printf("-- scenario: a mod of EldenNet's kind on the other copy, the game's folder's idling\n");
+    run_copy_beside_mod(dll, true);
   } else if (scenario == L"found-by-scan") {
     std::printf("-- scenario: the example finds a renamed copy\n");
     run_found_by_scan(dll);
@@ -9279,11 +9810,16 @@ int wmain(int argc, wchar_t** argv) {
         check(child == 0, name, "its process ended with %d", child);
       };
       for (const wchar_t* child_scenario :
-           {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
+           {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"copy-beside-mod", L"copy-beside-mod-reversed",
+            L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-focus-ring", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-focus-ring", L"menu-pad", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
             L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake", L"heap-guard", L"heap-guard-off"}) {
         run(child_scenario, dll, this_program());
+        if (std::wstring_view(child_scenario) == L"copy-beside-mod-reversed") {
+          DeleteFileW((folder_of_this_program() + L"GraceUI\\graceui.dll").c_str());  // its GraceUI\ copy (D244)
+          RemoveDirectoryW((folder_of_this_program() + L"GraceUI").c_str());
+        }
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.
       run(L"pages", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());

@@ -63,13 +63,13 @@ fill    ground.2      272, 540 1600x140  r4 clip1
 stroke  rule          272, 540 1600x140  r4 w1 clip1
 text    gold          292, 556   54x16   clip1 glyphs 7 "Related"
 line    rule          292, 580 1560x1    clip1
-text    ink.hi        292, 584   60x22   clip1 glyphs 8 "Overview"
-text    ink.mute      812, 586  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
-text    gold         1836, 584    8x22   clip1 glyphs 1 "→"
+text    ink.hi        304, 591   60x22   clip1 glyphs 8 "Overview"
+text    ink.mute      812, 592  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
+text    gold         1824, 591    8x22   clip1 glyphs 1 "→"
 line    rule          292, 624 1560x1    clip1
-text    ink.hi        292, 628   60x22   clip1 glyphs 8 "Festival"
-text    ink.mute      812, 630  243x20   clip1 glyphs 31 "Festival lights, in a later version."
-text    gold         1836, 628    8x22   clip1 glyphs 1 "→"
+text    ink.hi        304, 635   60x22   clip1 glyphs 8 "Festival"
+text    ink.mute      812, 636  243x20   clip1 glyphs 31 "Festival lights, in a later version."
+text    gold         1824, 635    8x22   clip1 glyphs 1 "→"
 line    rule          240,1044 1680x1   
 text    ink.faint     272,1052  256x20   glyphs 24 "Enter  Toggle    R  Reset    Esc  Back"
 stroke  gold.hi      1810, 263   44x26   r4 w2 clip1

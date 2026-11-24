@@ -54,13 +54,13 @@ fill    ground.2      340, 646 1540x175  r5 clip1
 stroke  rule          340, 646 1540x175  r5 w1 clip1
 text    gold          365, 666   67x20   clip1 glyphs 7 "Related"
 line    rule          365, 696 1490x1    clip1
-text    ink.hi        365, 701   66x28   clip1 glyphs 7 "Hotkeys"
-text    ink.mute      862, 704  515x25   clip1 glyphs 52 "The menu's key, and every mod's hotkeys with their conflicts."
-text    gold         1835, 701    9x28   clip1 glyphs 1 "→"
+text    ink.hi        380, 710   66x28   clip1 glyphs 7 "Hotkeys"
+text    ink.mute      862, 711  515x25   clip1 glyphs 52 "The menu's key, and every mod's hotkeys with their conflicts."
+text    gold         1820, 710    9x28   clip1 glyphs 1 "→"
 line    rule          365, 751 1490x1    clip1
-text    ink.hi        365, 756  112x28   clip1 glyphs 11 "Browser view"
-text    ink.mute      862, 759  953x25   clip1 glyphs 92 "The menu in a browser on this PC and on devices at home: its address, the browsers connected and the devices paired."
-text    gold         1835, 756    9x28   clip1 glyphs 1 "→"
+text    ink.hi        380, 765  112x28   clip1 glyphs 11 "Browser view"
+text    ink.mute      862, 766  937x25   clip1 glyphs 90 "The menu in a browser on this PC and on devices at home: its address, the browsers connected and the devices paired."
+text    gold         1820, 765    9x28   clip1 glyphs 1 "→"
 line    rule          300,1035 1620x1   
 text    ink.faint     340,1045  481x25   glyphs 34 "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back"
 stroke  gold.hi      1502, 266  356x41   r5 w3 clip1

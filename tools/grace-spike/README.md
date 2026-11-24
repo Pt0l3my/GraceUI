@@ -113,4 +113,8 @@ window, its thread's active window and the keyboard's focus at that moment, then
 lost, the game activated, deactivated); and `free_downs`: the presses that reached the game while no one held input,
 as DirectInput read them (keys, buttons) and as window messages (keys, buttons). `report.py` lists the state lines on
 which the window was not in front or had no focus, and the counts. If a press did not register, note roughly when: a
-state line near it says whether the window was in front and whether the game read the press.
+state line near it says whether the window was in front and whether the game read the press. Also since 0.2.34
+(D239): `stall_max_us` and `stalls_over`, each input detour's longest call and its calls over 2 ms and 8 ms;
+`poll_gaps`, the longest gaps between the game's DirectInput reads of the keyboard and of the mouse and the gaps over
+100 ms (a press shorter than such a gap can be lost; loading screens make long gaps too); `guard_in_detour_us`; and
+`heap_check_us`, the heap guard's last and longest whole check.

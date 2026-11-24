@@ -19,7 +19,9 @@
 #include <dxgi1_4.h>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <cwchar>
 
 #include "MinHook.h"
@@ -998,6 +1000,129 @@ bool installed_hook(std::uint32_t index, const char*& name, const char*& module)
 }
 
 std::uint32_t present_prologue() noexcept { return g_present_prologue.load(std::memory_order_relaxed); }
+
+namespace {
+
+static_assert(sizeof(void*) == 8, "the jumps followed are x64's");
+
+// Whether `size` bytes from `at` are committed and readable now, across regions if need be (D240).
+bool readable(std::uintptr_t at, std::size_t size) noexcept {
+  constexpr DWORD kReadable = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ |
+                              PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+  while (size > 0) {
+    MEMORY_BASIC_INFORMATION info{};
+    // SAFETY: VirtualQuery takes any address and only describes the region that holds it.
+    if (VirtualQuery(reinterpret_cast<const void*>(at), &info, sizeof info) != sizeof info ||
+        info.State != MEM_COMMIT || (info.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0 ||
+        (info.Protect & kReadable) == 0) {
+      return false;
+    }
+    // SAFETY: the region's base as a number, for the arithmetic of its end only.
+    const std::uintptr_t end = reinterpret_cast<std::uintptr_t>(info.BaseAddress) + info.RegionSize;
+    const std::size_t here = end - at < size ? end - at : size;
+    at += here;
+    size -= here;
+  }
+  return true;
+}
+
+template <typename T>
+T read_at(std::uintptr_t at) noexcept {
+  T value{};
+  // SAFETY: `at` was found readable for these bytes just before; code is read as MinHook itself reads it.
+  std::memcpy(&value, reinterpret_cast<const void*>(at), sizeof value);
+  return value;
+}
+
+// Follows the jumps at a function's entry, at most four, of the forms starts_with_jump knows but the push and ret, and
+// answers where they end; `through` says whether the chain reached `detour` (a detour behind a linker's thunk counts).
+std::uintptr_t follow(std::uintptr_t at, std::uintptr_t detour, std::uint32_t& jumps, bool& through) noexcept {
+  jumps = 0;
+  through = detour != 0 && at == detour;
+  for (int step = 0; step < 4 && !through && readable(at, 13); ++step) {
+    const auto b0 = read_at<std::uint8_t>(at);
+    const auto b1 = read_at<std::uint8_t>(at + 1);
+    std::uintptr_t next = 0;
+    if (b0 == 0xE9) {  // jmp rel32
+      next = at + 5 + static_cast<std::uintptr_t>(static_cast<std::intptr_t>(read_at<std::int32_t>(at + 1)));
+    } else if (b0 == 0xEB) {  // jmp rel8: MinHook's short jump to the five bytes above a function too short to patch
+      next = at + 2 + static_cast<std::uintptr_t>(static_cast<std::intptr_t>(static_cast<std::int8_t>(b1)));
+    } else if (b0 == 0xFF && b1 == 0x25) {  // jmp [rip+disp32]: MinHook's relay, an import's thunk
+      const std::uintptr_t slot =
+          at + 6 + static_cast<std::uintptr_t>(static_cast<std::intptr_t>(read_at<std::int32_t>(at + 2)));
+      if (!readable(slot, 8)) {
+        break;
+      }
+      next = read_at<std::uintptr_t>(slot);
+    } else if ((b0 == 0x48 && b1 == 0xB8 && read_at<std::uint8_t>(at + 10) == 0xFF &&
+                read_at<std::uint8_t>(at + 11) == 0xE0) ||  // mov rax, imm64; jmp rax
+               (b0 == 0x49 && b1 == 0xBB && read_at<std::uint8_t>(at + 10) == 0x41 &&
+                read_at<std::uint8_t>(at + 11) == 0xFF && read_at<std::uint8_t>(at + 12) == 0xE3)) {  // mov r11
+      next = read_at<std::uintptr_t>(at + 2);
+    } else {
+      break;
+    }
+    at = next;
+    ++jumps;
+    through = detour != 0 && at == detour;
+  }
+  return at;
+}
+
+// The module that holds `at`, answered as its handle, with its base name, UTF-8, in `out`; 0 and "" if no module does
+// (memory of no image, or none at all).
+std::uintptr_t module_of(std::uintptr_t at, char* out, std::uint32_t capacity) noexcept {
+  out[0] = '\0';
+  HMODULE module = nullptr;
+  // SAFETY: GetModuleHandleExW's FROM_ADDRESS form takes the address in its name argument's type, and only finds the
+  // module by it.
+  if (at == 0 || !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                     reinterpret_cast<LPCWSTR>(at), &module)) {
+    return 0;
+  }
+  // SAFETY: a module's handle is its base address; answered as a number, for a test to compare with its own handle.
+  const auto base = reinterpret_cast<std::uintptr_t>(module);
+  constexpr DWORD kUnits = 1024;
+  wchar_t path[kUnits];
+  const DWORD length = GetModuleFileNameW(module, path, kUnits);
+  if (length == 0 || length >= kUnits) {
+    return base;
+  }
+  const wchar_t* name = path;
+  for (DWORD i = 0; i < length; ++i) {
+    name = path[i] == L'\\' || path[i] == L'/' ? path + i + 1 : name;
+  }
+  if (WideCharToMultiByte(CP_UTF8, 0, name, -1, out, static_cast<int>(capacity), nullptr, nullptr) <= 0) {
+    out[0] = '\0';  // too long for `capacity`: no name rather than part of one
+  }
+  return base;
+}
+
+}  // namespace
+
+bool hook_lead(std::uint32_t index, bool& here, std::uint32_t& jumps, std::uintptr_t& base, char* module,
+               std::uint32_t capacity) noexcept {
+  if (capacity == 0 || index >= static_cast<std::uint32_t>(g_installed_count.load(std::memory_order_acquire))) {
+    return false;
+  }
+  const Hook& hook = g_installed[index];
+  std::uintptr_t end = 0;
+  if (hook.name == HookName::window_procedure) {
+    const void* procedure = nullptr;
+    if (!hooks_input::window_lead(procedure, here)) {
+      here = false;
+    }
+    jumps = 0;
+    // SAFETY: the procedure's address as a number, to find its module.
+    end = reinterpret_cast<std::uintptr_t>(procedure);
+  } else {
+    // SAFETY: the hook's target and detour as numbers: code addresses MinHook was given, read for their jumps only.
+    end = follow(reinterpret_cast<std::uintptr_t>(hook.target), reinterpret_cast<std::uintptr_t>(hook.detour), jumps,
+                 here);
+  }
+  base = module_of(end, module, capacity);
+  return true;
+}
 #endif
 
 }  // namespace grace::host::hooks

@@ -70,6 +70,8 @@ constexpr DWORD kCheckLeastMs = 100;
 constexpr DWORD kCheckMostMs = 600000;
 constinit std::atomic<DWORD> g_check_period{kCheckDefaultMs};
 constinit std::atomic<std::uint64_t> g_last_check{0};  // GetTickCount64 at the last whole check
+constinit std::atomic<std::uint64_t> g_check_last_us{0};  // D239: the last whole check's time, and the longest
+constinit std::atomic<std::uint64_t> g_check_max_us{0};
 
 // The first breach of the session, raised: written once, then published.
 constinit std::atomic<bool> g_breach_taken{false};
@@ -165,6 +167,19 @@ void on_breach(const Found& found) noexcept {
   t_reporting = false;  // reached only if a handler resumed it, which a noncontinuable exception refuses
 }
 
+// D239: the guard's time inside a detour on the game's thread, its longest kept.
+void note_guard_in_detour(std::int64_t before) noexcept {
+  LARGE_INTEGER now{};
+  LARGE_INTEGER frequency{};
+  QueryPerformanceCounter(&now);
+  QueryPerformanceFrequency(&frequency);
+  if (frequency.QuadPart > 0 && now.QuadPart > before) {
+    grace::host::counters::raise_max(grace::host::counters::guard_in_detour_max_ns,
+                                     static_cast<std::uint64_t>((now.QuadPart - before) * 1'000'000'000 /
+                                                                frequency.QuadPart));
+  }
+}
+
 // The block's maker: `caller`, the return address of operator new (or of Dear ImGui's allocator), and the two frames
 // above it on the stack. The stack is read from here and `caller` found in it, so that neither an inlined operator new
 // nor a tail call into this function can shift the frames; if it is not found, `caller` alone is kept.
@@ -189,7 +204,15 @@ GU_NOINLINE void* guarded_alloc(std::size_t size, const void* caller) noexcept {
     }
   }
   const void* const (&kept)[kMakerFrames] = maker;
-  return g_guard.allocate(size, kept);
+  if (!t_counting) {
+    return g_guard.allocate(size, kept);
+  }
+  // Inside a detour on the game's thread (D239): how long the guard kept it, its lock included.
+  LARGE_INTEGER before{};
+  QueryPerformanceCounter(&before);
+  void* block = g_guard.allocate(size, kept);
+  note_guard_in_detour(before.QuadPart);
+  return block;
 }
 
 void guarded_free(void* block) noexcept {
@@ -203,7 +226,15 @@ void guarded_free(void* block) noexcept {
     std::free(block);
     return;
   }
-  on_breach(g_guard.release(block));
+  if (!t_counting) {
+    on_breach(g_guard.release(block));
+    return;
+  }
+  LARGE_INTEGER before{};
+  QueryPerformanceCounter(&before);
+  const Found found = g_guard.release(block);
+  note_guard_in_detour(before.QuadPart);
+  on_breach(found);
 }
 
 void fill_found(const Found& found, GraceUiTestHeapFound& out) noexcept {
@@ -261,7 +292,18 @@ void check_heap_when_due() noexcept {
   if (last != 0 && now - last < g_check_period.load(std::memory_order_relaxed)) {
     return;
   }
+  LARGE_INTEGER before{};
+  LARGE_INTEGER after{};
+  LARGE_INTEGER frequency{};
+  QueryPerformanceCounter(&before);
   on_breach(g_guard.check_all());
+  QueryPerformanceCounter(&after);
+  QueryPerformanceFrequency(&frequency);
+  if (frequency.QuadPart > 0) {
+    const auto us = static_cast<std::uint64_t>((after.QuadPart - before.QuadPart) * 1'000'000 / frequency.QuadPart);
+    g_check_last_us.store(us, std::memory_order_relaxed);
+    grace::host::counters::raise_max(g_check_max_us, us);  // D239: a whole check's time, on GraceUI's thread
+  }
   g_last_check.store(GetTickCount64(), std::memory_order_relaxed);
 }
 
@@ -280,6 +322,8 @@ void fill_heap_guard(GraceUiTestHeapGuard& out) noexcept {
   out.blocks_checked = stats.blocks_checked;
   out.breaches = stats.breaches;
   out.last_check_ms = g_last_check.load(std::memory_order_relaxed);
+  out.check_last_us = g_check_last_us.load(std::memory_order_relaxed);
+  out.check_max_us = g_check_max_us.load(std::memory_order_relaxed);
   if (g_breach_published.load(std::memory_order_acquire)) {
     fill_found(g_breach, out.breach);
   }

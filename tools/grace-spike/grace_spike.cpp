@@ -844,6 +844,15 @@ void write_state(const Report& report, const Counters& counters) {
       .nums("window_focus", {in.foreground, in.active, in.has_focus, in.focus_gained, in.focus_lost, in.app_active,
                              in.app_inactive})
       .nums("free_downs", {in.free_dinput_keys, in.free_dinput_buttons, in.free_window_keys, in.free_window_buttons})
+      // D239: the input detours' longest calls (us: window, DirectInput, XInput) and their calls over 2 ms and 8 ms;
+      // the longest gaps between a thread's DirectInput reads (ms: keyboard, mouse) and those over 100 ms; the guard's
+      // longest time inside a detour (us).
+      .nums("stall_max_us", {in.window_max_us, in.dinput_max_us, in.xinput_max_us})
+      .nums("stalls_over", {in.window_over_2ms, in.dinput_over_2ms, in.xinput_over_2ms, in.window_over_8ms,
+                            in.dinput_over_8ms, in.xinput_over_8ms})
+      .nums("poll_gaps", {in.keyboard_gap_max_ms, in.mouse_gap_max_ms, in.keyboard_gaps_over_100ms,
+                          in.mouse_gaps_over_100ms})
+      .num("guard_in_detour_us", in.guard_in_detour_max_us)
       .num("menu_open", menu.open)
       .num("menu_scale_x100", static_cast<std::uint64_t>(menu.scale * 100.0f + 0.5f))
       .num("ui_scale_x100", counters.ui_scale_x100())
@@ -863,6 +872,7 @@ void write_state(const Report& report, const Counters& counters) {
       // D235: live blocks and bytes, kept after their free, damaged, whole checks and breaches (0s when not read).
       line.nums("heap", {guard.live_blocks, guard.live_bytes, guard.quarantined_blocks, guard.damaged_blocks,
                          guard.checks, guard.breaches})
+          .nums("heap_check_us", {guard.check_last_us, guard.check_max_us})  // D239
           .num("heap_read", guard.stats_read)
           .word("heap_breach", breach_word(guard.breach.breach));
     }

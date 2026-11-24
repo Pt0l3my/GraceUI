@@ -46,6 +46,12 @@ int windows_filtered() noexcept;
 // A pad's state as an XInput read would give it, through the same filter as the detour's (a harness has no pad).
 void test_pad(std::uint32_t user, std::uint16_t buttons) noexcept;
 std::uint16_t test_pad_read(std::uint32_t user, std::uint16_t buttons, std::uint32_t& packet) noexcept;
+// A whole pad, its triggers and sticks too (the menu's right stick, D242).
+void test_pad_state(std::uint32_t user, std::uint16_t buttons, std::uint8_t left_trigger, std::uint8_t right_trigger,
+                    std::int16_t left_x, std::int16_t left_y, std::int16_t right_x, std::int16_t right_y) noexcept;
+// The active window's procedure as GetWindowLongPtr answers it now, and whether it is GraceUI's filter (D240); false
+// with no window filtered.
+bool window_lead(const void*& procedure, bool& ours) noexcept;
 #endif
 
 // Pins the module that holds `address`, so that it is never unloaded under a hook (GraceUI never unhooks, D107).

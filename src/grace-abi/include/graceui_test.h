@@ -213,6 +213,24 @@ typedef struct GraceUiTestInput {
   uint32_t free_dinput_buttons; /* a mouse button likewise */
   uint32_t free_window_keys;    /* WM_KEYDOWN and WM_SYSKEYDOWN, repeats left out */
   uint32_t free_window_buttons; /* WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN and WM_XBUTTONDOWN */
+  /* Appended for the same (D239). Each input detour's longest call so far (its own work, in microseconds), and its
+   * calls over 2 ms and over 8 ms: */
+  uint32_t window_max_us;
+  uint32_t dinput_max_us;
+  uint32_t xinput_max_us;
+  uint32_t window_over_2ms;
+  uint32_t dinput_over_2ms;
+  uint32_t xinput_over_2ms;
+  uint32_t window_over_8ms;
+  uint32_t dinput_over_8ms;
+  uint32_t xinput_over_8ms;
+  /* The longest gap between one thread's DirectInput reads of the keyboard, and of the mouse, in ms (the game's polls;
+   * loading screens and a window behind others make long ones too), and the gaps over 100 ms: */
+  uint32_t keyboard_gap_max_ms;
+  uint32_t mouse_gap_max_ms;
+  uint32_t keyboard_gaps_over_100ms;
+  uint32_t mouse_gaps_over_100ms;
+  uint32_t guard_in_detour_max_us; /* the heap guard's longest time inside a detour, its lock included (0: never) */
 } GraceUiTestInput;
 
 /* request_input (D77): fills *out; answers 1, or 0 if `out` is null. */
@@ -227,6 +245,10 @@ GRACEUI_API void GraceUI_Test_SetCaret(int32_t x, int32_t y, int32_t height);
 GRACEUI_API void GraceUI_Test_SetCodePage(uint32_t code_page);
 /* Pad `user`'s buttons (XINPUT_GAMEPAD_*) as an XInput read gives them, through the detour's own filter (D176). */
 GRACEUI_API void GraceUI_Test_Pad(uint32_t user, uint32_t buttons);
+/* A whole pad as an XInput read gives it, through the same filter: its buttons, its triggers (0 to 255) and its sticks
+ * (-32768 to 32767, up and right positive), as XINPUT_GAMEPAD holds them (the menu's right stick, D242). */
+GRACEUI_API void GraceUI_Test_PadState(uint32_t user, uint32_t buttons, uint32_t left_trigger, uint32_t right_trigger,
+                                       int32_t left_x, int32_t left_y, int32_t right_x, int32_t right_y);
 /* The same with the read's packet number in *packet: answers the buttons the game then sees, and leaves in *packet the
  * packet number it reads (the pad chords' steps, D204). */
 GRACEUI_API uint32_t GraceUI_Test_PadRead(uint32_t user, uint32_t buttons, uint32_t* packet);
@@ -327,9 +349,14 @@ typedef struct GraceUiTestMenu {
   char focused[96];     /* the focused element, as grace-view names it ("setting:ui.scale") */
   float baked_scale;    /* the effective scale the menu's faces were baked at, at warm-up; 0 if they were left out */
   uint32_t focus_shown; /* 1 while the focus ring is drawn: after a key or the pad, until the mouse (G42) */
+  /* Appended for pad mode (D242): */
+  uint32_t pad_mode;    /* 1 while the key hints are the pad's: after the pad, until a key or the mouse */
+  uint32_t hints_shown; /* 1 while the key hints are drawn (View on a pad turns them off and on) */
+  char footer[160];     /* the footer's words as drawn: "A  Toggle    X  Reset    B  Back" in pad mode; "" hidden */
 } GraceUiTestMenu;
 
-/* Fills *out (out->size set by the caller); answers 1, or 0 if the size is too small. */
+/* Fills *out as far as out->size reaches (a caller built against an older header gets the fields it knows); answers 1,
+ * or 0 if the size is smaller than GraceUI 0.2.33's struct, which ended at focus_shown. */
 GRACEUI_API uint32_t GraceUI_Test_GetMenu(GraceUiTestMenu* out);
 /* A setting of GraceUI's own space as JSON text ("1.05", "\"clear\""), NUL-terminated; answers its length, or 0 before
  * GraceUI's own thread has loaded its space (at its first wake after the first request) or for no such key. One store
@@ -420,6 +447,8 @@ typedef struct GraceUiTestHeapGuard {
   uint64_t last_check_ms;     /* GetTickCount64 at the last whole check on GraceUI's thread, 0 before the first */
   GraceUiTestHeapFound breach; /* the session's first breach, the one raised */
   GraceUiTestHeapFound probe;  /* the last probe's (GraceUI_Test_HeapGuardProbe) */
+  uint64_t check_last_us;      /* the last whole check's time on GraceUI's thread (D239), and the longest */
+  uint64_t check_max_us;
 } GraceUiTestHeapGuard;
 
 /* Fills *out (out->size set by the caller); answers 1, or 0 if the size is too small. It never waits, so an exception
@@ -430,6 +459,24 @@ GRACEUI_API uint32_t GraceUI_Test_GetHeapGuard(GraceUiTestHeapGuard* out);
  * guard found (0 if none): recorded as the probe's and not raised, unless raise is 1, when it ends the process as a real
  * breach does. */
 GRACEUI_API uint32_t GraceUI_Test_HeapGuardProbe(uint32_t kind, uint32_t raise);
+
+/* ---- One hook holder in the process (EldenNet's S10.3.d, invariant 16, D240). */
+
+#define GRACEUI_TEST_MODULE_NAME_MAX 63
+
+typedef struct GraceUiTestHookLead {
+  uint32_t size;       /* set by the caller to sizeof(GraceUiTestHookLead) */
+  uint32_t leads_here; /* 1 if the function's entry leads now to this copy's detour (the window procedure: its filter) */
+  uint32_t jumps;      /* jumps followed from the entry: MinHook's makes 2 (its jump, then its relay's) */
+  uint32_t reserved;
+  uint64_t module_base; /* the module the entry leads into, as its HMODULE (a copy's own, to compare); 0 for none */
+  char module[GRACEUI_TEST_MODULE_NAME_MAX + 1]; /* its base name, UTF-8; "" for none */
+} GraceUiTestHookLead;
+
+/* Where installed hook `index` (GraceUI_Test_GetHookName's order) leads now: the function's first instructions read
+ * and each jump followed, at most four, the window procedure's as GetWindowLongPtr answers it. Fills *out (out->size set
+ * by the caller); answers 1, or 0 past the last hook (an idle copy has none) or if the size is too small. */
+GRACEUI_API uint32_t GraceUI_Test_GetHookLead(uint32_t index, GraceUiTestHookLead* out);
 
 #ifdef __cplusplus
 }

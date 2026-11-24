@@ -124,13 +124,13 @@ fill    ground.2      736,1474 1136x140  r4 clip1
 stroke  rule          736,1474 1136x140  r4 w1 clip1
 text    gold          756,1490   54x16   clip1 glyphs 7 "Related"
 line    rule          756,1514 1096x1    clip1
-text    ink.hi        756,1518   60x22   clip1 glyphs 8 "Overview"
-text    ink.mute     1121,1520  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
-text    gold         1836,1518    8x22   clip1 glyphs 1 "→"
+text    ink.hi        768,1525   60x22   clip1 glyphs 8 "Overview"
+text    ink.mute     1121,1526  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
+text    gold         1824,1525    8x22   clip1 glyphs 1 "→"
 line    rule          756,1558 1096x1    clip1
-text    ink.hi        756,1562   22x22   clip1 glyphs 3 "Log"
-text    ink.mute     1121,1564  418x20   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
-text    gold         1836,1562    8x22   clip1 glyphs 1 "→"
+text    ink.hi        768,1569   22x22   clip1 glyphs 3 "Log"
+text    ink.mute     1121,1570  418x20   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
+text    gold         1824,1569    8x22   clip1 glyphs 1 "→"
 line    rule          240,1044 1680x1   
 text    ink.faint     272,1052  162x20   glyphs 16 "Enter  Open    Esc  Back"
 stroke  gold.hi       850, 159   81x30   r4 w2 clip1

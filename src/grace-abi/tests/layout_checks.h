@@ -208,7 +208,7 @@ GU_AT(GraceUiEvent, ui_scale_default, 116);
 GU_AT(GraceUiEvent, scale, 120);
 GU_AT(GraceUiEvent, content_scale, 124);
 GU_AT(GraceUiEvent, faces_scale, 128);
-GU_AT(GraceUiEvent, reserved3, 132);
+GU_AT(GraceUiEvent, hotkey_by, 132);  /* reserved3 until ABI 1.7 (D243) */
 GU_AT(GraceUiEvent, file, 136);
 GU_AT(GraceUiEvent, file_capacity, 144);
 GU_AT(GraceUiEvent, file_length, 152);
@@ -260,7 +260,7 @@ GU_AT(GraceUiApi1, describe_hotkey, 184);
 GU_AT(GraceUiApi1, wake_event, 192);
 
 /* The numbers a mod compiles in. */
-GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 6u, "ABI 1.6");
+GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 7u, "ABI 1.7");
 GU_ASSERT(GRACEUI_UPLOAD_MAX == 32u * 1024u * 1024u, "an upload's 32 MiB (D226)");
 GU_SIZE(GraceUiHotkeyBinding, 104); /* ABI 1.4 (D210) */
 GU_AT(GraceUiHotkeyBinding, key_text, 24);

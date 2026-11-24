@@ -186,6 +186,7 @@ bool Hotkeys::take(std::uint16_t owner, Press& out) noexcept {
     if (presses_of(word) != 0) {
       out.id = id_of(i, generation_of(word));
       out.count = presses_of(word);
+      out.by = by_of(word);
       unlock();
       return true;
     }
@@ -207,7 +208,7 @@ std::uint32_t Hotkeys::match(Key key, std::uint8_t modifiers) const noexcept {
   return 0;
 }
 
-bool Hotkeys::pressed(std::uint32_t id) noexcept {
+bool Hotkeys::pressed(std::uint32_t id, std::uint8_t by) noexcept {
   const std::uint32_t index = (id & 0xFFu) - 1;
   if ((id & 0xFFu) == 0 || index >= kMaxHotkeys) {
     return false;
@@ -220,11 +221,13 @@ bool Hotkeys::pressed(std::uint32_t id) noexcept {
     if (state_of(word) == free || generation_of(word) != (id >> 8)) {
       return false;
     }
-    if (presses_of(word) == 0xFFFFFFFFu) {
-      return true;  // as many as the count holds: more change nothing a mod does
+    const std::uint64_t mark = std::uint64_t{static_cast<std::uint8_t>(by & (kByKey | kByChord))} << 62;
+    // As many as the count holds: more change nothing a mod does, but what made them is still said.
+    const std::uint64_t next = presses_of(word) == kMaxPresses ? word | mark : (word + (std::uint64_t{1} << 32)) | mark;
+    if (next == word) {
+      return true;
     }
-    if (slot.compare_exchange_weak(word, word + (std::uint64_t{1} << 32), std::memory_order_acq_rel,
-                                   std::memory_order_acquire)) {
+    if (slot.compare_exchange_weak(word, next, std::memory_order_acq_rel, std::memory_order_acquire)) {
       return true;
     }
   }

@@ -56,9 +56,43 @@ inline constexpr std::uint32_t kInputCostKinds = 3;
 inline constinit std::atomic<std::uint32_t> input_costs_ns[kInputCostKinds][kCostSamples]{};
 inline constinit std::atomic<std::uint64_t> input_cost_count[kInputCostKinds]{};
 
+// D239: each kind's longest call since load (a maximum, which a ring of samples and its p99 would lose), and its calls
+// over 2 ms and over 8 ms.
+inline constinit std::atomic<std::uint64_t> input_cost_max_ns[kInputCostKinds]{};
+inline constinit std::atomic<std::uint32_t> input_over_2ms[kInputCostKinds]{};
+inline constinit std::atomic<std::uint32_t> input_over_8ms[kInputCostKinds]{};
+
+inline void raise_max(std::atomic<std::uint64_t>& max, std::uint64_t value) noexcept {
+  std::uint64_t seen = max.load(std::memory_order_relaxed);
+  while (value > seen && !max.compare_exchange_weak(seen, value, std::memory_order_relaxed)) {
+  }
+}
+
 inline void record_input_cost(std::uint32_t kind, std::uint64_t ns) noexcept {
   const std::uint64_t n = input_cost_count[kind].fetch_add(1, std::memory_order_relaxed);
   input_costs_ns[kind][n % kCostSamples].store(clamp_ns(ns), std::memory_order_relaxed);
+  raise_max(input_cost_max_ns[kind], ns);
+  if (ns > 2'000'000) {
+    input_over_2ms[kind].fetch_add(1, std::memory_order_relaxed);
+  }
+  if (ns > 8'000'000) {
+    input_over_8ms[kind].fetch_add(1, std::memory_order_relaxed);
+  }
+}
+
+// D239: the longest gap between one thread's DirectInput reads of the keyboard, and of the mouse (the game's polls: a
+// press shorter than a late poll's gap is lost to a game that reads state), and the gaps over 100 ms; and the heap
+// guard's longest time inside a detour (its lock is the one thing of GraceUI's a detour could wait on).
+enum Poll : std::uint32_t { poll_keyboard, poll_mouse, kPollKinds };
+inline constinit std::atomic<std::uint64_t> poll_gap_max_us[kPollKinds]{};
+inline constinit std::atomic<std::uint32_t> poll_gaps_over_100ms[kPollKinds]{};
+inline constinit std::atomic<std::uint64_t> guard_in_detour_max_ns{0};
+
+inline void record_poll_gap(Poll kind, std::uint64_t us) noexcept {
+  raise_max(poll_gap_max_us[kind], us);
+  if (us > 100'000) {
+    poll_gaps_over_100ms[kind].fetch_add(1, std::memory_order_relaxed);
+  }
 }
 
 // What Dear ImGui received from the holder: the code points after each NewFrame, oldest first, and its state after the
