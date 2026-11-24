@@ -2727,3 +2727,28 @@ TEST_CASE("a form's prose field in game: the editor's prose well, several lines,
   CHECK(list.dump().find("\"Knows the tide and the wind both\"") != std::string::npos);
   CHECK(view.footer().find("Line") != std::string::npos);  // ↑ ↓ move by line in it
 }
+
+TEST_CASE("quick switches at registration: a switch's or a choice's shortcut by its key alone, or a session switch (D252)") {
+  const auto settings = test::decoded<grace::protocol::SettingsDescription>(test::space("demo").settings);
+  const auto demo = [] { return test::decoded<grace::protocol::SpacePages>(test::space("demo").pages); };
+  PageView view;
+  std::string why;
+  auto pages = demo();
+  REQUIRE(pages.quick);
+  CHECK(pages.quick->size() == 3);
+  CHECK(view.load(pages, settings, why));
+  pages = demo();
+  pages.quick->push_back(grace::protocol::QuickSwitch{.key = "lantern.keeper"});  // a text setting
+  CHECK_FALSE(view.load(pages, settings, why));
+  CHECK(why == "quick switch lantern.keeper is a shortcut to a switch or a choice of the space's, by its key alone");
+  pages = demo();
+  (*pages.quick)[2].command = "oil.order";  // a slow command
+  CHECK_FALSE(view.load(pages, settings, why));
+  CHECK(why.rfind("quick switch hush is a session switch", 0) == 0);
+  pages = demo();
+  (*pages.quick)[2].state->topic = "lantern.log";  // a stream
+  CHECK_FALSE(view.load(pages, settings, why));
+  pages = demo();
+  (*pages.quick)[2].home = "demo.nowhere";
+  CHECK_FALSE(view.load(pages, settings, why));
+}

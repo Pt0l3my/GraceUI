@@ -349,7 +349,8 @@
         "value": "14 min"
       }
     ],
-    "sentence": "The north lantern burns steady amber, with oil for about three hours."
+    "sentence": "The north lantern burns steady amber, with oil for about three hours.",
+    "hushed": false
   },
   "lantern.log": [
     {

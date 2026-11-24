@@ -14,10 +14,14 @@ name = "Demo space"
 settings_schema = 1
 commands = ["settings.set", "settings.reset", "lantern.trim", "lantern.clear_log", "keepers.dismiss", "keepers.ward",
             "keepers.hire", "keepers.dismiss_all", "oil.order", "note.check", "note.save", "note.reset", "note.restore",
-            "note.draft", "keepers.import", "report.part"]
+            "note.draft", "keepers.import", "report.part", "bell.hush"]
 slow_commands = ["oil.order", "note.draft"]  # the harbour store's oil and a drafted note: within 90 s (D216)
 file_commands = ["keepers.import"]  # a roster file, by the upload route from this PC alone (D226)
 sensitive_commands = ["keepers.import"]
+# The top bar's Quick switches (D252): the lantern on and its colour, as shortcuts to their homes; and the bell hushed
+# for this session, the space's own switch, never a setting, its state on lantern.status.
+quick = [{ key = "lantern.enabled" }, { key = "lantern.colour" },
+         { id = "hush", label = "Hush the bell for this session", command = "bell.hush", state = { topic = "lantern.status", field = "hushed" }, home = "demo.overview" }]
 
 [[topic]]
 id = "settings"
@@ -246,6 +250,7 @@ availability = "live"
 
 [[page]]
 id = "demo.overview"
+live = true  # its topics move by themselves: Live updates holds them (D252)
 category = "lanterns"
 name = "Overview"
 description = "The lantern at a glance: its flame, its oil and its last trim."
@@ -292,6 +297,7 @@ sections = [{ id = "keeper", title = "Keeper", blocks = [{ kind = "settings", ke
 
 [[page]]
 id = "demo.log"
+live = true  # its topics move by themselves: Live updates holds them (D252)
 category = "records"
 name = "Log"
 description = "What the lantern did, as it happens, and the keeper's journal."

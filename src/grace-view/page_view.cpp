@@ -484,6 +484,39 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       return false;
     }
   }
+  // The top bar's Quick switches (G45, D252), as the page lint checks them: a shortcut to a switch or a choice of the
+  // space's, by its key alone; or a session switch of the space's own, its command neither a settings, a file nor a slow
+  // command, its state a member of a state topic of the space's own, its home a page of the space's.
+  for (const protocol::QuickSwitch& q : pages.quick.value_or(std::vector<protocol::QuickSwitch>{})) {
+    if (q.key) {
+      const auto setting = std::find_if(settings.begin(), settings.end(),
+                                        [&](const protocol::Setting& one) { return one.key == *q.key; });
+      if (q.id || q.label || q.command || q.state || q.home || setting == settings.end() ||
+          (setting->type != protocol::SettingType::bool_ && setting->type != protocol::SettingType::choice)) {
+        why = "quick switch " + *q.key + " is a shortcut to a switch or a choice of the space's, by its key alone";
+        return false;
+      }
+      continue;
+    }
+    const auto state_topic = [&](const std::string& id) {
+      return id != "settings" && id != "space.state" &&
+             std::any_of(pages.topics.begin(), pages.topics.end(), [&](const protocol::TopicInfo& t) {
+               return t.id == id && t.shape == protocol::TopicShape::state && !t.family.value_or(false);
+             });
+    };
+    const bool session = q.id && q.label && !q.label->empty() && q.command && q.state && q.home &&
+                         usable(*q.command) && *q.command != "settings.set" && *q.command != "settings.reset" &&
+                         std::find(slow.begin(), slow.end(), *q.command) == slow.end() && state_topic(q.state->topic) &&
+                         name_ok(q.state->field) &&
+                         std::any_of(pages.pages.begin(), pages.pages.end(),
+                                     [&](const protocol::Page& p) { return p.id == *q.home; });
+    if (!session) {
+      why = "quick switch " + q.id.value_or("") + " is a session switch: an id, a label, a command of the space's own "
+            "(not a settings, file or slow command), its state a member of a state topic of the space's and its home a "
+            "page of the space's";
+      return false;
+    }
+  }
   const auto block_ok = [&](const protocol::Page& page, const protocol::PageBlock& block) {
     const std::string where = page.id + ": ";
     const bool table = block.kind == protocol::BlockKind::component && block.component == protocol::Component::table;

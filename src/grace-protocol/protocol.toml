@@ -11,7 +11,7 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 12 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 13 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
@@ -26,6 +26,7 @@ protocol = { major = 1, minor = 12 }  # 1.1 (D172): result.detail; a stream clea
                                      # 1.11 (G43): a table's or a master list's filter bar (D250)
                                      # 1.12 (G44): the document block, a form's prose field, the report preview's
                                      # command (D251)
+                                     # 1.13 (G45): a space's quick switches, and a page's live updates (D252)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -283,6 +284,24 @@ fields = [
   { name = "field", type = "string", max = 32, optional = true },
 ]
 
+[types.quick_state]
+doc = "A session switch's state (1.13, D252): a boolean at a member of a state topic of the space's"
+fields = [
+  { name = "topic", type = "id" },
+  { name = "field", type = "string", max = 32 },
+]
+
+[types.quick_switch]
+doc = "A quick switch (1.13, D252): a shortcut to a setting of the space's, a switch or a choice, by its key alone; or a session switch the space owns, which sends its command with {on} and shows the state the space publishes, named with the page it lives in"
+fields = [
+  { name = "key", type = "id", optional = true },
+  { name = "id", type = "id", optional = true },
+  { name = "label", type = "string", max = 64, optional = true },
+  { name = "command", type = "id", optional = true },
+  { name = "state", type = "type.quick_state", optional = true },
+  { name = "home", type = "id", optional = true },
+]
+
 [types.page_section]
 doc = "A section: a card with a label, an optional line, its blocks and an Advanced disclosure; a chip, a live status and actions of its own (D202)"
 fields = [
@@ -339,6 +358,7 @@ fields = [
   { name = "tabs", type = "list.type.page_tab", max = 8, optional = true },
   { name = "sections", type = "list.type.page_section", max = 32, optional = true },
   { name = "master", type = "type.page_master", optional = true },  # 1.5 (D215)
+  { name = "live", type = "bool", optional = true },  # 1.13 (D252): its topics move by themselves; Live updates holds them
 ]
 
 [types.category]
@@ -363,6 +383,7 @@ fields = [
   { name = "slow_commands", type = "list.id", max = 8, optional = true },  # 1.6 (D216): answered within 90 s, not 10
   { name = "sensitive_commands", type = "list.id", max = 16, optional = true },  # 1.8 (D221): from this PC alone, never a paired device
   { name = "file_commands", type = "list.id", max = 4, optional = true },  # 1.9 (D226): each takes one file by the upload route; each sensitive too
+  { name = "quick", type = "list.type.quick_switch", max = 12, optional = true },  # 1.13 (D252): the top bar's Quick switches
 ]
 
 # ---- Message kinds (§6.3). `from` is who sends it: page (a view: the browser or the in-game view), grace (GraceUI),

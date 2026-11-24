@@ -56,7 +56,7 @@ NUMERIC = {"integer", "number", "duration_s"}
 TRI_THIRDS = ("auto", "inherit")
 AVAILABILITY = re.compile(r"live|later|inert|check:[a-z0-9._-]{1,48}|version:\d+\.\d+|requires:[a-z0-9._/-]{1,64}")
 PAGE_FIELDS = ("id", "category", "name", "description", "help", "related", "increment", "tag", "actions", "tabs",
-               "sections", "master")
+               "sections", "master", "live")
 SETTING_FIELDS = ("key", "type", "default", "min", "max", "step", "unit", "choices", "choices_from", "third", "label", "help", "synonyms",
                   "home", "effect", "availability", "locked", "sensitive")
 
@@ -94,6 +94,8 @@ def documents(path, schema):
         space_pages["sensitive_commands"] = space["sensitive_commands"]  # D221
     if "file_commands" in space:
         space_pages["file_commands"] = space["file_commands"]  # D226
+    if "quick" in space:
+        space_pages["quick"] = space["quick"]  # D252
     settings = []
     for entry in source.get("setting", []):
         unknown = set(entry) - set(SETTING_FIELDS)
@@ -263,6 +265,41 @@ def lint(space_pages, description, fixtures, known_spaces):
             failures.append(f"{space}: category {c['id']} follows {foot}, at the rail's foot; the foot's categories "
                             f"come last (D248)")
 
+    # The top bar's Quick switches (G45, D252): each a shortcut to a switch or a choice of the space's, by its key
+    # alone; or a session switch of the space's own, its command sent {on}, its state a boolean member of a state topic
+    # of the space's, and the page it lives in.
+    quick = space_pages.get("quick", [])
+    for q in quick:
+        qwhere = f"{space}: quick switch {q.get('key') or q.get('id')}"
+        if "key" in q:
+            if set(q) != {"key"}:
+                failures.append(f"{qwhere}: a setting's shortcut names its key alone; its words and home are the "
+                                "setting's (D252)")
+            setting = settings.get(q["key"])
+            if setting is None or setting["type"] not in ("bool", "choice"):
+                failures.append(f"{qwhere}: names a switch or a choice of the space's settings (D252)")
+            continue
+        if set(q) != {"id", "label", "command", "state", "home"}:
+            failures.append(f"{qwhere}: a session switch has an id, a label, a command, a state and a home, and no "
+                            "key (D252)")
+            continue
+        name = q["command"]
+        if (name not in commands or name in ("settings.set", "settings.reset") or name in files or
+                name in space_pages.get("slow_commands", [])):
+            failures.append(f"{qwhere}: sends a command of the space's own, neither a settings, a file nor a slow "
+                            "command (D252)")
+        topic = q["state"].get("topic")
+        if (topic not in topics or topics[topic]["shape"] != "state" or topic in ("settings", SPACE_STATE) or
+                topic in families):
+            failures.append(f"{qwhere}: its state is on a state topic of the space's own, not a family (D252)")
+        if not FIELD_NAME.match(q["state"].get("field", "")):
+            failures.append(f"{qwhere}: its state field is a name (a-z, 0-9, _; 1 to 32)")
+        if q["home"] not in pages:
+            failures.append(f"{qwhere}: its home {q['home']} is not a page of the space's (D252)")
+        if not q["label"]:
+            failures.append(f"{qwhere}: has a label")
+    unique("quick switch", [q.get("key") or q.get("id") for q in quick], space)
+
     # 3 and 4: each page, its blocks and its settings.
     homed = {}
     for pid, p in pages.items():
@@ -285,6 +322,12 @@ def lint(space_pages, description, fixtures, known_spaces):
         sections = list(p.get("sections", []))
         for tab in p.get("tabs", []):
             sections += tab["sections"]
+        if p.get("live"):
+            # A live page (D252): something on it moves by itself, a topic a block draws or its master list's.
+            drawn = [b for sec in sections for b in sec["blocks"] + sec.get("advanced", [])
+                     if b.get("topic") not in (None, "settings")]
+            if not drawn and "master" not in p:
+                failures.append(f"{where}: a live page draws a topic of the space's, which Live updates holds (D252)")
         master = p.get("master")  # a master list, its detail the page's own tabs and sections (D215)
         if master is not None:
             mt = master.get("topic")
