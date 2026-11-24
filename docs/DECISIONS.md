@@ -1121,7 +1121,7 @@ on their titles and headings (G43's filter bar), as §1's "never a body" asks, r
 ## G45
 
 **The top bar's controls for a space, and tables read a page at a time** · *Open since 2026-11-24
-([proposal 0014](proposals/0014-top-bar-and-paging.md))*
+([proposal 0014](proposals/0014-top-bar-and-paging.md)) · Decided by the owner 2026-11-24, as recommended*
 
 **Question.** §4.2.3's Live updates, Journey and Quick switches are described as EldenNet's controls, but a mod's space
 has no way to declare them, and no table can show rows that a command answers a page at a time, as EldenNet's History
@@ -1144,3 +1144,10 @@ Start keeps waiting in game.
 
 **Follows from.** §4.2.3, §5.4, §6.5, §6.6; D15, D21, D41, D188, D215, D216, D219, D250; G16, G18, G20; EldenNet's
 PAGES §4.6.5 and §4.10.
+
+**Decision (2026-11-24).** (a), as recommended: all four, in two protocol minors. First the quick switches and a page's
+live updates, for EldenNet's 0.2 pages; then a space's scope and tables read a page at a time, for its 0.3 History, in
+formats agreed with EldenNet's session meanwhile (proposal 0014).
+
+**Owner's words.** Answering the question put to them in this session (its question dialog, 2026-11-24): "(a) All
+four, in two steps (Recommended)".
