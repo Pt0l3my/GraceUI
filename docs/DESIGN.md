@@ -1933,6 +1933,7 @@ in the entry with its date, and a later decision amends an earlier one by a note
 | [G40](DECISIONS.md#g40) | Should the menu close at an Alt+Tab? | Recommended: stay open, let go of the mouse and keys while away, take them again on the return where it was | Decided 2026-11-23: as recommended (built in 0.2.30, D233) |
 | [G41](DECISIONS.md#g41) | Should Tab move between elements? | Recommended: not in game (the menu and GraceUI's own panels); Tab still finishes a field and stays bindable; the browser view keeps the browser's Tab | Decided 2026-11-23: as recommended (built in 0.2.30, D233) |
 | [G42](DECISIONS.md#g42) | Should the menu's focus ring show while the player uses the mouse? | Recommended: as the browser view does, only after a key or the pad is used, gone when the mouse moves or clicks; the focus itself kept | Decided 2026-11-23: as recommended (built in 0.2.33, D237) |
+| [G43](DECISIONS.md#g43) | How should a table filter and sort? | Recommended: a table's own filter bar now, done in the view on the rows already published (filters on its columns, sort options, an optional search); paged history's filtering for 0.4, with its pages | Open since 2026-11-24 (proposal 0012) |
 
 ---
 

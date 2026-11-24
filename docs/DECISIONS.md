@@ -47,7 +47,8 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 - **2026-11-23.** G40 (the menu across an Alt+Tab: it stays open, lets go of the mouse and keys while the player is
   away, and takes them again on return) and G41 (Tab moves no focus in game; the browser view keeps the browser's Tab)
   raised by the owner from the first in-game run and decided the same day, as recommended.
-- **Open.** None.
+- **2026-11-24.** G43 (filtering and sorting a table) put with proposal 0012.
+- **Open.** G43.
 
 ## G1
 
@@ -1042,3 +1043,30 @@ key or the pad shows it on the focus, and the mouse's move or press puts it away
 return keeps what was. Only the ring changes: the hover tint, the footer's key hints and the focus itself are as before.
 
 **Owner's words.** Answering this question in the session: "After keys or pad (Recommended)".
+
+## G43
+
+**Filtering and sorting a table** · *Open since 2026-11-24 ([proposal 0012](proposals/0012-filtering-tables.md))*
+
+**Question.** EldenNet's PAGES puts a filter bar above the table of four pages: Requests (0.2), Named NPCs and
+Memories (0.3), and Events (0.4). §2.5 names a filter bar and a sortable table among the components, and the protocol
+has listed `filter_bar` since 1.0, but neither view draws one, and a table neither filters nor sorts. Three of the
+pages hold their rows in a state topic; Events reads a page at a time with `history.page`. **(a) A table's own filter
+bar now, paged history for 0.4** (recommended): a table block or a page's master list carries `filter_bar` (at most
+four filters on its columns, whose choices are the values its published rows hold; at most four sort options on a
+column or a hidden member of each row, with a direction; an optional search on named columns), done in the view on the
+rows already published, kept for the session, never sent to the space; Events' paged filtering is proposed with its
+pages. **(b) Both now**: the paged kind designed before a page uses it. **(c) The space filters**: every change is
+sent to the space, which publishes the filtered rows. **(d) Nothing yet.**
+
+**Recommendation.** (a): three of the four pages need only the view's filtering, which costs the space nothing and
+sends nothing anywhere; the paged kind is best designed with the pages that page.
+
+**What each answer changes.** (a): protocol 1.10's `filter_bar` on `page_block` and `page_master`, the page lint, both
+views, the demo space's pages as the example, and the tests and goldens; no change of the ABI. A `filter_bar` block on
+its own becomes a lint error that points to the table's field. (b): as (a), and `history.page`'s paging and filters as
+a table's mode. (c): a command for each change, and a filtering and sorting duty for every space. (d): nothing.
+
+**Follows from.** §2.5, §3.8, §4.2, §6.6; D21, D36, D186, D215; EldenNet's PAGES (Requests, Named NPCs, Memories,
+Events).
+
