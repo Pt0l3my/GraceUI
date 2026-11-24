@@ -1210,6 +1210,28 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("a stream's filter bar: its level filter and its search over the rows it holds, newest first (D257)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "records", "demo.log");
+      const log = page.locator("[data-section='log']");
+      await log.locator(".feed__row").first().waitFor();
+      const lines = async () => log.locator(".feed__line").allTextContents();
+      assert.equal((await lines())[0], "The flame guttered in a draught, then steadied.");  // newest first
+      assert.deepEqual(await log.locator("select[data-filter='level'] option").allTextContents(), ["All", "info", "warning"]);
+      await log.locator("select[data-filter='level']").selectOption("warning");
+      assert.deepEqual(await lines(), ["The flame guttered in a draught, then steadied."]);
+      await log.locator("select[data-filter='level']").selectOption("");
+      await log.locator(".filter-bar__search").fill("wick");
+      assert.deepEqual(await lines(), ["The wick was trimmed."]);
+      await log.locator(".filter-bar__search").fill("zz");
+      await log.locator(".filter-bar__none").waitFor();
+      assert.equal(await log.locator(".feed__row").count(), 0);
+    } finally {
+      await close();
+    }
+  });
+
   test("a space's foot categories sit at the rail's foot, under its rule, above GraceUI's own (D248)", async () => {
     const { page, close } = await fresh();
     try {

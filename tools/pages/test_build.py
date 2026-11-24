@@ -128,7 +128,13 @@ class Seeded(unittest.TestCase):
         self.expect("its master list: a sort option names its key", sp, desc, fx)
         sp, desc, fx = demo()
         page(sp, "demo.overview")["sections"][0]["blocks"][0]["filter_bar"] = {"sort": [{"key": "a", "label": "A"}]}
-        self.expect("a filter bar goes on a table, or on a page's master list", sp, desc, fx)
+        self.expect("a filter bar goes on a table, a stream or a page's master list", sp, desc, fx)
+        # A stream's bar (D257): filters and a search, never a sort.
+        sp, desc, fx = demo()
+        feed = next(b for sec in page(sp, "demo.log")["sections"] for b in sec["blocks"]
+                    if b.get("component") == "live_feed")
+        feed["filter_bar"]["sort"] = [{"key": "time", "label": "Time"}]
+        self.expect("a stream's filter bar has filters and a search, and no sort", sp, desc, fx)
         sp, desc, fx = demo()
         page(sp, "demo.overview")["sections"][0]["blocks"].append(
             {"kind": "component", "component": "filter_bar", "topic": "lantern.keepers"})

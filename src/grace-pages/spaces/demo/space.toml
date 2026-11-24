@@ -339,7 +339,7 @@ confirm = "The log's lines are removed. The journal is kept."
 [[page.sections]]
 id = "log"
 title = "Log"
-blocks = [{ kind = "component", component = "live_feed", topic = "lantern.log" }]
+blocks = [{ kind = "component", component = "live_feed", topic = "lantern.log", filter_bar = { filters = [{ column = "level", label = "Level" }], search = { columns = ["line"], label = "Find in the log" } } }]  # a stream's bar (D257)
 
 [[page.sections]]
 id = "journal"

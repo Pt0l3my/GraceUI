@@ -369,17 +369,20 @@
     {
       "seq": 1,
       "time": "19:02",
-      "line": "The lantern was lit."
+      "line": "The lantern was lit.",
+      "level": "info"
     },
     {
       "seq": 2,
       "time": "19:16",
-      "line": "The wick was trimmed."
+      "line": "The wick was trimmed.",
+      "level": "info"
     },
     {
       "seq": 3,
       "time": "19:40",
-      "line": "The flame guttered in a draught, then steadied."
+      "line": "The flame guttered in a draught, then steadied.",
+      "level": "warning"
     }
   ],
   "lantern.journal": [

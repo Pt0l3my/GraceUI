@@ -623,6 +623,7 @@ class PageView {
   };
   std::optional<bool> header_state(const protocol::PageAction& a) const;  // a header switch's state (D256)
   static bool has_drawer(const protocol::Json& table);  // a table with drawer columns (D256)
+  static bool is_stream(const protocol::PageBlock& block);  // a live feed or a log tail (D257)
   static std::string drawer_key(const protocol::Json& row, std::size_t index);
   std::map<std::string, std::string, std::less<>> drawer_open_;  // a table's open row drawer, by its key (D256)
   std::map<std::string, Paged, std::less<>> paged_;

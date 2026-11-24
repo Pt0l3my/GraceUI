@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 15,
+  "minor": 16,
   "categories": [
     {
       "id": "lanterns",
@@ -213,7 +213,21 @@
             {
               "kind": "component",
               "component": "live_feed",
-              "topic": "lantern.log"
+              "topic": "lantern.log",
+              "filter_bar": {
+                "filters": [
+                  {
+                    "column": "level",
+                    "label": "Level"
+                  }
+                ],
+                "search": {
+                  "columns": [
+                    "line"
+                  ],
+                  "label": "Find in the log"
+                }
+              }
             }
           ]
         },

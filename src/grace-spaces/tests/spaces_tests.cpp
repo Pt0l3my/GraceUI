@@ -451,6 +451,51 @@ TEST_CASE("the menu's side, with no server: the space listed, a watch, its state
   CHECK_FALSE(registry.game_state("demo", "settings", 0, body, rev));  // forgotten with the watch
 }
 
+TEST_CASE("a stream on the menu's side: its newest rows kept as {rows}, each with its seq; resent rows once; a clear (D257)") {
+  spaces::Registry registry;
+  const std::string pages = demo_pages();
+  const std::string settings = demo_settings();
+  std::string why;
+  REQUIRE(registry.add(kMod, "demo", demo_registration(pages, settings, spaces::kViewGame), why) == Status::ok);
+  registry.game_watch("demo", "lantern.log", true);
+  REQUIRE(poll(registry).kind == EventKind::watched);
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"rows","space":"demo","topic":"lantern.log","from_seq":1,"rows":[{"time":"19:02","line":"Lit."},{"time":"19:16","line":"Trimmed."}],"dropped":0})",
+                         why) == Status::ok);
+  Json body;
+  std::uint64_t rev = 0;
+  REQUIRE(registry.game_state("demo", "lantern.log", 0, body, rev));
+  REQUIRE(body["rows"].size() == 2);
+  CHECK(body["rows"][0]["seq"] == 1);
+  CHECK(body["rows"][1]["line"] == "Trimmed.");
+  const std::uint64_t first = rev;
+  // Sent again from the oldest for a new watcher, then a new row: each row once.
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"rows","space":"demo","topic":"lantern.log","from_seq":1,"rows":[{"time":"19:02","line":"Lit."},{"time":"19:16","line":"Trimmed."},{"time":"19:40","line":"Guttered."}],"dropped":0})",
+                         why) == Status::ok);
+  REQUIRE(registry.game_state("demo", "lantern.log", first, body, rev));
+  REQUIRE(body["rows"].size() == 3);
+  CHECK(body["rows"][2]["seq"] == 3);
+  // At most kGameStreamRows, the newest: three batches of a hundred (a batch's most).
+  for (int b = 0; b < 3; ++b) {
+    Json many = Json::array();
+    for (int i = 0; i < 100; ++i) {
+      many.push_back(Json::object({{"time", "20:00"}, {"line", "Row " + std::to_string(b * 100 + i)}}));
+    }
+    const std::string batch = Json::object({{"v", 1}, {"t", "rows"}, {"space", "demo"}, {"topic", "lantern.log"},
+                                            {"from_seq", 4 + b * 100}, {"rows", many}, {"dropped", 0}}).dump();
+    CHECK(registry.publish(kMod, batch, why) == Status::ok);
+  }
+  REQUIRE(registry.game_state("demo", "lantern.log", rev, body, rev));
+  CHECK(body["rows"].size() == spaces::kGameStreamRows);
+  CHECK(body["rows"].back()["line"] == "Row 299");
+  // An empty batch past a gap clears it (protocol 1.1), as a browser's.
+  CHECK(registry.publish(kMod, R"({"v":1,"t":"rows","space":"demo","topic":"lantern.log","from_seq":900,"rows":[],"dropped":0})",
+                         why) == Status::ok);
+  REQUIRE(registry.game_state("demo", "lantern.log", rev, body, rev));
+  CHECK(body["rows"].empty());
+  registry.game_watch("demo", "lantern.log", false);
+  CHECK_FALSE(registry.game_state("demo", "lantern.log", 0, body, rev));  // forgotten with the watch
+}
+
 TEST_CASE("a family's member through the registry: watched by the menu, published, kept; the family itself refused (D215)") {
   spaces::Registry registry;
   const std::string pages = demo_pages();

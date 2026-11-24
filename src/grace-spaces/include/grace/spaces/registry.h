@@ -28,6 +28,8 @@ namespace grace::spaces {
 
 inline constexpr std::uint32_t kViewGame = 1;     // GRACEUI_VIEW_GAME
 inline constexpr std::uint32_t kViewBrowser = 2;  // GRACEUI_VIEW_BROWSER
+// A stream's rows the menu keeps (D257): its newest, a page's worth to read in game; the browser view keeps its ring.
+inline constexpr std::size_t kGameStreamRows = 200;
 inline constexpr std::size_t kMaxSpaces = 16;     // mods' spaces in a session (EST)
 inline constexpr std::chrono::milliseconds kAnswerDeadline{10000};  // a command unanswered past this: internal (EST)
 inline constexpr std::chrono::milliseconds kSlowAnswerDeadline{90000};  // a slow command's (D216): a model's draft (EST)

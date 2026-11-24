@@ -6896,6 +6896,26 @@ void run_master(const std::wstring& dll) {
         more.is_object() ? more["args"].dump().c_str() : "NOTHING", added ? "yes" : "NO");
   press(window, VK_F5, kScanF5);
   frames(game, 5);
+
+  // 5. A stream in game (D257): the Log's live feed watched with its page; a row the mod publishes is drawn, newest first.
+  press(window, VK_F5, kScanF5);
+  menu = menu_after(game, grace, menu.lists);
+  for (int i = 0; i < 6 && std::strcmp(grace.menu().page, "demo.log") != 0; ++i) {
+    press(window, VK_PRIOR, 0x49);
+    menu = menu_after(game, grace, grace.menu().lists);
+  }
+  const bool on_log = std::strcmp(grace.menu().page, "demo.log") == 0;
+  const bool log_watched = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.log");
+  const std::string rows =
+      R"({"v":1,"t":"rows","space":"demo","topic":"lantern.log","from_seq":1,"rows":[{"time":"19:02","line":"The lantern was lit.","level":"info"},{"time":"19:40","line":"The flame guttered.","level":"warning"}],"dropped":0})";
+  const GraceUiStatus published = table->publish(mod, rows.data(), rows.size());
+  const bool stream_drawn = until_shows(game, grace, "The flame guttered.") &&
+                            grace.menu_shows("The lantern was lit.") != 0 && grace.menu_shows("Shown in the browser view.") == 0;
+  check(on_log && log_watched && published == GRACEUI_OK && stream_drawn, "master: a stream's rows drawn in game (D257)",
+        "on Log %s; lantern.log watched %s; its rows published %s; drawn %s", on_log ? "yes" : "NO",
+        log_watched ? "yes" : "NO", published == GRACEUI_OK ? "ok" : "REFUSED", stream_drawn ? "yes" : "NO");
+  press(window, VK_F5, kScanF5);
+  frames(game, 5);
 }
 
 // ---- A slow command in game (D216): the control reads Working… while it waits, and the mod's answer after 11 s,

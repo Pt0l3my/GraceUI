@@ -101,14 +101,23 @@ function StatTiles({ body, empty }: { body: JsonObject; empty: JSX.Element }) {
   );
 }
 
-function Feed({ rows, newestFirst, live, empty }: {
-  rows: JsonObject[]; newestFirst: boolean; live: boolean; empty: JSX.Element;
+function Feed({ rows, newestFirst, live, empty, barKey, spec }: {
+  rows: JsonObject[]; newestFirst: boolean; live: boolean; empty: JSX.Element; barKey?: string; spec?: PageBlock["filter_bar"];
 }) {
   const lines = rows.filter((r) => text(r.line) !== null);
+  // Its filter bar (D257): filters and a search over the rows it holds, in time's order (no sort).
+  const bar = useFilterBar(barKey ?? "", spec, lines);
   if (lines.length === 0) {
     return empty;
   }
-  const ordered = newestFirst ? [...lines].reverse() : lines;
+  const shown = bar.order.map((i) => lines[i]!);
+  const ordered = newestFirst ? [...shown].reverse() : shown;
+  const strip = spec
+    ? <FilterBar spec={spec} rows={lines} state={bar.state} shown={shown.length} set={bar.set} label="" />
+    : null;
+  if (shown.length === 0) {
+    return strip;
+  }
   const list = (
     <ol class={live ? "feed feed--live" : "feed"}>
       {ordered.map((r) => (
@@ -119,7 +128,7 @@ function Feed({ rows, newestFirst, live, empty }: {
       ))}
     </ol>
   );
-  return live ? <div role="log" aria-live="polite">{list}</div> : list;
+  return <>{strip}{live ? <div role="log" aria-live="polite">{list}</div> : list}</>;
 }
 
 function KeyValues({ body, empty }: { body: JsonObject; empty: JSX.Element }) {
@@ -581,10 +590,12 @@ export function ComponentBlock({ space, block }: { space: string; block: PageBlo
       return line !== null ? <p class="sentence">{line}</p> : empty;
     }
     case "live_feed":
-      return <Feed rows={data?.kind === "rows" ? data.rows : []} newestFirst live empty={empty} />;
+      return <Feed rows={data?.kind === "rows" ? data.rows : []} newestFirst live empty={empty}
+                   barKey={`${space}/${topic ?? ""}`} spec={block.filter_bar} />;
     case "log_tail":  // D187: newest first if the page says so
       return <Feed rows={data?.kind === "rows" ? data.rows : []} newestFirst={props.newest_first === true} live={false}
-                   empty={data?.kind === "rows" ? <Empty own={typeof props.empty === "string" ? props.empty : null} /> : empty} />;
+                   empty={data?.kind === "rows" ? <Empty own={typeof props.empty === "string" ? props.empty : null} /> : empty}
+                   barKey={`${space}/${topic ?? ""}`} spec={block.filter_bar} />;
     case "key_value_list":
       return body ? <KeyValues body={body} empty={empty} /> : empty;
     case "table":
