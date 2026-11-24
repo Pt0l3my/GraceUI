@@ -66,5 +66,12 @@ text    ink.hi        380, 740  131x28   clip1 glyphs 13 "Installed mods"
 text    ink.mute      862, 741  759x25   clip1 glyphs 76 "Every mod connected to GraceUI this session, what each uses, and whether its notices show."
 text    gold         1820, 740    9x28   clip1 glyphs 1 "→"
 line    rule          300,1035 1620x1   
-text    ink.faint     340,1045  202x25   glyphs 16 "Enter  Open    Esc  Back"
+fill    ground.well   340,1044   60x28   r3
+stroke  edge          340,1044   60x28   r3 w1
+text    ink.body      348,1046   44x25   glyphs 5 "Enter"
+text    ink.faint     407,1045   34x25   glyphs 4 "Open"
+fill    ground.well   466,1044   42x28   r3
+stroke  edge          466,1044   42x28   r3 w1
+text    ink.body      474,1046   26x25   glyphs 3 "Esc"
+text    ink.faint     515,1045   34x25   glyphs 4 "Back"
 stroke  gold.hi      1668,  86  215x46   r5 w3 clip1

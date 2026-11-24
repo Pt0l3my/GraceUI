@@ -98,5 +98,16 @@ text    ink.hi        304,1028   60x22   clip1 glyphs 8 "Overview"
 text    ink.mute      812,1029  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
 text    gold         1824,1028    8x22   clip1 glyphs 1 "→"
 line    rule          240,1044 1680x1   
-text    ink.faint     272,1052  277x20   glyphs 27 "Enter  Next    Esc  Done    Ctrl+V  Paste"
+fill    ground.well   272,1051   47x22   r2
+stroke  edge          272,1051   47x22   r2 w1
+text    ink.body      278,1052   35x20   glyphs 5 "Enter"
+text    ink.faint     325,1052   27x20   glyphs 4 "Next"
+fill    ground.well   372,1051   33x22   r2
+stroke  edge          372,1051   33x22   r2 w1
+text    ink.body      378,1052   21x20   glyphs 3 "Esc"
+text    ink.faint     411,1052   27x20   glyphs 4 "Done"
+fill    ground.well   458,1051   54x22   r2
+stroke  edge          458,1051   54x22   r2 w1
+text    ink.body      464,1052   42x20   glyphs 6 "Ctrl+V"
+text    ink.faint     518,1052   34x20   glyphs 5 "Paste"
 stroke  gold.hi      1290, 491  564x32   r4 w2 clip1

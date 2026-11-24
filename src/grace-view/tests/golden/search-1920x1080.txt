@@ -98,7 +98,18 @@ text    ink.hi        304,1028   60x22   clip1 glyphs 8 "Overview"
 text    ink.mute      812,1029  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
 text    gold         1824,1028    8x22   clip1 glyphs 1 "→"
 line    rule          240,1044 1680x1   
-text    ink.faint     272,1052  270x20   glyphs 25 "↑ ↓  Choose    Enter  Open    Esc  Close"
+fill    ground.well   272,1051   33x22   r2
+stroke  edge          272,1051   33x22   r2 w1
+text    ink.body      278,1052   21x20   glyphs 2 "↑ ↓"
+text    ink.faint     311,1052   40x20   glyphs 6 "Choose"
+fill    ground.well   372,1051   47x22   r2
+stroke  edge          372,1051   47x22   r2 w1
+text    ink.body      378,1052   35x20   glyphs 5 "Enter"
+text    ink.faint     424,1052   27x20   glyphs 4 "Open"
+fill    ground.well   472,1051   33x22   r2
+stroke  edge          472,1051   33x22   r2 w1
+text    ink.body      478,1052   21x20   glyphs 3 "Esc"
+text    ink.faint     510,1052   34x20   glyphs 5 "Close"
 stroke  gold.hi       270,   6  284x32   r4 w2
 fill    ground.3      272,  42  560x52   r2
 stroke  edge          272,  42  560x52   r2 w1

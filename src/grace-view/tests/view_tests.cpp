@@ -167,7 +167,8 @@ TEST_CASE("View hides and shows the key hints, and the right stick scrolls the p
   };
   const std::string shown = laid(1080);
   CHECK(view.hints_shown());
-  CHECK(shown.find("Esc  Back") != std::string::npos);
+  CHECK(view.footer().find("Esc  Back") != std::string::npos);
+  CHECK(shown.find("\"Back\"") != std::string::npos);  // drawn: its label beside Esc's key cap (D246)
   view.input(Input{Key::toggle_hints, false, true});
   const std::string hidden = laid(1080);
   CHECK_FALSE(view.hints_shown());
@@ -251,6 +252,26 @@ TEST_CASE("the focus ring on the rail falls whole within it, and a related row's
   const float ring_width = std::round(3 * scale);
   CHECK(label.x - (related.x + ring_width) >= 10 * scale);
   CHECK(std::fabs((label.y + label.h / 2) - (related.y + related.h / 2)) <= 1.5f);
+}
+
+TEST_CASE("the keyboard's hints as key caps: each key in a cap on ground.well, its label beside it (§3.8, D246)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  const std::string dump = list.dump();
+  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back");
+  // Four caps, each a fill on ground.well under an edge border, with its keys in the mono face.
+  for (const char* keys : {"\"← →\"", "\"Shift+← →\"", "\"R\"", "\"Esc\""}) {
+    CHECK(dump.find(keys) != std::string::npos);
+  }
+  for (const char* label : {"\"Change\"", "\"By ten\"", "\"Reset\"", "\"Back\""}) {
+    CHECK(dump.find(label) != std::string::npos);
+  }
+  const DumpRect cap = dump_rect(dump, "fill    ground.well", "");
+  const DumpRect esc = dump_rect(dump, "text    ink.body", "\"Esc\"");
+  REQUIRE(esc.found);
+  CHECK(cap.found);
+  CHECK(dump.find("\"← →  Change") == std::string::npos);  // no longer one run of words
 }
 
 TEST_CASE("back goes to the rail, and back again closes; the rail opens pages") {
@@ -1328,7 +1349,7 @@ TEST_CASE("a text setting in GraceUI's own field: Enter edits, Enter sends, Esca
   CHECK(view.editing());
   DisplayList open;
   view.layout(Viewport{}, test::fonts(), open);
-  CHECK(open.dump().find("Enter  Save    Esc  Cancel") != std::string::npos);
+  CHECK(view.footer() == "Enter  Save    Esc  Cancel    Ctrl+V  Paste");
   CHECK(view.caret().w > 0);  // the IME's place
   // Its text is the value; Ctrl+Backspace takes a word, then more is typed.
   view.edit(EditInput{EditKey::backspace, false, true});
@@ -1377,7 +1398,7 @@ TEST_CASE("a secret in GraceUI's own field: masked, empty at the start, sent onc
     ++discs;
   }
   CHECK(discs == 8);
-  CHECK(dump.find("Enter  Set    Esc  Cancel") != std::string::npos);
+  CHECK(view.footer().find("Enter  Set    Esc  Cancel") != std::string::npos);
   view.edit(EditInput{EditKey::select_all});
   view.edit(EditInput{EditKey::copy});
   std::string clipboard;
@@ -1477,7 +1498,7 @@ TEST_CASE("search in game: `/` or Ctrl+F opens it, its results as it is typed, E
   DisplayList list;
   view.layout(Viewport{}, test::fonts(), list);
   CHECK(list.dump().find("\"Oil merchant's token\"") != std::string::npos);
-  CHECK(list.dump().find("↑ ↓  Choose    Enter  Open    Esc  Close") != std::string::npos);
+  CHECK(view.footer() == "↑ ↓  Choose    Enter  Open    Esc  Close");
   Action opened = view.edit(EditInput{EditKey::enter});
   CHECK(opened.kind == Action::Kind::opened_page);
   CHECK(opened.page == "demo.behaviour");
@@ -1792,7 +1813,8 @@ TEST_CASE("a row's key captured in game: the next key, sent with the row's key; 
   DisplayList asking;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), asking);
   CHECK(asking.dump().find("Quiet Camp's Pitch the tent") != std::string::npos);
-  CHECK(asking.dump().find("Enter  Use it here") != std::string::npos);
+  CHECK(view.footer().find("Enter  Use it here") != std::string::npos);
+  CHECK(asking.dump().find("\"Use it here\"") != std::string::npos);  // in the modal's card too, by its key cap
   golden("hotkeys-asking-1920x1080.txt", asking.dump());
   const Action moved = press(view, Key::activate);
   REQUIRE(moved.kind == Action::Kind::command);

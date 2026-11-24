@@ -62,5 +62,20 @@ text    ink.hi        380, 765  112x28   clip1 glyphs 11 "Browser view"
 text    ink.mute      862, 766  937x25   clip1 glyphs 90 "The menu in a browser on this PC and on devices at home: its address, the browsers connected and the devices paired."
 text    gold         1820, 765    9x28   clip1 glyphs 1 "→"
 line    rule          300,1035 1620x1   
-text    ink.faint     340,1045  481x25   glyphs 34 "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back"
+fill    ground.well   340,1044   42x28   r3
+stroke  edge          340,1044   42x28   r3 w1
+text    ink.body      348,1046   26x25   glyphs 2 "← →"
+text    ink.faint     389,1045   51x25   glyphs 6 "Change"
+fill    ground.well   465,1044   95x28   r3
+stroke  edge          465,1044   95x28   r3 w1
+text    ink.body      473,1046   79x25   glyphs 8 "Shift+← →"
+text    ink.faint     567,1045   51x25   glyphs 5 "By ten"
+fill    ground.well   642,1044   25x28   r3
+stroke  edge          642,1044   25x28   r3 w1
+text    ink.body      650,1046    9x25   glyphs 1 "R"
+text    ink.faint     674,1045   42x25   glyphs 5 "Reset"
+fill    ground.well   741,1044   42x28   r3
+stroke  edge          741,1044   42x28   r3 w1
+text    ink.body      749,1046   26x25   glyphs 3 "Esc"
+text    ink.faint     790,1045   34x25   glyphs 4 "Back"
 stroke  gold.hi      1502, 266  356x41   r5 w3 clip1

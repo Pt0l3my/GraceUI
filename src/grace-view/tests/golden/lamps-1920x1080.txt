@@ -59,5 +59,16 @@ text    ink.hi        768, 507   22x22   clip1 glyphs 3 "Log"
 text    ink.mute     1121, 508  418x20   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
 text    gold         1824, 507    8x22   clip1 glyphs 1 "→"
 line    rule          240,1044 1680x1   
-text    ink.faint     272,1052  236x20   glyphs 20 "↑ ↓  Choose    →  Open    Esc  Back"
+fill    ground.well   272,1051   33x22   r2
+stroke  edge          272,1051   33x22   r2 w1
+text    ink.body      278,1052   21x20   glyphs 2 "↑ ↓"
+text    ink.faint     311,1052   40x20   glyphs 6 "Choose"
+fill    ground.well   372,1051   19x22   r2
+stroke  edge          372,1051   19x22   r2 w1
+text    ink.body      378,1052    7x20   glyphs 1 "→"
+text    ink.faint     396,1052   27x20   glyphs 4 "Open"
+fill    ground.well   444,1051   33x22   r2
+stroke  edge          444,1051   33x22   r2 w1
+text    ink.body      450,1052   21x20   glyphs 3 "Esc"
+text    ink.faint     482,1052   27x20   glyphs 4 "Back"
 stroke  gold.hi       278, 199  428x60   r4 w2 clip1

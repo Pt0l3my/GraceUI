@@ -63,6 +63,17 @@ text    ink.hi        623, 464   19x18   clip1 glyphs 3 "Log"
 text    ink.mute      821, 465  349x17   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
 text    gold         1213, 464    6x18   clip1 glyphs 1 "→"
 line    rule          200, 690 1080x1   
-text    ink.faint     227, 697  197x17   glyphs 20 "↑ ↓  Choose    →  Open    Esc  Back"
+fill    ground.well   227, 696   28x18   r2
+stroke  edge          227, 696   28x18   r2 w1
+text    ink.body      232, 697   17x17   glyphs 2 "↑ ↓"
+text    ink.faint     260, 697   34x17   glyphs 6 "Choose"
+fill    ground.well   310, 696   16x18   r2
+stroke  edge          310, 696   16x18   r2 w1
+text    ink.body      315, 697    6x17   glyphs 1 "→"
+text    ink.faint     331, 697   22x17   glyphs 4 "Open"
+fill    ground.well   371, 696   28x18   r2
+stroke  edge          371, 696   28x18   r2 w1
+text    ink.body      376, 697   18x17   glyphs 3 "Esc"
+text    ink.faint     403, 697   22x17   glyphs 4 "Back"
 stroke  gold.hi       232, 166  340x51   r3 w2 clip1
-# 66 items, 2124 vertices, 4206 indices, 4 commands; check_draw_list: passes
+# 77 items, 2340 vertices, 5160 indices, 4 commands; check_draw_list: passes

@@ -66,16 +66,54 @@ text    ink.hi        380, 740  131x28   clip1 glyphs 13 "Installed mods"
 text    ink.mute      862, 741  759x25   clip1 glyphs 76 "Every mod connected to GraceUI this session, what each uses, and whether its notices show."
 text    gold         1820, 740    9x28   clip1 glyphs 1 "→"
 line    rule          300,1035 1620x1   
-text    ink.faint     340,1045  608x25   glyphs 42 "↑ ↓  Move    ← →  Change    Enter  Use    R  No pad chord    Esc  Cancel"
+fill    ground.well   340,1044   42x28   r3
+stroke  edge          340,1044   42x28   r3 w1
+text    ink.body      348,1046   26x25   glyphs 2 "↑ ↓"
+text    ink.faint     389,1045   34x25   glyphs 4 "Move"
+fill    ground.well   448,1044   42x28   r3
+stroke  edge          448,1044   42x28   r3 w1
+text    ink.body      456,1046   26x25   glyphs 2 "← →"
+text    ink.faint     497,1045   51x25   glyphs 6 "Change"
+fill    ground.well   573,1044   60x28   r3
+stroke  edge          573,1044   60x28   r3 w1
+text    ink.body      581,1046   44x25   glyphs 5 "Enter"
+text    ink.faint     640,1045   25x25   glyphs 3 "Use"
+fill    ground.well   690,1044   25x28   r3
+stroke  edge          690,1044   25x28   r3 w1
+text    ink.body      698,1046    9x25   glyphs 1 "R"
+text    ink.faint     722,1045  101x25   glyphs 10 "No pad chord"
+fill    ground.well   848,1044   42x28   r3
+stroke  edge          848,1044   42x28   r3 w1
+text    ink.body      856,1046   26x25   glyphs 3 "Esc"
+text    ink.faint     897,1045   51x25   glyphs 6 "Cancel"
 stroke  gold.hi      1600, 536  171x41   r5 w3 clip1
 fill    scrim           0,   0 1920x1080 a160
-fill    ground.2      685, 376  850x328  r5
-stroke  edge          685, 376  850x328  r5 w1
-text    ink.hi        720, 411  629x35   glyphs 37 "Change pad chord: Quiet Camp, Pitch the tent"
-text    ink.mute      720, 461  638x28   glyphs 56 "Choose the button held first, then the one pressed while it is held."
-text    ink.mute      735, 518   94x28   glyphs 9 "Held first"
-text    ink.hi       1354, 518  131x28   glyphs 9 "←  D-pad Up  →"
-stroke  gold.hi       720, 508  780x45   r3 w3
-text    ink.mute      735, 572  112x28   glyphs 11 "Then pressed"
-text    ink.hi       1391, 572   94x28   glyphs 6 "←  View  →"
-text    ink.faint     720, 644  608x25   glyphs 42 "↑ ↓  Move    ← →  Change    Enter  Use    R  No pad chord    Esc  Cancel"
+fill    ground.2      685, 374  850x332  r5
+stroke  edge          685, 374  850x332  r5 w1
+text    ink.hi        720, 409  629x35   glyphs 37 "Change pad chord: Quiet Camp, Pitch the tent"
+text    ink.mute      720, 459  638x28   glyphs 56 "Choose the button held first, then the one pressed while it is held."
+text    ink.mute      735, 516   94x28   glyphs 9 "Held first"
+text    ink.hi       1354, 516  131x28   glyphs 9 "←  D-pad Up  →"
+stroke  gold.hi       720, 506  780x45   r3 w3
+text    ink.mute      735, 570  112x28   glyphs 11 "Then pressed"
+text    ink.hi       1391, 570   94x28   glyphs 6 "←  View  →"
+fill    ground.well   720, 642   42x28   r3
+stroke  edge          720, 642   42x28   r3 w1
+text    ink.body      728, 644   26x25   glyphs 2 "↑ ↓"
+text    ink.faint     769, 644   34x25   glyphs 4 "Move"
+fill    ground.well   828, 642   42x28   r3
+stroke  edge          828, 642   42x28   r3 w1
+text    ink.body      836, 644   26x25   glyphs 2 "← →"
+text    ink.faint     877, 644   51x25   glyphs 6 "Change"
+fill    ground.well   953, 642   60x28   r3
+stroke  edge          953, 642   60x28   r3 w1
+text    ink.body      961, 644   44x25   glyphs 5 "Enter"
+text    ink.faint    1020, 644   25x25   glyphs 3 "Use"
+fill    ground.well  1070, 642   25x28   r3
+stroke  edge         1070, 642   25x28   r3 w1
+text    ink.body     1078, 644    9x25   glyphs 1 "R"
+text    ink.faint    1102, 644  101x25   glyphs 10 "No pad chord"
+fill    ground.well  1228, 642   42x28   r3
+stroke  edge         1228, 642   42x28   r3 w1
+text    ink.body     1236, 644   26x25   glyphs 3 "Esc"
+text    ink.faint    1277, 644   51x25   glyphs 6 "Cancel"

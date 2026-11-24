@@ -162,8 +162,9 @@ PadGlyph pad_button_of(std::string_view keys, bool& dropped) noexcept {
   return PadGlyph::none;
 }
 
-// A hints line's parts; an entry with no two spaces in it is words alone ("Not available now").
-std::vector<HintPart> hint_parts(std::string_view hints) {
+// A hints line's parts; an entry with no two spaces in it is words alone ("Not available now"). For a pad, the hints it
+// has no button for are left out.
+std::vector<HintPart> hint_parts(std::string_view hints, bool pad) {
   std::vector<HintPart> parts;
   while (!hints.empty()) {
     const std::size_t end = hints.find("    ");
@@ -177,7 +178,7 @@ std::vector<HintPart> hint_parts(std::string_view hints) {
       part.keys = entry.substr(0, gap);
       part.label = entry.substr(gap + 2);
       bool dropped = false;
-      part.button = pad_button_of(part.keys, dropped);
+      part.button = pad ? pad_button_of(part.keys, dropped) : PadGlyph::none;
       if (dropped) {
         continue;
       }
@@ -210,7 +211,7 @@ std::string_view dpad_words(PadGlyph button) noexcept {
 // The words pad mode's footer stands for, as the tests and the dump read it: "A  Toggle    X  Reset    B  Back".
 std::string pad_words(std::string_view hints) {
   std::string out;
-  for (const HintPart& part : hint_parts(hints)) {
+  for (const HintPart& part : hint_parts(hints, true)) {
     out += out.empty() ? "" : "    ";
     const std::string_view name = !letter_of(part.button).empty() ? letter_of(part.button)
                                   : !dpad_words(part.button).empty() ? dpad_words(part.button)
@@ -265,21 +266,38 @@ void dpad(Cursor& c, Rect r, PadGlyph button) {
   }
 }
 
-// Pad mode's footer, left to right from `x` within `max_w`: each part's glyph (and a face button's letter), then its
-// label in the footer's ink; a part that would not fit is left out, with those after it.
-void pad_hints(Cursor& c, std::string_view hints, float x, float top, float height, float max_w) {
+// A key cap (§3.8, D246): the keys' names in the mono face, on ground.well in an edge border with the control's radius,
+// `h` high from `y`; answers its width.
+float key_cap(Cursor& c, std::string_view keys, float x, float y, float h) {
+  const float s = c.s;
+  const float pad = std::round(6 * s);
+  const float w = c.width(keys, TypeRole::num) + 2 * pad;
+  const Rect cap{x, y, w, h};
+  const float radius = std::round(tokens::radius::control * s);
+  c.fill(cap, Colour::ground_well, radius);
+  c.stroke(cap, Colour::edge, std::max(1.0f, std::round(tokens::kGrace.size.edge_width * s)), radius);
+  c.text(keys, TypeRole::num, x + pad, y + std::round((h - line_height(TypeRole::num, s)) / 2), w, Colour::ink_body);
+  return w;
+}
+
+// The key hints, left to right from `x` within `max_w`, centred in `height` from `top` (§3.8): each part's keys in a key
+// cap, or in pad mode its glyph (and a face button's letter, D242), then its label in the hints' ink; words alone as
+// they are. A part that would not fit is left out, with those after it.
+void hints_line(Cursor& c, std::string_view hints, bool pad, float x, float top, float height, float max_w) {
   const float s = c.s;
   const float g = std::round(16 * s);
+  const float cap_h = std::round(22 * s);
   const float gy = top + std::round((height - g) / 2);
+  const float cy = top + std::round((height - cap_h) / 2);
   const float ty = top + std::round((height - line_height(TypeRole::ui_sm, s)) / 2);
   const float right = x + max_w;
   const float gap = std::round(6 * s);
-  for (const HintPart& part : hint_parts(hints)) {
+  for (const HintPart& part : hint_parts(hints, pad)) {
     const std::string_view letter = letter_of(part.button);
     const bool cross = !dpad_words(part.button).empty();
     const float lead = !letter.empty() ? g + std::round(3 * s) + c.width(letter, TypeRole::ui_sm) + gap
                        : cross         ? g + gap
-                       : !part.keys.empty() ? c.width(part.keys, TypeRole::ui_sm) + gap
+                       : !part.keys.empty() ? c.width(part.keys, TypeRole::num) + std::round(12 * s) + gap
                                             : 0.0f;
     if (x + lead + c.width(part.label, TypeRole::ui_sm) > right) {
       break;
@@ -290,7 +308,7 @@ void pad_hints(Cursor& c, std::string_view hints, float x, float top, float heig
     } else if (cross) {
       dpad(c, Rect{x, gy, g, g}, part.button);
     } else if (!part.keys.empty()) {
-      c.text(part.keys, TypeRole::ui_sm, x, ty, right - x, Colour::ink_mute);
+      key_cap(c, part.keys, x, cy, cap_h);
     }
     x += lead;
     x += c.text(part.label, TypeRole::ui_sm, x, ty, right - x, Colour::ink_faint) + std::round(20 * s);
@@ -5050,12 +5068,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                                                       : "Press a key    Esc  Cancel";
     }
     footer_ = !hints_shown_ ? std::string() : pad_mode_ ? pad_words(hints) : hints;
-    if (hints_shown_ && pad_mode_) {
-      pad_hints(c, hints, page_x + gutter, H - footer_h, footer_h, page_w - 2 * gutter);  // D242
-    } else if (hints_shown_) {
-      c.text(hints, TypeRole::ui_sm, page_x + gutter,
-             H - footer_h + std::round((footer_h - line_height(TypeRole::ui_sm, s)) / 2), page_w - 2 * gutter,
-             Colour::ink_faint);
+    if (hints_shown_) {
+      hints_line(c, hints, pad_mode_, page_x + gutter, H - footer_h, footer_h, page_w - 2 * gutter);  // D242, D246
     }
     if (c.focus_found && focus_shown_) {
       const float off = std::round(tokens::kGrace.size.focus_offset * s);
@@ -5143,7 +5157,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const float title_h = line_height(TypeRole::display_md, s);
       const float body_h = line_height(TypeRole::ui, s);
       const float picker_h = std::round(44 * s);
-      const float hints_h = line_height(TypeRole::ui_sm, s);
+      const float hints_h = std::round(24 * s);  // a key cap's line (D246)
       float card_h = pad * 2 + title_h * static_cast<float>(title_lines.size()) + std::round(12 * s) +
                      body_h * static_cast<float>(body_lines.size()) + std::round(20 * s) + hints_h;
       if (capture_.kind == CaptureKind::chord && capture_.stage == CaptureStage::waiting) {
@@ -5183,8 +5197,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
           cy += picker_h;
         }
       }
-      // Its keys, in the card where they can be read: the footer's are under its scrim.
-      c.text(hints, TypeRole::ui_sm, card.x + pad, cy + std::round(20 * s), inner, Colour::ink_faint);
+      // Its keys, in the card where they can be read: the footer's are under its scrim. Key caps, or the pad's glyphs.
+      hints_line(c, hints, pad_mode_, card.x + pad, cy + std::round(20 * s), hints_h, inner);
     }
     // The sheet (G9), over everything, as the capture's modal is: its title, its figure, its lines and its Close.
     if (sheet_open_) {

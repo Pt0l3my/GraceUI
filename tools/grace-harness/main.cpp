@@ -6339,9 +6339,15 @@ void post_text(HWND window, std::wstring_view text) {
 }
 
 // Frames until the menu's last layout draws `text` (or no longer does, with `gone`), at most 3 s.
+// Whether the menu's last layout draws `text`, or its footer says it: the key hints are drawn as key caps and labels
+// since D246, so a whole hints line ("Enter  Save    Esc  Cancel") is read from the footer's words.
+bool menu_says(const GraceUi& grace, const char* text) {
+  return grace.menu_shows(text) != 0 || std::strstr(grace.menu().footer, text) != nullptr;
+}
+
 bool until_shows(Game& game, const GraceUi& grace, const char* text, bool gone = false) {
   for (int i = 0; i < 150; ++i) {
-    if ((grace.menu_shows(text) != 0) != gone) {
+    if (menu_says(grace, text) != gone) {
       return true;
     }
     game.frame(kInputColour, PresentWith::present);
@@ -6672,7 +6678,7 @@ void run_typing(const std::wstring& dll) {
   }
   press(window, VK_F5, kScanF5);
   menu = menu_after(game, grace, grace.menu().lists);
-  const bool kept = until_shows(game, grace, "Ash Moor") && grace.menu_shows("Enter  Type    Esc  Back") != 0 &&
+  const bool kept = until_shows(game, grace, "Ash Moor") && menu_says(grace, "Enter  Type    Esc  Back") &&
                     std::strcmp(grace.menu().focused, "field:hire/0/name") == 0;
   check(on_name_again && shut && kept, "typing: the close routine keeps a form's text",
         "F5 while Name was edited closed the menu %s; reopened on %s, not editing, its text kept %s",

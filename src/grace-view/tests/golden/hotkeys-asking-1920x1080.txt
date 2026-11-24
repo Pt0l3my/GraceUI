@@ -66,11 +66,25 @@ text    ink.hi        380, 740  131x28   clip1 glyphs 13 "Installed mods"
 text    ink.mute      862, 741  759x25   clip1 glyphs 76 "Every mod connected to GraceUI this session, what each uses, and whether its notices show."
 text    gold         1820, 740    9x28   clip1 glyphs 1 "→"
 line    rule          300,1035 1620x1   
-text    ink.faint     340,1045  278x25   glyphs 23 "Enter  Use it here    Esc  Cancel"
+fill    ground.well   340,1044   60x28   r3
+stroke  edge          340,1044   60x28   r3 w1
+text    ink.body      348,1046   44x25   glyphs 5 "Enter"
+text    ink.faint     407,1045   93x25   glyphs 9 "Use it here"
+fill    ground.well   525,1044   42x28   r3
+stroke  edge          525,1044   42x28   r3 w1
+text    ink.body      533,1046   26x25   glyphs 3 "Esc"
+text    ink.faint     574,1045   51x25   glyphs 6 "Cancel"
 stroke  gold.hi      1470, 476  120x41   r5 w3 clip1
 fill    scrim           0,   0 1920x1080 a160
-fill    ground.2      685, 441  850x198  r5
-stroke  edge          685, 441  850x198  r5 w1
-text    ink.hi        720, 476  629x35   glyphs 37 "Change key: Tide Charts, Show the tide table"
-text    ink.hi        720, 526  741x28   glyphs 63 "F9 is Quiet Camp's Pitch the tent. Use it here, and leave that one with no key?"
-text    ink.faint     720, 578  278x25   glyphs 23 "Enter  Use it here    Esc  Cancel"
+fill    ground.2      685, 439  850x202  r5
+stroke  edge          685, 439  850x202  r5 w1
+text    ink.hi        720, 474  629x35   glyphs 37 "Change key: Tide Charts, Show the tide table"
+text    ink.hi        720, 524  741x28   glyphs 63 "F9 is Quiet Camp's Pitch the tent. Use it here, and leave that one with no key?"
+fill    ground.well   720, 578   60x28   r3
+stroke  edge          720, 578   60x28   r3 w1
+text    ink.body      728, 580   44x25   glyphs 5 "Enter"
+text    ink.faint     787, 580   93x25   glyphs 9 "Use it here"
+fill    ground.well   905, 578   42x28   r3
+stroke  edge          905, 578   42x28   r3 w1
+text    ink.body      913, 580   26x25   glyphs 3 "Esc"
+text    ink.faint     954, 580   51x25   glyphs 6 "Cancel"
