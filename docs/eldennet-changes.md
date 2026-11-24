@@ -1398,3 +1398,13 @@ reads these from GraceUI's test build.
    `graceui_sys_find` asked afresh answers the active copy's table, as does its scan past an idle copy that holds the
    name graceui.dll. Under Wine `GetModuleHandleW(L"graceui.dll")` answered the active copy each time; Windows may
    answer the one loaded first, which is why the scan's case is checked by itself.
+
+## 69. EB Garamond Italic in GraceUI's folder, for the Tarnished's lines (2026-11-24, D241; GraceUI 0.2.36)
+
+For S11.4.c's italic lines: GraceUI 0.2.36 ships `fonts\EBGaramond-Italic.ttf` beside the Regular you read now, from
+the same pinned commit and under the same `EBGaramond-OFL.txt`. Register it as a third `GRACEUI_FACE_SCALED` face (at
+your lower third's size), read from GraceUI's folder in your registration window as you read Regular; you register two
+of your eight faces, so nothing else changes. An older GraceUI has no such file: then register none and draw the
+Tarnished's lines upright, or set your floor to 0.2.36. The panels' rounded corners need nothing of GraceUI's: the
+checker takes any triangles on your own texture, so corners made as Dear ImGui makes them (a fan of points per corner
+and a half-pixel fringe fading to nothing by vertex alpha, on your white texel) pass as they are.

@@ -1,7 +1,7 @@
 # GraceUI's faces (§3.4, §3.16, D22, D51, D167): Noto Sans Regular (the notices' face) and SemiBold, Noto Sans Mono
-# Regular, Cinzel Regular and Bold, and EB Garamond Regular, Medium and SemiBold, OFL, each from its publisher's own
-# repository at a pinned commit, checked against its SHA-256 and downloaded at configure time into the build tree; the
-# repository keeps no font. NOTICE credits them. The build puts them where the harness's game folder has them: GraceUI's
+# Regular, Cinzel Regular and Bold, and EB Garamond Regular, Medium, SemiBold and Italic (D241), OFL, each from its
+# publisher's own repository at a pinned commit, checked against its SHA-256 and downloaded at configure time into the
+# build tree; the repository keeps no font. NOTICE credits them. The build puts them where the harness's game folder has them: GraceUI's
 # in `bin\fonts\`, beside graceui.dll, as GraceUI's own folder holds them (D51), with each family's licence (Noto's as
 # OFL.txt, the others' as Cinzel-OFL.txt and EBGaramond-OFL.txt); and Noto Sans Mono in `bin\hello-panel\` too, beside
 # the example mod that registers it. Cinzel publishes no static 500 or 600: the menu takes Regular and Bold (D167).
@@ -32,9 +32,11 @@ set(GU_GARAMOND_COMMIT 106a4a6d377987459ae5e68673a4570f13b957fb)  # octaviopardo
 set(GU_GARAMOND_DIR ${CMAKE_BINARY_DIR}/_deps/ebgaramond)
 gu_fetch(octaviopardo/EBGaramond12 ${GU_GARAMOND_COMMIT} OFL.txt ${GU_GARAMOND_DIR}
   058611bd968817d532cedeab6acaa055e882d365a88523df00e7917ad7a0f704)
-foreach(weight Regular Medium SemiBold)
+foreach(weight Regular Medium SemiBold Italic)
   if(weight STREQUAL "Regular")
     set(hash 2028dc06d3c130b4761693481436a32a8e35ed500bf58c25c53de004106125b8)
+  elseif(weight STREQUAL "Italic")  # for mods' faces (D241): the menu bakes none of it yet
+    set(hash d4ad1d0a9390d26d6d3f176117a1d121441edb8c8632bfca52cfad084b9059cb)
   elseif(weight STREQUAL "Medium")
     set(hash 57f9e2a5881ac1a3a7bf02935ceb604ba0ca21961fb161d7a535bae4f74a52b1)
   else()

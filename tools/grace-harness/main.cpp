@@ -8916,6 +8916,14 @@ void run_display(const std::wstring& dll) {
   const GraceUiStatus scaled_status = face_of(table, first.answer.consumer, noto, 16, GRACEUI_FACE_SCALED, scaled_id);
   const GraceUiStatus plain_status = face_of(table, first.answer.consumer, noto, 16, 0, plain_id);
   const GraceUiStatus unknown_flag = face_of(table, older_answer.consumer, noto, 16, 2u, unknown_id);
+  // EB Garamond Italic from GraceUI's own fonts\ folder (D241), as a mod reads Regular there for its lines: scaled, at
+  // 30 px at 1080 lines, by a mod of its own (each mod but EldenNet has two faces).
+  const std::vector<unsigned char> italic = read_file(folder_of_this_program() + L"fonts\\EBGaramond-Italic.ttf");
+  const Connected verse = connect(table, request_for("verse-mod", GRACEUI_VERSION_PACK(0, 2, 2), "Verse mod",
+                                                     "faces display"));
+  std::uint32_t italic_id = 0;
+  const GraceUiStatus italic_status =
+      italic.empty() ? GRACEUI_FAULT : face_of(table, verse.answer.consumer, italic, 30, GRACEUI_FACE_SCALED, italic_id);
   const std::vector<GraceUiEvent> early = displays_of(table, first.answer.consumer);
   start_host(game, grace);
   for (int i = 0; i < 150 && grace.state().atlas_generation == 0; ++i) {
@@ -8949,6 +8957,19 @@ void run_display(const std::wstring& dll) {
         status_name(scaled_status), status_name(plain_status), status_name(unknown_flag), display_text(early).c_str(),
         display_text(warm).c_str(), display_text(again).c_str(), display_text(older_events).c_str(),
         scaled_table.pixel_height, plain_table.pixel_height);
+
+  GraceUiGlyphTable italic_table{};
+  italic_table.size = sizeof italic_table;
+  const GraceUiStatus italic_glyphs =
+      italic_status == GRACEUI_OK ? table->glyph_table(verse.answer.consumer, italic_id, &italic_table) : GRACEUI_FAULT;
+  check(!italic.empty() && verse.status == GRACEUI_OK && italic_status == GRACEUI_OK && italic_glyphs == GRACEUI_OK &&
+            std::fabs(italic_table.pixel_height - std::round(30.0f * 720.0f / 1080.0f)) < 0.05f &&
+            italic_table.glyph_count >= 95,
+        "display: the italic face",
+        "fonts\\EBGaramond-Italic.ttf beside graceui.dll (%zu bytes) registered as a scaled face of 30 px: %s; its glyph "
+        "table %s, %u glyphs baked at %.2f px",
+        italic.size(), status_name(italic_status), status_name(italic_glyphs), italic_table.glyph_count,
+        italic_table.pixel_height);
 
   // 4. ui.scale changed in the menu (1.25 to 1.30): one event, the faces' scale as they were baked.
   press(window, VK_F5, kScanF5);

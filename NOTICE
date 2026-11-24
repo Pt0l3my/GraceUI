@@ -368,7 +368,8 @@ Source:   https://github.com/octaviopardo/EBGaramond12, commit 106a4a6d377987459
 Licence:  SIL Open Font License 1.1, the same text as Noto's above, under its own copyright lines (below); read in
           full on 2026-11-20, with no clause on the use of AI
 Used:     EB Garamond Regular, Medium and SemiBold, the in-game menu's serif face (§3.4, D167), read at run time from
-          GraceUI's fonts\ folder and baked into the shared atlas. GraceUI's build downloads them at configure time,
+          GraceUI's fonts\ folder and baked into the shared atlas; and EB Garamond Italic, shipped in the same folder
+          for mods to register as a face of their own (D241). GraceUI's build downloads them at configure time,
           each checked against its SHA-256 (cmake/fonts.cmake), and puts them beside graceui.dll with this licence as
           EBGaramond-OFL.txt; no font is kept in this repository, and no font is modified.
 
@@ -377,6 +378,7 @@ SHA-256 of each file used:
   2028dc06d3c130b4761693481436a32a8e35ed500bf58c25c53de004106125b8  fonts/ttf/EBGaramond-Regular.ttf
   57f9e2a5881ac1a3a7bf02935ceb604ba0ca21961fb161d7a535bae4f74a52b1  fonts/ttf/EBGaramond-Medium.ttf
   ebf827a102983972abb2a1a3964afd5a7b79ca04f2ddd9e53917ce623cefdf2c  fonts/ttf/EBGaramond-SemiBold.ttf
+  d4ad1d0a9390d26d6d3f176117a1d121441edb8c8632bfca52cfad084b9059cb  fonts/ttf/EBGaramond-Italic.ttf
 
     Copyright 2017 The EB Garamond Project Authors (https://github.com/octaviopardo/EBGaramond12)
     Copyright 2025 Deborah Khodanovich (RCS citation glyphs)
