@@ -175,6 +175,25 @@ def lint(space_pages, description, fixtures, known_spaces):
                 failures.append(f"{where}: {kind} {i} twice")
             seen.add(i)
 
+    def filter_bar(bar, where):
+        # A table's or a master list's filter bar (G43, D250): at least one part; each filter on a column by its name;
+        # each sort option on a column or a member of each row by its name; the search on one to four columns. Its
+        # columns are the topic's, published later, so a view leaves out any it does not find.
+        filters, sorts, search = bar.get("filters") or [], bar.get("sort") or [], bar.get("search")
+        if not filters and not sorts and search is None:
+            failures.append(f"{where}: its filter bar has a filter, a sort option or a search (D250)")
+        for f in filters:
+            if not FIELD_NAME.match(f.get("column", "")) or not f.get("label"):
+                failures.append(f"{where}: a filter names its column (a name) and has a label (D250)")
+        unique("filter on column", [f.get("column") for f in filters], where)
+        for s in sorts:
+            if not FIELD_NAME.match(s.get("key", "")) or not s.get("label"):
+                failures.append(f"{where}: a sort option names its key (a name) and has a label (D250)")
+        unique("sort on key", [s.get("key") for s in sorts], where)
+        if search is not None and (not 1 <= len(search.get("columns", [])) <= 4 or not search.get("label") or
+                                   not all(FIELD_NAME.match(c) for c in search.get("columns", []))):
+            failures.append(f"{where}: its search names one to four columns (names) and has a label (D250)")
+
     unique("page", [p["id"] for p in space_pages["pages"]], space)
     unique("category", [c["id"] for c in space_pages["categories"]], space)
     unique("topic", list(t["id"] for t in space_pages["topics"]), space)
@@ -275,6 +294,8 @@ def lint(space_pages, description, fixtures, known_spaces):
                 failures.append(f"{where}: its master list's detail is a family the space declares (D215)")
             if not FIELD_NAME.match(master.get("key", "")) or not master.get("label"):
                 failures.append(f"{where}: its master list has a key column (a name) and a label")
+            if "filter_bar" in master:
+                filter_bar(master["filter_bar"], f"{where}: its master list")
             for words in ("empty", "none"):
                 if words in master and not 1 <= len(master[words]) <= 160:
                     failures.append(f"{where}: its master list's {words} is 1 to 160 characters")
@@ -348,6 +369,13 @@ def lint(space_pages, description, fixtures, known_spaces):
                 if (("row_actions" in block or "row_secret" in block) and
                         (kind != "component" or block.get("component") != "table")):
                     failures.append(f"{bwhere}: row actions and a row secret go on a table (D192, D194)")
+                if "filter_bar" in block and (kind != "component" or block.get("component") != "table"):
+                    failures.append(f"{bwhere}: a filter bar goes on a table, or on a page's master list (D250)")
+                elif "filter_bar" in block:
+                    filter_bar(block["filter_bar"], bwhere)
+                if kind == "component" and block.get("component") == "filter_bar":
+                    failures.append(f"{bwhere}: a filter bar is a table's own field, filter_bar, not a block of its own "
+                                    "(D250)")
                 if kind == "form":
                     fields = block.get("fields") or []
                     if (block.get("command") not in commands or not 1 <= len(fields) <= 4 or

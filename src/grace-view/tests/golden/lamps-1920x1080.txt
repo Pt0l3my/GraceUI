@@ -18,17 +18,29 @@ text    ink.hi        272,  69   79x36   clip1 glyphs 5 "Lamps"
 text    ink.mute      272, 109  371x20   clip1 glyphs 45 "Every lamp on the harbour wall, and how each one burns."
 line    rule.strong   272, 141 1600x1    clip1
 diamond gold.deep     272, 137    9x9    w1 clip1
-fill    ground.2      272, 161  440x220  r4 clip1
-stroke  rule          272, 161  440x220  r4 w1 clip1
+fill    ground.2      272, 161  440x292  r4 clip1
+stroke  rule          272, 161  440x292  r4 w1 clip1
 text    gold          292, 177   38x16   clip1 glyphs 5 "Lamps"
-fill    tint.select   280, 201  424x56   clip1
-fill    gold          280, 201    2x56   clip1
-text    gold.hi       292, 208   98x22   clip1 glyphs 12 "Harbour mouth"
-text    ink.mute      292, 230  169x20   clip1 glyphs 20 "The north end of the wall"
-text    ink.hi        292, 264   75x22   clip1 glyphs 9 "Fish steps"
-text    ink.mute      292, 286  202x20   clip1 glyphs 26 "Halfway along, above the steps"
-text    ink.hi        292, 320   68x22   clip1 glyphs 8 "Old crane"
-text    ink.mute      292, 342  182x20   clip1 glyphs 22 "The inner end, by the crane"
+text    ink.mute      292, 205   27x20   clip1 glyphs 4 "Sort"
+fill    ground.well   327, 201  138x28   r2 clip1
+stroke  edge          327, 201  138x28   r2 w1 clip1
+text    ink.faint     335, 205    7x20   clip1 glyphs 1 "‹"
+text    ink.hi        349, 205   94x20   clip1 glyphs 12 "Along the wall"
+text    ink.faint     450, 205    7x20   clip1 glyphs 1 "›"
+stroke  edge          482, 201   28x28   r2 w1 clip1
+fill    ink.hi        494, 213    2x8    clip1
+tri     ink.hi        490, 209   10x5    clip1 ^
+fill    ground.well   292, 237  220x28   r2 clip1
+stroke  edge          292, 237  220x28   r2 w1 clip1
+text    ink.faint     302, 241   74x20   clip1 glyphs 9 "Find a lamp"
+fill    tint.select   280, 273  424x56   clip1
+fill    gold          280, 273    2x56   clip1
+text    gold.hi       292, 280   98x22   clip1 glyphs 12 "Harbour mouth"
+text    ink.mute      292, 302  169x20   clip1 glyphs 20 "The north end of the wall"
+text    ink.hi        292, 336   75x22   clip1 glyphs 9 "Fish steps"
+text    ink.mute      292, 358  202x20   clip1 glyphs 26 "Halfway along, above the steps"
+text    ink.hi        292, 392   68x22   clip1 glyphs 8 "Old crane"
+text    ink.mute      292, 414  182x20   clip1 glyphs 22 "The inner end, by the crane"
 text    gold.hi       736, 161   31x18   clip1 glyphs 4 "Lamp"
 fill    gold          736, 185   30x2    clip1
 text    ink.mute      790, 161   39x18   clip1 glyphs 5 "Notes"
@@ -75,4 +87,4 @@ fill    ground.well   454,1051   33x22   r2
 stroke  edge          454,1051   33x22   r2 w1
 text    ink.body      460,1052   21x20   glyphs 3 "Esc"
 text    ink.faint     494,1052   27x20   glyphs 4 "Back"
-stroke  gold.hi       278, 199  428x60   r4 w2 clip1
+stroke  gold.hi       278, 271  428x60   r4 w2 clip1

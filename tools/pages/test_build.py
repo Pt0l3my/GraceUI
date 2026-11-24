@@ -108,6 +108,32 @@ class Seeded(unittest.TestCase):
         sp["categories"].reverse()
         self.expect("category lanterns follows records, at the rail's foot", sp, desc, fx)
 
+    def test_filter_bars(self):
+        # The demo's Keepers table and Lamps master list carry one each (G43, D250).
+        sp, desc, fx = demo()
+        keepers = page(sp, "demo.keepers")["sections"][0]["blocks"][0]
+        self.assertIn("filter_bar", keepers)
+        self.assertIn("filter_bar", page(sp, "demo.lamps")["master"])
+        keepers["filter_bar"] = {}
+        self.expect("its filter bar has a filter, a sort option or a search", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.keepers")["sections"][0]["blocks"][0]["filter_bar"]["filters"].append(
+            {"column": "post", "label": "Again"})
+        self.expect("filter on column post twice", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.keepers")["sections"][0]["blocks"][0]["filter_bar"]["search"] = {"columns": [], "label": "X"}
+        self.expect("its search names one to four columns", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.lamps")["master"]["filter_bar"]["sort"].append({"key": "a.b", "label": "Bad"})
+        self.expect("its master list: a sort option names its key", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["sections"][0]["blocks"][0]["filter_bar"] = {"sort": [{"key": "a", "label": "A"}]}
+        self.expect("a filter bar goes on a table, or on a page's master list", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["sections"][0]["blocks"].append(
+            {"kind": "component", "component": "filter_bar", "topic": "lantern.keepers"})
+        self.expect("a filter bar is a table's own field", sp, desc, fx)
+
     def test_tabs_and_sections(self):
         sp, desc, fx = demo()
         page(sp, "demo.behaviour")["sections"] = [{"id": "x", "title": "X", "blocks": []}]

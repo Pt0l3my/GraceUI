@@ -1777,7 +1777,10 @@ TEST_CASE("master and detail in game: ↑ ↓ along the list choose, → into th
   view.set_topic("lantern.lamp/harbour-mouth", kHarbour);
   // The page opens on the list's first row; ↓ moves along it, each row chosen as focus comes onto it.
   REQUIRE(view.focused() == "item:lantern.lamps/harbour-mouth");
-  press(view, Key::up);  // the first row: ↑ stays on it
+  press(view, Key::up);  // the first row: ↑ goes up to the list's filter bar (D250), and ↓ comes back
+  CHECK(view.focused() == "filter:master:lantern.lamps/search");
+  CHECK(view.chosen() == "harbour-mouth");
+  press(view, Key::down);
   CHECK(view.focused() == "item:lantern.lamps/harbour-mouth");
   press(view, Key::down);
   press(view, Key::down);
@@ -2438,4 +2441,115 @@ TEST_CASE("search across spaces in game: another space's settings found, named b
   for (std::size_t i = 1; i < both.size(); ++i) {
     CHECK(both[i - 1].label <= both[i].label);
   }
+}
+
+TEST_CASE("a table's filter bar in game: its selects, its sort and direction, its search, Clear filters (G43, D250)") {
+  PageView view = loaded("demo", "demo.keepers");
+  view.set_topic("lantern.keepers", kKeepers);
+  const auto walk_to = [&](const std::string& name) {
+    for (int i = 0; i < 40 && view.focused() != name; ++i) {
+      press(view, Key::down);
+    }
+    return view.focused() == name;
+  };
+  // The rows' focus stops, in the order they show.
+  const auto rows = [&] {
+    std::vector<std::string> out;
+    const std::string before = view.focused();
+    for (int i = 0; i < 60; ++i) {
+      const std::string at = view.focused();
+      if (at.rfind("row:lantern.keepers/", 0) == 0) {
+        out.push_back(at.substr(20, at.find('/', 20) - 20));
+      }
+      press(view, Key::down);
+      if (view.focused() == at) {
+        break;
+      }
+    }
+    while (view.focused() != before) {
+      press(view, Key::up);
+    }
+    return out;
+  };
+  const auto dump = [&] {
+    DisplayList list;
+    view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+    return list.dump();
+  };
+  REQUIRE(walk_to("filter:lantern.keepers/f0"));
+  CHECK(dump().find("\"Post\"") != std::string::npos);
+  CHECK(dump().find("\"All\"") != std::string::npos);
+  CHECK(rows() == std::vector<std::string>{"k1", "k2", "k3", "k4"});  // no Time kept here: the space's order
+  // → takes the first post the rows hold: one row left, and the count line says so.
+  press(view, Key::right);
+  CHECK(view.focused() == "filter:lantern.keepers/f0");
+  CHECK(rows() == std::vector<std::string>{"k1"});
+  CHECK(dump().find("\"1 of 4 shown\"") != std::string::npos);
+  for (int i = 0; i < 6; ++i) {
+    press(view, Key::right);  // past the last post it stays there
+  }
+  CHECK(rows() == std::vector<std::string>{"k4"});
+  for (int i = 0; i < 6; ++i) {
+    press(view, Key::left);  // back to All
+  }
+  CHECK(rows().size() == 4);
+  CHECK(dump().find("of 4 shown") == std::string::npos);
+  // Sort by Name, then reversed.
+  REQUIRE(walk_to("filter:lantern.keepers/sort"));
+  press(view, Key::right);
+  CHECK(rows() == std::vector<std::string>{"k3", "k4", "k1", "k2"});  // Ada, Bran, Orla, Tamsin
+  REQUIRE(walk_to("filter:lantern.keepers/dir"));
+  press(view, Key::activate);
+  CHECK(rows() == std::vector<std::string>{"k2", "k1", "k4", "k3"});
+  CHECK(dump().find("tri     ink.hi") != std::string::npos);  // its arrow, drawn
+  // The search, as it is typed; nothing matching offers Clear filters, which brings every row back.
+  REQUIRE(walk_to("filter:lantern.keepers/search"));
+  press(view, Key::activate);
+  type(view, "ra");
+  CHECK(dump().find("\"Bran Teel\"") != std::string::npos);  // as it is typed
+  CHECK(dump().find("\"Orla Venn\"") == std::string::npos);
+  press(view, Key::activate);  // done typing
+  CHECK(rows() == std::vector<std::string>{"k4"});  // Bran
+  press(view, Key::activate);
+  type(view, "zz");
+  press(view, Key::activate);
+  CHECK(rows().empty());
+  CHECK(dump().find("\"Nothing matches these filters.\"") != std::string::npos);
+  REQUIRE(walk_to("filter:lantern.keepers/clear"));
+  press(view, Key::activate);
+  CHECK(rows().size() == 4);
+  CHECK(view.focused() == "filter:lantern.keepers/f0");
+  // The rows' commands still name their own rows, whatever order they show in.
+  REQUIRE(walk_to("row:lantern.keepers/k3/dismiss"));
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // it asks first
+  const Action sent = press(view, Key::activate);
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.args["id"] == "k3");
+}
+
+TEST_CASE("a master list's filter bar in game: above its rows, and ↑ from the first row reaches it (D250)") {
+  PageView view = loaded("demo", "demo.lamps");
+  view.set_topic("lantern.lamps", Json::parse(R"({"columns": [{"id": "name", "label": "Lamp"},
+    {"id": "place", "label": "Where"}], "rows": [
+    {"id": "harbour-mouth", "name": "Harbour mouth", "place": "The north end", "along_m": 0},
+    {"id": "fish-steps", "name": "Fish steps", "place": "Halfway along", "along_m": 120},
+    {"id": "old-crane", "name": "Old crane", "place": "The inner end", "along_m": 260}]})"));
+  // The rows along the wall (its first sort), and ↑ from the first row reaches the bar above them.
+  for (int i = 0; i < 6 && view.focused() != "item:lantern.lamps/harbour-mouth"; ++i) {
+    press(view, Key::up);
+  }
+  REQUIRE(view.focused() == "item:lantern.lamps/harbour-mouth");
+  press(view, Key::down);
+  CHECK(view.focused() == "item:lantern.lamps/fish-steps");
+  press(view, Key::up);
+  press(view, Key::up);
+  CHECK(view.focused() == "filter:master:lantern.lamps/search");
+  // Find a lamp: "crane" leaves one row; ↑ from it goes back to the bar.
+  press(view, Key::activate);
+  type(view, "crane");
+  press(view, Key::activate);
+  press(view, Key::down);
+  CHECK(view.focused() == "item:lantern.lamps/old-crane");
+  press(view, Key::up);
+  CHECK(view.focused() == "filter:master:lantern.lamps/search");
 }

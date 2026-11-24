@@ -20,83 +20,101 @@ text    ink.hi        272,  69  111x36   clip1 glyphs 7 "Keepers"
 text    ink.mute      272, 109  425x20   clip1 glyphs 52 "Who keeps the lantern, their ward words, and the oil they burn."
 line    rule.strong   272, 141 1600x1    clip1
 diamond gold.deep     272, 137    9x9    w1 clip1
-fill    ground.2      272, 161 1600x262  r4 clip1
-stroke  rule          272, 161 1600x262  r4 w1 clip1
+fill    ground.2      272, 161 1600x302  r4 clip1
+stroke  rule          272, 161 1600x302  r4 w1 clip1
 text    gold          292, 184   46x16   clip1 glyphs 6 "Roster"
 text    ink.faint    1842, 182    7x20   clip1 glyphs 1 "-"
 fill    rot.fill     1726, 178   98x28   r2 clip1
 text    ink.hi       1738, 182   74x20   clip1 glyphs 10 "Dismiss all"
-line    rule          292, 219 1560x1    clip1
-text    ink.hi        292, 232   68x22   clip1 glyphs 8 "Orla Venn"
-fill    rot.fill     1781, 229   71x28   r2 clip1
-text    ink.hi       1793, 233   47x20   clip1 glyphs 7 "Dismiss"
-stroke  edge         1724, 229   44x28   r2 w1 clip1
-text    ink.hi       1736, 233   20x20   clip1 glyphs 3 "Set"
-text    ink.mute      812, 233  202x20   clip1 glyphs 23 "North light  ·  Ward word: Set"
-line    rule          292, 267 1560x1    clip1
-text    ink.hi        292, 280   82x22   clip1 glyphs 10 "Tamsin Reed"
-fill    rot.fill     1781, 277   71x28   r2 clip1
-text    ink.hi       1793, 281   47x20   clip1 glyphs 7 "Dismiss"
-stroke  edge         1724, 277   44x28   r2 w1 clip1
-text    ink.hi       1736, 281   20x20   clip1 glyphs 3 "Set"
-text    ink.mute      812, 281  236x20   clip1 glyphs 28 "Harbour wall  ·  Ward word: Missing"
-line    rule          292, 315 1560x1    clip1
-text    ink.hi        292, 328   68x22   clip1 glyphs 8 "Ada Marsh"
-fill    rot.fill     1781, 325   71x28   r2 clip1
-text    ink.hi       1793, 329   47x20   clip1 glyphs 7 "Dismiss"
-stroke  edge         1724, 325   44x28   r2 w1 clip1
-text    ink.hi       1736, 329   20x20   clip1 glyphs 3 "Set"
-text    ink.mute      812, 329  223x20   clip1 glyphs 26 "Store room  ·  Ward word: Refused"
-line    rule          292, 363 1560x1    clip1
-text    ink.hi        292, 376   68x22   clip1 glyphs 8 "Bran Teel"
-fill    rot.fill     1781, 373   71x28   r2 clip1
-text    ink.hi       1793, 377   47x20   clip1 glyphs 7 "Dismiss"
-text    ink.mute      812, 377  236x20   clip1 glyphs 27 "Lamp loft  ·  Ward word: Not needed"
-fill    ground.2      272, 439 1600x204  r4 clip1
-stroke  rule          272, 439 1600x204  r4 w1 clip1
-text    gold          292, 455  100x16   clip1 glyphs 11 "Hire a keeper"
-text    ink.faint    1842, 455    7x20   clip1 glyphs 1 "-"
-line    rule          292, 483 1560x1    clip1
-text    ink.hi        292, 496   30x22   clip1 glyphs 4 "Name"
-fill    ground.well  1292, 493  560x28   r2 clip1
-stroke  edge         1292, 493  560x28   r2 w1 clip1
-text    ink.body     1302, 497   61x20   clip1 glyphs 8 "Orla Venn"
-line    rule          292, 531 1560x1    clip1
-text    ink.hi        292, 544   30x22   clip1 glyphs 4 "Post"
-fill    ground.well  1292, 541  560x28   r2 clip1
-stroke  edge         1292, 541  560x28   r2 w1 clip1
-fill    gold         1790, 589   62x32   r2 clip1
-text    on.gold      1806, 594   30x22   clip1 glyphs 4 "Hire"
-fill    ground.2      272, 659 1600x118  r4 clip1
-stroke  rule          272, 659 1600x118  r4 w1 clip1
-text    gold          292, 682   23x16   clip1 glyphs 3 "Oil"
-text    ink.faint     327, 680   34x20   clip1 glyphs 5 "store"
-text    ink.faint    1842, 680    7x20   clip1 glyphs 1 "-"
-stroke  edge         1739, 676   85x28   r2 w1 clip1
-text    ink.hi       1751, 680   61x20   clip1 glyphs 8 "Order oil"
-line    rule          292, 717 1560x1    clip1
-text    ink.hi        292, 730   22x22   clip1 glyphs 3 "Oil"
-fill    ground.well  1572, 727  280x28   r2 clip1
-stroke  edge         1572, 727  280x28   r2 w1 clip1
-text    ink.body     1582, 731   54x20   clip1 glyphs 8 "rapeseed"
-text    ink.faint     326, 732  176x20   clip1 glyphs 22 "Nothing to choose from yet"
-fill    ground.2      272, 793 1600x124  r4 clip1
-stroke  rule          272, 793 1600x124  r4 w1 clip1
-text    gold          292, 809  138x16   clip1 glyphs 15 "From a roster file"
-text    ink.faint    1842, 809    7x20   clip1 glyphs 1 "-"
-text    ink.mute      292, 829  580x20   clip1 glyphs 72 "A harbour roster lists several keepers at once; each keeper it names joins the roster."
-text    ink.mute      292, 869  338x20   clip1 glyphs 40 "Add a roster file: in the browser view on this PC."
-fill    ground.2      272, 933 1600x140  r4 clip1
-stroke  rule          272, 933 1600x140  r4 w1 clip1
-text    gold          292, 949   54x16   clip1 glyphs 7 "Related"
-line    rule          292, 973 1560x1    clip1
-text    ink.hi        304, 984   68x22   clip1 glyphs 9 "Behaviour"
-text    ink.mute      812, 985  425x20   clip1 glyphs 52 "How the lantern burns, how often it flickers, and who keeps it."
-text    gold         1824, 984    8x22   clip1 glyphs 1 "→"
-line    rule          292,1017 1560x1    clip1
-text    ink.hi        304,1028   60x22   clip1 glyphs 8 "Overview"
-text    ink.mute      812,1029  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
-text    gold         1824,1028    8x22   clip1 glyphs 1 "→"
+text    ink.mute      292, 227   27x20   clip1 glyphs 4 "Post"
+fill    ground.well   327, 223   96x28   r2 clip1
+stroke  edge          327, 223   96x28   r2 w1 clip1
+text    ink.faint     335, 227    7x20   clip1 glyphs 1 "‹"
+text    ink.hi        349, 227   20x20   clip1 glyphs 3 "All"
+text    ink.faint     407, 227    7x20   clip1 glyphs 1 "›"
+text    ink.mute      439, 227   27x20   clip1 glyphs 4 "Sort"
+fill    ground.well   474, 223  105x28   r2 clip1
+stroke  edge          474, 223  105x28   r2 w1 clip1
+text    ink.faint     482, 227    7x20   clip1 glyphs 1 "‹"
+text    ink.hi        496, 227   61x20   clip1 glyphs 8 "Time kept"
+text    ink.faint     563, 227    7x20   clip1 glyphs 1 "›"
+stroke  edge          595, 223   28x28   r2 w1 clip1
+fill    ink.hi        608, 231    2x8    clip1
+tri     ink.hi        604, 238   10x5    clip1 v
+fill    ground.well   639, 223  220x28   r2 clip1
+stroke  edge          639, 223  220x28   r2 w1 clip1
+text    ink.faint     649, 227   88x20   clip1 glyphs 11 "Find a keeper"
+line    rule          292, 259 1560x1    clip1
+text    ink.hi        292, 272   68x22   clip1 glyphs 8 "Orla Venn"
+fill    rot.fill     1781, 269   71x28   r2 clip1
+text    ink.hi       1793, 273   47x20   clip1 glyphs 7 "Dismiss"
+stroke  edge         1724, 269   44x28   r2 w1 clip1
+text    ink.hi       1736, 273   20x20   clip1 glyphs 3 "Set"
+text    ink.mute      812, 273  202x20   clip1 glyphs 23 "North light  ·  Ward word: Set"
+line    rule          292, 307 1560x1    clip1
+text    ink.hi        292, 320   82x22   clip1 glyphs 10 "Tamsin Reed"
+fill    rot.fill     1781, 317   71x28   r2 clip1
+text    ink.hi       1793, 321   47x20   clip1 glyphs 7 "Dismiss"
+stroke  edge         1724, 317   44x28   r2 w1 clip1
+text    ink.hi       1736, 321   20x20   clip1 glyphs 3 "Set"
+text    ink.mute      812, 321  236x20   clip1 glyphs 28 "Harbour wall  ·  Ward word: Missing"
+line    rule          292, 355 1560x1    clip1
+text    ink.hi        292, 368   68x22   clip1 glyphs 8 "Ada Marsh"
+fill    rot.fill     1781, 365   71x28   r2 clip1
+text    ink.hi       1793, 369   47x20   clip1 glyphs 7 "Dismiss"
+stroke  edge         1724, 365   44x28   r2 w1 clip1
+text    ink.hi       1736, 369   20x20   clip1 glyphs 3 "Set"
+text    ink.mute      812, 369  223x20   clip1 glyphs 26 "Store room  ·  Ward word: Refused"
+line    rule          292, 403 1560x1    clip1
+text    ink.hi        292, 416   68x22   clip1 glyphs 8 "Bran Teel"
+fill    rot.fill     1781, 413   71x28   r2 clip1
+text    ink.hi       1793, 417   47x20   clip1 glyphs 7 "Dismiss"
+text    ink.mute      812, 417  236x20   clip1 glyphs 27 "Lamp loft  ·  Ward word: Not needed"
+fill    ground.2      272, 479 1600x204  r4 clip1
+stroke  rule          272, 479 1600x204  r4 w1 clip1
+text    gold          292, 495  100x16   clip1 glyphs 11 "Hire a keeper"
+text    ink.faint    1842, 495    7x20   clip1 glyphs 1 "-"
+line    rule          292, 523 1560x1    clip1
+text    ink.hi        292, 536   30x22   clip1 glyphs 4 "Name"
+fill    ground.well  1292, 533  560x28   r2 clip1
+stroke  edge         1292, 533  560x28   r2 w1 clip1
+text    ink.body     1302, 537   61x20   clip1 glyphs 8 "Orla Venn"
+line    rule          292, 571 1560x1    clip1
+text    ink.hi        292, 584   30x22   clip1 glyphs 4 "Post"
+fill    ground.well  1292, 581  560x28   r2 clip1
+stroke  edge         1292, 581  560x28   r2 w1 clip1
+fill    gold         1790, 629   62x32   r2 clip1
+text    on.gold      1806, 634   30x22   clip1 glyphs 4 "Hire"
+fill    ground.2      272, 699 1600x118  r4 clip1
+stroke  rule          272, 699 1600x118  r4 w1 clip1
+text    gold          292, 722   23x16   clip1 glyphs 3 "Oil"
+text    ink.faint     327, 720   34x20   clip1 glyphs 5 "store"
+text    ink.faint    1842, 720    7x20   clip1 glyphs 1 "-"
+stroke  edge         1739, 716   85x28   r2 w1 clip1
+text    ink.hi       1751, 720   61x20   clip1 glyphs 8 "Order oil"
+line    rule          292, 757 1560x1    clip1
+text    ink.hi        292, 770   22x22   clip1 glyphs 3 "Oil"
+fill    ground.well  1572, 767  280x28   r2 clip1
+stroke  edge         1572, 767  280x28   r2 w1 clip1
+text    ink.body     1582, 771   54x20   clip1 glyphs 8 "rapeseed"
+text    ink.faint     326, 772  176x20   clip1 glyphs 22 "Nothing to choose from yet"
+fill    ground.2      272, 833 1600x124  r4 clip1
+stroke  rule          272, 833 1600x124  r4 w1 clip1
+text    gold          292, 849  138x16   clip1 glyphs 15 "From a roster file"
+text    ink.faint    1842, 849    7x20   clip1 glyphs 1 "-"
+text    ink.mute      292, 869  580x20   clip1 glyphs 72 "A harbour roster lists several keepers at once; each keeper it names joins the roster."
+text    ink.mute      292, 909  338x20   clip1 glyphs 40 "Add a roster file: in the browser view on this PC."
+fill    ground.2      272, 973 1600x140  r4 clip1
+stroke  rule          272, 973 1600x140  r4 w1 clip1
+text    gold          292, 989   54x16   clip1 glyphs 7 "Related"
+line    rule          292,1013 1560x1    clip1
+text    ink.hi        304,1024   68x22   clip1 glyphs 9 "Behaviour"
+text    ink.mute      812,1025  425x20   clip1 glyphs 52 "How the lantern burns, how often it flickers, and who keeps it."
+text    gold         1824,1024    8x22   clip1 glyphs 1 "→"
+line    rule          292,1057 1560x1    clip1
+text    ink.hi        304,1068   60x22   clip1 glyphs 8 "Overview"
+text    ink.mute      812,1069  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
+text    gold         1824,1068    8x22   clip1 glyphs 1 "→"
 line    rule          240,1044 1680x1   
 fill    ground.well   272,1051   39x22   r2
 stroke  edge          272,1051   39x22   r2 w1
