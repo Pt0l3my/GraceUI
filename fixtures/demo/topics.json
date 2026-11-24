@@ -379,5 +379,250 @@
       "time": "Today",
       "line": "The glass was cleaned."
     }
-  ]
+  ],
+  "lantern.guides": {
+    "columns": [
+      {
+        "id": "title",
+        "label": "Guide"
+      },
+      {
+        "id": "headings",
+        "label": "Covers"
+      }
+    ],
+    "rows": [
+      {
+        "id": "lighting",
+        "title": "Lighting the lamp",
+        "headings": "Before dusk · The match · Trimming"
+      },
+      {
+        "id": "oil",
+        "title": "Oil",
+        "headings": "Which oil · Storing it"
+      },
+      {
+        "id": "storms",
+        "title": "Keeping a lamp in a storm",
+        "headings": "Wind · Rain · When to shutter"
+      }
+    ]
+  },
+  "lantern.guide/lighting": {
+    "title": "Lighting the lamp",
+    "blocks": [
+      {
+        "paragraph": [
+          {
+            "text": "A lamp lit well burns all night with one trim. Read "
+          },
+          {
+            "text": "Oil",
+            "doc": "oil"
+          },
+          {
+            "text": " first if the lamp is new to you."
+          }
+        ]
+      },
+      {
+        "heading": "Before dusk"
+      },
+      {
+        "list": [
+          "Clean the glass inside and out.",
+          "Fill the oil to the line, never above it.",
+          "Check the wick is dry."
+        ],
+        "ordered": true
+      },
+      {
+        "heading": "The match"
+      },
+      {
+        "paragraph": [
+          {
+            "text": "Strike the match away from the glass, and light the wick at its "
+          },
+          {
+            "text": "edge",
+            "strong": true
+          },
+          {
+            "text": ", not its middle."
+          }
+        ]
+      },
+      {
+        "note": [
+          {
+            "text": "Never leave a lit lamp alone in its first quarter hour."
+          }
+        ]
+      },
+      {
+        "heading": "Trimming",
+        "level": 3
+      },
+      {
+        "paragraph": [
+          {
+            "text": "Trim to a flat, even wick; a peaked wick smokes. In wind, see "
+          },
+          {
+            "text": "Keeping a lamp in a storm",
+            "doc": "storms",
+            "heading": "Wind"
+          },
+          {
+            "text": "."
+          }
+        ]
+      }
+    ]
+  },
+  "lantern.guide/oil": {
+    "title": "Oil",
+    "blocks": [
+      {
+        "heading": "Which oil"
+      },
+      {
+        "table": {
+          "columns": [
+            {
+              "id": "oil",
+              "label": "Oil"
+            },
+            {
+              "id": "burns",
+              "label": "Burns"
+            },
+            {
+              "id": "smoke",
+              "label": "Smoke"
+            }
+          ],
+          "rows": [
+            {
+              "oil": "Rapeseed",
+              "burns": "Long and bright",
+              "smoke": "Little"
+            },
+            {
+              "oil": "Olive",
+              "burns": "Steady",
+              "smoke": "Little"
+            },
+            {
+              "oil": "Tallow",
+              "burns": "Short",
+              "smoke": "Much"
+            }
+          ]
+        }
+      },
+      {
+        "heading": "Storing it"
+      },
+      {
+        "paragraph": "Keep it cool and dark, in the store room, sealed."
+      },
+      {
+        "code": "store room   rapeseed  12 jars\nstore room   olive      4 jars"
+      }
+    ]
+  },
+  "lantern.guide/storms": {
+    "title": "Keeping a lamp in a storm",
+    "blocks": [
+      {
+        "heading": "Wind"
+      },
+      {
+        "paragraph": "Lower the wick a turn before the wind rises; a tall flame in a gust blackens the glass."
+      },
+      {
+        "heading": "Rain"
+      },
+      {
+        "paragraph": [
+          {
+            "text": "Rain on hot glass can crack it. Close the hood, and see "
+          },
+          {
+            "text": "Lighting the lamp",
+            "doc": "lighting",
+            "heading": "Trimming"
+          },
+          {
+            "text": " for the trim after."
+          }
+        ]
+      },
+      {
+        "heading": "When to shutter"
+      },
+      {
+        "paragraph": [
+          {
+            "text": "Shutter only on the harbour master's word. A guide not yet written, "
+          },
+          {
+            "text": "Signals",
+            "doc": "signals"
+          },
+          {
+            "text": ", will say more."
+          }
+        ]
+      }
+    ]
+  },
+  "lantern.report": {
+    "parts": [
+      {
+        "id": "summary",
+        "label": "Summary",
+        "optional": false,
+        "included": true,
+        "fields": [
+          {
+            "label": "Lamp",
+            "value": "North light"
+          },
+          {
+            "label": "Burned",
+            "value": "Eleven hours"
+          }
+        ]
+      },
+      {
+        "id": "log",
+        "label": "Recent log",
+        "optional": true,
+        "included": true,
+        "fields": [
+          {
+            "label": "Lines",
+            "value": "19:44  A moth circled the glass.\n19:48  The wind rose; the flame held.",
+            "code": true
+          }
+        ]
+      },
+      {
+        "id": "notes",
+        "label": "Your notes",
+        "optional": true,
+        "included": false,
+        "fields": [
+          {
+            "label": "Notes",
+            "value": "The glass wants a new seal."
+          }
+        ]
+      }
+    ]
+  }
 }

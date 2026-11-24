@@ -14,7 +14,7 @@ name = "Demo space"
 settings_schema = 1
 commands = ["settings.set", "settings.reset", "lantern.trim", "lantern.clear_log", "keepers.dismiss", "keepers.ward",
             "keepers.hire", "keepers.dismiss_all", "oil.order", "note.check", "note.save", "note.reset", "note.restore",
-            "note.draft", "keepers.import"]
+            "note.draft", "keepers.import", "report.part"]
 slow_commands = ["oil.order", "note.draft"]  # the harbour store's oil and a drafted note: within 90 s (D216)
 file_commands = ["keepers.import"]  # a roster file, by the upload route from this PC alone (D226)
 sensitive_commands = ["keepers.import"]
@@ -50,6 +50,19 @@ shape = "state"
 family = true
 
 [[topic]]
+id = "lantern.guides"  # the handbook's list: each guide's id, title and headings (D251)
+shape = "state"
+
+[[topic]]
+id = "lantern.guide"  # a guide's document (D251)
+shape = "state"
+family = true
+
+[[topic]]
+id = "lantern.report"  # the lamp report's preview (D251)
+shape = "state"
+
+[[topic]]
 id = "lantern.log"
 shape = "stream"
 ring = 200
@@ -67,7 +80,7 @@ pages = ["demo.overview", "demo.behaviour", "demo.keepers"]
 [[category]]
 id = "records"
 name = "Records"
-pages = ["demo.log", "demo.festival", "demo.lamps"]
+pages = ["demo.log", "demo.festival", "demo.lamps", "demo.handbook"]
 foot = true  # at the rail's foot, under a rule (D248)
 
 # ---- Settings: one of every type (§6.9).
@@ -305,6 +318,12 @@ title = "Journal"
 collapsed = true
 blocks = [{ kind = "component", component = "log_tail", topic = "lantern.journal" }]
 
+[[page.sections]]
+id = "report"
+title = "Lamp report"
+description = "What a report to the harbour master would hold. Leave out the parts you would rather not send."
+blocks = [{ kind = "component", component = "report_preview", topic = "lantern.report", command = "report.part" }]
+
 [[page]]
 id = "demo.festival"
 category = "records"
@@ -339,7 +358,7 @@ actions = [{ id = "dismiss_all", label = "Dismiss all", command = "keepers.dismi
 [[page.sections]]
 id = "hire"
 title = "Hire a keeper"
-blocks = [{ kind = "form", command = "keepers.hire", fields = [{ id = "name", label = "Name", max = 32 }, { id = "post", label = "Post", max = 64 }], submit = "Hire" }]
+blocks = [{ kind = "form", command = "keepers.hire", fields = [{ id = "name", label = "Name", max = 32 }, { id = "post", label = "Post", max = 64 }, { id = "notes", label = "Notes", max = 400, prose = true }], submit = "Hire" }]
 
 [[page.sections]]
 id = "oil"
@@ -380,3 +399,20 @@ sections = [{ id = "notes", title = "Keeper's notes", blocks = [{ kind = "compon
 id = "yours"
 name = "Your notes"
 sections = [{ id = "your_notes", title = "Your notes", blocks = [{ kind = "editor", topic = "lantern.note", editor = { save = "note.save", check = "note.check", reset = "note.reset", restore = "note.restore", draft = "note.draft", notes_label = "Your rough notes", notes_max = 400 } }] }]
+
+[[page]]
+id = "demo.handbook"
+category = "records"
+name = "Handbook"
+description = "The keeper's handbook: how to light, feed and keep the lamps."
+increment = "0.2"
+related = ["demo.lamps", "demo.log"]
+help.purpose = "Read the keeper's handbook, one guide at a time."
+help.steps = ["Choose a guide in the list, or find one by its title or a heading.", "Follow a link to another guide, or to one of its headings.", "Return to the list with Esc or the left arrow."]
+master = { topic = "lantern.guides", key = "id", detail = "lantern.guide", label = "Guides", empty = "No guide is written yet.", none = "Choose a guide to read it.", filter_bar = { search = { columns = ["title", "headings"], label = "Find a guide" } } }
+
+[[page.sections]]
+id = "guide"
+title = "Guide"
+blocks = [{ kind = "document", topic = "lantern.guide" }]
+
