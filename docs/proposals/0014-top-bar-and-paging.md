@@ -1,6 +1,7 @@
 # Proposal 0014: The top bar's controls for a space, and tables read a page at a time
 
-**Status: proposal, 2026-11-24, put to the owner (G45) and to EldenNet's session for its formats. The owner chose (a) the same day, as recommended: §1 and §2 in one protocol minor, then §3 and §4 in the next. §1 and §2 were built as D252 in GraceUI 0.2.45 (protocol 1.13); §3 and §4 wait for EldenNet's answers. Where this text and the design differ, the design holds once built.** §4.2.3 names six
+**Status: proposal, 2026-11-24, put to the owner (G45) and to EldenNet's session for its formats. The owner chose (a) the same day, as recommended: §1 and §2 in one protocol minor, then §3 and §4 in the next. §1 and §2 were built as D252 in GraceUI 0.2.45 (protocol 1.13); §3 and §4, with EldenNet's answers (§7), as D254 in
+GraceUI 0.2.47 (protocol 1.14). Where this text and the design differ, the design holds once built.** §4.2.3 names six
 top bar controls: search, the status lamp, Live updates, Journey, the theme and Quick switches. Search, the lamp and
 the theme are built. The other three are described as EldenNet's controls (its quick switches, its journeys), but no
 form exists for a mod's space to declare them, and in game "Start waits for the quick switches" (§5.4). EldenNet's
