@@ -1408,3 +1408,13 @@ of your eight faces, so nothing else changes. An older GraceUI has no such file:
 Tarnished's lines upright, or set your floor to 0.2.36. The panels' rounded corners need nothing of GraceUI's: the
 checker takes any triangles on your own texture, so corners made as Dear ImGui makes them (a fan of points per corner
 and a half-pixel fringe fading to nothing by vertex alpha, on your white texel) pass as they are.
+
+## 70. The menu's pad mode (2026-11-24, D242; GraceUI 0.2.37)
+
+Nothing for EldenNet to change. In game, GraceUI's menu now follows the last device used: after a pad press its key
+hints are the pad's buttons, in GraceUI's own glyphs, for your space's pages as for GraceUI's; Y opens search, View
+hides and shows the hints, and the right stick scrolls the page. Your own panels (the chat box, the lower third, F11)
+draw their own hints, as before. For your harness: `GraceUiTestMenu` gains `pad_mode`, `hints_shown` and `footer` (the
+footer's words as drawn), and `GraceUI_Test_GetMenu` now fills as far as your struct's size reaches, so a harness built
+against an older `graceui_test.h` still reads the menu; `GraceUI_Test_PadState` gives a whole pad, sticks and triggers
+included, should a case of yours need the right stick or a trigger.
