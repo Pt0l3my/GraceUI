@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
@@ -191,6 +192,65 @@ TEST_CASE("View hides and shows the key hints, and the right stick scrolls the p
   // Search on the pad's Y, as on `/`.
   view.input(Input{Key::search, false, true});
   CHECK(view.editing());
+}
+
+// The first item in a dump whose line starts with `prefix` (e.g. "stroke  gold.hi"), and holds `text` if given: its
+// rectangle, read from the dump's "x, y  wxh" columns; found false if there is none.
+struct DumpRect {
+  bool found = false;
+  float x = 0, y = 0, w = 0, h = 0;
+};
+DumpRect dump_rect(const std::string& dump, const std::string& prefix, const std::string& text = {}) {
+  std::istringstream lines(dump);
+  for (std::string line; std::getline(lines, line);) {
+    if (line.rfind(prefix, 0) != 0 || (!text.empty() && line.find(text) == std::string::npos)) {
+      continue;
+    }
+    DumpRect r;
+    std::istringstream at(line.substr(prefix.size()));
+    char comma = 0, by = 0;
+    if (at >> r.x >> comma >> r.y >> r.w >> by >> r.h && comma == ',' && by == 'x') {
+      r.found = true;
+      return r;
+    }
+  }
+  return {};
+}
+
+TEST_CASE("the focus ring on the rail falls whole within it, and a related row's clears its words, centred (D245)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  const float scale = 1.25f;
+  const auto laid = [&] {
+    DisplayList list;
+    view.layout(Viewport{1920, 1080, scale}, test::fonts(), list);
+    return list.dump();
+  };
+  // The rail: from x = 0 to its width, at the display's left edge; the ring's outer edge within it.
+  press(view, Key::back);
+  REQUIRE(view.scope() == Scope::rail);
+  const std::string rail = laid();
+  const DumpRect ring = dump_rect(rail, "stroke  gold.hi");
+  const DumpRect ground = dump_rect(rail, "fill    ground.0");
+  REQUIRE(ring.found);
+  REQUIRE(ground.found);
+  CHECK(ground.x == 0);
+  CHECK(ring.x >= ground.x);
+  CHECK(ring.x + ring.w <= ground.x + ground.w);
+  // A related row: the ring round the row, its label at least 10 px (at scale) inside the ring's inner edge (it was 1
+  // px), and the label's middle at the ring's.
+  press(view, Key::activate);
+  for (int i = 0; i < 30 && view.focused().rfind("related:", 0) != 0; ++i) {
+    press(view, Key::down);
+  }
+  REQUIRE(view.focused() == "related:graceui.hotkeys");
+  const std::string page = laid();
+  const DumpRect related = dump_rect(page, "stroke  gold.hi");
+  const DumpRect label = dump_rect(page, "text    ink.hi", "\"Hotkeys\"");
+  REQUIRE(related.found);
+  REQUIRE(label.found);
+  const float ring_width = std::round(3 * scale);
+  CHECK(label.x - (related.x + ring_width) >= 10 * scale);
+  CHECK(std::fabs((label.y + label.h / 2) - (related.y + related.h / 2)) <= 1.5f);
 }
 
 TEST_CASE("back goes to the rail, and back again closes; the rail opens pages") {

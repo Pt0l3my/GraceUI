@@ -46,13 +46,13 @@ fill    ground.2      189, 287  589x98   r3 clip1
 stroke  rule          189, 287  589x98   r3 w1 clip1
 text    gold          203, 298   37x11   clip1 glyphs 7 "Related"
 line    rule          203, 315  561x1    clip1
-text    ink.hi        203, 318   47x15   clip1 glyphs 9 "Behaviour"
-text    ink.mute      390, 319  295x14   clip1 glyphs 52 "How the lantern burns, how often it flickers, and who keeps it."
-text    gold          753, 318    5x15   clip1 glyphs 1 "→"
+text    ink.hi        211, 323   47x15   clip1 glyphs 9 "Behaviour"
+text    ink.mute      390, 324  295x14   clip1 glyphs 52 "How the lantern burns, how often it flickers, and who keeps it."
+text    gold          745, 323    5x15   clip1 glyphs 1 "→"
 line    rule          203, 346  561x1    clip1
-text    ink.hi        203, 349   16x15   clip1 glyphs 3 "Log"
-text    ink.mute      390, 350  291x14   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
-text    gold          753, 349    5x15   clip1 glyphs 1 "→"
+text    ink.hi        211, 354   16x15   clip1 glyphs 3 "Log"
+text    ink.mute      390, 355  291x14   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
+text    gold          745, 354    5x15   clip1 glyphs 1 "→"
 line    rule          167, 575  633x1   
 text    ink.faint     189, 581  112x14   glyphs 16 "Enter  Open    Esc  Back"
 stroke  gold.hi       687,  49   92x24   r3 w1 clip1

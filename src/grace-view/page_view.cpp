@@ -3606,6 +3606,12 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     // ---- The rail.
     const float rail_w = std::round(size::rail * s);
     c.fill(Rect{menu_x, 0, rail_w, H}, Colour::ground_0);
+    // A rail row's focus, inset so that its ring, drawn outside it by the ring's offset, falls whole within the rail: at
+    // the display's left edge and short of the page (D245).
+    const auto rail_ring = [&](Rect row) {
+      const float inset = std::round(tokens::kGrace.size.focus_offset * s) + std::max(1.0f, std::round(s));
+      return Rect{row.x + inset, row.y, row.w - 2 * inset, row.h};
+    };
     const float pad = std::round(size::rail_padding * s);
     float y = pad;
     c.text(context_.title.empty() ? pages_.name : context_.title, TypeRole::display_md, menu_x + pad, y,
@@ -3643,7 +3649,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         c.text(label, TypeRole::ui_sm, menu_x + pad, y + std::round((h - line_height(TypeRole::ui_sm, s)) / 2),
                rail_w - 2 * pad, Colour::ink_mute);
         if (scope_ == Scope::rail && i == rail_focus_) {
-          c.focused(row);
+          c.focused(rail_ring(row));
         }
         y += h;
         continue;
@@ -3665,7 +3671,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       c.text(label, role, menu_x + pad + indent, y + std::round((h - line_height(role, s)) / 2),
              rail_w - 2 * pad - indent, ink);
       if (scope_ == Scope::rail && i == rail_focus_) {
-        c.focused(row);
+        c.focused(rail_ring(row));
       }
       y += h;
     }
@@ -4934,13 +4940,17 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         }
         hit(row, Scope::page, focus_index(FocusKind::related, link));
         c.line(row.x, row.y, row.w, Colour::rule);
-        c.text(target != nullptr ? target->name : link, TypeRole::ui, row.x, y + std::round(4 * s), row.w / 3,
+        // The words clear of the focus ring, which goes round the row, and centred in it (D245).
+        const float inner = std::round(12 * s);
+        const float label_y = y + std::round((row.h - line_height(TypeRole::ui, s)) / 2);
+        c.text(target != nullptr ? target->name : link, TypeRole::ui, row.x + inner, label_y, row.w / 3 - inner,
                Colour::ink_hi);
         if (target != nullptr) {
-          c.text(target->description, TypeRole::ui_sm, row.x + row.w / 3, y + std::round(6 * s),
-                 row.w * 2 / 3 - std::round(30 * s), Colour::ink_mute);
+          c.text(target->description, TypeRole::ui_sm, row.x + row.w / 3,
+                 y + std::round((row.h - line_height(TypeRole::ui_sm, s)) / 2),
+                 row.w * 2 / 3 - std::round(30 * s) - inner, Colour::ink_mute);
         }
-        c.text("→", TypeRole::ui, row.right() - std::round(16 * s), y + std::round(4 * s), std::round(16 * s),
+        c.text("→", TypeRole::ui, row.right() - inner - std::round(16 * s), label_y, std::round(16 * s),
                Colour::gold);
         if (page_focus(FocusKind::related, link)) {
           c.focused(row);

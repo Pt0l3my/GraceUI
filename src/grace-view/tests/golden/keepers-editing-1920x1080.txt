@@ -90,13 +90,13 @@ fill    ground.2      272, 933 1600x140  r4 clip1
 stroke  rule          272, 933 1600x140  r4 w1 clip1
 text    gold          292, 949   54x16   clip1 glyphs 7 "Related"
 line    rule          292, 973 1560x1    clip1
-text    ink.hi        292, 977   68x22   clip1 glyphs 9 "Behaviour"
-text    ink.mute      812, 979  425x20   clip1 glyphs 52 "How the lantern burns, how often it flickers, and who keeps it."
-text    gold         1836, 977    8x22   clip1 glyphs 1 "→"
+text    ink.hi        304, 984   68x22   clip1 glyphs 9 "Behaviour"
+text    ink.mute      812, 985  425x20   clip1 glyphs 52 "How the lantern burns, how often it flickers, and who keeps it."
+text    gold         1824, 984    8x22   clip1 glyphs 1 "→"
 line    rule          292,1017 1560x1    clip1
-text    ink.hi        292,1021   60x22   clip1 glyphs 8 "Overview"
-text    ink.mute      812,1023  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
-text    gold         1836,1021    8x22   clip1 glyphs 1 "→"
+text    ink.hi        304,1028   60x22   clip1 glyphs 8 "Overview"
+text    ink.mute      812,1029  418x20   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
+text    gold         1824,1028    8x22   clip1 glyphs 1 "→"
 line    rule          240,1044 1680x1   
 text    ink.faint     272,1052  277x20   glyphs 27 "Enter  Next    Esc  Done    Ctrl+V  Paste"
 stroke  gold.hi      1290, 491  564x32   r4 w2 clip1

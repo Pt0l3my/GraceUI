@@ -5032,6 +5032,26 @@ void run_menu_space(const std::wstring& dll) {
   if (named != std::string::npos) {
     other_pages.replace(named, 12, "\"The second lantern\"");
   }
+  // Its Records category holds only pages of a later increment (0.6), so that GraceUI's links back to it leave the
+  // category out, as its own rail does (D173, D245).
+  {
+    grace::protocol::Json parsed = grace::protocol::Json::parse(other_pages, nullptr, false);
+    if (parsed.is_object() && parsed.contains("categories") && parsed.contains("pages")) {
+      for (const grace::protocol::Json& category : parsed["categories"]) {
+        if (category.value("id", std::string()) != "records") {
+          continue;
+        }
+        for (grace::protocol::Json& page : parsed["pages"]) {
+          for (const grace::protocol::Json& id : category["pages"]) {
+            if (page.value("id", std::string()) == id.get<std::string>()) {
+              page["increment"] = "0.6";
+            }
+          }
+        }
+      }
+      other_pages = parsed.dump();
+    }
+  }
   const Connected lantern = connect(table, request_for("lantern"));
   const GraceUiSpaceDesc other = game_space(other_pages, space.settings);
   const GraceUiStatus second = table->register_pages(lantern.answer.consumer, &other);
@@ -5065,6 +5085,8 @@ void run_menu_space(const std::wstring& dll) {
   menu = menu_after(game, grace, grace.menu().lists);
   const std::string own_page = menu.page;
   const std::string own_focus = menu.focused;
+  const bool lanterns_back = grace.menu_shows("Lanterns") != 0;
+  const bool records_back = grace.menu_shows("Records") != 0;
   for (int i = 0; i < 12; ++i) {
     press(window, VK_UP, 0x48);
   }
@@ -5076,12 +5098,13 @@ void run_menu_space(const std::wstring& dll) {
   check(foot.rfind("rail:graceui/", 0) == 0 && left_lantern.kind == GRACEUI_EVENT_UNWATCHED &&
             own_page.rfind("graceui.", 0) == 0 && own_focus == "rail:" + own_page &&
             head == "rail:lantern/demo.overview" && back.kind == GRACEUI_EVENT_WATCHED &&
-            std::strcmp(menu.page, "demo.overview") == 0,
+            std::strcmp(menu.page, "demo.overview") == 0 && lanterns_back && !records_back,
         "menu space: GraceUI's at the foot, the mod's at the head",
-        "↓ to %s, Enter: page %s, focus %s, the second mod polled %s; ↑ to %s, Enter: %s, the second mod polled %s",
+        "↓ to %s, Enter: page %s, focus %s, the second mod polled %s; the links back show Lanterns %s and Records "
+        "(no page in the space's increment) %s; ↑ to %s, Enter: %s, the second mod polled %s",
         foot.c_str(), own_page.c_str(), own_focus.c_str(),
-        left_lantern.kind == GRACEUI_EVENT_UNWATCHED ? "its unsub" : "NO UNSUB", head.c_str(), menu.page,
-        back.kind == GRACEUI_EVENT_WATCHED ? "its sub" : "NO SUB");
+        left_lantern.kind == GRACEUI_EVENT_UNWATCHED ? "its unsub" : "NO UNSUB", lanterns_back ? "yes" : "NO",
+        records_back ? "SHOWN" : "not", head.c_str(), menu.page, back.kind == GRACEUI_EVENT_WATCHED ? "its sub" : "NO SUB");
 
   // 6. F5 closes it: the mod hears the menu stop watching. Both mods go while it is closed, and F5 opens GraceUI's.
   press(window, VK_F5, kScanF5);

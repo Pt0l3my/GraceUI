@@ -199,14 +199,18 @@ grace::spaces::OwnSpace& own_space() {
 grace::view::PageView& active_view(State& m) { return m.spaces[m.active]->view; }
 SpaceView& own_view(State& m) { return *m.spaces.back(); }
 
-std::string first_page(const grace::protocol::SpacePages& pages, const grace::protocol::Category& category) {
-  return category.pages.empty() ? (pages.pages.empty() ? std::string() : pages.pages[0].id) : category.pages[0];
-}
-
-std::vector<grace::view::RailLink> category_links(const grace::protocol::SpacePages& pages) {
+// A space's categories as links to their first pages, in the increment the space runs (D173, D245): a category with
+// no page present is left out, as the space's own rail leaves it out, and each links to its first page present.
+std::vector<grace::view::RailLink> category_links(const grace::protocol::SpacePages& pages,
+                                                  const grace::view::PageView& view) {
   std::vector<grace::view::RailLink> links;
   for (const grace::protocol::Category& category : pages.categories) {
-    links.push_back(grace::view::RailLink{category.name, pages.space, first_page(pages, category), true});
+    for (const std::string& page : category.pages) {
+      if (view.present(page)) {
+        links.push_back(grace::view::RailLink{category.name, pages.space, page, true});
+        break;
+      }
+    }
   }
   return links;
 }
@@ -219,12 +223,12 @@ void load(State& m) {
   view->id = own.pages().space;
   view->name = own.pages().name;
   view->own = true;
-  view->categories = category_links(own.pages());
   std::string why;
   if (!view->view.load(own.pages(), own.settings(), why)) {
     throw std::runtime_error("GraceUI's own space does not load");
   }
   view->view.set_increment(spaces::increment_text());  // its later pages absent (§4.2.2, D173)
+  view->categories = category_links(own.pages(), view->view);
   if (!view->view.open("graceui.menu")) {
     throw std::runtime_error("GraceUI's own space has no Menu page");
   }
@@ -351,12 +355,12 @@ bool sync_spaces(State& m) {
       kept = std::make_unique<SpaceView>();
       kept->id = listed.id;
       kept->name = listed.name;
-      kept->categories = category_links(*listed.pages);
       std::string why;
-      const std::string page = kept->categories.empty() ? std::string() : kept->categories[0].page;
       if (kept->view.load(*listed.pages, *listed.settings, why)) {
         kept->view.set_increment(listed.increment);  // its later pages absent (§4.2.2, D173)
       }
+      kept->categories = category_links(*listed.pages, kept->view);
+      const std::string page = kept->categories.empty() ? std::string() : kept->categories[0].page;
       if (!why.empty() || !kept->view.open(page)) {
         log_line("the menu cannot show %s's space: %s", listed.id.c_str(), why.c_str());
         continue;

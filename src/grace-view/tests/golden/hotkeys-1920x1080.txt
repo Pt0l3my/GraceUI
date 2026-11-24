@@ -58,13 +58,13 @@ fill    ground.2      340, 621 1540x175  r5 clip1
 stroke  rule          340, 621 1540x175  r5 w1 clip1
 text    gold          365, 641   67x20   clip1 glyphs 7 "Related"
 line    rule          365, 671 1490x1    clip1
-text    ink.hi        365, 676   38x28   clip1 glyphs 4 "Menu"
-text    ink.mute      862, 679  548x25   clip1 glyphs 53 "How the menu looks: its size, its theme, its motion and its type."
-text    gold         1835, 676    9x28   clip1 glyphs 1 "→"
+text    ink.hi        380, 685   38x28   clip1 glyphs 4 "Menu"
+text    ink.mute      862, 686  548x25   clip1 glyphs 53 "How the menu looks: its size, its theme, its motion and its type."
+text    gold         1820, 685    9x28   clip1 glyphs 1 "→"
 line    rule          365, 726 1490x1    clip1
-text    ink.hi        365, 731  131x28   clip1 glyphs 13 "Installed mods"
-text    ink.mute      862, 734  759x25   clip1 glyphs 76 "Every mod connected to GraceUI this session, what each uses, and whether its notices show."
-text    gold         1835, 731    9x28   clip1 glyphs 1 "→"
+text    ink.hi        380, 740  131x28   clip1 glyphs 13 "Installed mods"
+text    ink.mute      862, 741  759x25   clip1 glyphs 76 "Every mod connected to GraceUI this session, what each uses, and whether its notices show."
+text    gold         1820, 740    9x28   clip1 glyphs 1 "→"
 line    rule          300,1035 1620x1   
 text    ink.faint     340,1045  202x25   glyphs 16 "Enter  Open    Esc  Back"
 stroke  gold.hi      1668,  86  215x46   r5 w3 clip1

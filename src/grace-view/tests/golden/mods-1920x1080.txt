@@ -47,9 +47,9 @@ fill    ground.2      340, 586 1540x120  r5 clip1
 stroke  rule          340, 586 1540x120  r5 w1 clip1
 text    gold          365, 606   67x20   clip1 glyphs 7 "Related"
 line    rule          365, 636 1490x1    clip1
-text    ink.hi        365, 641   66x28   clip1 glyphs 7 "Hotkeys"
-text    ink.mute      862, 644  515x25   clip1 glyphs 52 "The menu's key, and every mod's hotkeys with their conflicts."
-text    gold         1835, 641    9x28   clip1 glyphs 1 "→"
+text    ink.hi        380, 650   66x28   clip1 glyphs 7 "Hotkeys"
+text    ink.mute      862, 651  515x25   clip1 glyphs 52 "The menu's key, and every mod's hotkeys with their conflicts."
+text    gold         1820, 650    9x28   clip1 glyphs 1 "→"
 line    rule          300,1035 1620x1   
 text    ink.faint     340,1045  202x25   glyphs 16 "Enter  Open    Esc  Back"
 stroke  gold.hi       362, 428 1496x26   r5 w3 clip1
