@@ -4072,7 +4072,7 @@ std::vector<PageView::PageRequest> PageView::take_page_requests() {
       p.more = p.more && p.loading;
       continue;
     }
-    p.serial += 1;
+    p.serial = ++page_serial_;  // never reused, so an answer from before a clear never matches (D254)
     p.loading = true;
     if (first) {
       if (!p.signature.empty()) {
@@ -4158,9 +4158,10 @@ void PageView::page_answer(std::string_view where, const protocol::Result& resul
       p.pages = 1;
     }
     p.next = body.contains("next") && body["next"].is_string() ? body["next"].get<std::string>() : std::string();
-    p.total = body.contains("total") && body["total"].is_number() && body["total"].get<double>() >= 0
-                  ? std::optional<double>(body["total"].get<double>())
-                  : std::nullopt;
+    // A count, whole and below 2^53 (as JSON's numbers keep exactly, and the browser takes it): else no count.
+    const double total = body.contains("total") && body["total"].is_number() ? body["total"].get<double>() : -1.0;
+    p.total = total >= 0 && total <= 9007199254740991.0 && std::floor(total) == total ? std::optional<double>(total)
+                                                                                      : std::nullopt;
     p.refused.clear();
     p.answered = true;
   }
@@ -5192,6 +5193,13 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         right = x + c.width("Loading\u2026", TypeRole::ui_sm);
       } else if (!p.next.empty() && !p.loading) {
         right = stop("Show more", key + "/more");
+      }
+      if (!p.refused.empty() && !p.body["rows"].empty()) {
+        // A refused Show more: the space's words beside it, the rows kept above.
+        const float gap = right > x ? std::round(16 * s) : 0.0f;
+        c.text(p.refused, TypeRole::ui_sm, right + gap, y + std::round((h - lh) / 2),
+               std::max(0.0f, x + w - right - gap), Colour::ink_body);
+        right += gap + c.width(p.refused, TypeRole::ui_sm);
       }
       if (p.total) {
         std::string digits = std::to_string(static_cast<long long>(*p.total));

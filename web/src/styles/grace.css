@@ -535,6 +535,10 @@ ul, ol {
   color: var(--ink-body);
 }
 
+.paging__refused {
+  color: var(--ink-body);
+}
+
 .paging__total {
   margin-left: auto;
 }

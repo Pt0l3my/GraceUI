@@ -3053,3 +3053,36 @@ TEST_CASE("a table read a page at a time in game: its filter's choices from a to
   REQUIRE(asked.size() == 1);
   CHECK(asked[0].command.args["search"] == "Orla");  // trimmed, as the browser sends it
 }
+
+TEST_CASE("rows read a page at a time: an answer from before the menu closed never matches; a refused Show more says why; a count is whole (D254)") {
+  PageView view = loaded("demo", "demo.lightings");
+  view.set_topic("lantern.seasons", kSeasons);
+  auto asked = view.take_page_requests();
+  REQUIRE(asked.size() == 1);
+  const std::string before = asked[0].where;
+  view.cancel_confirmation();  // the menu closed before the space answered, and opened again
+  view.set_topic("lantern.seasons", kSeasons);
+  asked = view.take_page_requests();
+  REQUIRE(asked.size() == 1);
+  CHECK(asked[0].where != before);  // serials are never reused
+  view.page_answer(before, page_of({1}, nullptr, 1));
+  CHECK_FALSE(shows(laid_out(view), "Night 1"));
+  auto fractional = page_of({60, 59}, "c2", 40);
+  fractional.body->operator[]("total") = 12.5;
+  view.page_answer(asked[0].where, fractional);
+  std::string dump = laid_out(view);
+  CHECK(shows(dump, "Night 60"));
+  CHECK_FALSE(shows(dump, "in all"));  // no count rather than a cut one
+  // Show more refused: the space's words at the foot, the rows kept.
+  REQUIRE(move_to(view, "paging:demo.lightings.list/more"));
+  press(view, Key::activate);
+  asked = view.take_page_requests();
+  REQUIRE(asked.size() == 1);
+  grace::protocol::Result refused;
+  refused.error = grace::protocol::ErrorCode::not_now;
+  refused.detail = "The keeper's book is shut.";
+  view.page_answer(asked[0].where, refused);
+  dump = laid_out(view);
+  CHECK(shows(dump, "Night 60"));
+  CHECK(shows(dump, "The keeper's book is shut."));
+}

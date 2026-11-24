@@ -621,6 +621,7 @@ class PageView {
     int pages = 0;
   };
   std::map<std::string, Paged, std::less<>> paged_;
+  std::uint64_t page_serial_ = 0;  // every page asked for, across pages and the menu's closes: never reset
   struct ScopeChoice {
     std::string id;
     std::string label;

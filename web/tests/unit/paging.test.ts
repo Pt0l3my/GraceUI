@@ -75,6 +75,8 @@ test("a page as the view reads it: object rows, at most 200; a cursor and a coun
   assert.equal(page.total, 1234);
   assert.deepEqual(readPage(undefined), { columns: [], rows: [], next: null, total: null });
   assert.deepEqual(readPage({ rows: [], next: "", total: -1 }), { columns: [], rows: [], next: null, total: null });
+  assert.equal(readPage({ rows: [], total: 12.5 }).total, null);  // a count is whole, as in game
+  assert.equal(readPage({ rows: [], total: 2 ** 60 }).total, null);
 });
 
 test("the demo space's answer: a season's lightings, filtered, searched, sorted and cut 25 at a time", () => {

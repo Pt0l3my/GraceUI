@@ -118,7 +118,8 @@ export function readPage(body: JsonObject | undefined): PageBody {
   const columns = Array.isArray(body?.columns) ? body.columns.flatMap((c) => (object(c) ? [object(c)!] : [])) : [];
   const rows = Array.isArray(body?.rows) ? body.rows.flatMap((r) => (object(r) ? [object(r)!] : [])) : [];
   const next = typeof body?.next === "string" && body.next !== "" ? body.next : null;
-  const total = typeof body?.total === "number" && Number.isFinite(body.total) && body.total >= 0 ? body.total : null;
+  // A count, whole and at most 2^53, as the game takes it: anything else is no count.
+  const total = typeof body?.total === "number" && Number.isSafeInteger(body.total) && body.total >= 0 ? body.total : null;
   return { columns, rows: rows.slice(0, PAGE_ROWS_MAX), next, total };
 }
 

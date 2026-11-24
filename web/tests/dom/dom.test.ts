@@ -1160,6 +1160,14 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.equal(await history.locator(".table tbody tr").count(), 50);  // nothing moved until asked
       await history.locator("[data-paging='fresh']").click();
       await page.waitForFunction(() => document.querySelectorAll("[data-section='history'] .table tbody tr").length === 25);
+      // A refusal's words stand in for the rows; when its topic moves the space is asked again (as in game).
+      host.refuse.set("lightings.page", "not_now");
+      await history.locator(".filter-bar__search").fill("Tam");
+      await history.locator(".empty__line", { hasText: "Not possible right now." }).waitFor();
+      host.refuse.delete("lightings.page");
+      host.push("demo", "lantern.status", { sentence: "Another lamp was lit.", hushed: false,
+                                            lamps: ["North light", "Harbour wall", "Store room"] });
+      await page.waitForFunction(() => document.querySelectorAll("[data-section='history'] .table tbody tr").length > 0);
       // Its search goes to the space once the typing stops.
       await history.locator(".filter-bar__search").fill("Ada");
       await page.waitForFunction(() => [...document.querySelectorAll("[data-section='history'] .table tbody tr")]
