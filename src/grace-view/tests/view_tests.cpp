@@ -2614,6 +2614,63 @@ TEST_CASE("a document in game: its blocks drawn, a link to a listed guide a stop
   CHECK(view.chosen() == "oil");
 }
 
+TEST_CASE("a link to a heading in game: brought to the top; one the document lacks leaves it at its top, and is not kept (D251)") {
+  // A long guide: its heading far down the page.
+  const auto guide = [](bool with_heading) {
+    Json blocks = Json::array();
+    for (int i = 0; i < 40; ++i) {
+      blocks.push_back(Json::object({{"paragraph", "Pour slowly, and wipe the rim after every fill."}}));
+    }
+    if (with_heading) {
+      blocks.push_back(Json::object({{"heading", "Which oil"}}));
+    }
+    for (int i = 0; i < 40; ++i) {
+      blocks.push_back(Json::object({{"paragraph", "Rapeseed burns clean; tallow smokes."}}));
+    }
+    return Json::object({{"title", "Oil and its keeping"}, {"blocks", blocks}});
+  };
+  const auto follow = [](PageView& view) {
+    view.set_topic("lantern.guides", kGuides);
+    view.set_topic("lantern.guide/lighting", kLighting);
+    DisplayList list;
+    view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+    press(view, Key::right);
+    for (int i = 0; i < 30 && view.focused() != "link:lantern.guide/lighting/0"; ++i) {
+      press(view, Key::down);
+    }
+    REQUIRE(view.focused() == "link:lantern.guide/lighting/0");
+    press(view, Key::activate);
+    REQUIRE(view.chosen() == "oil");
+    CHECK(view.focused() == "item:lantern.guides/oil");  // on its row, where the player now is
+  };
+  const auto y_of = [](PageView& view, const char* words) {
+    DisplayList list;
+    view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+    view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);  // a scroll asked for shows at the next layout
+    for (const Item& item : list.items) {
+      if (item.shape == Shape::text && std::string_view(list.text).substr(item.text_first, item.text_size) == words &&
+          item.rect.x > 300) {
+        return item.rect.y;  // in the detail, right of the rail and the list's rows
+      }
+    }
+    return -1e9f;
+  };
+  PageView found = loaded("demo", "demo.handbook");
+  follow(found);
+  found.set_topic("lantern.guide/oil", guide(true));
+  CHECK(y_of(found, "Which oil") < 200);  // at the page's top, the guide's title above it, scrolled away
+  PageView lacking = loaded("demo", "demo.handbook");
+  follow(lacking);
+  lacking.set_topic("lantern.guide/oil", guide(false));
+  const float top = y_of(lacking, "Oil and its keeping");
+  CHECK(top > 0);
+  CHECK(top < 400);
+  // The guide gains that heading later: the link is long followed, so nothing moves.
+  lacking.set_topic("lantern.guide/oil", guide(true));
+  CHECK(y_of(lacking, "Oil and its keeping") == top);
+  CHECK(y_of(lacking, "Which oil") > 1080);
+}
+
 TEST_CASE("a report preview in game: its parts, a left-out part's fields hidden, an optional part's switch sends (D251)") {
   PageView view = loaded("demo", "demo.log");
   view.set_topic("lantern.report", kReport);

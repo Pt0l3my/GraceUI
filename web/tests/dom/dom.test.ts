@@ -910,6 +910,8 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       // A link to another guide chooses its row; a link to a heading of a guide, likewise, to that heading.
       await page.locator(".doc__link[data-doc='oil']").click();
       await page.waitForFunction(() => document.querySelector(".doc__title")?.textContent === "Oil");
+      // Focus on the chosen guide's row, where the reader now is, as in game.
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-key")), "oil");
       assert.equal(await page.locator(".doc table.doc__table tbody tr").count(), 3);
       assert.match((await page.locator(".doc__code").textContent()) ?? "", /12 jars\n/);
       await page.locator(".master__row[data-key='storms']").click();
@@ -919,6 +921,12 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.match((await page.locator(".doc").textContent()) ?? "", /Signals/);
       await page.locator(".doc__link[data-doc='lighting'][data-heading='Trimming']").click();
       await page.waitForFunction(() => document.querySelector(".doc__title")?.textContent === "Lighting the lamp");
+      // At its heading: brought into view.
+      await page.waitForFunction(() => {
+        const h = [...document.querySelectorAll(".doc__h2, .doc__h3")].find((e) => e.textContent === "Trimming");
+        const r = h?.getBoundingClientRect();
+        return r !== undefined && r.top >= 0 && r.top < window.innerHeight;
+      });
       // The list's own search finds a guide by a heading, never by its body.
       await page.locator(".master .filter-bar__search").fill("shutter");
       assert.deepEqual(await page.locator(".master__row .master__name").allTextContents(), ["Keeping a lamp in a storm"]);

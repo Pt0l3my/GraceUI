@@ -13,8 +13,9 @@ import { useTopic } from "./components.tsx";
 import { chooseByHand, domId } from "./view-state.ts";
 import { signal } from "@preact/signals";
 
-/** The heading a followed link asked for, by "space/page/doc", scrolled to once its document is drawn. */
-const wanted = signal<string | null>(null);
+/** The document a followed link asked for, by "space/page/doc", and the element id of its heading if it named one:
+ * scrolled to once that document is drawn, and let go then, found or not (invariant 2). */
+const wanted = signal<{ doc: string; heading: string | null } | null>(null);
 
 function headingId(space: string, page: string, doc: string, heading: string): string {
   return domId("doc", space, page, doc, heading.toLowerCase());
@@ -36,11 +37,11 @@ function Spans({ spans, space, page, keys }: { spans: Span[]; space: string; pag
             <a key={i} href="#" class="doc__link" data-doc={doc} data-heading={s.heading}
                onClick={(e) => {
                  e.preventDefault();
-                 wanted.value = s.heading !== undefined ? headingId(space, page, doc, s.heading) : null;
+                 wanted.value = { doc: `${space}/${page}/${doc}`,
+                                  heading: s.heading !== undefined ? headingId(space, page, doc, s.heading) : null };
                  chooseByHand(space, page, doc);
-                 if (s.heading === undefined) {
-                   document.getElementById(domId("detail", space, page))?.scrollIntoView({ block: "start" });
-                 }
+                 // Focus on the chosen document's row, where the reader now is, as in game.
+                 document.getElementById(domId("option", space, page, doc))?.focus({ preventScroll: true });
                }}>
               {s.text}
             </a>
@@ -89,17 +90,16 @@ export function DocumentBlock({ space, block }: { space: string; block: PageBloc
   const view = parseDocument(body);
   const page = master?.page ?? "";
   const doc = master?.key ?? "";
+  const want = wanted.value;
   useEffect(() => {
-    // A followed link's heading, once its document is here.
-    const id = wanted.value;
-    if (id !== null && body !== undefined) {
-      const el = document.getElementById(id);
-      if (el) {
-        el.scrollIntoView({ block: "start" });
-        wanted.value = null;
-      }
+    // A followed link's document, once it is here: at its heading, or at its top if it has none of that name.
+    if (want === null || body === undefined || want.doc !== `${space}/${page}/${doc}`) {
+      return;
     }
-  }, [body, wanted.value]);
+    const at = want.heading !== null ? document.getElementById(want.heading) : null;
+    (at ?? document.getElementById(domId("detail", space, page)))?.scrollIntoView({ block: "start" });
+    wanted.value = null;
+  }, [body, want, space, page, doc]);
   if (body === undefined) {
     return <p class="empty__line">Nothing to show.</p>;
   }

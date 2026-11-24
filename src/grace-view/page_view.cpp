@@ -1571,6 +1571,18 @@ Action PageView::follow_link(const Focus& f) {
   doc_heading_ = to.heading;  // scrolled to once its document is laid out
   scroll_ = 0;
   choose(to.doc);
+  // Focus on the chosen document's row, where the player now is; the page shows what the link asked, the document's
+  // top or its heading, as after the wheel, until a key moves focus again.
+  refocus_name_.clear();
+  if (const protocol::PageMaster* m = master(); m != nullptr && scope_ == Scope::page) {
+    for (std::size_t i = 0; i < focus_.size(); ++i) {
+      if (focus_[i].kind == FocusKind::master_row && focus_[i].id == m->topic + "/" + to.doc) {
+        page_focus_ = i;
+        break;
+      }
+    }
+  }
+  follow_ = false;
   return {};
 }
 
@@ -5177,6 +5189,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 }
               }
             }
+            // Drawn: a followed link's heading that this document lacks leaves it at its top, and is not kept for a later
+            // document that has one of that name (invariant 2).
+            doc_heading_.clear();
             continue;
           }
           if (block.kind == protocol::BlockKind::form) {
