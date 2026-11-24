@@ -1418,3 +1418,19 @@ draw their own hints, as before. For your harness: `GraceUiTestMenu` gains `pad_
 footer's words as drawn), and `GraceUI_Test_GetMenu` now fills as far as your struct's size reaches, so a harness built
 against an older `graceui_test.h` still reads the menu; `GraceUI_Test_PadState` gives a whole pad, sticks and triggers
 included, should a case of yours need the right stick or a trigger.
+
+## 71. What pressed a hotkey, and the notice when GraceUI's own copy idles (2026-11-24, D243, D244; GraceUI 0.2.38)
+
+Your three points of 2026-11-24.
+
+1. **What pressed a hotkey (ABI 1.7).** `GraceUiEvent.hotkey_by` (the word that was `reserved3`, so your event of 1.2's
+   size or more holds it) says what made the presses a `GRACEUI_EVENT_HOTKEY` counts: `GRACEUI_HOTKEY_BY_KEY`,
+   `GRACEUI_HOTKEY_BY_CHORD`, or both if both came before your poll. Check `has_cap("hotkey-by")`; an older GraceUI
+   leaves it 0. Your chat box can log `via=pad_chord` for the chord and arm the swallow of T's character only when the
+   key's bit is set. Re-vendor `graceui.h` (GRACEUI_ABI1_MINOR 7).
+2. **Wine's lookup by name.** Your case's result is recorded in D240: Wine answered the copy loaded first there, the
+   active copy in GraceUI's own scenarios; nothing relies on either, and graceui-sys's scan covers both.
+3. **The notice's words.** When GraceUI's own copy (`GraceUI\graceui.dll`) is the one that idles, its notice now
+   reads "GraceUI's own copy is idle: another copy was started first and is in use, <its name>. Remove that copy to use
+   GraceUI's own.", naming the copy in use, the one to remove; the log line says the same. Your -second-copy-first case
+   reads the new words there; the other order's are unchanged.
