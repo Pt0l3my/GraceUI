@@ -46,7 +46,7 @@ class FakeSocket implements SocketLike {
 
 const TICKET = "x".repeat(43);
 const WELCOME: Welcome = {
-  v: 1, t: "welcome", protocol: "1.11", caps: [], graceui: "0.2.0", session: "s1",
+  v: 1, t: "welcome", protocol: "1.12", caps: [], graceui: "0.2.0", session: "s1",
   spaces: [{ id: "demo", name: "Demo space", version: "0.2.0", increment: "0.2", settings_schema: { number: 1, hash: "h" } }],
 };
 
@@ -121,7 +121,7 @@ test("the handshake: a same-origin POST for the ticket, the socket on this origi
   assert.equal(request?.init.body, "{}");
   assert.deepEqual(request?.init.headers, { "Content-Type": "application/json" });
   assert.equal(socket.url, "ws://127.0.0.1:8642/api/ws");
-  assert.deepEqual(socket.frames()[0], { v: 1, t: "hello", protocol: "1.11", bundle: "0.2.0", caps: [], ticket: TICKET });
+  assert.deepEqual(socket.frames()[0], { v: 1, t: "hello", protocol: "1.12", bundle: "0.2.0", caps: [], ticket: TICKET });
   assert.equal(got.welcome?.length, 1);
 });
 

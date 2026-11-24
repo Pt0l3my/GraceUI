@@ -32,7 +32,7 @@ test("welcome names both spaces, with their settings schemas", async () => {
   assert.equal(await transport.connect(events), true);
   const welcome = got.welcome[0];
   assert.ok(welcome);
-  assert.equal(welcome.protocol, "1.11");
+  assert.equal(welcome.protocol, "1.12");
   assert.deepEqual(welcome.spaces.map((s) => s.id), ["graceui", "demo"]);
   assert.equal(welcome.spaces[1]?.settings_schema.hash, space("demo").settings.schema.hash);
 });

@@ -11,7 +11,7 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 11 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 12 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
@@ -24,6 +24,8 @@ protocol = { major = 1, minor = 11 }  # 1.1 (D172): result.detail; a stream clea
                                      # and the welcome's view (D226)
                                      # 1.10: a category at the rail's foot (D248)
                                      # 1.11 (G43): a table's or a master list's filter bar (D250)
+                                     # 1.12 (G44): the document block, a form's prose field, the report preview's
+                                     # command (D251)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -72,7 +74,8 @@ values = ["stat_tiles", "filter_bar", "table", "master_detail", "card_grid", "se
           "action_button", "wizard_steps", "key_value_list"]
 
 [enums.block_kind]
-values = ["settings", "shortcuts", "component", "form", "editor", "upload"]  # upload: 1.9 (D226)
+values = ["settings", "shortcuts", "component", "form", "editor", "upload", "document"]  # upload: 1.9 (D226);
+                                                                                      # document: 1.12 (D251)
 
 [enums.action_tone]
 values = ["primary", "secondary", "destructive"]
@@ -209,6 +212,7 @@ fields = [
   { name = "id", type = "id" },
   { name = "label", type = "string", max = 64 },
   { name = "max", type = "u32" },
+  { name = "prose", type = "bool", optional = true },  # 1.12 (D251): several lines, max up to 2000
 ]
 
 [types.editor_block]

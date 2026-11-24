@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 11;
-inline constexpr std::string_view kProtocolVersion = "1.11";
+inline constexpr std::uint32_t kProtocolMinor = 12;
+inline constexpr std::string_view kProtocolVersion = "1.12";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -142,6 +142,7 @@ enum class BlockKind : std::uint8_t {
   form,
   editor,
   upload,
+  document,
 };
 std::string_view to_string(BlockKind value) noexcept;
 bool from_string(std::string_view text, BlockKind& out) noexcept;
@@ -323,6 +324,7 @@ struct FormField {
   std::string id{};
   std::string label{};
   std::uint32_t max_{};
+  std::optional<bool> prose{};
   bool operator==(const FormField&) const = default;
 };
 bool decode(const Json& in, FormField& out, const std::string& path, DecodeError& e);

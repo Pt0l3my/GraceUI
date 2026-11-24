@@ -1,0 +1,64 @@
+{
+  "about": "A document block's body (G44, D251): the same body gives the same title and blocks in both views. Run by web/tests/unit/document.test.ts and grace-view's document tests. Invented lantern-keeping words.",
+  "cases": [
+    {"name": "every kind of block, in order",
+     "body": {"title": "A keeper's handbook", "blocks": [
+       {"heading": "Lighting the lamp"},
+       {"paragraph": [{"text": "Trim the wick "}, {"text": "before", "strong": true}, {"text": " dusk, as "},
+                      {"text": "Oil", "doc": "oil", "heading": "Which oil"}, {"text": " says."}]},
+       {"list": [[{"text": "A clean glass"}], "A dry match"], "ordered": true},
+       {"note": [{"text": "Never leave a lit lamp alone."}]},
+       {"heading": "The log", "level": 3},
+       {"code": "dusk  trimmed\nnight lit"},
+       {"table": {"columns": [{"id": "hour", "label": "Hour"}, {"id": "task", "label": "Task"}],
+                  "rows": [{"hour": 6, "task": "Trim"}, {"hour": "dusk", "task": "Light"}, "not a row"]}}
+     ]},
+     "expect": {"title": "A keeper's handbook", "blocks": [
+       {"kind": "heading", "level": 2, "text": "Lighting the lamp"},
+       {"kind": "paragraph", "spans": [{"text": "Trim the wick ", "style": "plain"}, {"text": "before", "style": "strong"},
+                                       {"text": " dusk, as ", "style": "plain"},
+                                       {"text": "Oil", "style": "link", "doc": "oil", "heading": "Which oil"},
+                                       {"text": " says.", "style": "plain"}]},
+       {"kind": "list", "ordered": true, "items": [[{"text": "A clean glass", "style": "plain"}],
+                                                   [{"text": "A dry match", "style": "plain"}]]},
+       {"kind": "note", "spans": [{"text": "Never leave a lit lamp alone.", "style": "plain"}]},
+       {"kind": "heading", "level": 3, "text": "The log"},
+       {"kind": "code", "text": "dusk  trimmed\nnight lit"},
+       {"kind": "table", "columns": [{"id": "hour", "label": "Hour"}, {"id": "task", "label": "Task"}],
+        "rows": [["6", "Trim"], ["dusk", "Light"]]}
+     ]}},
+    {"name": "a block that breaks a rule is left out, and the rest are kept",
+     "body": {"title": "Rules", "blocks": [
+       {"heading": "Two kinds", "paragraph": "at once"},
+       {"heading": "A level of four", "level": 4},
+       {"heading": ""},
+       {"paragraph": []},
+       {"paragraph": [{"text": "both", "strong": true, "code": true}]},
+       {"paragraph": [{"text": "a web link", "doc": "https://example.invalid/x"}]},
+       {"list": []},
+       {"list": [[{"text": "fine"}], []]},
+       {"code": ""},
+       {"table": {"columns": [], "rows": []}},
+       {"image": "lamp.png"},
+       "not a block",
+       {"paragraph": "Kept."}
+     ]},
+     "expect": {"title": "Rules", "blocks": [
+       {"kind": "paragraph", "spans": [{"text": "Kept.", "style": "plain"}]}
+     ]}},
+    {"name": "a span that breaks a rule is left out of its paragraph",
+     "body": {"blocks": [{"paragraph": [{"text": "Keep "}, {"text": ""}, {"text": "x", "strong": true, "doc": "a"},
+                                        {"text": "this", "code": true}, {"text": "link", "doc": "Bad Id"}]}]},
+     "expect": {"title": "", "blocks": [
+       {"kind": "paragraph", "spans": [{"text": "Keep ", "style": "plain"}, {"text": "this", "style": "code"}]}
+     ]}},
+    {"name": "a link's heading of the wrong kind is dropped, the link kept",
+     "body": {"blocks": [{"paragraph": [{"text": "See it", "doc": "oil", "heading": 3}]}]},
+     "expect": {"title": "", "blocks": [
+       {"kind": "paragraph", "spans": [{"text": "See it", "style": "link", "doc": "oil"}]}
+     ]}},
+    {"name": "not a document",
+     "body": {"title": "No blocks"},
+     "expect": {"title": "", "blocks": [], "error": "not_a_document"}}
+  ]
+}
