@@ -2912,3 +2912,132 @@ TEST_CASE("a report preview's field in game: its words wrapped to its column, it
   }
   CHECK(joined == happened.substr(happened.find('\n') + 1));  // every word, in order
 }
+
+namespace {
+
+const Json kSeasons = Json::parse(R"({"choices": [{"id": "winter", "label": "This winter"},
+  {"id": "autumn", "label": "Last autumn", "read_only": true}], "current": "winter"})");
+
+grace::protocol::Result page_of(std::initializer_list<int> nights, const char* next, int total) {
+  grace::protocol::Result r;
+  r.ok = true;
+  Json rows = Json::array();
+  for (const int n : nights) {
+    rows.push_back(Json::object({{"id", "l" + std::to_string(n)}, {"lit", "Night " + std::to_string(n)},
+                                 {"lamp", "North light"}, {"keeper", "Orla Venn"}, {"at_ms", n}}));
+  }
+  Json body = Json::object({{"columns", Json::array({Json::object({{"id", "lit"}, {"label", "Lit"}}),
+                                                     Json::object({{"id", "lamp"}, {"label", "Lamp"}})})},
+                            {"rows", rows}, {"total", total}});
+  if (next != nullptr) {
+    body["next"] = next;
+  }
+  r.body = body;
+  return r;
+}
+
+bool has(const std::vector<std::string>& topics, const char* topic) {
+  return std::find(topics.begin(), topics.end(), topic) != topics.end();
+}
+
+}  // namespace
+
+TEST_CASE("a scoped page in game: the scope's chooser, its members, a list read a page at a time, a read-only scope (D254)") {
+  PageView view = loaded("demo", "demo.lightings");
+  CHECK(view.take_page_requests().empty());  // its scope has not come: nothing is asked
+  CHECK(has(view.component_topics(), "lantern.seasons"));
+  view.set_topic("lantern.seasons", kSeasons);
+  CHECK(view.scope_id() == "winter");
+  CHECK(shows(laid_out(view), "Season: This winter"));
+  CHECK(shows(laid_out(view), "Loading\u2026"));
+  auto asked = view.take_page_requests();
+  REQUIRE(asked.size() == 1);
+  CHECK(asked[0].where == "page:demo.lightings.list#1");
+  CHECK(asked[0].command.name == "lightings.page");
+  CHECK(asked[0].command.args == Json::object({{"view", "list"},
+                                               {"sort", Json::object({{"key", "at_ms"}, {"direction", "descending"}})},
+                                               {"scope", "winter"}}));
+  CHECK(view.take_page_requests().empty());  // asked once
+  view.page_answer(asked[0].where, page_of({60, 59, 58}, "c2", 40));
+  std::string dump = laid_out(view);
+  CHECK(shows(dump, "Night 60"));
+  CHECK(shows(dump, "Show more"));
+  CHECK(shows(dump, "40 in all"));
+  CHECK(view.chosen() == "l60");  // the first row chosen, as a topic's list does (D215)
+  const auto topics = view.component_topics();
+  CHECK(has(topics, "lantern.lighting/l60"));  // the detail family: the chosen row's member
+  CHECK(has(topics, "lantern.season/winter"));  // any other family: the scope's member
+  CHECK(has(topics, "lantern.status"));         // its changes topic
+  // Show more: the next page asked for with the space's cursor, its rows added below.
+  CHECK(move_to(view, "paging:demo.lightings.list/more"));
+  press(view, Key::activate);
+  asked = view.take_page_requests();
+  REQUIRE(asked.size() == 1);
+  CHECK(asked[0].command.args["cursor"] == "c2");
+  view.page_answer(asked[0].where, page_of({57, 56}, nullptr, 40));
+  dump = laid_out(view);
+  CHECK(shows(dump, "Night 56"));
+  CHECK_FALSE(shows(dump, "Show more"));
+  // New rows: past the first page, said at the top and nothing moved until asked; then the first page again.
+  view.set_topic("lantern.status", Json::object({{"sentence", "Steady."}, {"hushed", false}}));
+  view.set_topic("lantern.status", Json::object({{"sentence", "A lamp was lit."}, {"hushed", false}}));
+  CHECK(view.take_page_requests().empty());
+  CHECK(shows(laid_out(view), "New rows \u00B7 Show"));
+  // The scope: Enter steps to the next choice; the page's members and its rows follow; a read-only one greys it.
+  press(view, Key::search);
+  view.edit(EditInput{EditKey::escape});
+  press(view, Key::right);
+  press(view, Key::right);
+  REQUIRE(view.focused() == "top:scope");
+  press(view, Key::activate);
+  CHECK(view.scope_id() == "autumn");
+  dump = laid_out(view);
+  CHECK(shows(dump, "Season: Last autumn"));
+  CHECK(shows(dump, "Last autumn is read only."));
+  CHECK(has(view.component_topics(), "lantern.season/autumn"));
+  asked = view.take_page_requests();
+  REQUIRE(asked.size() == 1);
+  CHECK(asked[0].command.args["scope"] == "autumn");
+  CHECK_FALSE(asked[0].command.args.contains("cursor"));
+  // A late answer to a page asked before is dropped; a refusal's words stand in for the rows.
+  CHECK(asked[0].where == "page:demo.lightings.list#3");
+  dump = laid_out(view);
+  CHECK_FALSE(shows(dump, "Night 60"));  // another season's rows are not kept while its own are asked for
+  CHECK(shows(dump, "Loading\u2026"));
+  view.page_answer("page:demo.lightings.list#2", page_of({1}, nullptr, 1));
+  CHECK_FALSE(shows(laid_out(view), "Night 1"));
+  grace::protocol::Result refused;
+  refused.error = grace::protocol::ErrorCode::not_now;
+  refused.detail = "Load a lantern to see this.";
+  view.page_answer(asked[0].where, refused);
+  CHECK(shows(laid_out(view), "Load a lantern to see this."));
+  // The menu opens again: the current season, and the pages asked for afresh.
+  view.cancel_confirmation();
+  CHECK(view.scope_id() == "winter");
+  CHECK(view.take_page_requests().size() == 1);
+}
+
+TEST_CASE("a table read a page at a time in game: its filter's choices from a topic, sent to the space; changes ask again (D254)") {
+  PageView view = loaded("demo", "demo.log");
+  view.set_topic("lantern.status", Json::object({{"sentence", "Steady."}, {"hushed", false},
+                                                 {"lamps", Json::array({"North light", "Harbour wall"})}}));
+  auto asked = view.take_page_requests();
+  REQUIRE(asked.size() == 1);
+  CHECK(asked[0].where == "page:page.lightings.page.table#1");
+  CHECK(asked[0].command.args == Json::object({{"view", "table"},
+                                               {"sort", Json::object({{"key", "at_ms"}, {"direction", "descending"}})}}));
+  view.page_answer(asked[0].where, page_of({60, 59}, "c2", 60));
+  CHECK(shows(laid_out(view), "Night 60"));
+  // Its filter: All, then the topic's lamps; a choice asks for the first page again, filtered by the space.
+  REQUIRE(move_to(view, "filter:page.lightings.page.table/f0"));
+  press(view, Key::right);
+  CHECK(shows(laid_out(view), "North light"));
+  asked = view.take_page_requests();
+  REQUIRE(asked.size() == 1);
+  CHECK(asked[0].command.args["filters"] == Json::object({{"lamp", "North light"}}));
+  view.page_answer(asked[0].where, page_of({60}, nullptr, 20));
+  // Its changes topic: showing its first page, it asks for it again.
+  view.set_topic("lantern.status", Json::object({{"sentence", "A lamp was lit."}, {"hushed", false},
+                                                 {"lamps", Json::array({"North light", "Harbour wall"})}}));
+  CHECK(view.take_page_requests().size() == 1);
+}

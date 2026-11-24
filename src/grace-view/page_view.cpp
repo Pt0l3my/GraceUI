@@ -886,6 +886,7 @@ bool PageView::open(std::string_view page_id) {
     if (pages_.pages[i].id == page_id && present(page_id)) {
       release_held();  // what the last page held is applied (D252)
       quick_open_ = false;
+      paged_.clear();  // nothing a page answered is kept past leaving it (D254)
       page_ = i;
       tab_ = 0;
       page_focus_ = 0;
@@ -994,6 +995,7 @@ void PageView::set_topic(std::string_view topic, const Json& body) {
     return;
   }
   const std::string was = focused();
+  const bool had = topics_.find(topic) != topics_.end();
   topics_[std::string(topic)] = body;
   for (const std::string& prefix : std::array<std::string, 2>{std::string(topic) + "/", std::string(topic) + "#"}) {
     for (auto at = refusals_.lower_bound(prefix); at != refusals_.end() && at->first.rfind(prefix, 0) == 0;) {
@@ -1012,7 +1014,27 @@ void PageView::set_topic(std::string_view topic, const Json& body) {
       }
     }
   }
+  // A page source's changes topic (D254): new rows. A list showing its first page asks for it again; one showing more
+  // says so at its top and moves nothing until asked. (Its first body is the topic's own, not a change.)
+  if (had) {
+    for (const Source& src : page_sources()) {
+      if (src.source->changes && *src.source->changes == topic) {
+        Paged& p = paged_[src.key];
+        if (p.answered && p.pages <= 1) {
+          p.signature.clear();
+        } else if (p.answered) {
+          p.fresh = true;
+        }
+      }
+    }
+  }
   if (const protocol::PageMaster* m = master(); m != nullptr && !master_topic().empty() && topic == master_topic()) {
+    master_changed();
+  }
+}
+
+void PageView::master_changed() {
+  if (const protocol::PageMaster* m = master(); m != nullptr) {
     // The list changed: a chosen row it no longer has is let go, and the first row chosen if none is (D215).
     const auto rows = master_rows();
     const auto at = chosen_.find(current().id);
@@ -1065,6 +1087,14 @@ std::string prop_text(const protocol::PageBlock& block, const char* name) {
 
 PageView::Drawn PageView::drawn(const protocol::PageBlock& block) const {
   Drawn out;
+  if (block.page) {
+    // Rows read a page at a time (D254): what the space has answered, once it has.
+    if (const Paged* p = paged_of(cell_base(block)); p != nullptr && p->answered) {
+      out.published = true;
+      out.body = &p->body;
+    }
+    return out;
+  }
   if (!block.topic) {
     return out;
   }
@@ -1338,6 +1368,14 @@ std::pair<std::string, std::string> PageView::section_status(const protocol::Pag
 }
 
 std::string PageView::cell_base(const protocol::PageBlock& block) {
+  if (block.page) {
+    // A table read a page at a time (D254): its command, and its args' view if they name one.
+    const auto& args = block.page->args;
+    const std::string view = args && args->is_object() && args->contains("view") && (*args)["view"].is_string()
+                                 ? (*args)["view"].get<std::string>()
+                                 : std::string();
+    return "page." + block.page->command + (view.empty() ? std::string() : "." + view);
+  }
   const std::string field = prop_text(block, "field");
   return *block.topic + (field.empty() ? std::string() : "#" + field);
 }
@@ -1345,6 +1383,19 @@ std::string PageView::cell_base(const protocol::PageBlock& block) {
 std::string PageView::greyed_words(std::string_view page_id) const {
   if (const auto found = greyed_.find(page_id); found != greyed_.end()) {
     return found->second;
+  }
+  if (inactive_.empty() && pages_.scope) {
+    // A scoped page on a scope marked read only (D254): its writing controls greyed, the scope's words.
+    for (const protocol::Page& p : pages_.pages) {
+      if (p.id == page_id && p.scoped.value_or(false)) {
+        const std::string id = scope_id();
+        for (const ScopeChoice& c : scope_choices()) {
+          if (c.id == id && c.read_only) {
+            return c.label + " is read only.";
+          }
+        }
+      }
+    }
   }
   return inactive_;
 }
@@ -1363,6 +1414,25 @@ std::vector<std::string> PageView::component_topics() const {
   for (const protocol::QuickSwitch& q : pages_.quick.value_or(std::vector<protocol::QuickSwitch>{})) {
     if (q.state && std::find(out.begin(), out.end(), q.state->topic) == out.end()) {
       out.push_back(q.state->topic);  // a session switch's state (D252), on every page: Start opens them anywhere
+    }
+  }
+  const auto want = [&](const std::string& topic) {
+    if (!topic.empty() && std::find(out.begin(), out.end(), topic) == out.end()) {
+      out.push_back(topic);
+    }
+  };
+  if (pages_.scope && current().scoped.value_or(false)) {
+    want(pages_.scope->topic);  // the scope's choices, on a page that follows it (D254)
+  }
+  for (const Source& src : page_sources()) {
+    // A page source's changes topic, and the topics its filters take their choices from (D254).
+    want(src.source->changes.value_or(std::string()));
+    for (const protocol::FilterOption& f :
+         src.bar != nullptr ? src.bar->filters.value_or(std::vector<protocol::FilterOption>{})
+                            : std::vector<protocol::FilterOption>{}) {
+      if (f.choices_from) {
+        want(f.choices_from->topic);
+      }
     }
   }
   if (const protocol::PageMaster* m = master(); m != nullptr) {
@@ -1438,7 +1508,8 @@ std::vector<std::string> PageView::component_topics() const {
 }
 
 const Json* PageView::table_of(const protocol::PageBlock& block) const {
-  if (block.kind != protocol::BlockKind::component || block.component != protocol::Component::table || !block.topic) {
+  if (block.kind != protocol::BlockKind::component || block.component != protocol::Component::table ||
+      (!block.topic && !block.page)) {
     return nullptr;
   }
   const Json* body = drawn(block).body;
@@ -1453,8 +1524,8 @@ const Json* PageView::table_of(const protocol::PageBlock& block) const {
 PageView::Bar PageView::bar_of_table(const protocol::PageBlock& block) const {
   Bar out;
   const Json* table = block.filter_bar ? table_of(block) : nullptr;
-  if (table == nullptr || (*table)["rows"].empty()) {
-    return out;
+  if (table == nullptr || ((*table)["rows"].empty() && !block.page)) {
+    return out;  // (a table read a page at a time keeps its bar with no rows: its filters chose none, D254)
   }
   out.key = cell_base(block);
   out.bar = &*block.filter_bar;
@@ -1479,12 +1550,42 @@ PageView::Bar PageView::bar_of_master() const {
   return out;
 }
 
+std::vector<std::pair<std::string, std::string>> PageView::bar_choices(const Bar& bar, std::size_t i) const {
+  std::vector<std::pair<std::string, std::string>> out;
+  const protocol::FilterOption& f = (*bar.bar->filters)[i];
+  if (f.choices) {
+    for (const protocol::Choice& c : *f.choices) {
+      out.emplace_back(c.value, c.label.empty() ? c.value : c.label);
+    }
+    return out;
+  }
+  if (f.choices_from) {
+    const Json* body = latest(f.choices_from->topic);
+    if (body != nullptr && f.choices_from->field) {
+      body = body->is_object() && body->contains(*f.choices_from->field) ? &(*body)[*f.choices_from->field] : nullptr;
+    }
+    for (std::size_t k = 0; body != nullptr && body->is_array() && k < body->size() && out.size() < 32; ++k) {
+      const Json& v = (*body)[k];
+      if (v.is_string() && !v.get_ref<const std::string&>().empty()) {
+        out.emplace_back(v.get<std::string>(), v.get<std::string>());
+      } else if (v.is_object() && !cell_words(v, "value").empty()) {
+        out.emplace_back(cell_words(v, "value"), cell_words(v, "label").empty() ? cell_words(v, "value") : cell_words(v, "label"));
+      }
+    }
+    return out;
+  }
+  for (const std::string& v : filter_choices(*bar.rows, f.column)) {
+    out.emplace_back(v, v);
+  }
+  return out;
+}
+
 PageView::Bar PageView::bar_of(const Focus& f) const {
   return f.block != nullptr ? bar_of_table(*f.block) : bar_of_master();
 }
 
 std::vector<std::size_t> PageView::shown_rows(const protocol::PageBlock& block, const Json& rows) const {
-  if (const Bar bar = bar_of_table(block); bar) {
+  if (const Bar bar = bar_of_table(block); bar && !block.page) {  // a page at a time: the space filtered (D254)
     const auto state = filters_.find(bar.key);
     return visible_rows(rows, *bar.bar, state != filters_.end() ? state->second : FilterState{});
   }
@@ -1548,7 +1649,10 @@ Action PageView::filter_input(const Focus& f, Key key) {
   if (part[0] == 'f' && sideways) {
     // A filter's choices: All, then the values its rows hold, and the player's own though no row holds it now.
     const std::size_t i = static_cast<std::size_t>(std::stoul(part.substr(1)));
-    std::vector<std::string> values = filter_choices(*bar.rows, (*bar.bar->filters)[i].column);
+    std::vector<std::string> values;
+    for (const auto& [value, words] : bar_choices(bar, i)) {
+      values.push_back(value);
+    }
     if (st.chosen.size() <= i) {
       st.chosen.resize(i + 1);
     }
@@ -1789,9 +1893,16 @@ void PageView::rebuild() {
     // The master list's filter bar (D250), then its rows (D215), before its detail: by the list's topic and each row's
     // key.
     push_bar(bar_of_master(), nullptr);
+    const Paged* paged = m->page ? paged_of(master_name(*m)) : nullptr;
+    if (paged != nullptr && paged->fresh) {
+      focus_.push_back({FocusKind::paging, master_name(*m) + "/fresh", 0});  // "New rows · Show" (D254)
+    }
     const auto rows = master_rows();
     for (std::size_t r = 0; r < rows.size(); ++r) {
       focus_.push_back({FocusKind::master_row, master_name(*m) + "/" + rows[r].first, r});
+    }
+    if (paged != nullptr && !paged->next.empty() && !paged->loading) {
+      focus_.push_back({FocusKind::paging, master_name(*m) + "/more", 0});  // Show more (D254)
     }
   }
   // A master page with no row chosen draws no detail: its tabs and sections are no focus stops then (D215).
@@ -1896,6 +2007,10 @@ void PageView::rebuild() {
           }
           const std::size_t actions = block.row_actions ? block.row_actions->size() : 0;
           push_bar(bar_of_table(block), &block);  // its filter bar first (D250), then its rows as they show
+          const Paged* paged = block.page ? paged_of(cell_base(block)) : nullptr;
+          if (paged != nullptr && paged->fresh) {
+            focus_.push_back({FocusKind::paging, cell_base(block) + "/fresh", 0, &block});  // "New rows · Show" (D254)
+          }
           for (const std::size_t r : shown_rows(block, (*table)["rows"])) {
             const Json& row = (*table)["rows"][r];
             if (sw != nullptr) {
@@ -1913,6 +2028,9 @@ void PageView::rebuild() {
                 focus_.push_back({FocusKind::row_action, row_action_id(block, row, r, act), r, &block, a});
               }
             }
+          }
+          if (paged != nullptr && !paged->next.empty() && !paged->loading) {
+            focus_.push_back({FocusKind::paging, cell_base(block) + "/more", 0, &block});  // Show more (D254)
           }
           continue;
         }
@@ -1968,7 +2086,10 @@ std::string PageView::focused() const {
 
 std::string PageView::name_of(Scope scope, std::size_t index) const {
   if (scope == Scope::top) {
-    return index == kTopLive ? "top:live" : index == kTopQuick ? "top:quick" : "search";  // the top bar's (D252)
+    return index == kTopLive    ? "top:live"
+           : index == kTopQuick ? "top:quick"
+           : index == kTopScope ? "top:scope"
+                                : "search";  // the top bar's (D252, D254)
   }
   if (scope == Scope::rail) {
     if (index >= rail_.size()) {
@@ -1989,7 +2110,7 @@ std::string PageView::name_of(Scope scope, std::size_t index) const {
   }
   static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
                                           "cell", "row", "section-action", "field", "submit", "secret", "item", "editor",
-                                          "filter", "link", "part"};
+                                          "filter", "link", "part", "paging"};
   const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -2517,10 +2638,21 @@ std::string PageView::master_name(const protocol::PageMaster& m) const {
 
 std::string PageView::master_topic() const {
   const protocol::PageMaster* m = master();
-  return m != nullptr && m->topic ? *m->topic : std::string();  // none for a list read a page at a time (D254)
+  if (m == nullptr || !m->topic) {
+    return {};  // none for a list read a page at a time (D254)
+  }
+  if (current().scoped.value_or(false) && is_family(*m->topic)) {
+    const std::string id = scope_id();  // a scoped page's list: the scope's member (D254)
+    return id.empty() ? std::string() : *m->topic + "/" + id;
+  }
+  return *m->topic;
 }
 
 const Json* PageView::master_body() const {
+  if (const protocol::PageMaster* m = master(); m != nullptr && m->page) {
+    const Paged* p = paged_of(master_name(*m));  // rows read a page at a time (D254)
+    return p != nullptr && p->answered ? &p->body : nullptr;
+  }
   const std::string topic = master_topic();
   if (topic.empty()) {
     return nullptr;
@@ -2542,7 +2674,7 @@ std::vector<std::pair<std::string, const Json*>> PageView::master_rows() const {
   // Through its filter bar, if it has one (G43, D250): the rows that show, in the order they show.
   const Json& rows = (*body)["rows"];
   std::vector<std::size_t> order;
-  if (const Bar bar = bar_of_master(); bar) {
+  if (const Bar bar = bar_of_master(); bar && !m->page) {  // a page at a time: the space filtered (D254)
     const auto state = filters_.find(bar.key);
     order = visible_rows(rows, *bar.bar, state != filters_.end() ? state->second : FilterState{});
   } else {
@@ -2567,17 +2699,70 @@ std::string PageView::topic_of(const protocol::PageBlock& block) const {
   if (!block.topic) {
     return {};
   }
-  if (const protocol::PageMaster* m = master(); m != nullptr) {
-    // Any family on a master page draws the chosen row's member: <family>/<the row's key> (D215, D217).
-    const bool family = std::any_of(pages_.topics.begin(), pages_.topics.end(), [&](const protocol::TopicInfo& t) {
-      return t.id == *block.topic && t.family.value_or(false);
-    });
-    if (family) {
-      const std::string key = chosen();
-      return key.empty() ? std::string() : *block.topic + "/" + key;
-    }
+  if (!is_family(*block.topic)) {
+    return *block.topic;
+  }
+  const bool scoped = current().scoped.value_or(false);
+  const protocol::PageMaster* m = master();
+  if (m != nullptr && !(scoped && *block.topic != m->detail)) {
+    // A family on a master page draws the chosen row's member: <family>/<the row's key> (D215, D217).
+    const std::string key = chosen();
+    return key.empty() ? std::string() : *block.topic + "/" + key;
+  }
+  if (scoped) {
+    // Any other family on a scoped page draws the scope's member: <family>/<the scope in view> (D254).
+    const std::string id = scope_id();
+    return id.empty() ? std::string() : *block.topic + "/" + id;
   }
   return *block.topic;
+}
+
+bool PageView::is_family(std::string_view topic) const {
+  return std::any_of(pages_.topics.begin(), pages_.topics.end(), [&](const protocol::TopicInfo& t) {
+    return t.id == topic && t.family.value_or(false);
+  });
+}
+
+std::vector<PageView::ScopeChoice> PageView::scope_choices() const {
+  std::vector<ScopeChoice> out;
+  if (!pages_.scope) {
+    return out;
+  }
+  const Json* body = latest(pages_.scope->topic);
+  if (body != nullptr && pages_.scope->field) {
+    body = body->is_object() && body->contains(*pages_.scope->field) ? &(*body)[*pages_.scope->field] : nullptr;
+  }
+  if (body == nullptr || !body->is_object() || !body->contains("choices") || !(*body)["choices"].is_array()) {
+    return out;
+  }
+  for (const Json& c : (*body)["choices"]) {
+    const std::string id = c.is_object() ? cell_words(c, "id") : std::string();
+    if (id.empty() || id.size() > 64 || id.find('/') != std::string::npos || out.size() >= 32) {
+      continue;  // an id names a family's member: no slash
+    }
+    ScopeChoice one;
+    one.id = id;
+    one.label = cell_words(c, "label").empty() ? id : cell_words(c, "label");
+    one.read_only = c.contains("read_only") && c["read_only"] == true;
+    out.push_back(std::move(one));
+  }
+  return out;
+}
+
+std::string PageView::scope_id() const {
+  const std::vector<ScopeChoice> choices = scope_choices();
+  const auto listed = [&](const std::string& id) {
+    return std::any_of(choices.begin(), choices.end(), [&](const ScopeChoice& c) { return c.id == id; });
+  };
+  if (!scope_choice_.empty() && listed(scope_choice_)) {
+    return scope_choice_;
+  }
+  const Json* body = pages_.scope ? latest(pages_.scope->topic) : nullptr;
+  if (body != nullptr && pages_.scope->field) {
+    body = body->is_object() && body->contains(*pages_.scope->field) ? &(*body)[*pages_.scope->field] : nullptr;
+  }
+  const std::string current = body != nullptr && body->is_object() ? cell_words(*body, "current") : std::string();
+  return listed(current) ? current : (choices.empty() ? std::string() : choices.front().id);
 }
 
 std::string PageView::chosen() const {
@@ -3661,6 +3846,8 @@ void PageView::close_sheet() noexcept {
 
 void PageView::cancel_confirmation() noexcept {
   confirming_.clear();
+  scope_choice_.clear();  // the scope's current one again at the next open (D254)
+  paged_.clear();         // and pages asked for afresh
   capture_ = Capture{};  // and an open capture: nothing changes (D209)
   if (editing()) {
     // As Escape, whatever closed the menu (§5.1, G38 (2)): a form's fields keep their text for the next open (kept at
@@ -3741,6 +3928,9 @@ std::vector<std::size_t> PageView::top_stops() const {
   if (current().live.value_or(false)) {
     stops.push_back(kTopLive);
   }
+  if (current().scoped.value_or(false) && !scope_choices().empty()) {
+    stops.push_back(kTopScope);  // the scope's chooser (D254)
+  }
   if (has_quick()) {
     stops.push_back(kTopQuick);
   }
@@ -3794,12 +3984,202 @@ Action PageView::quick_input(const Input& in) {
   }
 }
 
+// ---- Rows read a page at a time (G45, D254).
+
+const PageView::Paged* PageView::paged_of(std::string_view key) const {
+  const auto found = paged_.find(key);
+  return found != paged_.end() ? &found->second : nullptr;
+}
+
+std::vector<PageView::Source> PageView::page_sources() const {
+  std::vector<Source> out;
+  if (const protocol::PageMaster* m = master(); m != nullptr && m->page) {
+    Source src;
+    src.key = master_name(*m);
+    src.source = &*m->page;
+    src.bar = m->filter_bar ? &*m->filter_bar : nullptr;
+    src.bar_key = "master:" + src.key;
+    out.push_back(src);
+  }
+  for (const protocol::PageSection& section : sections()) {
+    for (const auto* blocks : {&section.blocks, section.advanced ? &*section.advanced : nullptr}) {
+      if (blocks == nullptr) {
+        continue;
+      }
+      for (const protocol::PageBlock& block : *blocks) {
+        if (block.page && block.kind == protocol::BlockKind::component && block.component == protocol::Component::table) {
+          Source src;
+          src.key = cell_base(block);
+          src.source = &*block.page;
+          src.bar = block.filter_bar ? &*block.filter_bar : nullptr;
+          src.bar_key = src.key;
+          out.push_back(src);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+Json PageView::page_args(const Source& src) const {
+  // Its own args, then what the view chose: each filter's value by its column, the sort and its direction, the search
+  // and the scope in view. The cursor is added for Show more.
+  Json args = src.source->args && src.source->args->is_object() ? *src.source->args : Json::object();
+  if (src.bar != nullptr) {
+    const auto state = filters_.find(src.bar_key);
+    const FilterState st = state != filters_.end() ? state->second : FilterState{};
+    Json filters = Json::object();
+    const auto& options = src.bar->filters.value_or(std::vector<protocol::FilterOption>{});
+    for (std::size_t i = 0; i < options.size() && i < st.chosen.size(); ++i) {
+      if (st.chosen[i]) {
+        filters[options[i].column] = *st.chosen[i];
+      }
+    }
+    if (!filters.empty()) {
+      args["filters"] = std::move(filters);
+    }
+    if (src.bar->sort && !src.bar->sort->empty()) {
+      const protocol::SortOption& by = (*src.bar->sort)[std::min(st.sort, src.bar->sort->size() - 1)];
+      args["sort"] = Json::object({{"key", by.key}, {"direction", descending(*src.bar, st) ? "descending" : "ascending"}});
+    }
+    const std::size_t from = st.search.find_first_not_of(' ');
+    if (from != std::string::npos) {
+      args["search"] = st.search.substr(from, st.search.find_last_not_of(' ') - from + 1);  // as the browser sends it
+    }
+  }
+  if (current().scoped.value_or(false)) {
+    if (const std::string id = scope_id(); !id.empty()) {
+      args["scope"] = id;
+    }
+  }
+  return args;
+}
+
+std::vector<PageView::PageRequest> PageView::take_page_requests() {
+  std::vector<PageRequest> out;
+  for (const Source& src : page_sources()) {
+    if (current().scoped.value_or(false) && pages_.scope && latest(pages_.scope->topic) == nullptr) {
+      continue;  // its scope's topic has not come: nothing is asked until it has; with no choices, none is sent
+    }
+    Paged& p = paged_[src.key];
+    Json args = page_args(src);
+    const std::string signature = args.dump();
+    const bool first = signature != p.signature;
+    if (!first && !(p.more && !p.next.empty() && !p.loading)) {
+      p.more = p.more && p.loading;
+      continue;
+    }
+    p.serial += 1;
+    p.loading = true;
+    if (first) {
+      if (!p.signature.empty()) {
+        // Another query (a filter, the sort, the search or the scope): its rows are not these, so none are kept.
+        p.body["rows"] = Json::array();
+        p.answered = false;
+        p.next.clear();
+        p.total.reset();
+        p.refused.clear();
+        p.pages = 0;
+      }
+      p.signature = signature;
+      p.appending = false;
+      p.more = false;
+      p.fresh = false;
+    } else {
+      p.appending = true;
+      p.more = false;
+      args["cursor"] = p.next;
+    }
+    PageRequest request;
+    request.where = "page:" + src.key + "#" + std::to_string(p.serial);
+    request.command.space = pages_.space;
+    request.command.name = src.source->command;
+    request.command.args = std::move(args);
+    out.push_back(std::move(request));
+  }
+  return out;
+}
+
+void PageView::page_answer(std::string_view where, const protocol::Result& result) {
+  if (where.rfind("page:", 0) != 0) {
+    return;
+  }
+  const std::size_t hash = where.rfind('#');
+  if (hash == std::string_view::npos || hash <= 5) {
+    return;
+  }
+  const std::string key(where.substr(5, hash - 5));
+  std::uint64_t serial = 0;
+  for (const char ch : where.substr(hash + 1)) {
+    if (ch < '0' || ch > '9') {
+      return;
+    }
+    serial = serial * 10 + static_cast<std::uint64_t>(ch - '0');
+  }
+  const auto found = paged_.find(key);
+  if (found == paged_.end() || found->second.serial != serial) {
+    return;  // an answer to a page asked for before the last change: not drawn
+  }
+  Paged& p = found->second;
+  const std::string was = focused();
+  p.loading = false;
+  if (result.error.has_value()) {
+    p.refused = result.detail && !result.detail->empty() ? *result.detail : std::string("Not now.");
+    if (!p.appending) {
+      p.body["rows"] = Json::array();
+      p.next.clear();
+      p.total.reset();
+      p.pages = 0;
+    }
+    p.answered = true;
+  } else {
+    const Json body = result.body && result.body->is_object() ? *result.body : Json::object();
+    Json rows = Json::array();
+    if (body.contains("rows") && body["rows"].is_array()) {
+      for (const Json& row : body["rows"]) {
+        if (row.is_object() && rows.size() < 200) {
+          rows.push_back(row);
+        }
+      }
+    }
+    if (body.contains("columns") && body["columns"].is_array()) {
+      p.body["columns"] = body["columns"];
+    }
+    if (p.appending) {
+      for (Json& row : rows) {
+        p.body["rows"].push_back(std::move(row));
+      }
+      p.pages += 1;
+    } else {
+      p.body["rows"] = std::move(rows);
+      p.pages = 1;
+    }
+    p.next = body.contains("next") && body["next"].is_string() ? body["next"].get<std::string>() : std::string();
+    p.total = body.contains("total") && body["total"].is_number() && body["total"].get<double>() >= 0
+                  ? std::optional<double>(body["total"].get<double>())
+                  : std::nullopt;
+    p.refused.clear();
+    p.answered = true;
+  }
+  rebuild();
+  for (std::size_t i = 0; scope_ == Scope::page && i < focus_.size(); ++i) {
+    if (name_of(Scope::page, i) == was) {
+      page_focus_ = i;  // the same element, wherever it now is
+      break;
+    }
+  }
+  if (const protocol::PageMaster* m = master(); m != nullptr && m->page && master_name(*m) == key) {
+    master_changed();
+  }
+}
+
 // ---- Input (§5.3, §5.4, §5.7).
 
 // The first control of the page's focus order: past the section labels where there is one (§5.7).
 Action PageView::open_index(std::size_t index, Scope scope) {
   release_held();  // what the last page held is applied: the next page draws it as it is (D252)
   quick_open_ = false;
+  paged_.clear();  // nothing a page answered is kept past leaving it (D254)
   page_ = index;
   tab_ = 0;
   page_focus_ = 0;
@@ -4017,6 +4397,21 @@ Action PageView::input_body(const Input& in) {
           quick_focus_ = 0;
           return {};
         }
+        if (top_focus_ == kTopScope) {
+          // The next of the space's choices, round again after the last (D254): the page's members follow it.
+          const std::vector<ScopeChoice> choices = scope_choices();
+          const std::string id = scope_id();
+          std::size_t at = 0;
+          for (std::size_t k = 0; k < choices.size(); ++k) {
+            at = choices[k].id == id ? (k + 1) % choices.size() : at;
+          }
+          if (!choices.empty()) {
+            scope_choice_ = choices[at].id;
+            confirming_.clear();
+            rebuild();
+          }
+          return {};
+        }
         start_edit(EditKind::search, "search", search_query_, kSearchMax, false);
         edited();
         return {};
@@ -4046,17 +4441,22 @@ Action PageView::input_body(const Input& in) {
     std::size_t first = focus_.size();
     std::size_t last = 0;
     std::size_t chosen_at = focus_.size();
+    // The list's stops: its rows, and Show more and "New rows · Show" of a list read a page at a time (D254).
+    const auto of_list = [&](const Focus& one) {
+      return one.kind == FocusKind::master_row ||
+             (one.kind == FocusKind::paging && one.block == nullptr && one.id.rfind(master_name(*m) + "/", 0) == 0);
+    };
     for (std::size_t i = 0; i < focus_.size(); ++i) {
-      if (focus_[i].kind == FocusKind::master_row) {
+      if (of_list(focus_[i])) {
         first = std::min(first, i);
         last = i;
-        if (focus_[i].id == master_name(*m) + "/" + chosen()) {
+        if (focus_[i].kind == FocusKind::master_row && focus_[i].id == master_name(*m) + "/" + chosen()) {
           chosen_at = i;
         }
       }
     }
     const bool on_row = f.kind == FocusKind::master_row;
-    if (on_row && (in.key == Key::up || in.key == Key::down)) {
+    if (of_list(f) && (in.key == Key::up || in.key == Key::down)) {
       if (in.key == Key::up && page_focus_ > first) {
         --page_focus_;
       } else if (in.key == Key::up && page_focus_ == first && first > 0 &&
@@ -4148,6 +4548,18 @@ Action PageView::input_body(const Input& in) {
           return follow_link(f);
         case FocusKind::part:
           return flip_part(f);
+        case FocusKind::paging: {
+          // Show more, or "New rows · Show": the host takes the request at its next look (D254).
+          const std::size_t slash = f.id.rfind('/');
+          Paged& p = paged_[f.id.substr(0, slash)];
+          if (f.id.substr(slash + 1) == "more") {
+            p.more = true;
+          } else {
+            p.signature.clear();
+            p.fresh = false;
+          }
+          return {};
+        }
         case FocusKind::section_action:
           return section_action(f);
         case FocusKind::action: {
@@ -4532,6 +4944,15 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       if (has_quick()) {
         quick_pill = pill("Quick switches", kTopQuick, quick_open_);
       }
+      if (current().scoped.value_or(false) && pages_.scope) {
+        // The scope's chooser (D254): its label and the choice in view.
+        const std::string id = scope_id();
+        for (const ScopeChoice& choice : scope_choices()) {
+          if (choice.id == id) {
+            pill(pages_.scope->label + ": " + choice.label, kTopScope, false);
+          }
+        }
+      }
       if (current().live.value_or(false)) {
         std::string words = live_mode_ == LiveMode::live ? "Live" : live_mode_ == LiveMode::every_5s ? "Every 5 s" : "Paused";
         if (live_mode_ != LiveMode::live && held_new_ > 0) {
@@ -4663,7 +5084,13 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const std::size_t filters = bar.bar->filters ? bar.bar->filters->size() : 0;
       for (std::size_t i = 0; i < filters; ++i) {
         const bool chosen_one = i < st.chosen.size() && st.chosen[i].has_value();
-        select("f" + std::to_string(i), (*bar.bar->filters)[i].label, chosen_one ? *st.chosen[i] : std::string("All"));
+        std::string shown = chosen_one ? *st.chosen[i] : std::string("All");
+        if (chosen_one) {
+          for (const auto& [value, words] : bar_choices(bar, i)) {
+            shown = value == *st.chosen[i] ? words : shown;  // a choice's own words (D254)
+          }
+        }
+        select("f" + std::to_string(i), (*bar.bar->filters)[i].label, shown);
       }
       if (bar.bar->sort && !bar.bar->sort->empty()) {
         const std::size_t at = std::min(st.sort, bar.bar->sort->size() - 1);
@@ -4730,6 +5157,45 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         }
       }
       return cy;
+    };
+    // Rows read a page at a time (D254): at the top, "New rows · Show" when new rows came past the first page; at the end,
+    // "Loading…" while a page is asked for, Show more while the space has a next page, and how many in all if it said.
+    // Each answers the rows' own height; a focus stop is the stop the view keeps under the same name.
+    const auto draw_paging = [&](const Paged& p, const std::string& key, bool top, float x, float y, float w) {
+      const float lh = line_height(TypeRole::ui_sm, s);
+      const float h = std::round(32 * s);
+      const auto stop = [&](const std::string& words, const std::string& id) {
+        const float bw = c.width(words, TypeRole::ui_sm) + std::round(28 * s);
+        const Rect box{x, y + std::round(6 * s), bw, h - std::round(8 * s)};
+        c.fill(box, hovered(box) ? Colour::tint_hover : Colour::ground_3, std::round(tokens::radius::control * s));
+        c.text(words, TypeRole::ui_sm, box.x + std::round(14 * s), box.y + std::round((box.h - lh) / 2), bw,
+               Colour::ink_hi);
+        hit(box, Scope::page, focus_index(FocusKind::paging, id));
+        if (page_focus(FocusKind::paging, id)) {
+          c.focused(box);
+        }
+        return box.right();
+      };
+      if (top) {
+        if (!p.fresh) {
+          return 0.0f;
+        }
+        stop("New rows \u00B7 Show", key + "/fresh");
+        return h + std::round(4 * s);
+      }
+      float right = x;
+      if (p.loading && p.appending) {
+        c.text("Loading\u2026", TypeRole::ui_sm, x, y + std::round((h - lh) / 2), w, Colour::ink_mute);
+        right = x + c.width("Loading\u2026", TypeRole::ui_sm);
+      } else if (!p.next.empty() && !p.loading) {
+        right = stop("Show more", key + "/more");
+      }
+      if (p.total) {
+        const std::string all = std::to_string(static_cast<long long>(*p.total)) + " in all";
+        c.text(all, TypeRole::ui_sm, right + std::round(16 * s), y + std::round((h - lh) / 2),
+               std::max(0.0f, x + w - right - std::round(16 * s)), Colour::ink_mute);
+      }
+      return right > x || p.total ? h : 0.0f;
     };
     // The header: title, description, actions, the lozenge rule.
     c.text(page.name, TypeRole::display_lg, x0, y, content_w / 2, Colour::ink_hi);
@@ -4798,6 +5264,10 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       if (master_bar) {
         my = draw_bar(master_bar, x0 + mpad, my, mw - 2 * mpad);
       }
+      const Paged* paged = m->page ? paged_of(master_name(*m)) : nullptr;  // rows read a page at a time (D254)
+      if (paged != nullptr) {
+        my += draw_paging(*paged, master_name(*m), true, x0 + mpad, my, mw - 2 * mpad);
+      }
       const auto rows = master_rows();
       std::string first_column;
       std::string second_column;
@@ -4836,11 +5306,21 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         }
         my += row_hm;
       }
-      if (rows.empty() && !master_bar) {
-        // Its own words once its topic has spoken (D186), nothing else until then (invariant 2).
+      if (paged != nullptr && !rows.empty()) {
+        my += draw_paging(*paged, master_name(*m), false, x0 + mpad, my, mw - 2 * mpad);  // Show more (D254)
+      }
+      if (rows.empty() && (!master_bar || m->page)) {
+        // Its own words once its topic has spoken (D186), nothing else until then (invariant 2); a list read a page at
+        // a time says "Loading…" while it asks, or the space's words for a refusal (D254).
         const bool published = master_body() != nullptr;
-        c.text(published && m->empty ? *m->empty : std::string("Nothing to show."), TypeRole::ui_sm, x0 + mpad,
-               my + std::round(4 * s), mw - 2 * mpad, Colour::ink_mute);
+        const bool refused = paged != nullptr && !paged->refused.empty();
+        const std::string words = refused ? paged->refused
+                                  : m->page && (paged == nullptr || paged->loading || !paged->answered)
+                                      ? std::string("Loading\u2026")
+                                  : published && m->empty ? *m->empty
+                                                          : std::string("Nothing to show.");
+        c.text(words, TypeRole::ui_sm, x0 + mpad, my + std::round(4 * s), mw - 2 * mpad,
+               refused ? Colour::ink_body : Colour::ink_mute);
         my += std::round(line_height(TypeRole::ui_sm, s) + 12 * s);
       }
       my += std::round(12 * s);
@@ -5788,8 +6268,11 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               continue;
             }
             const Json* table = table_of(block);
+            const Paged* paged = block.page ? paged_of(cell_base(block)) : nullptr;
             if (table == nullptr) {
-              one_line(none, Colour::ink_mute);
+              // A table read a page at a time asks for its first page (D254); any other, its words until it has rows.
+              one_line(block.page && (paged == nullptr || paged->loading) ? std::string("Loading\u2026") : none,
+                       Colour::ink_mute);
               continue;
             }
             // A table in game (D181): a row a row, its first column's words, the others' after them, and a switch
@@ -5815,14 +6298,23 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             const std::vector<protocol::RowAction>& row_actions =
                 block.row_actions ? *block.row_actions : std::vector<protocol::RowAction>{};
             const Json& rows = (*table)["rows"];
+            if (paged != nullptr) {
+              // Read a page at a time (D254): its bar with or without rows (the space filters), then New rows.
+              if (const Bar table_bar = bar_of_table(block); table_bar) {
+                y = draw_bar(table_bar, x0 + card_pad, y + std::round(4 * s), content_w - 2 * card_pad);
+              }
+              y += draw_paging(*paged, cell_base(block), true, x0 + card_pad, y, content_w - 2 * card_pad);
+            }
             if (rows.empty()) {
               c.line(x0 + card_pad, y, content_w - 2 * card_pad, Colour::rule);
-              c.text(none, TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s),
-                     content_w - 2 * card_pad, Colour::ink_mute);
+              const bool refused = paged != nullptr && !paged->refused.empty();
+              c.text(refused ? paged->refused : paged != nullptr && paged->loading ? std::string("Loading\u2026") : none,
+                     TypeRole::ui_sm, x0 + card_pad, y + std::round(12 * s), content_w - 2 * card_pad,
+                     refused ? Colour::ink_body : Colour::ink_mute);
               y += row_h;
               continue;
             }
-            if (const Bar table_bar = bar_of_table(block); table_bar) {
+            if (const Bar table_bar = bar_of_table(block); table_bar && paged == nullptr) {
               y = draw_bar(table_bar, x0 + card_pad, y + std::round(4 * s), content_w - 2 * card_pad);  // D250
             }
             for (const std::size_t r : shown_rows(block, rows)) {
@@ -5949,6 +6441,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 c.text(said->second, TypeRole::ui_sm, row.x, y - std::round(8 * s), row.w, Colour::rot);
                 y += std::round(line_height(TypeRole::ui_sm, s));
               }
+            }
+            if (paged != nullptr) {
+              y += draw_paging(*paged, cell_base(block), false, x0 + card_pad, y, content_w - 2 * card_pad);  // D254
             }
             continue;
           }
@@ -6230,7 +6725,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       hints = "Not available now    Esc  Back";  // a greyed page's controls (D188)
     } else if (scope_ == Scope::page && !focus_.empty()) {
       const Focus& f = focus_[page_focus_];
-      if (f.kind == FocusKind::shortcut) {
+      if (f.kind == FocusKind::paging) {
+        hints = f.id.ends_with("/more") ? "Enter  Show more    Esc  Back" : "Enter  Show the new rows    Esc  Back";
+      } else if (f.kind == FocusKind::shortcut) {
         // Its home's control, and its link (D189).
         const Setting& st = settings_[f.index];
         const bool changes = !st.locked && st.availability != "later" && st.type != SettingType::key_name &&
@@ -6281,7 +6778,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     } else if (scope_ == Scope::rail) {
       hints = "↑ ↓  Move    Enter  Open    →  Page    Esc  Close";
     } else if (scope_ == Scope::top) {
-      hints = top_focus_ == kTopLive    ? "Enter  Change    ← →  Move    ↓  Page    Esc  Back"
+      hints = top_focus_ == kTopLive || top_focus_ == kTopScope
+                                        ? "Enter  Change    ← →  Move    ↓  Page    Esc  Back"
               : top_focus_ == kTopQuick ? "Enter  Open    ← →  Move    ↓  Page    Esc  Back"
               : top_stops().size() > 1  ? "Enter  Search    →  Next    ↓  Page    Esc  Back"
                                         : "Enter  Search    ↓  Page    Esc  Back";

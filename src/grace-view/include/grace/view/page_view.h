@@ -192,6 +192,21 @@ class PageView {
   bool holding() const noexcept { return !pending_.empty(); }
   std::size_t held_new() const noexcept { return held_new_; }
   bool quick_open() const noexcept { return quick_open_; }
+  // ---- A space's scope, and rows read a page at a time (G45, D254). A scoped page follows the scope in view (the
+  // top bar's chooser, after Live updates; Enter steps through the space's choices, the current one again at each
+  // open): a block or master list bound to a family draws <family>/<scope> (a master page's detail family still the
+  // chosen row's), and a choice marked read_only greys the page's writing controls. A table or master list with a page
+  // source asks its space for its rows: take_page_requests() gives the host each command to send (the first page when
+  // the page opens, or its filters, sort, search or scope change; the next one on Show more; the first again when its
+  // changes topic moves), and page_answer() takes each answer by where it was sent from. While a page is asked for,
+  // "Loading…"; a refusal's words stand in for its rows; nothing a page answered is kept past leaving the page.
+  struct PageRequest {
+    std::string where;  // "page:<key>#<serial>", for page_answer
+    protocol::Cmd command;
+  };
+  std::vector<PageRequest> take_page_requests();
+  void page_answer(std::string_view where, const protocol::Result& result);
+  std::string scope_id() const;  // the scope in view: the chosen one if the space still lists it, else its current
   // The state topics of the open page's components that the view draws in game (a table, a key-value list, a check
   // list, stat tiles, a computed sentence; D184): what the host watches while the page is open.
   std::vector<std::string> component_topics() const;
@@ -319,7 +334,8 @@ class PageView {
                                         section_action, form_field, form_submit, row_secret, master_row, editor,
                                         filter,  // a filter bar's control (G43, D250)
                                         link,    // a document's link (G44, D251)
-                                        part };  // a report preview's optional part's switch (D251)
+                                        part,    // a report preview's optional part's switch (D251)
+                                        paging };  // Show more, or "New rows · Show", of rows read a page at a time (D254)
   struct Focus {
     FocusKind kind;
     std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
@@ -358,6 +374,9 @@ class PageView {
   Bar bar_of_table(const protocol::PageBlock& block) const;
   Bar bar_of_master() const;
   Bar bar_of(const Focus& focus) const;
+  // A filter's choices, each its value and its words: the values its rows hold, or on rows read a page at a time its
+  // own list or a state topic's (D254).
+  std::vector<std::pair<std::string, std::string>> bar_choices(const Bar& bar, std::size_t filter) const;
   // A table's rows that show, by index into its rows, in the order they show: every row where it has no bar.
   std::vector<std::size_t> shown_rows(const protocol::PageBlock& block, const protocol::Json& rows) const;
   // A bar's controls, in the focus order: "f0" to "f3", "sort", "dir", "search", and "clear" while it hides every row.
@@ -587,6 +606,41 @@ class PageView {
   // A page's master list (D215): its name in focus ids (its topic, or for a list read a page at a time its page's id
   // and ".list"), its topic as watched (none for such a list), and its rows' body, wherever they come from (D254).
   std::string master_name(const protocol::PageMaster& m) const;
+  struct Paged {  // a table's or a master list's rows read a page at a time (D254), by its key
+    protocol::Json body = protocol::Json::object({{"columns", protocol::Json::array()}, {"rows", protocol::Json::array()}});
+    bool answered = false;   // a page has come
+    std::string signature;   // the args it was last asked with, the cursor aside: a change asks for the first page
+    std::uint64_t serial = 0;
+    bool loading = false;
+    bool appending = false;  // the request in flight is Show more's
+    bool more = false;       // Show more pressed
+    std::string next;        // the space's cursor for the next page
+    std::optional<double> total;
+    std::string refused;     // the space's words, in place of rows
+    bool fresh = false;      // new rows came past the first page: "New rows · Show"
+    int pages = 0;
+  };
+  std::map<std::string, Paged, std::less<>> paged_;
+  struct ScopeChoice {
+    std::string id;
+    std::string label;
+    bool read_only = false;
+  };
+  std::vector<ScopeChoice> scope_choices() const;
+  std::string scope_choice_;  // the player's choice; empty: the space's current
+  bool is_family(std::string_view topic) const;
+  // The open page's page sources (D254), each with its key: a table's cell_base, a master list's master_name.
+  struct Source {
+    std::string key;
+    const protocol::PageSource* source = nullptr;
+    const protocol::FilterBar* bar = nullptr;
+    std::string bar_key;  // its filter bar's state's key (a master list's "master:<name>")
+  };
+  std::vector<Source> page_sources() const;
+  protocol::Json page_args(const Source& source) const;
+  const Paged* paged_of(std::string_view key) const;
+  void master_changed();  // after its list's rows change: a chosen row it no longer has let go, the first chosen
+  static constexpr std::size_t kTopScope = 1002;
   std::string master_topic() const;
   const protocol::Json* master_body() const;
   bool has_quick() const noexcept { return pages_.quick && !pages_.quick->empty(); }

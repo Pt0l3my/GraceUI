@@ -508,6 +508,22 @@ bool take_from_spaces(State& m) {
       changed = true;
       continue;
     }
+    if (it->second.second.rfind("page:", 0) == 0) {
+      // A page of rows (D254): its answer, rows and all, goes back to the list or table that asked, which drops it if
+      // it has asked again since.
+      for (auto& view : m.spaces) {
+        if (view->id == it->second.first) {
+          grace::protocol::Result answer = result.result;
+          if (answer.error.has_value() && (!answer.detail.has_value() || answer.detail->empty())) {
+            answer.detail = refusal_words(*answer.error);  // the view's own words where the space gave none
+          }
+          view->view.page_answer(it->second.second, answer);
+        }
+      }
+      m.commands.erase(it);
+      changed = true;
+      continue;
+    }
     if (it->second.second.rfind("editor:", 0) == 0) {
       // An editor's command (D217): its answer, body and all, goes to the element that sent it, whatever is open.
       if (result.result.error.has_value()) {
@@ -942,6 +958,33 @@ void close_view(State& m) {
   active_view(m).cancel_confirmation();
 }
 
+// Rows read a page at a time (D254): what the open page asks of its space, sent as the view's own commands are, each
+// answer going back by where it was asked from. True if anything was asked.
+bool send_page_requests(State& m) {
+  SpaceView& space = *m.spaces[m.active];
+  if (space.own || !m.open) {
+    return false;
+  }
+  bool any = false;
+  for (grace::view::PageView::PageRequest& request : space.view.take_page_requests()) {
+    any = true;
+    grace::protocol::Cmd sent = std::move(request.command);
+    sent.space = space.id;
+    sent.id = m.next_command++;
+    std::uint64_t ticket = 0;
+    if (spaces::registry().game_command(space.id, std::move(sent), ticket)) {
+      m.commands[ticket] = {space.id, request.where};
+    } else {
+      g_refusals.fetch_add(1, std::memory_order_relaxed);
+      grace::protocol::Result busy;
+      busy.error = grace::protocol::ErrorCode::busy;
+      busy.detail = "Not now: the space has too many commands waiting.";
+      space.view.page_answer(request.where, busy);
+    }
+  }
+  return any;
+}
+
 void serve_menu() {
   if (g_lists.load(std::memory_order_acquire) == nullptr) {
     g_lists.store(new grace::abi::DrawListBuffers(), std::memory_order_release);
@@ -1028,6 +1071,9 @@ void serve_menu() {
   }
   if (watch_topics(m)) {  // the page or the space changed: what its components need (D184)
     take_from_spaces(m);
+    dirty = true;
+  }
+  if (send_page_requests(m)) {  // rows read a page at a time: "Loading…" until they come (D254)
     dirty = true;
   }
   const std::uint32_t width = g_width.load(std::memory_order_relaxed);
