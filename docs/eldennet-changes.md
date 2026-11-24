@@ -1540,3 +1540,10 @@ The owner chose G45 (a); this is its first step. So, for Home, Requests and Paus
    the top bar's power button. Your goldens move where a page is live or your space has quick switches (the top bar's
    pills). The protocol is 1.13; no change of the ABI.
 
+## 79. Two fixes your 0.2.44 pin found (2026-11-24, D253; GraceUI 0.2.46)
+
+1. **In game, a document's member is watched now**: Docs shows each document. Your docs golden from grace-dev's dump
+   follows; nothing in your page data changes.
+2. **A report preview's fields wrap in game and keep their line breaks in both views**, so "What happened" shows whole.
+   Nothing changes on your side. The protocol stays 1.13.
+
