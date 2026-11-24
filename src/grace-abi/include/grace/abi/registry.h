@@ -31,9 +31,9 @@ inline constexpr std::uint64_t kTextureBytesPerMod = GRACEUI_TEXTURE_BYTES_PER_M
 inline constexpr std::uint64_t kTextureBytesTotal = 64ull << 20;  // EST: every mod's together
 inline constexpr std::uint32_t kTextureSideMax = GRACEUI_TEXTURE_SIDE_MAX;
 
-inline constexpr std::uint32_t kMaxFaces = 24;  // EST: every mod's together
+inline constexpr std::uint32_t kMaxFaces = GRACEUI_FACES_ALL_MODS;  // EST: every mod's together
 inline constexpr std::uint32_t kFacesPerMod = GRACEUI_FACES_PER_MOD;
-inline constexpr std::uint32_t kFacesEldenNet = 8;  // EST: EldenNet's surfaces (D80)
+inline constexpr std::uint32_t kFacesEldenNet = GRACEUI_FACES_ELDENNET;  // EST: EldenNet's surfaces (D80)
 inline constexpr std::uint64_t kFaceBytesMax = GRACEUI_FACE_BYTES_MAX;
 inline constexpr std::uint32_t kFaceRangesMax = GRACEUI_FACE_RANGES_MAX;
 inline constexpr std::uint32_t kFaceCodePointsMax = 65536;  // EST: code points a face's ranges cover in all
