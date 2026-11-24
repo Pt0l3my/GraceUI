@@ -69,20 +69,20 @@ tri     ink.body      348,1051    7x14   <
 fill    ink.body      372,1057    9x2   
 tri     ink.body      380,1051    7x14   >
 text    ink.faint     402,1045   51x25   glyphs 6 "Change"
-fill    ground.well   477,1044  107x28   r3
-stroke  edge          477,1044  107x28   r3 w1
+fill    ground.well   477,1044  110x28   r3
+stroke  edge          477,1044  110x28   r3 w1
 text    ink.body      485,1046   52x25   glyphs 6 "Shift+"
-fill    ink.body      544,1057    9x2   
-tri     ink.body      538,1051    7x14   <
-fill    ink.body      562,1057    9x2   
-tri     ink.body      570,1051    7x14   >
-text    ink.faint     592,1045   51x25   glyphs 5 "By ten"
-fill    ground.well   667,1044   25x28   r3
-stroke  edge          667,1044   25x28   r3 w1
-text    ink.body      675,1046    9x25   glyphs 1 "R"
-text    ink.faint     699,1045   42x25   glyphs 5 "Reset"
-fill    ground.well   766,1044   42x28   r3
-stroke  edge          766,1044   42x28   r3 w1
-text    ink.body      774,1046   26x25   glyphs 3 "Esc"
-text    ink.faint     815,1045   34x25   glyphs 4 "Back"
+fill    ink.body      547,1057    9x2   
+tri     ink.body      541,1051    7x14   <
+fill    ink.body      565,1057    9x2   
+tri     ink.body      573,1051    7x14   >
+text    ink.faint     595,1045   51x25   glyphs 5 "By ten"
+fill    ground.well   670,1044   25x28   r3
+stroke  edge          670,1044   25x28   r3 w1
+text    ink.body      678,1046    9x25   glyphs 1 "R"
+text    ink.faint     702,1045   42x25   glyphs 5 "Reset"
+fill    ground.well   769,1044   42x28   r3
+stroke  edge          769,1044   42x28   r3 w1
+text    ink.body      777,1046   26x25   glyphs 3 "Esc"
+text    ink.faint     818,1045   34x25   glyphs 4 "Back"
 stroke  gold.hi      1502, 266  356x41   r5 w3 clip1

@@ -296,6 +296,19 @@ TEST_CASE("a key cap's arrows are drawn, each a shaft and a head centred in its 
   }
   CHECK(left == 2);
   CHECK(right == 2);
+  // "Shift+" and its arrow stand apart, as the keys' names' own space parts "← →".
+  const DumpRect shift = dump_rect(dump, "text    ink.body", "\"Shift+\"");
+  REQUIRE(shift.found);
+  std::istringstream again(dump);
+  float after_shift = -1;
+  for (std::string line; std::getline(again, line);) {
+    const DumpRect r = dump_rect(line, "tri     ink.body", " <");
+    if (r.found && r.x > shift.x) {
+      after_shift = r.x;
+      break;
+    }
+  }
+  CHECK(after_shift >= shift.x + shift.w + std::round(2 * scale));
   // The first cap's first arrow: its head within the cap, its box's middle at the cap's middle, to a pixel.
   const DumpRect head = dump_rect(dump, "tri     ink.body", " <");
   REQUIRE(head.found);

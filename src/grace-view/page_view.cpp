@@ -337,7 +337,9 @@ void arrow(Cursor& c, Rect r, Facing facing, Colour ink) {
 template <typename Run, typename Drawn>
 float key_names(Cursor& c, std::string_view keys, float x, Run&& run, Drawn&& drawn) {
   const float x0 = x;
+  const float join = std::round(2 * c.s);  // between an arrow and text with no space between them ("Shift+←")
   std::size_t from = 0;
+  bool after_arrow = false;
   for (std::size_t i = 0; i <= keys.size(); ++i) {
     const std::optional<Facing> facing = i < keys.size() ? arrow_at(keys, i) : std::nullopt;
     if (!facing && i < keys.size()) {
@@ -345,10 +347,14 @@ float key_names(Cursor& c, std::string_view keys, float x, Run&& run, Drawn&& dr
     }
     if (i > from) {
       const std::string_view text = keys.substr(from, i - from);
+      x += after_arrow && text.front() != ' ' ? join : 0.0f;
       run(text, x);
       x += c.width(text, TypeRole::num);
+      after_arrow = false;
     }
     if (facing) {
+      x += i > from && keys[i - 1] != ' ' ? join : 0.0f;
+      after_arrow = true;
       drawn(*facing, x);
       x += arrow_box(*facing, c.s).w;
       i += 2;
