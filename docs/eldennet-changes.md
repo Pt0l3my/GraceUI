@@ -1466,3 +1466,15 @@ instead of the mono face's small, low glyphs. So:
 2. **Nothing else changes**: `GraceUiTestMenu.footer` and the view's `footer()` hold the keyboard's hints line as
    before, and the Related card's arrow and every other arrow in the menu's words stay text.
 
+## 75. The rail's foot, and empty words without "yet" (2026-11-24, D248, D249; GraceUI 0.2.42)
+
+Your two questions from Content packs. So:
+
+1. **Your foot categories** (Settings, Docs, Content packs) can say `"foot": true` in their `[[category]]`, at
+   protocol 1.10. They must come after every other category: the lint and registration refuse a foot category before
+   one that is not. Both views then pin them to the rail's bottom under a rule, above GraceUI's own link, and with
+   GraceUI's page open they are links at GraceUI's foot. Your goldens' rails move where you mark them.
+2. **The default empty words** are now "Nothing to show.", without "yet", in both views. Your blocks with words of
+   their own (`props.empty`) don't change.
+3. **The protocol is 1.10**: the welcome and hello say "1.10". A space built for 1.9 runs unchanged.
+

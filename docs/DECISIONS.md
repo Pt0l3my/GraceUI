@@ -1062,7 +1062,7 @@ sent to the space, which publishes the filtered rows. **(d) Nothing yet.**
 **Recommendation.** (a): three of the four pages need only the view's filtering, which costs the space nothing and
 sends nothing anywhere; the paged kind is best designed with the pages that page.
 
-**What each answer changes.** (a): protocol 1.10's `filter_bar` on `page_block` and `page_master`, the page lint, both
+**What each answer changes.** (a): the next protocol minor's `filter_bar` on `page_block` and `page_master`, the page lint, both
 views, the demo space's pages as the example, and the tests and goldens; no change of the ABI. A `filter_bar` block on
 its own becomes a lint error that points to the table's field. (b): as (a), and `history.page`'s paging and filters as
 a table's mode. (c): a command for each change, and a filtering and sorting duty for every space. (d): nothing.

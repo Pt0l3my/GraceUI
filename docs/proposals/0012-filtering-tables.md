@@ -19,7 +19,7 @@ it is put here rather than settled alone. A bare § is a section of [DESIGN.md](
 The first three hold their rows in a state topic, as every table does today. Events reads its rows a page at a time
 with `history.page` (§6.6), because a journey's events can number thousands.
 
-## 2. Proposed: a table's own filter bar (protocol 1.10)
+## 2. Proposed: a table's own filter bar (the next protocol minor)
 
 A table block, or a page's master list, may carry `filter_bar`:
 
@@ -77,7 +77,7 @@ change costs a round trip in game. (d) **Nothing yet**: EldenNet's pages draw th
 
 ## 5. Cost
 
-`protocol.toml` gains `filter_bar` (three small types) on `page_block` and `page_master`, at protocol 1.10. Then come
+`protocol.toml` gains `filter_bar` (three small types) on `page_block` and `page_master`, at the next protocol minor (1.11, D248 having taken 1.10). Then come
 the page lint, both views (a new row in game, a strip in the browser), the demo space's Keepers and Lamps pages as
 the example, and the view's, the web's and grace-dev's tests and goldens. There is no change to the ABI. About the
 size of G38's master–detail (D215).
