@@ -1374,3 +1374,37 @@ the same state lines each input detour's longest call and its calls over 2 ms an
 guard's longest time in a detour and its longest check (`guard_in_detour_us`, `heap_check_us`). For the next A1, the
 owner's rough time of a missed press, set against the state line near it, says whether a read came late.
 
+
+## 68. One hook holder, shown at run time, and a mod beside a second copy (2026-11-24, D240; GraceUI 0.2.35)
+
+For v0.1's exit check S10.3.d (your request of 2026-11-24): nothing in EldenNet's code changes; your harness's case
+reads these from GraceUI's test build.
+
+1. **A second copy** from another folder, asked as a mod carrying a private copy would ask it
+   (`GraceUI_RequestApi(1)`), answers null every time. Its `GraceUI_Test_GetState` says `host` 4
+   (`GRACEUI_TEST_HOST_IDLE_COPY`) with no init thread, install run or hook; the active copy's says `copies_named` 1,
+   its hooks unchanged, and shows one notice of its own (owner 0, `GRACEUI_TONE_WARNING`): "A second copy of GraceUI was
+   loaded from another folder and is idle: " and its name relative to the game's folder, never a path; its log has one
+   line, "a second copy of GraceUI is loaded, and idle: " and the same name. A copy is named at the active copy's next
+   request, or when it is asked first itself. The first `GraceUI_RequestApi` in the process takes the mutex: the copy
+   asked second is the one that idles, whichever folder it is in.
+2. **Where each hook leads**: `GraceUI_Test_GetHookLead(index, &lead)`, in `GraceUI_Test_GetHookName`'s order, says
+   whether the hooked function's entry leads now to that copy's own detour (`leads_here`), the jumps followed
+   (MinHook's are two), and the module it leads into (`module_base`, its `HMODULE`; `module`, its base name). Every
+   function on D102's list leading into the active copy, and none read in the idle copy, is "one hook library in the
+   process" at run time; a hook laid over one of GraceUI's shows as leading into its own module.
+3. **GraceUI's harness** now runs a mod of your kind beside a second copy, each way round (copy-beside-mod and
+   copy-beside-mod-reversed): its panel, hotkey, input holder and danger close carry on while the other copy idles, and
+   `graceui_sys_find` asked afresh answers the active copy's table, as does its scan past an idle copy that holds the
+   name graceui.dll. Under Wine `GetModuleHandleW(L"graceui.dll")` answered the active copy each time; Windows may
+   answer the one loaded first, which is why the scan's case is checked by itself.
+
+## 69. EB Garamond Italic in GraceUI's folder, for the Tarnished's lines (2026-11-24, D241; GraceUI 0.2.36)
+
+For S11.4.c's italic lines: GraceUI 0.2.36 ships `fonts\EBGaramond-Italic.ttf` beside the Regular you read now, from
+the same pinned commit and under the same `EBGaramond-OFL.txt`. Register it as a third `GRACEUI_FACE_SCALED` face (at
+your lower third's size), read from GraceUI's folder in your registration window as you read Regular; you register two
+of your eight faces, so nothing else changes. An older GraceUI has no such file: then register none and draw the
+Tarnished's lines upright, or set your floor to 0.2.36. The panels' rounded corners need nothing of GraceUI's: the
+checker takes any triangles on your own texture, so corners made as Dear ImGui makes them (a fan of points per corner
+and a half-pixel fringe fading to nothing by vertex alpha, on your white texel) pass as they are.
