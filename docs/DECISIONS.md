@@ -47,8 +47,10 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
 - **2026-11-23.** G40 (the menu across an Alt+Tab: it stays open, lets go of the mouse and keys while the player is
   away, and takes them again on return) and G41 (Tab moves no focus in game; the browser view keeps the browser's Tab)
   raised by the owner from the first in-game run and decided the same day, as recommended.
-- **2026-11-24.** G43 (filtering and sorting a table) put with proposal 0012.
-- **Open.** G43.
+- **2026-11-24.** G43 (filtering and sorting a table) put with proposal 0012 and decided the same day, as
+  recommended.
+- **2026-11-24.** G44 (documents, a multi-line form field and the report preview) put with proposal 0013.
+- **Open.** G44.
 
 ## G1
 
@@ -1046,7 +1048,7 @@ return keeps what was. Only the ring changes: the hover tint, the footer's key h
 
 ## G43
 
-**Filtering and sorting a table** · *Open since 2026-11-24 ([proposal 0012](proposals/0012-filtering-tables.md))*
+**Filtering and sorting a table** · *Open since 2026-11-24 ([proposal 0012](proposals/0012-filtering-tables.md)) · Decided by the owner 2026-11-24, as recommended*
 
 **Question.** EldenNet's PAGES puts a filter bar above the table of four pages: Requests (0.2), Named NPCs and
 Memories (0.3), and Events (0.4). §2.5 names a filter bar and a sortable table among the components, and the protocol
@@ -1069,4 +1071,39 @@ a table's mode. (c): a command for each change, and a filtering and sorting duty
 
 **Follows from.** §2.5, §3.8, §4.2, §6.6; D21, D36, D186, D215; EldenNet's PAGES (Requests, Named NPCs, Memories,
 Events).
+
+**Decision (2026-11-24).** (a), as recommended: a table's own filter bar now, done in the view on the rows already
+published, and Events' paged filtering designed with its pages for 0.4. EldenNet's session answered the proposal's
+§6 the same day (proposal 0012 §7): Requests' `calls` and Named NPCs' roster are whole state topics, and Memories
+will be one NPC's memories whole; its hidden sort keys are `last_met_s`, `first_met_s`, `at_ms`, `first_token_ms`,
+`total_ms`, `tokens`, and a memory's time and weight, as numbers; "names as shown" is the search over the name column,
+which only ever holds a name as the game shows it or the veiled label. A row with no value for the sort key sorts last
+in either direction, as it asked.
+
+**Owner's words.** Answering the question put to them in EldenNet's session (its question dialog, 2026-11-24,
+relayed by that session and read in its transcript): "(a) Filter bar now, Events later (Recommended)".
+
+## G44
+
+**Documents, a multi-line form field and the report preview** · *Open since 2026-11-24
+([proposal 0013](proposals/0013-documents-and-report.md))*
+
+**Question.** EldenNet's last v0.2 pages need what no component offers: Docs (its bundled documentation, offline) and
+Tools › Bug report (a "What happened" box, and the bundle's preview with its optional parts switchable). G16 keeps
+HTML out of page data, and only GraceUI adds a component. **(a) All three, in one protocol minor after the filter
+bar's** (recommended): a `document` block on a master page (headings, paragraphs, lists, notes, code and plain tables;
+spans that are strong, code or a link to another document or one of its headings, never a URL; searched by titles and
+headings only), a form field's `"prose": true` (up to 2000 characters, the editor's prose well), and the
+`report_preview` component (parts with their fields, a `code` field in the mono face, a switch for an optional part
+sending the block's command). **(b) The prose field and the preview now, documents later.** **(c) None**: EldenNet
+keeps its stand-ins.
+
+**Recommendation.** (a): EldenNet agreed the formats, with its four additions taken in; each piece is small and every
+mod with a help page or a report can use it.
+
+**What each answer changes.** (a): the next protocol minor but one, the page lint, both views, the demo space's
+examples, and the tests and goldens; no change of the ABI. (b): the same without the document block. (c): nothing.
+
+**Follows from.** §2.5, §4.3, §6; D21, D36, D57, D195, D214, D215, D217, D219; G16; EldenNet's PAGES (Docs, Bug
+report).
 

@@ -1,6 +1,6 @@
 # Proposal 0012: Filtering and sorting a table
 
-**Status: proposal, 2026-11-24, put to the owner and EldenNet's session (G43).** EldenNet's PAGES gives four pages a
+**Status: proposal, 2026-11-24, put to the owner and EldenNet's session (G43). EldenNet's session answered §6 the same day (§7). The owner chose (a) the same day, as recommended; where this text and the design differ, the design holds once built.** EldenNet's PAGES gives four pages a
 filter bar above their table: Requests (0.2), Named NPCs and Memories (0.3), and Events (0.4). §2.5 lists a filter
 bar and a table "with sort" among the components, and §3.8 and §4.2 describe how they look. `filter_bar` has been a
 name in the protocol's component list since 1.0. But neither view draws one: a `filter_bar` block shows "Not shown in
@@ -89,3 +89,16 @@ size of G38's master–detail (D215).
    rows then come and go.
 2. Which hidden sort keys would your rows carry (seconds since met, a weight as a number)?
 3. Would Named NPCs' "names as shown" be §2's search over the name column, or a filter of names?
+
+## 7. EldenNet's answers (2026-11-24)
+
+1. Requests reads `calls`, a state topic holding the whole kept set (20 calls, or 200 in developer mode), newest
+   first and published whole at each call; its rows come and go only as the oldest drops out. Named NPCs' master list,
+   `characters.named`, holds the whole roster. Memories (0.3) will hold one NPC's memories whole, bounded. So §2
+   covers all three.
+2. Hidden sort keys: Named NPCs, `last_met_s` and `first_met_s` (play-time seconds, larger is later) and the name;
+   Requests, `at_ms`, `first_token_ms`, `total_ms` and `tokens`; Memories, the time and the weight, as numbers. A row
+   with no value for the key (someone never met has no `last_met_s`) sorts last in either direction.
+3. "Names as shown" is §2's search over the name column, which only ever holds the name as the game shows it or the
+   veiled label (EldenNet's SP5), so a hidden name can never be matched. It is not a filter of names.
+
