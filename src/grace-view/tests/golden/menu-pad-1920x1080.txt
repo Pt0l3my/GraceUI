@@ -1,0 +1,82 @@
+fill    scrim           0,   0 1920x1080
+fill    ground.1        0,   0 1920x1080
+fill    ground.0        0,   0  300x1080
+text    gold           30,  30  100x35   glyphs 7 "GraceUI"
+text    ink.hi         30,  95   74x30   glyphs 7 "GraceUI"
+fill    tint.select     0, 135  300x40  
+fill    gold            0, 135    3x40  
+text    gold.hi        50, 143   34x25   glyphs 4 "Menu"
+text    ink.mute       50, 183   59x25   glyphs 7 "Hotkeys"
+text    ink.mute       50, 223  101x25   glyphs 11 "Browser view"
+text    ink.mute       50, 263  118x25   glyphs 13 "Installed mods"
+text    ink.mute       50, 303  110x25   glyphs 13 "Compatibility"
+text    ink.mute       50, 343   42x25   glyphs 5 "About"
+fill    ground.well   340,  10  350x35   r3
+text    ink.faint     353,  15   51x25   glyphs 6 "Search"
+text    ink.faint    1804,  15   76x25   glyphs 7 "F5  Close"
+line    rule          300,  55 1620x1   
+text    ink.hi        340,  86   80x45   clip1 glyphs 4 "Menu"
+text    ink.mute      340, 136  548x25   clip1 glyphs 53 "How the menu looks: its size, its theme, its motion and its type."
+line    rule.strong   340, 176 1540x1    clip1
+diamond gold.deep     340, 171   11x11   w1 clip1
+fill    ground.2      340, 201 1540x215  r5 clip1
+stroke  rule          340, 201 1540x215  r5 w1 clip1
+text    gold          365, 221   38x20   clip1 glyphs 4 "Look"
+text    ink.faint    1842, 221    8x25   clip1 glyphs 1 "-"
+line    rule          365, 256 1490x1    clip1
+text    ink.hi        365, 272   84x28   clip1 glyphs 8 "Menu size"
+text    ink.mute      365, 306  726x25   clip1 glyphs 70 "How large the menu and its text are drawn, in game and in the browser. Default: 1.25×."
+text    ink.body     1796, 274   44x25   clip1 glyphs 5 "1.25×"
+fill    ground.well  1520, 284  240x5    r2 clip1
+fill    gold         1520, 284  160x5    r2 clip1
+circle  gold.hi      1671, 277   18x18   clip1
+line    rule          365, 341 1490x1    clip1
+text    ink.hi        365, 357   47x28   clip1 glyphs 5 "Theme"
+stroke  edge         1505, 352  350x38   r3 w1 clip1
+fill    ground.3     1506, 353  173x36   r3 clip1
+text    gold.hi      1571, 359   42x25   clip1 glyphs 5 "Grace"
+text    ink.mute     1685, 359  160x25   clip1 glyphs 16 "Grace Clear (high contrast)"
+fill    ground.2      340, 436 1540x190  r5 clip1
+stroke  rule          340, 436 1540x190  r5 w1 clip1
+text    gold          365, 456   67x20   clip1 glyphs 7 "Comfort"
+text    ink.faint    1842, 456    8x25   clip1 glyphs 1 "-"
+line    rule          365, 491 1490x1    clip1
+text    ink.hi        365, 507  122x28   clip1 glyphs 12 "Reduce motion"
+fill    ground.well  1805, 507   50x28   r14 clip1
+stroke  edge         1805, 507   50x28   r14 w1 clip1
+circle  ink.mute     1809, 511   20x20   clip1
+line    rule          365, 551 1490x1    clip1
+text    ink.hi        365, 567   94x28   clip1 glyphs 9 "Plain text"
+fill    ground.well  1805, 567   50x28   r14 clip1
+stroke  edge         1805, 567   50x28   r14 w1 clip1
+circle  ink.mute     1809, 571   20x20   clip1
+fill    ground.2      340, 646 1540x175  r5 clip1
+stroke  rule          340, 646 1540x175  r5 w1 clip1
+text    gold          365, 666   67x20   clip1 glyphs 7 "Related"
+line    rule          365, 696 1490x1    clip1
+text    ink.hi        365, 701   66x28   clip1 glyphs 7 "Hotkeys"
+text    ink.mute      862, 704  515x25   clip1 glyphs 52 "The menu's key, and every mod's hotkeys with their conflicts."
+text    gold         1835, 701    9x28   clip1 glyphs 1 "→"
+line    rule          365, 751 1490x1    clip1
+text    ink.hi        365, 756  112x28   clip1 glyphs 11 "Browser view"
+text    ink.mute      862, 759  953x25   clip1 glyphs 92 "The menu in a browser on this PC and on devices at home: its address, the browsers connected and the devices paired."
+text    gold         1835, 756    9x28   clip1 glyphs 1 "→"
+line    rule          300,1035 1620x1   
+fill    ink.faint     340,1054   18x6    r1 a110
+fill    ink.faint     346,1048    6x18   r1 a110
+fill    ink.hi        340,1054    6x6    r1
+fill    ink.hi        352,1054    6x6    r1
+text    ink.faint     368,1045   51x25   glyphs 6 "Change"
+stroke  ink.faint     450,1048    7x7    r4 w1
+stroke  ink.faint     457,1055    7x7    r4 w1
+stroke  ink.faint     450,1061    7x7    r4 w1
+circle  ink.hi        444,1055    7x7   
+text    ink.mute      468,1045    8x25   glyphs 1 "X"
+text    ink.faint     484,1045   42x25   glyphs 5 "Reset"
+stroke  ink.faint     558,1048    7x7    r4 w1
+circle  ink.hi        564,1055    7x7   
+stroke  ink.faint     558,1061    7x7    r4 w1
+stroke  ink.faint     551,1055    7x7    r4 w1
+text    ink.mute      575,1045    8x25   glyphs 1 "B"
+text    ink.faint     592,1045   34x25   glyphs 4 "Back"
+stroke  gold.hi      1502, 266  356x41   r5 w3 clip1

@@ -9,6 +9,10 @@
 #include "grace/host/host.h"
 
 #if defined(GRACEUI_TEST_EXPORTS)
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
+
 #include "graceui_test.h"
 #endif
 
@@ -150,10 +154,14 @@ GRACEUI_API uint64_t GraceUI_Test_GetPanelPublished(uint64_t panel) {
 
 GRACEUI_API uint32_t GraceUI_Test_GetMenu(GraceUiTestMenu* out) {
   try {
-    if (out == nullptr || out->size < sizeof(GraceUiTestMenu)) {
+    // GraceUI 0.2.33's struct ended at focus_shown: a caller built against it still gets every field it knows (D242).
+    if (out == nullptr || out->size < offsetof(GraceUiTestMenu, pad_mode)) {
       return 0;
     }
-    grace::host::test_fill_menu(*out);
+    GraceUiTestMenu full{};
+    full.size = out->size;
+    grace::host::test_fill_menu(full);
+    std::memcpy(out, &full, std::min<std::size_t>(out->size, sizeof full));
     return 1;
   } catch (...) {
     return 0;
@@ -290,6 +298,18 @@ GRACEUI_API void GraceUI_Test_SetCodePage(uint32_t code_page) {
 GRACEUI_API void GraceUI_Test_Pad(uint32_t user, uint32_t buttons) {
   try {
     grace::host::test_pad(user, static_cast<std::uint16_t>(buttons));
+  } catch (...) {
+  }
+}
+
+GRACEUI_API void GraceUI_Test_PadState(uint32_t user, uint32_t buttons, uint32_t left_trigger, uint32_t right_trigger,
+                                       int32_t left_x, int32_t left_y, int32_t right_x, int32_t right_y) {
+  try {
+    const auto axis = [](int32_t v) { return static_cast<std::int16_t>(std::clamp<int32_t>(v, -32768, 32767)); };
+    grace::host::test_pad_state(user, static_cast<std::uint16_t>(buttons),
+                                static_cast<std::uint8_t>(std::min<uint32_t>(left_trigger, 255)),
+                                static_cast<std::uint8_t>(std::min<uint32_t>(right_trigger, 255)), axis(left_x),
+                                axis(left_y), axis(right_x), axis(right_y));
   } catch (...) {
   }
 }

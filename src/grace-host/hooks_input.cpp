@@ -797,6 +797,20 @@ void test_pad(std::uint32_t user, std::uint16_t buttons) noexcept {
   filter_pad(user, &state, ERROR_SUCCESS);
 }
 
+void test_pad_state(std::uint32_t user, std::uint16_t buttons, std::uint8_t left_trigger, std::uint8_t right_trigger,
+                    std::int16_t left_x, std::int16_t left_y, std::int16_t right_x, std::int16_t right_y) noexcept {
+  XINPUT_STATE state{};
+  state.dwPacketNumber = static_cast<DWORD>(input::now_ms());
+  state.Gamepad.wButtons = buttons;
+  state.Gamepad.bLeftTrigger = left_trigger;
+  state.Gamepad.bRightTrigger = right_trigger;
+  state.Gamepad.sThumbLX = left_x;
+  state.Gamepad.sThumbLY = left_y;
+  state.Gamepad.sThumbRX = right_x;
+  state.Gamepad.sThumbRY = right_y;
+  filter_pad(user, &state, ERROR_SUCCESS);
+}
+
 std::uint16_t test_pad_read(std::uint32_t user, std::uint16_t buttons, std::uint32_t& packet) noexcept {
   XINPUT_STATE state{};
   state.dwPacketNumber = packet;

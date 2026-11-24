@@ -103,6 +103,96 @@ TEST_CASE("the focus ring: drawn after a key or the pad, gone with the mouse, th
   CHECK(rings() == 0);
 }
 
+TEST_CASE("pad mode: the key hints as the pad's buttons after the pad, the keyboard's after a key or the mouse (D242)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  const auto laid = [&] {
+    DisplayList list;
+    view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+    return list.dump();
+  };
+  const auto count = [](const std::string& dump, const std::string& what) {
+    int n = 0;
+    for (std::size_t at = dump.find(what); at != std::string::npos; at = dump.find(what, at + 1)) {
+      ++n;
+    }
+    return n;
+  };
+  const std::string keyboard = laid();
+  CHECK_FALSE(view.pad_mode());  // a view starts as a keyboard player sees it (grace-dev's dumps)
+  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back");
+  const std::string focus = view.focused();
+  // The pad: the same hints with its buttons (the D-pad's cross, X, B), Shift's ten steps left out, focus where it was.
+  view.input(Input{Key::down, false, true});
+  view.input(Input{Key::up, false, true});
+  CHECK(view.focused() == focus);
+  const std::string pad = laid();
+  CHECK(view.pad_mode());
+  CHECK(view.footer() == "D-pad ← →  Change    X  Reset    B  Back");
+  CHECK(pad.find("\"← →  Change") == std::string::npos);
+  CHECK(pad.find("\"Change\"") != std::string::npos);
+  CHECK(pad.find("\"X\"") != std::string::npos);
+  CHECK(pad.find("\"B\"") != std::string::npos);
+  // X's and B's diamonds: one dot filled and three rings each; the cross's two bars dim and its two arms marked.
+  CHECK(count(pad, "circle  ink.hi") == count(keyboard, "circle  ink.hi") + 2);
+  CHECK(count(pad, "stroke  ink.faint") == count(keyboard, "stroke  ink.faint") + 6);
+  golden("menu-pad-1920x1080.txt", pad);
+  // A key: the keyboard's hints again; the pad, then the mouse, likewise; the host's word sets it.
+  view.input(Input{Key::down});
+  view.input(Input{Key::up});
+  laid();
+  CHECK_FALSE(view.pad_mode());
+  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back");
+  view.input(Input{Key::down, false, true});
+  view.input(Input{Key::up, false, true});
+  view.pointer(Pointer{Pointer::Kind::move, 5, 5});
+  laid();
+  CHECK_FALSE(view.pad_mode());
+  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back");
+  view.set_pad_mode(true);
+  laid();
+  CHECK(view.footer() == "D-pad ← →  Change    X  Reset    B  Back");
+  // The rail's hints, and a toggle's: A for Enter, the D-pad's ↑ ↓ and →, B for Esc.
+  view.input(Input{Key::back, false, true});
+  laid();
+  CHECK(view.footer() == "D-pad ↑ ↓  Move    A  Open    D-pad →  Page    B  Close");
+}
+
+TEST_CASE("View hides and shows the key hints, and the right stick scrolls the page with focus kept (D242)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  const auto laid = [&](float height) {
+    DisplayList list;
+    view.layout(Viewport{1280, height, 1.0f}, test::fonts(), list);
+    return list.dump();
+  };
+  const std::string shown = laid(1080);
+  CHECK(view.hints_shown());
+  CHECK(shown.find("Esc  Back") != std::string::npos);
+  view.input(Input{Key::toggle_hints, false, true});
+  const std::string hidden = laid(1080);
+  CHECK_FALSE(view.hints_shown());
+  CHECK(view.footer().empty());
+  CHECK(hidden.find("Back") == std::string::npos);
+  view.input(Input{Key::toggle_hints, false, true});
+  laid(1080);
+  CHECK(view.footer() == "D-pad ← →  Change    X  Reset    B  Back");
+  // On a page taller than its display, each step of the stick moves the page by 40 px at scale 1; focus stays, and the
+  // page no longer follows it until a key moves focus. At the top a step up does nothing.
+  const std::string focus = view.focused();
+  laid(400);
+  const float before = view.bounds_of(focus).row.y;
+  view.input(Input{Key::scroll_down, false, true});
+  laid(400);
+  CHECK(view.focused() == focus);
+  CHECK(view.bounds_of(focus).row.y == doctest::Approx(before - 40));
+  view.input(Input{Key::scroll_up, false, true});
+  view.input(Input{Key::scroll_up, false, true});
+  laid(400);
+  CHECK(view.bounds_of(focus).row.y == doctest::Approx(before));
+  // Search on the pad's Y, as on `/`.
+  view.input(Input{Key::search, false, true});
+  CHECK(view.editing());
+}
+
 TEST_CASE("back goes to the rail, and back again closes; the rail opens pages") {
   PageView view = loaded("graceui", "graceui.menu");
   press(view, Key::back);

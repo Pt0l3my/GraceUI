@@ -29,15 +29,18 @@ struct Viewport {
 };
 
 // What the host makes of a key or a button (§5.3, §5.4): ↑ ↓ and the d-pad; ← →; Tab and Shift+Tab; Enter, Space and A;
-// Esc and B; Q, E, LB and RB; Page Up, Page Down, LT and RT; R and X; `/` and Ctrl+F, search (§4.3). `shift` is Shift
-// held (a slider's ten steps).
+// Esc and B; Q, E, LB and RB; Page Up, Page Down, LT and RT; R and X; `/`, Ctrl+F and Y, search (§4.3); the right stick,
+// a step of the page's scroll; View, the key hints shown or hidden (D242). `shift` is Shift held (a slider's ten steps);
+// `pad`, the input came from a pad, so that the key hints follow the last device used (§3.8).
 enum class Key : std::uint8_t {
   up, down, left, right, next, previous, activate, back, previous_tab, next_tab, previous_page, next_page, reset, search,
+  scroll_up, scroll_down, toggle_hints,
 };
 
 struct Input {
   Key key = Key::down;
   bool shift = false;
+  bool pad = false;
 };
 
 enum class Scope : std::uint8_t { rail, top, page };
@@ -262,6 +265,16 @@ class PageView {
   // dumps); the browser view's own rule is the browser's :focus-visible.
   void set_focus_shown(bool shown) noexcept { focus_shown_ = shown; }
   bool focus_shown() const noexcept { return focus_shown_; }
+  // Pad mode (§5.4, D242): the key hints drawn as the pad's buttons, in our own glyphs. Set by an input from a pad,
+  // cleared by a key or the mouse, and given by the host, which keeps the last device for the whole menu. A view starts
+  // without it, as a keyboard player sees it (grace-dev's dumps).
+  void set_pad_mode(bool on) noexcept { pad_mode_ = on; }
+  bool pad_mode() const noexcept { return pad_mode_; }
+  // Whether the key hints are drawn (View on a pad turns them off and on, D242), and the footer's words as the last
+  // layout drew them: the keys' names and labels, or in pad mode the buttons' ("A  Toggle    B  Back").
+  void set_hints_shown(bool shown) noexcept { hints_shown_ = shown; }
+  bool hints_shown() const noexcept { return hints_shown_; }
+  const std::string& footer() const noexcept { return footer_; }
   // Where the last layout drew an element, named as focused() names it: its row (within the page's clip) and its control
   // (a setting's or a cell's; else the row). Both empty if it was not drawn. For tests and the pointer's host.
   struct Bounds {
@@ -495,6 +508,9 @@ class PageView {
   std::vector<Hit> hits_;       // the last layout's
   bool pointer_in_ = false;     // the pointer is over the menu: hover tints
   bool focus_shown_ = true;     // the focus ring is drawn (G42)
+  bool pad_mode_ = false;       // the key hints as the pad's buttons (D242)
+  bool hints_shown_ = true;     // the key hints drawn (View, D242)
+  std::string footer_;          // the footer's words as the last layout drew them
   float pointer_x_ = 0;
   float pointer_y_ = 0;
   std::string drag_;            // a slider's key while its button is held

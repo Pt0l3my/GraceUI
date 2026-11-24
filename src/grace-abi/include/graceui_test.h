@@ -245,6 +245,10 @@ GRACEUI_API void GraceUI_Test_SetCaret(int32_t x, int32_t y, int32_t height);
 GRACEUI_API void GraceUI_Test_SetCodePage(uint32_t code_page);
 /* Pad `user`'s buttons (XINPUT_GAMEPAD_*) as an XInput read gives them, through the detour's own filter (D176). */
 GRACEUI_API void GraceUI_Test_Pad(uint32_t user, uint32_t buttons);
+/* A whole pad as an XInput read gives it, through the same filter: its buttons, its triggers (0 to 255) and its sticks
+ * (-32768 to 32767, up and right positive), as XINPUT_GAMEPAD holds them (the menu's right stick, D242). */
+GRACEUI_API void GraceUI_Test_PadState(uint32_t user, uint32_t buttons, uint32_t left_trigger, uint32_t right_trigger,
+                                       int32_t left_x, int32_t left_y, int32_t right_x, int32_t right_y);
 /* The same with the read's packet number in *packet: answers the buttons the game then sees, and leaves in *packet the
  * packet number it reads (the pad chords' steps, D204). */
 GRACEUI_API uint32_t GraceUI_Test_PadRead(uint32_t user, uint32_t buttons, uint32_t* packet);
@@ -345,9 +349,14 @@ typedef struct GraceUiTestMenu {
   char focused[96];     /* the focused element, as grace-view names it ("setting:ui.scale") */
   float baked_scale;    /* the effective scale the menu's faces were baked at, at warm-up; 0 if they were left out */
   uint32_t focus_shown; /* 1 while the focus ring is drawn: after a key or the pad, until the mouse (G42) */
+  /* Appended for pad mode (D242): */
+  uint32_t pad_mode;    /* 1 while the key hints are the pad's: after the pad, until a key or the mouse */
+  uint32_t hints_shown; /* 1 while the key hints are drawn (View on a pad turns them off and on) */
+  char footer[160];     /* the footer's words as drawn: "A  Toggle    X  Reset    B  Back" in pad mode; "" hidden */
 } GraceUiTestMenu;
 
-/* Fills *out (out->size set by the caller); answers 1, or 0 if the size is too small. */
+/* Fills *out as far as out->size reaches (a caller built against an older header gets the fields it knows); answers 1,
+ * or 0 if the size is smaller than GraceUI 0.2.33's struct, which ended at focus_shown. */
 GRACEUI_API uint32_t GraceUI_Test_GetMenu(GraceUiTestMenu* out);
 /* A setting of GraceUI's own space as JSON text ("1.05", "\"clear\""), NUL-terminated; answers its length, or 0 before
  * GraceUI's own thread has loaded its space (at its first wake after the first request) or for no such key. One store

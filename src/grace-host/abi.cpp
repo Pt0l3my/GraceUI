@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
+#include <cstddef>
 #include <cstring>
 #include <cwchar>
 #include <iterator>
@@ -342,6 +343,11 @@ void test_fill_menu(GraceUiTestMenu& out) noexcept {
   std::memcpy(out.page, view.page, sizeof out.page);
   std::memcpy(out.focused, view.focused, sizeof out.focused);
   out.focus_shown = view.focus_shown;
+  if (out.size >= offsetof(GraceUiTestMenu, footer) + sizeof out.footer) {  // D242's fields, for a caller that knows them
+    out.pad_mode = view.pad_mode;
+    out.hints_shown = view.hints_shown;
+    std::memcpy(out.footer, view.footer, sizeof out.footer);
+  }
 }
 
 void test_fill_server(GraceUiTestServer& out) noexcept {
@@ -577,6 +583,10 @@ void test_set_caret(std::int32_t x, std::int32_t y, std::int32_t height) noexcep
 void test_set_code_page(std::uint32_t code_page) noexcept { input::test_set_code_page(code_page); }
 
 void test_pad(std::uint32_t user, std::uint16_t buttons) noexcept { hooks_input::test_pad(user, buttons); }
+void test_pad_state(std::uint32_t user, std::uint16_t buttons, std::uint8_t left_trigger, std::uint8_t right_trigger,
+                    std::int16_t left_x, std::int16_t left_y, std::int16_t right_x, std::int16_t right_y) noexcept {
+  hooks_input::test_pad_state(user, buttons, left_trigger, right_trigger, left_x, left_y, right_x, right_y);
+}
 std::uint16_t test_pad_read(std::uint32_t user, std::uint16_t buttons, std::uint32_t& packet) noexcept {
   return hooks_input::test_pad_read(user, buttons, packet);
 }

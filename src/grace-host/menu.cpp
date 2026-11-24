@@ -63,6 +63,7 @@ struct MenuInput {
   std::uint8_t edit = 0;
   char32_t character = 0;
   bool paste = false;
+  bool pad = false;  // the present thread's, from the pad: the key hints follow it (D242)
 };
 
 // Whether the menu's view waits for a key to capture (D209): set on GraceUI's thread after each input, read by the
@@ -110,10 +111,13 @@ struct PadSeen {
   bool right_trigger;
   std::int8_t stick_x;
   std::int8_t stick_y;
+  std::int8_t scroll = 0;         // the right stick held up (1) or down (-1) past half its travel (D242)
+  std::int64_t scroll_next = 0;   // when its next step is due (GetTickCount64)
 };
 constinit PadSeen g_pad_seen{};
 
 constexpr float kStickPress = 16384.0f;  // half the left stick's travel: a press of the d-pad (EST)
+constexpr float kStickFull = 29490.0f;   // nine tenths of a stick's travel: the right stick's faster scroll (EST)
 
 // A space the menu shows (D79, D171): GraceUI's own, or a mod's that asked for the game's view.
 struct SpaceView {
@@ -152,6 +156,11 @@ struct State {
   bool away = false;                    // let go of input at an Alt+Tab, kept for the focus's return (G40)
   bool focus_shown = false;             // the focus ring drawn: after a key or the pad, until the mouse (G42)
   bool focus_drawn = false;             // the last published layout's, under g_view_lock (the tests')
+  bool pad_mode = false;                // the key hints as the pad's: the last device used (D242)
+  bool hints_shown = true;              // the key hints drawn: View on a pad turns them off and on (D242)
+  bool pad_drawn = false;               // the last published layout's, under g_view_lock (the tests')
+  bool hints_drawn = true;
+  std::string footer;                   // its footer's words
   grace::view::PageView::Sheet sheet;   // as last shown
   std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
   std::uint64_t states = 0;    // its other topics', as the menu last took them (D181)
@@ -819,8 +828,11 @@ void take(State& m, const MenuInput& in, bool& dirty) {
     action = view.edit(grace::view::PageView::EditInput{static_cast<grace::view::PageView::EditKey>(in.edit - 1),
                                                          (in.modifiers & 2u) != 0, (in.modifiers & 1u) != 0});
   } else {
-    action = view.input(grace::view::Input{in.key, in.shift != 0});
+    action = view.input(grace::view::Input{in.key, in.shift != 0, in.pad});
   }
+  // The last device used and the key hints' View toggle are the menu's, whichever space's view is drawn (D242).
+  m.pad_mode = in.pad && in.captured == grace::input::kNoKey && in.character == 0 && !in.paste && in.edit == 0;
+  m.hints_shown = view.hints_shown();
   g_inputs.fetch_add(1, std::memory_order_relaxed);
   dirty = true;
   act(m, action);
@@ -837,6 +849,7 @@ void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
   }
   if (in.pointer.kind != grace::view::Pointer::Kind::leave) {
     m.focus_shown = false;  // the mouse: the ring goes, the focus stays (G42)
+    m.pad_mode = false;     // and the key hints are the keyboard's (D242)
   }
   const grace::view::Action action = active_view(m).pointer(in.pointer);
   if (in.pointer.kind != grace::view::Pointer::Kind::move) {
@@ -855,6 +868,8 @@ void publish(State& m) {
   const std::int64_t started = qpc();
   const float scale = static_cast<float>(m.height) / 1080.0f * static_cast<float>(m.ui_scale);  // §3.13
   active_view(m).set_focus_shown(m.focus_shown);  // the menu's, whichever space's view is drawn (G42)
+  active_view(m).set_pad_mode(m.pad_mode);        // likewise the last device used, and View's toggle (D242)
+  active_view(m).set_hints_shown(m.hints_shown);
   active_view(m).layout(grace::view::Viewport{static_cast<float>(m.width), static_cast<float>(m.height), scale},
                         *fonts, m.list);
   grace::draw::Atlas atlas{grace::abi::kAtlasTexture, 0.0f, 0.0f};
@@ -891,6 +906,9 @@ void publish(State& m) {
   m.page.assign(active_view(m).page());
   m.focused = active_view(m).focused();
   m.focus_drawn = m.focus_shown;
+  m.pad_drawn = m.pad_mode;
+  m.hints_drawn = m.hints_shown;
+  m.footer.assign(active_view(m).footer());
 #if defined(GRACEUI_TEST_EXPORTS)
   m.bounds.swap(bounds);
   m.shown.swap(shown);
@@ -1012,7 +1030,11 @@ void serve_menu() {
 }
 
 void push_pad(Key key, std::uint32_t generation, bool& any) noexcept {
-  any = g_pad.push(MenuInput{key, 0, generation}) || any;
+  MenuInput in;
+  in.key = key;
+  in.generation = generation;
+  in.pad = true;
+  any = g_pad.push(in) || any;
 }
 
 // The present thread: the holder's pad, its new presses as the menu's inputs (§5.4).
@@ -1026,9 +1048,27 @@ void pad_inputs(std::uint32_t generation) noexcept {
               pad.right_trigger > grace::input::kTriggerThreshold,
               static_cast<std::int8_t>(pad.left_x > kStickPress ? 1 : pad.left_x < -kStickPress ? -1 : 0),
               static_cast<std::int8_t>(pad.left_y > kStickPress ? 1 : pad.left_y < -kStickPress ? -1 : 0)};
+  // The right stick scrolls the page (§5.4, D242): a step when it is pushed, then, held, one every 90 ms after 250 (45 ms
+  // past nine tenths of its travel), as a key repeats.
+  now.scroll = static_cast<std::int8_t>(pad.right_y > kStickPress ? 1 : pad.right_y < -kStickPress ? -1 : 0);
   const PadSeen before = g_pad_seen;
+  const bool first = before.generation != generation;
+  const std::int64_t at = input::now_ms();
+  bool scroll = false;
+  if (!first && now.scroll != 0) {
+    const bool fast = pad.right_y > kStickFull || pad.right_y < -kStickFull;
+    if (now.scroll != before.scroll) {
+      scroll = true;
+      now.scroll_next = at + 250;
+    } else if (at >= before.scroll_next) {
+      scroll = true;
+      now.scroll_next = at + (fast ? 45 : 90);
+    } else {
+      now.scroll_next = before.scroll_next;
+    }
+  }
   g_pad_seen = now;
-  if (before.generation != generation) {
+  if (first) {
     return;  // the first look for this holder: what is held now does nothing until it is released
   }
   const std::uint16_t pressed = static_cast<std::uint16_t>(now.buttons & ~before.buttons);
@@ -1039,7 +1079,8 @@ void pad_inputs(std::uint32_t generation) noexcept {
   static constexpr Map kButtons[] = {
       {0x0001, Key::up},           {0x0002, Key::down},    {0x0004, Key::left},     {0x0008, Key::right},
       {0x1000, Key::activate},     {0x2000, Key::back},    {0x0100, Key::previous_tab},
-      {0x0200, Key::next_tab},     {0x4000, Key::reset},
+      {0x0200, Key::next_tab},     {0x4000, Key::reset},   {0x8000, Key::search},   // Y (D242)
+      {0x0020, Key::toggle_hints},  // View: the key hints off and on (D242); Start's quick switches are not in game yet
   };
   bool any = false;
   for (const Map& map : kButtons) {
@@ -1058,6 +1099,9 @@ void pad_inputs(std::uint32_t generation) noexcept {
   }
   if (now.stick_x != before.stick_x && now.stick_x != 0) {
     push_pad(now.stick_x > 0 ? Key::right : Key::left, generation, any);
+  }
+  if (scroll) {
+    push_pad(now.scroll > 0 ? Key::scroll_up : Key::scroll_down, generation, any);
   }
   if (any) {
     hooks::wake();
@@ -1363,6 +1407,9 @@ void test_view(TestView& out) noexcept {
     std::snprintf(out.page, sizeof out.page, "%s", g_state->page.c_str());
     std::snprintf(out.focused, sizeof out.focused, "%s", g_state->focused.c_str());
     out.focus_shown = g_state->focus_drawn ? 1 : 0;
+    out.pad_mode = g_state->pad_drawn ? 1 : 0;
+    out.hints_shown = g_state->hints_drawn ? 1 : 0;
+    std::snprintf(out.footer, sizeof out.footer, "%s", g_state->footer.c_str());
   }
   g_view_lock.unlock();
 }

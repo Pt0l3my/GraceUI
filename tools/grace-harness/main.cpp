@@ -771,6 +771,7 @@ struct GraceUi {
   decltype(&GraceUI_Test_SetCaret) set_caret = nullptr;
   decltype(&GraceUI_Test_SetCodePage) set_code_page = nullptr;
   decltype(&GraceUI_Test_Pad) pad = nullptr;
+  decltype(&GraceUI_Test_PadState) pad_state = nullptr;
   decltype(&GraceUI_Test_PadRead) pad_read = nullptr;
   decltype(&GraceUI_Test_GetInput) get_input = nullptr;
   decltype(&GraceUI_Test_GetChars) get_chars = nullptr;
@@ -822,6 +823,7 @@ struct GraceUi {
     set_caret = function_of<decltype(set_caret)>(module, "GraceUI_Test_SetCaret");
     set_code_page = function_of<decltype(set_code_page)>(module, "GraceUI_Test_SetCodePage");
     pad = function_of<decltype(pad)>(module, "GraceUI_Test_Pad");
+    pad_state = function_of<decltype(pad_state)>(module, "GraceUI_Test_PadState");
     pad_read = function_of<decltype(pad_read)>(module, "GraceUI_Test_PadRead");
     get_input = function_of<decltype(get_input)>(module, "GraceUI_Test_GetInput");
     get_chars = function_of<decltype(get_chars)>(module, "GraceUI_Test_GetChars");
@@ -847,7 +849,7 @@ struct GraceUi {
     heap_guard_probe = function_of<decltype(heap_guard_probe)>(module, "GraceUI_Test_HeapGuardProbe");
     get_pairing_code = function_of<decltype(get_pairing_code)>(module, "GraceUI_Test_GetPairingCode");
     set_network_addresses = function_of<decltype(set_network_addresses)>(module, "GraceUI_Test_SetNetworkAddresses");
-    return get_hook_lead != nullptr && get_server != nullptr && get_heap_guard != nullptr && heap_guard_probe != nullptr && get_pairing_code != nullptr && set_network_addresses != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
+    return pad_state != nullptr && get_hook_lead != nullptr && get_server != nullptr && get_heap_guard != nullptr && heap_guard_probe != nullptr && get_pairing_code != nullptr && set_network_addresses != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
            get_menu_bounds != nullptr && set_anti_cheat_recheck != nullptr && menu_shows != nullptr && init_step != nullptr &&
            panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
@@ -7148,6 +7150,173 @@ void run_menu_focus_ring(const std::wstring& dll) {
   frames(game, 2);
 }
 
+// ---- Pad mode (D242, §5.4): the menu by pad alone once F5 has opened it (D33: no pad chord opens it by default), the
+// pad-only walkthrough of v1.0's exit checks. The key hints become the pad's; LT and RT walk every page the keyboard's
+// Page Up and Page Down walk, in the same order; the D-pad changes a setting and X resets it; Y opens search and B
+// closes it; View hides and shows the hints; the right stick scrolls the page with focus kept; a key gives the keyboard's
+// hints back; B goes to the rail and closes the menu, and that B never reaches the game. 900 by 1080: narrow enough for
+// the Menu page's words to wrap past its display, so that there is something to scroll.
+void run_menu_pad(const std::wstring& dll) {
+  Game game(false, 900, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  const std::string first(menu.page);
+  const auto walk = [&](const std::function<void()>& step) {  // pages from here until the walk stops or comes round
+    std::vector<std::string> pages{std::string(menu.page)};
+    for (int i = 0; i < 40; ++i) {
+      step();
+      menu = menu_after(game, grace, menu.lists);
+      const std::string page(menu.page);
+      if (page == pages.back() || page == pages.front()) {
+        break;
+      }
+      pages.push_back(page);
+    }
+    return pages;
+  };
+  const auto pad_press = [&](std::uint32_t buttons, std::uint32_t left_trigger = 0, std::uint32_t right_trigger = 0) {
+    grace.pad_state(0, buttons, left_trigger, right_trigger, 0, 0, 0, 0);
+    frames(game, 2);
+    grace.pad_state(0, 0, 0, 0, 0, 0, 0, 0);
+    frames(game, 2);
+  };
+  const auto pad_menu = [&](std::uint32_t buttons, std::uint32_t left_trigger = 0, std::uint32_t right_trigger = 0) {
+    const std::uint64_t lists = grace.menu().lists;
+    pad_press(buttons, left_trigger, right_trigger);
+    menu = menu_after(game, grace, lists);
+  };
+  const std::vector<std::string> by_keys = walk([&] { press(window, VK_NEXT, 0x51); });
+  const std::string keyboard_footer(menu.footer);
+  const std::uint32_t pad_mode_with_keys = menu.pad_mode;
+  // The pad from here on. Its first look takes what is held (nothing) and does nothing (§5.2).
+  grace.pad_state(0, 0, 0, 0, 0, 0, 0, 0);
+  frames(game, 2);
+  std::vector<std::string> by_lt = walk([&] { pad_press(0, 255, 0); });
+  std::reverse(by_lt.begin(), by_lt.end());
+  const std::string pad_footer(menu.footer);
+  const std::uint32_t pad_mode = menu.pad_mode;
+  const std::uint32_t ring = menu.focus_shown;
+  save_shot(game.frame_and_read(kInputColour, PresentWith::present), "menu-pad.bmp");  // GRACE_SHOTS: the pad's hints
+  const std::vector<std::string> by_rt = walk([&] { pad_press(0, 0, 255); });
+  check(by_keys.size() >= 5 && by_rt == by_keys && by_lt == by_keys && pad_mode_with_keys == 0 && pad_mode == 1 &&
+            ring == 1 && keyboard_footer.find("Esc  ") != std::string::npos &&
+            pad_footer.find("B  ") != std::string::npos && pad_footer.find("Esc") == std::string::npos,
+        "menu by pad: every page",
+        "Page Down walked %zu pages from %s; LT walked them back (%s) and RT on again (%s); the hints with keys \"%s\" "
+        "(pad mode %u), with the pad \"%s\" (pad mode %u, the ring %s)",
+        by_keys.size(), first.c_str(), by_lt == by_keys ? "the same" : "NOT THE SAME",
+        by_rt == by_keys ? "the same" : "NOT THE SAME", keyboard_footer.c_str(), pad_mode_with_keys,
+        pad_footer.c_str(), pad_mode, ring != 0 ? "shown" : "HIDDEN");
+
+  // Back to the Menu page by LT; its first setting is Menu size (ui.scale): the D-pad changes it, X resets it.
+  for (int i = 0; i < 40 && std::string_view(menu.page) != "graceui.menu"; ++i) {
+    pad_menu(0, 255, 0);
+  }
+  const std::string scale_before = grace.setting("ui.scale");
+  const std::string focus(menu.focused);
+  pad_menu(XINPUT_GAMEPAD_DPAD_RIGHT);
+  const std::string scale_changed = grace.setting("ui.scale");
+  const std::string slider_footer(menu.footer);
+  pad_menu(XINPUT_GAMEPAD_X);
+  const std::string scale_reset = grace.setting("ui.scale");
+  check(std::string_view(menu.page) == "graceui.menu" && focus == "setting:ui.scale" && scale_before == "1.25" &&
+            std::fabs(std::stod(scale_changed.empty() ? "0" : scale_changed) - 1.3) < 0.001 &&
+            scale_reset == "1.25" && slider_footer == "D-pad ← →  Change    X  Reset    B  Back",
+        "menu by pad: a setting",
+        "on %s, %s: %s, the D-pad's → made it %s, X reset it to %s; the hints \"%s\"", menu.page, focus.c_str(),
+        scale_before.c_str(), scale_changed.c_str(), scale_reset.c_str(), slider_footer.c_str());
+
+  // Y: search, with the pad's hints for it; B closes it. View: the hints hidden, then shown.
+  pad_menu(XINPUT_GAMEPAD_Y);
+  const std::string search_focus(menu.focused);
+  const std::string search_footer(menu.footer);
+  pad_menu(XINPUT_GAMEPAD_B);
+  const std::string after_search_footer(menu.footer);
+  pad_menu(XINPUT_GAMEPAD_BACK);
+  const std::uint32_t hidden = menu.hints_shown;
+  const std::string hidden_footer(menu.footer);
+  pad_menu(XINPUT_GAMEPAD_BACK);
+  check(search_focus == "search" && search_footer == "D-pad ↑ ↓  Choose    A  Open    B  Close" &&
+            after_search_footer != search_footer && hidden == 0 && hidden_footer.empty() && menu.hints_shown == 1 &&
+            !std::string(menu.footer).empty(),
+        "menu by pad: search and the hints",
+        "Y: focus on %s, the hints \"%s\"; B: \"%s\"; View: the hints %s (\"%s\"); View again: %s (\"%s\")",
+        search_focus.c_str(), search_footer.c_str(), after_search_footer.c_str(), hidden == 0 ? "hidden" : "SHOWN",
+        hidden_footer.c_str(), menu.hints_shown != 0 ? "shown" : "HIDDEN", menu.footer);
+
+  // The right stick, held down for half a second, then up for longer: the page moves under the focus, which stays,
+  // and comes back to where it was. Menu size at its largest first (1.5), so that the page runs past its display.
+  for (int i = 0; i < 20 && std::string_view(menu.focused) != "setting:ui.scale"; ++i) {
+    pad_menu(XINPUT_GAMEPAD_DPAD_DOWN);  // from search back onto the page's first setting
+  }
+  for (int i = 0; i < 6; ++i) {
+    pad_menu(XINPUT_GAMEPAD_DPAD_RIGHT);
+  }
+  const std::string largest = grace.setting("ui.scale");
+  const std::string held(menu.focused);
+  const std::uint32_t inputs_before = menu.inputs;
+  const float y_before = menu_bounds(grace, held.c_str()).row[1];
+  const auto stick = [&](std::int32_t right_y, DWORD ms) {
+    const DWORD start = GetTickCount();
+    while (GetTickCount() - start < ms) {
+      grace.pad_state(0, 0, 0, 0, 0, 0, 0, right_y);
+      game.frame(kInputColour, PresentWith::present);
+      Sleep(10);
+    }
+    grace.pad_state(0, 0, 0, 0, 0, 0, 0, 0);
+    menu = menu_after(game, grace, grace.menu().lists);
+  };
+  stick(-32767, 500);
+  const float y_down = menu_bounds(grace, held.c_str()).row[1];
+  const std::string focus_down(menu.focused);
+  const std::uint32_t inputs_down = menu.inputs - inputs_before;
+  stick(32767, 1500);
+  const float y_back = menu_bounds(grace, held.c_str()).row[1];
+  pad_menu(XINPUT_GAMEPAD_X);  // Menu size back to its default
+  // The page moves as far as it runs past its display (the view bounds the scroll), here a little, by several steps.
+  check(inputs_down >= 3 && y_down < y_before - 10 && std::fabs(y_back - y_before) < 0.5f && focus_down == held &&
+            std::string(menu.focused) == held && grace.setting("ui.scale") == "1.25",
+        "menu by pad: the right stick scrolls",
+        "at Menu size %s, %s's row at y %.0f; the stick down for 0.5 s (%u steps taken): %.0f (focus %s); up for 1.5 s: "
+        "%.0f; Menu size reset to %s",
+        largest.c_str(), held.c_str(), y_before, inputs_down, y_down, focus_down == held ? "kept" : "MOVED", y_back,
+        grace.setting("ui.scale").c_str());
+
+  // A key: the keyboard's hints again. Then B to the rail and B again closes the menu: neither B reaches the game, nor
+  // the second while it is still held after the close; a new press after it does.
+  press(window, VK_DOWN, 0x50);
+  menu = menu_after(game, grace, menu.lists);
+  const std::uint32_t pad_after_key = menu.pad_mode;
+  const std::string key_footer(menu.footer);
+  pad_menu(XINPUT_GAMEPAD_B);
+  const std::string rail(menu.focused);
+  std::uint32_t packet = 1;
+  const std::uint32_t closing = grace.pad_read(0, XINPUT_GAMEPAD_B, &packet);
+  frames(game, 3);
+  const std::uint32_t held_after = grace.pad_read(0, XINPUT_GAMEPAD_B, &packet);
+  const bool closed = grace.menu().open == 0;
+  grace.pad_read(0, 0, &packet);
+  frames(game, 2);
+  const std::uint32_t new_press = grace.pad_read(0, XINPUT_GAMEPAD_B, &packet);
+  grace.pad_read(0, 0, &packet);
+  check(pad_after_key == 0 && key_footer.find("Esc  ") != std::string::npos && rail.rfind("rail:", 0) == 0 &&
+            closing == 0 && held_after == 0 && closed && new_press == XINPUT_GAMEPAD_B,
+        "menu by pad: back and close",
+        "a key: pad mode %u, the hints \"%s\"; B: focus on %s; B again: the menu %s, the game saw %#x, %#x while it was "
+        "held, then %#x for a new press",
+        pad_after_key, key_footer.c_str(), rail.c_str(), closed ? "closed" : "STILL OPEN", closing, held_after,
+        new_press);
+  DeleteFileW(settings_file_of(dll).c_str());  // nothing kept for the next scenario (D179)
+}
+
 void run_menu_recentred(const std::wstring& dll) {
   Game game(false, 1280, 720);
   const HWND window = game.window();
@@ -9417,6 +9586,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"copies") {
     std::printf("-- scenario: two copies asked at once\n");
     run_copies(dll);
+  } else if (scenario == L"menu-pad") {
+    std::printf("-- scenario: the menu by pad alone (D242)\n");
+    run_menu_pad(dll);
   } else if (scenario == L"copy-beside-mod") {
     std::printf("-- scenario: a mod of EldenNet's kind beside a second copy\n");
     run_copy_beside_mod(dll, false);
@@ -9589,7 +9761,7 @@ int wmain(int argc, wchar_t** argv) {
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"copy-beside-mod", L"copy-beside-mod-reversed",
             L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-focus-ring", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-focus-ring", L"menu-pad", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
             L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake", L"heap-guard", L"heap-guard-off"}) {
         run(child_scenario, dll, this_program());
       }

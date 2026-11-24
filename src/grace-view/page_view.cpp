@@ -122,6 +122,181 @@ struct Cursor {
   }
 };
 
+// ---- Pad mode's key hints (§3.8, §5.4, D242). The keyboard's hints are the one source of the words: each "keys
+// label" entry, four spaces apart, is drawn in pad mode with the pad's button for its keys, as the host maps them.
+
+enum class PadGlyph : std::uint8_t { none, a, b, x, y, dpad_lr, dpad_ud, dpad_right, dpad_down };
+
+struct HintPart {
+  PadGlyph button = PadGlyph::none;
+  std::string_view keys;  // the keyboard's keys, drawn as they are when no button stands for them
+  std::string_view label;
+};
+
+// The button the menu maps to a hint's keys (the host's pad_inputs): A for Enter, B for Esc, X for R, the D-pad for the
+// arrows. `dropped` for keys a pad has no button for (Shift+← →, Ctrl+V, Backspace): pad mode leaves those hints out.
+PadGlyph pad_button_of(std::string_view keys, bool& dropped) noexcept {
+  dropped = false;
+  if (keys == "Esc") {
+    return PadGlyph::b;
+  }
+  if (keys == "Enter") {
+    return PadGlyph::a;
+  }
+  if (keys == "R") {
+    return PadGlyph::x;
+  }
+  if (keys == "← →") {
+    return PadGlyph::dpad_lr;
+  }
+  if (keys == "↑ ↓") {
+    return PadGlyph::dpad_ud;
+  }
+  if (keys == "→") {
+    return PadGlyph::dpad_right;
+  }
+  if (keys == "↓") {
+    return PadGlyph::dpad_down;
+  }
+  dropped = keys == "Shift+← →" || keys == "Ctrl+V" || keys == "Backspace";
+  return PadGlyph::none;
+}
+
+// A hints line's parts; an entry with no two spaces in it is words alone ("Not available now").
+std::vector<HintPart> hint_parts(std::string_view hints) {
+  std::vector<HintPart> parts;
+  while (!hints.empty()) {
+    const std::size_t end = hints.find("    ");
+    const std::string_view entry = hints.substr(0, end);
+    hints = end == std::string_view::npos ? std::string_view() : hints.substr(end + 4);
+    HintPart part;
+    const std::size_t gap = entry.find("  ");
+    if (gap == std::string_view::npos) {
+      part.label = entry;
+    } else {
+      part.keys = entry.substr(0, gap);
+      part.label = entry.substr(gap + 2);
+      bool dropped = false;
+      part.button = pad_button_of(part.keys, dropped);
+      if (dropped) {
+        continue;
+      }
+    }
+    parts.push_back(part);
+  }
+  return parts;
+}
+
+std::string_view letter_of(PadGlyph button) noexcept {
+  switch (button) {
+    case PadGlyph::a: return "A";
+    case PadGlyph::b: return "B";
+    case PadGlyph::x: return "X";
+    case PadGlyph::y: return "Y";
+    default: return {};
+  }
+}
+
+std::string_view dpad_words(PadGlyph button) noexcept {
+  switch (button) {
+    case PadGlyph::dpad_lr: return "D-pad ← →";
+    case PadGlyph::dpad_ud: return "D-pad ↑ ↓";
+    case PadGlyph::dpad_right: return "D-pad →";
+    case PadGlyph::dpad_down: return "D-pad ↓";
+    default: return {};
+  }
+}
+
+// The words pad mode's footer stands for, as the tests and the dump read it: "A  Toggle    X  Reset    B  Back".
+std::string pad_words(std::string_view hints) {
+  std::string out;
+  for (const HintPart& part : hint_parts(hints)) {
+    out += out.empty() ? "" : "    ";
+    const std::string_view name = !letter_of(part.button).empty() ? letter_of(part.button)
+                                  : !dpad_words(part.button).empty() ? dpad_words(part.button)
+                                                                     : part.keys;
+    if (!name.empty()) {
+      out.append(name).append("  ");
+    }
+    out.append(part.label);
+  }
+  return out;
+}
+
+// A face button (§3.8): a diamond of four dots, the button's own filled, the others rings.
+void face_button(Cursor& c, Rect r, PadGlyph button) {
+  const float d = std::max(3.0f, std::round(r.w * 0.36f));
+  const float ring = std::max(1.0f, std::round(c.s));
+  const float cx = std::round(r.x + r.w / 2 - d / 2);
+  const float cy = std::round(r.y + r.h / 2 - d / 2);
+  const struct {
+    PadGlyph button;
+    float x, y;
+  } dots[] = {{PadGlyph::y, cx, r.y}, {PadGlyph::b, r.right() - d, cy}, {PadGlyph::a, cx, r.bottom() - d},
+              {PadGlyph::x, r.x, cy}};
+  for (const auto& dot : dots) {
+    const Rect at{dot.x, dot.y, d, d};
+    if (dot.button == button) {
+      c.circle(at, Colour::ink_hi);
+    } else {
+      c.stroke(at, Colour::ink_faint, ring, d / 2);
+    }
+  }
+}
+
+// The D-pad: a cross, dim, with the arms of the hint's directions marked.
+void dpad(Cursor& c, Rect r, PadGlyph button) {
+  const float t = std::floor(r.w / 3);  // within the glyph's square
+  const float corner = std::max(1.0f, std::round(c.s));
+  c.fill(Rect{r.x, r.y + t, 3 * t, t}, Colour::ink_faint, corner, 110);
+  c.fill(Rect{r.x + t, r.y, t, 3 * t}, Colour::ink_faint, corner, 110);
+  const auto arm = [&](float x, float y) { c.fill(Rect{x, y, t, t}, Colour::ink_hi, corner); };
+  if (button == PadGlyph::dpad_lr) {
+    arm(r.x, r.y + t);
+  }
+  if (button == PadGlyph::dpad_lr || button == PadGlyph::dpad_right) {
+    arm(r.x + 2 * t, r.y + t);
+  }
+  if (button == PadGlyph::dpad_ud) {
+    arm(r.x + t, r.y);
+  }
+  if (button == PadGlyph::dpad_ud || button == PadGlyph::dpad_down) {
+    arm(r.x + t, r.y + 2 * t);
+  }
+}
+
+// Pad mode's footer, left to right from `x` within `max_w`: each part's glyph (and a face button's letter), then its
+// label in the footer's ink; a part that would not fit is left out, with those after it.
+void pad_hints(Cursor& c, std::string_view hints, float x, float top, float height, float max_w) {
+  const float s = c.s;
+  const float g = std::round(16 * s);
+  const float gy = top + std::round((height - g) / 2);
+  const float ty = top + std::round((height - line_height(TypeRole::ui_sm, s)) / 2);
+  const float right = x + max_w;
+  const float gap = std::round(6 * s);
+  for (const HintPart& part : hint_parts(hints)) {
+    const std::string_view letter = letter_of(part.button);
+    const bool cross = !dpad_words(part.button).empty();
+    const float lead = !letter.empty() ? g + std::round(3 * s) + c.width(letter, TypeRole::ui_sm) + gap
+                       : cross         ? g + gap
+                       : !part.keys.empty() ? c.width(part.keys, TypeRole::ui_sm) + gap
+                                            : 0.0f;
+    if (x + lead + c.width(part.label, TypeRole::ui_sm) > right) {
+      break;
+    }
+    if (!letter.empty()) {
+      face_button(c, Rect{x, gy, g, g}, part.button);
+      c.text(letter, TypeRole::ui_sm, x + g + std::round(3 * s), ty, right - x, Colour::ink_mute);
+    } else if (cross) {
+      dpad(c, Rect{x, gy, g, g}, part.button);
+    } else if (!part.keys.empty()) {
+      c.text(part.keys, TypeRole::ui_sm, x, ty, right - x, Colour::ink_mute);
+    }
+    x += lead;
+    x += c.text(part.label, TypeRole::ui_sm, x, ty, right - x, Colour::ink_faint) + std::round(20 * s);
+  }
+}
+
 // The parts protocol 1.2 adds (G34, D192 to D195), checked at registration as the page lint checks them: a table's row
 // actions and row secret, a form block, a text setting's choices from a topic.
 bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::Setting>& settings, std::string& why) {
@@ -1884,7 +2059,22 @@ void PageView::settle_expected() {
 }
 
 Action PageView::input(const Input& in) {
+  pad_mode_ = in.pad;             // the key hints follow the last device used (§3.8, D242)
   focus_shown_ = true;            // a key or the pad: the ring shows where they act (G42)
+  if (in.key == Key::toggle_hints) {
+    hints_shown_ = !hints_shown_;  // View (§5.4): focus and the page stay as they are
+    return {};
+  }
+  if (in.key == Key::scroll_up || in.key == Key::scroll_down) {
+    // The right stick (§5.4): a step of the page, as a third of the wheel's notch; the page stays where it is left
+    // until a key moves focus, as after the wheel.
+    if (!capture_open()) {
+      const float step = std::round(40.0f * scale_);
+      scroll_ = std::max(0.0f, in.key == Key::scroll_up ? scroll_ - step : scroll_ + step);
+      follow_ = false;
+    }
+    return {};
+  }
   master_focus_pending_ = false;  // a key moves focus on its own from now on
   refocus_name_.clear();
   if (in.key == Key::activate && !editing() && !capture_open() && scope_ == Scope::page && running(focused())) {
@@ -1903,6 +2093,7 @@ Action PageView::input(const Input& in) {
 Action PageView::pointer(const Pointer& in) {
   if (in.kind != Pointer::Kind::leave) {
     focus_shown_ = false;  // the mouse: the ring goes, the focus stays (G42)
+    pad_mode_ = false;     // and the key hints are the keyboard's again (D242)
   }
   if (in.kind == Pointer::Kind::press) {
     master_focus_pending_ = false;
@@ -4848,8 +5039,14 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               : capture_.row                          ? "Press a key    Backspace  No key    Esc  Cancel"
                                                       : "Press a key    Esc  Cancel";
     }
-    c.text(hints, TypeRole::ui_sm, page_x + gutter, H - footer_h + std::round((footer_h - line_height(TypeRole::ui_sm, s)) / 2),
-           page_w - 2 * gutter, Colour::ink_faint);
+    footer_ = !hints_shown_ ? std::string() : pad_mode_ ? pad_words(hints) : hints;
+    if (hints_shown_ && pad_mode_) {
+      pad_hints(c, hints, page_x + gutter, H - footer_h, footer_h, page_w - 2 * gutter);  // D242
+    } else if (hints_shown_) {
+      c.text(hints, TypeRole::ui_sm, page_x + gutter,
+             H - footer_h + std::round((footer_h - line_height(TypeRole::ui_sm, s)) / 2), page_w - 2 * gutter,
+             Colour::ink_faint);
+    }
     if (c.focus_found && focus_shown_) {
       const float off = std::round(tokens::kGrace.size.focus_offset * s);
       const Rect ring{c.focus.x - off, c.focus.y - off, c.focus.w + 2 * off, c.focus.h + 2 * off};
