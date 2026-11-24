@@ -2196,3 +2196,8 @@ ul, ol {
   margin: 0;
   color: var(--ink-body);
 }
+
+/* A report preview's field (D251): the player's own line breaks kept, its words wrapped, as grace-view draws it. */
+.preview__fields .kv__value {
+  white-space: pre-line;
+}

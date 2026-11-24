@@ -2585,6 +2585,10 @@ const Json kReport = Json::parse(R"({"parts": [
 TEST_CASE("a document in game: its blocks drawn, a link to a listed guide a stop that chooses it, none to the rest (D251)") {
   PageView view = loaded("demo", "demo.handbook");
   view.set_topic("lantern.guides", kGuides);
+  // The chosen guide's member is one of the page's topics, so that the host watches it (EldenNet's 0.2.44 pin found it
+  // left out: the reader said "Nothing to show." for every document).
+  const auto watched = view.component_topics();
+  CHECK(std::find(watched.begin(), watched.end(), "lantern.guide/lighting") != watched.end());
   view.set_topic("lantern.guide/lighting", kLighting);
   DisplayList list;
   view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
@@ -2879,4 +2883,32 @@ TEST_CASE("live updates in game: Every 5 s and Paused hold a live page's topics;
   view.set_topic("lantern.status", status("Clear.", false));
   CHECK_FALSE(view.holding());
   CHECK(laid_out(view).find("Updates:") == std::string::npos);
+}
+
+TEST_CASE("a report preview's field in game: its words wrapped to its column, its line breaks kept (D251)") {
+  PageView view = loaded("demo", "demo.log");
+  const std::string happened =
+      "The lamp went out at dusk.\nThe keeper could not light it again until the wind dropped, long after the bell "
+      "had rung twice for the harbour and the boats were in, and the glass had to be cleaned of soot before morning.";
+  view.set_topic("lantern.report", Json::parse(R"({"parts": [{"id": "summary", "label": "Summary", "optional": false,
+    "fields": [{"label": "What happened", "value": )" + Json(happened).dump() + "}]}]}"));
+  DisplayList list;
+  view.layout(Viewport{1280, 720, 1.0f}, test::fonts(), list);
+  std::vector<std::string> lines;
+  for (const Item& item : list.items) {
+    if (item.shape == Shape::text) {
+      const std::string words(std::string_view(list.text).substr(item.text_first, item.text_size));
+      if (happened.find(words) != std::string::npos && words.size() > 8) {
+        lines.push_back(words);
+      }
+    }
+  }
+  REQUIRE(lines.size() >= 3);  // its first line, then the second wrapped onto two or more
+  CHECK(lines.front() == "The lamp went out at dusk.");
+  CHECK(lines.back().ends_with("before morning."));
+  std::string joined;
+  for (std::size_t i = 1; i < lines.size(); ++i) {
+    joined += (i > 1 ? " " : "") + lines[i];
+  }
+  CHECK(joined == happened.substr(happened.find('\n') + 1));  // every word, in order
 }
