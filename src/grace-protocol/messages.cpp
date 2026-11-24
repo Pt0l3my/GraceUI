@@ -757,6 +757,36 @@ Json encode(const TopicInfo& in) {
   return out;
 }
 
+bool decode(const Json& in, QuickState& out, const std::string& path, DecodeError& e) {
+  if (!in.is_object()) {
+    return fail(e, path, "not an object");
+  }
+  if (const Json* v = field(in, "topic", true, path, e)) {
+    const std::string p = path.empty() ? std::string("topic") : path + ".topic";
+    if (!read_id(*v, out.topic, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "field", true, path, e)) {
+    const std::string p = path.empty() ? std::string("field") : path + ".field";
+    if (!read_string(*v, 32, out.field, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  return true;
+}
+
+Json encode(const QuickState& in) {
+  Json out = Json::object();
+  out["topic"] = Json(in.topic);
+  out["field"] = Json(in.field);
+  return out;
+}
+
 bool decode(const Json& in, PageAction& out, const std::string& path, DecodeError& e) {
   if (!in.is_object()) {
     return fail(e, path, "not an object");
@@ -802,6 +832,15 @@ bool decode(const Json& in, PageAction& out, const std::string& path, DecodeErro
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "state", false, path, e)) {
+    const std::string p = path.empty() ? std::string("state") : path + ".state";
+    out.state.emplace();
+    if (!decode(*v, *out.state, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -813,6 +852,9 @@ Json encode(const PageAction& in) {
   out["tone"] = Json(to_string(in.tone));
   if (in.confirm) {
     out["confirm"] = Json(*in.confirm);
+  }
+  if (in.state) {
+    out["state"] = encode(*in.state);
   }
   return out;
 }
@@ -1582,36 +1624,6 @@ Json encode(const SectionStatus& in) {
   if (in.field) {
     out["field"] = Json(*in.field);
   }
-  return out;
-}
-
-bool decode(const Json& in, QuickState& out, const std::string& path, DecodeError& e) {
-  if (!in.is_object()) {
-    return fail(e, path, "not an object");
-  }
-  if (const Json* v = field(in, "topic", true, path, e)) {
-    const std::string p = path.empty() ? std::string("topic") : path + ".topic";
-    if (!read_id(*v, out.topic, p, e)) {
-      return false;
-    }
-  } else if (!e.field.empty()) {
-    return false;
-  }
-  if (const Json* v = field(in, "field", true, path, e)) {
-    const std::string p = path.empty() ? std::string("field") : path + ".field";
-    if (!read_string(*v, 32, out.field, p, e)) {
-      return false;
-    }
-  } else if (!e.field.empty()) {
-    return false;
-  }
-  return true;
-}
-
-Json encode(const QuickState& in) {
-  Json out = Json::object();
-  out["topic"] = Json(in.topic);
-  out["field"] = Json(in.field);
   return out;
 }
 

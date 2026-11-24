@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 14,
+  "minor": 15,
   "categories": [
     {
       "id": "lanterns",
@@ -50,6 +50,16 @@
           "label": "Trim the wick",
           "command": "lantern.trim",
           "tone": "primary"
+        },
+        {
+          "id": "hush",
+          "label": "Hush the bell",
+          "command": "bell.hush",
+          "tone": "secondary",
+          "state": {
+            "topic": "lantern.status",
+            "field": "hushed"
+          }
         }
       ],
       "sections": [

@@ -268,3 +268,45 @@ TEST_CASE("the pointer: its tip at the hotspot, its size, and an outline that ne
   CHECK(std::min(left_turns, right_turns) <= static_cast<int>(draw::kPointerArcPoints) + 1);
 }
 
+
+TEST_CASE("an item wholly outside its clip costs no vertex; one that crosses its edge is drawn (D256)") {
+  Item below;
+  below.shape = Shape::fill;
+  below.colour = tokens::Colour::ground_2;
+  below.rect = Rect{10, 900, 100, 40};  // a long page's row past the view's 400 px
+  abi::DrawListData out;
+  draw::tessellate(one(below), tokens::kGrace.colour, kAtlas, out);
+  CHECK(out.vertices.empty());
+  CHECK(out.commands.empty());
+  Item above = below;
+  above.rect = Rect{10, -60, 100, 40};
+  draw::tessellate(one(above), tokens::kGrace.colour, kAtlas, out);
+  CHECK(out.vertices.empty());
+  Item crossing = below;
+  crossing.rect = Rect{10, 380, 100, 40};  // half in view
+  draw::tessellate(one(crossing), tokens::kGrace.colour, kAtlas, out);
+  CHECK(out.vertices.size() == 4);
+}
+
+TEST_CASE("a page far longer than the view tessellates only its rows in view, within a mod's limits (D256)") {
+  view::DisplayList list;
+  list.clips.push_back(Rect{0, 0, 1920, 1080});
+  for (int row = 0; row < 4000; ++row) {
+    Item item;
+    item.shape = Shape::fill;
+    item.colour = tokens::Colour::ground_2;
+    item.radius = 4;
+    item.rect = Rect{10, static_cast<float>(row * 30), 600, 24};
+    list.items.push_back(item);
+  }
+  abi::DrawListData out;
+  draw::tessellate(list, tokens::kGrace.colour, kAtlas, out);
+  CHECK(out.vertices.size() <= 37 * 24);  // the 36 or 37 rows that reach the view
+  abi::DrawContext context;
+  context.width = 1920;
+  context.height = 1080;
+  context.atlas = kAtlas.texture;
+  context.atlas_generation = 1;
+  out.atlas_generation = 1;
+  CHECK(abi::check_draw_list(out, context) == abi::Refusal::none);
+}

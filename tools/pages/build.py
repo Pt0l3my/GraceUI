@@ -412,6 +412,9 @@ def lint(space_pages, description, fixtures, known_spaces):
                     failures.append(f"{swhere}: its status field is a name (a-z, 0-9, _; 1 to 32)")
             unique("section action", [a["id"] for a in section.get("actions", [])], swhere)
             for action in section.get("actions", []):
+                if "state" in action:
+                    failures.append(f"{swhere}: action {action['id']} has a state; a switch is a header action's "
+                                    "alone (D256)")
                 if action["command"] not in commands or not action["label"]:
                     failures.append(f"{swhere}: action {action['id']} has a label and sends a command of the space")
                 if action["tone"] == "destructive" and not action.get("confirm"):
@@ -421,6 +424,24 @@ def lint(space_pages, description, fixtures, known_spaces):
                 failures.append(f"{where}: action {action['id']} sends {action['command']}, not a command of the space")
             if action["tone"] == "destructive" and not action.get("confirm"):
                 failures.append(f"{where}: destructive action {action['id']} has no confirmation")
+            state = action.get("state")
+            if state is not None:
+                # A header switch (D256): a session switch's form, as a quick switch's (D252), drawn in the header.
+                awhere = f"{where}: action {action['id']}"
+                name = action["command"]
+                if (name in ("settings.set", "settings.reset") or name in files or
+                        name in space_pages.get("slow_commands", [])):
+                    failures.append(f"{awhere}: a switch sends a command of the space's own, neither a settings, a "
+                                    "file nor a slow command (D256)")
+                if action["tone"] == "destructive" or "confirm" in action:
+                    failures.append(f"{awhere}: a switch is neither destructive nor confirmed: it sends {{on}} at "
+                                    "once (D256)")
+                topic = state.get("topic")
+                if (topic not in topics or topics[topic]["shape"] != "state" or topic in ("settings", SPACE_STATE) or
+                        topic in families):
+                    failures.append(f"{awhere}: its state is on a state topic of the space's own, not a family (D256)")
+                if not FIELD_NAME.match(state.get("field", "")):
+                    failures.append(f"{awhere}: its state field is a name (a-z, 0-9, _; 1 to 32)")
         for section in sections:
             for block in section["blocks"] + section.get("advanced", []):
                 kind = block["kind"]

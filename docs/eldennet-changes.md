@@ -1593,3 +1593,19 @@ Found by a review of 0.2.47's code; nothing changes on your side, and the protoc
    moves, as the game does, so publish that topic when a character loads.
 3. A refused Show more shows your words at the list's foot, the rows kept.
 4. `total` must be a whole number (at most 2^53 − 1) to show as "N in all"; anything else shows no count.
+
+## 82. Your four points from the 0.2.46 pin (2026-11-24, D256; GraceUI 0.2.49, protocol 1.15)
+
+1. **Docs within the limits.** What is out of view costs no vertex now, so grace-dev's dump of Docs passes its check;
+   drop the exit you took for Docs. In game Docs drew already (the menu's own list is not checked as a mod's is), and
+   now costs only what shows.
+2. **A page opens at its top.** Requests and Home open on their first card's label, the header in view, rather than
+   on Related; focus does not jump when the filter bar comes. Your goldens of ai.requests and home move by their focus.
+3. **A row drawer**: mark a column of a table's body `"drawer": true` (Why, Text shown) and it leaves the row for the
+   row's drawer, label above words, line breaks kept. In game the row is a stop; Enter opens its drawer, Esc closes it.
+   In the browser a mark at the row's start opens it. Give each row an `id` so its drawer follows it. No minor: an
+   older GraceUI shows the column on the row.
+4. **A header switch**: in a page's `actions`, `{ id = "pause", label = "Pause AI", command = "ai.pause",
+   tone = "secondary", state = { topic = "status", field = "ai_paused" } }` (TOML on one line). It shows your
+   `status.ai_paused`, "Not known yet" until it comes, and sends `{"on": ...}` flipped; not destructive, not
+   confirmed, and not on a section. Page data using it is minor 15.

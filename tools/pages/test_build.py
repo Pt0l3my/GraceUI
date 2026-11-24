@@ -330,6 +330,29 @@ class Seeded(unittest.TestCase):
         page(sp, "demo.behaviour")["live"] = True  # settings rows alone: nothing moves by itself
         self.expect("demo.behaviour: a live page draws a topic of the space's", sp, desc, fx)
 
+    def test_a_header_switch(self):  # D256
+        def hush(sp):
+            return next(a for a in page(sp, "demo.overview")["actions"] if a["id"] == "hush")
+        for command in ("settings.set", "keepers.import", "oil.order"):
+            sp, desc, fx = demo()
+            hush(sp)["command"] = command
+            self.expect("a switch sends a command of the space's own, neither a settings, a file nor a slow", sp, desc, fx)
+        sp, desc, fx = demo()
+        hush(sp)["tone"] = "destructive"
+        hush(sp)["confirm"] = "Sure?"
+        self.expect("a switch is neither destructive nor confirmed", sp, desc, fx)
+        for topic in ("lantern.lamp", "settings", "lantern.log", "lantern.nowhere"):
+            sp, desc, fx = demo()
+            hush(sp)["state"]["topic"] = topic
+            self.expect("its state is on a state topic of the space's own, not a family (D256)", sp, desc, fx)
+        sp, desc, fx = demo()
+        hush(sp)["state"]["field"] = "Hushed!"
+        self.expect("its state field is a name", sp, desc, fx)
+        sp, desc, fx = demo()
+        section = next(sec for sec in page(sp, "demo.keepers")["sections"] if sec.get("actions"))
+        section["actions"][0]["state"] = {"topic": "lantern.status", "field": "hushed"}
+        self.expect("a switch is a header action's alone (D256)", sp, desc, fx)
+
     def test_scope_and_pages_read_a_page_at_a_time(self):  # G45, D254
         def lightings(sp):
             return page(sp, "demo.lightings")
