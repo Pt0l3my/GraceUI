@@ -1114,3 +1114,6 @@ preview, in the formats EldenNet agreed (proposal 0013 §6), in one protocol min
 **Owner's words.** Answering the question put to them in EldenNet's session (its question dialog, 2026-11-24,
 relayed by that session and read in its transcript): "(a) All three (Recommended)".
 
+**Built** (2026-11-24) in GraceUI 0.2.44, protocol 1.12 (DESIGN D251). Documents are found by their list's own search
+on their titles and headings (G43's filter bar), as §1's "never a body" asks, rather than by the global search.
+
