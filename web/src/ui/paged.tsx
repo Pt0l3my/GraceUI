@@ -147,10 +147,10 @@ export function usePaged(space: string, key: string, source: PageSource | undefi
     const before = last.current;
     last.current = { key, data: changes };
     if (changes === undefined || before.key !== key || before.data === undefined || before.data === changes ||
-        held.key !== key || held.body === null || args === null) {
-      return;  // its first body, or nothing shown yet: the first page is asked for already
+        held.key !== key || (held.body === null && held.refused === null) || args === null) {
+      return;  // its first body, or nothing come yet: the first page is asked for already
     }
-    if (held.pages <= 1) {
+    if (held.pages <= 1) {  // its first page alone, or a refusal: asked for again, as in game
       ask(args, false, true);
     } else {
       setHeld((h) => ({ ...h, fresh: true }));
@@ -208,6 +208,9 @@ export function PagingFoot({ paged }: { paged: Paged }): JSX.Element | null {
             Show more
           </button>
         )}
+      {!paged.loading && paged.refused !== null && (
+        <span class="paging__refused" role="alert">{paged.refused}</span>
+      )}
       {total !== null && <span class="paging__total">{total}</span>}
     </p>
   );
