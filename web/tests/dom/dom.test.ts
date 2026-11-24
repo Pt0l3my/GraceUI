@@ -895,6 +895,56 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("a table's filter bar: its selects, its sort and direction, its search, Clear filters (G43, D250)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "lanterns", "demo.keepers");
+      const names = async () => page.locator(".table tbody tr td:first-child").allTextContents();
+      await page.locator(".filter-bar select[data-filter='post']").waitFor();
+      // Time kept, longest first: the space's own order here. The Post filter offers All and the posts the rows hold.
+      assert.deepEqual(await names(), ["Orla Venn", "Tamsin Reed", "Ada Marsh"]);
+      assert.deepEqual(await page.locator("select[data-filter='post'] option").allTextContents(),
+                       ["All", "North light", "Harbour wall", "Store room"]);
+      await page.locator("select[data-filter='post']").selectOption("Harbour wall");
+      assert.deepEqual(await names(), ["Tamsin Reed"]);
+      assert.equal(await page.locator(".filter-bar__count").textContent(), "1 of 3 shown");
+      await page.locator("select[data-filter='post']").selectOption("");
+      assert.equal(await page.locator(".filter-bar__count").count(), 0);
+      // By name, then reversed.
+      await page.locator("select[data-sort]").selectOption("1");
+      assert.deepEqual(await names(), ["Ada Marsh", "Orla Venn", "Tamsin Reed"]);
+      await page.locator(".filter-bar__direction").click();
+      assert.deepEqual(await names(), ["Tamsin Reed", "Orla Venn", "Ada Marsh"]);
+      // The search: nothing matching says so, and Clear filters brings every row back. Nothing went to the space.
+      await page.locator(".filter-bar__search").fill("zz");
+      await page.locator(".filter-bar__none").waitFor();
+      assert.equal(await page.locator(".table").count(), 0);
+      await page.locator("[data-clear-filters]").click();
+      assert.equal((await names()).length, 3);
+      assert.equal(await page.locator(".filter-bar__search").inputValue(), "");
+      // A row's action still names its own row, in whatever order the rows show.
+      assert.equal(await page.locator("[data-row-action='dismiss']").first().getAttribute("aria-label"),
+                   "Dismiss: Tamsin Reed");
+    } finally {
+      await close();
+    }
+  });
+
+  test("a master list's filter bar: its rows along the wall, and its search (D250)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "records", "demo.lamps");
+      await page.locator(".master .filter-bar").waitFor();
+      const lamps = async () => page.locator(".master__row .master__name").allTextContents();
+      assert.deepEqual(await lamps(), ["Harbour mouth", "Fish steps", "Old crane"]);
+      await page.locator(".master .filter-bar__search").fill("crane");
+      assert.deepEqual(await lamps(), ["Old crane"]);
+      assert.equal(await page.locator(".master .filter-bar__count").textContent(), "1 of 3 shown");
+    } finally {
+      await close();
+    }
+  });
+
   test("a space's foot categories sit at the rail's foot, under its rule, above GraceUI's own (D248)", async () => {
     const { page, close } = await fresh();
     try {
