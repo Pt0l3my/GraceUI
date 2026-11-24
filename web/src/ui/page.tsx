@@ -8,7 +8,7 @@ import type { Json, Page, PageAction, PageBlock, PageSection } from "../protocol
 import { pageById, parseLink, sectionsOf } from "../model/layout.ts";
 import { refusalWords } from "../model/session.ts";
 import type { TopicData } from "../model/session.ts";
-import { GreyedContext, MasterContext, useSession } from "./context.ts";
+import { GreyedContext, MasterContext, ScopeContext, useSession } from "./context.ts";
 import { ComponentBlock, useLiveTopic, useTopic } from "./components.tsx";
 import { LivePage, release } from "./live.ts";
 import { Arrow, Chevron, Cross, HelpMark, Lozenge, Warning } from "./icons.tsx";
@@ -24,6 +24,10 @@ import { FormBlock } from "./form.tsx";
 import { EditorBlockView } from "./editor.tsx";
 import { UploadBlock } from "./upload.tsx";
 import { FilterBar, useFilterBar } from "./filter-bar.tsx";
+import type { Paged } from "./paged.tsx";
+import { PagingFoot, PagingTop, pagedWords, useOwnChoices, usePaged, useScope } from "./paged.tsx";
+import { filters } from "./view-state.ts";
+import { FRESH } from "../model/filter.ts";
 import { DocumentBlock } from "./document.tsx";
 import { dropDrafts } from "../model/editor.ts";
 
@@ -276,12 +280,12 @@ function cellText(row: { [key: string]: Json }, column: string | undefined): str
 }
 
 /** The rows of a master list's body that name a member, each with its key, in the list's order. */
-function masterRows(master: PageMaster, data: TopicData | undefined): { key: string; row: { [key: string]: Json } }[] {
-  if (data?.kind !== "state" || !Array.isArray(data.body.rows)) {
+function masterRows(master: PageMaster, body: { [key: string]: Json } | undefined): { key: string; row: { [key: string]: Json } }[] {
+  if (body === undefined || !Array.isArray(body.rows)) {
     return [];
   }
   const out: { key: string; row: { [key: string]: Json } }[] = [];
-  for (const row of data.body.rows) {
+  for (const row of body.rows) {
     if (typeof row === "object" && row !== null && !Array.isArray(row)) {
       const key = cellText(row, master.key);
       if (memberKey(master.detail, key)) {
@@ -292,15 +296,24 @@ function masterRows(master: PageMaster, data: TopicData | undefined): { key: str
   return out;
 }
 
+/** A master list's filter bar's key: its topic's, or its page's for a list read a page at a time (D254). */
+function masterBarKey(space: string, page: Page, master: PageMaster): string {
+  return `${space}/master/${master.topic ?? `${page.id}.list`}`;
+}
+
 /** A page's master list (D215, D36): a listbox of its rows, each by its first column's words and its second's; ↑ ↓,
- * Home and End move the choice, → or Enter go into the detail. */
-function MasterList({ space, page, master, data, current }: { space: string; page: Page; master: PageMaster;
-                                                              data: TopicData | undefined; current: string | null }) {
+ * Home and End move the choice, → or Enter go into the detail. Read a page at a time (D254), the space's rows in
+ * its order, with Show more at the foot. */
+function MasterList({ space, page, master, body, current, paged }: {
+  space: string; page: Page; master: PageMaster; body: { [key: string]: Json } | undefined; current: string | null;
+  paged: Paged | null;
+}) {
   // Its filter bar (G43, D250): the rows that show, in the order they show; the chosen row stays chosen if hidden.
-  const all = masterRows(master, data);
-  const bar = useFilterBar(`${space}/master/${master.topic}`, master.filter_bar, all.map((r) => r.row));
+  const all = masterRows(master, body);
+  const bar = useFilterBar(masterBarKey(space, page, master), master.filter_bar, all.map((r) => r.row), paged !== null);
+  const own = useOwnChoices(space, paged !== null ? master.filter_bar : undefined);
   const rows = bar.order.map((i) => all[i]!);
-  const columns = data?.kind === "state" && Array.isArray(data.body.columns) ? data.body.columns : [];
+  const columns = body !== undefined && Array.isArray(body.columns) ? body.columns : [];
   const ids = columns.flatMap((c) => (typeof c === "object" && c !== null && !Array.isArray(c) && typeof c.id === "string"
     ? [c.id] : []));
   const optionId = (key: string) => domId("option", space, page.id, key);
@@ -315,12 +328,15 @@ function MasterList({ space, page, master, data, current }: { space: string; pag
   return (
     <nav class="master" aria-label={master.label}>
       <h2 class="master__label">{master.label}</h2>
-      {master.filter_bar && all.length > 0 && (
+      {master.filter_bar && (all.length > 0 || paged !== null) && (
         <FilterBar spec={master.filter_bar} rows={all.map((r) => r.row)} state={bar.state} shown={rows.length}
-                   set={bar.set} label={master.label} />
+                   set={bar.set} label={master.label} own={paged !== null ? own : undefined} />
       )}
+      {paged !== null && <PagingTop paged={paged} />}
       {all.length === 0
-        ? <p class="master__empty">{data !== undefined && master.empty !== undefined ? master.empty : "Nothing to show."}</p>
+        ? <p class="master__empty">{paged !== null && (paged.refused !== null || paged.loading || paged.body === null)
+                                      ? pagedWords(paged, "")
+                                      : body !== undefined && master.empty !== undefined ? master.empty : "Nothing to show."}</p>
         : (
           rows.length > 0 && <ul class="master__list" role="listbox" aria-label={master.label}>
             {rows.map(({ key, row }, i) => (
@@ -344,6 +360,7 @@ function MasterList({ space, page, master, data, current }: { space: string; pag
             ))}
           </ul>
         )}
+      {paged !== null && <PagingFoot paged={paged} />}
     </nav>
   );
 }
@@ -359,10 +376,25 @@ export function PageView() {
   // The space's greyed pages (D188), watched with every page of a space that declares space.state.
   const declaresState = (pages?.topics ?? []).some((t) => t.id === SPACE_STATE && t.shape === "state");
   const stateData = useTopic(route?.space ?? "", route && declaresState ? SPACE_STATE : undefined);
-  // A master list (D215): its rows, and the chosen one (the first, as soon as the list has one).
+  // A scoped page (G45, D254): the scope in view; its families draw that scope's member.
+  const scope = useScope(route?.space ?? "", pages);
+  const scoped = page?.scoped === true && scope !== null;
+  const scopeIn = scoped ? scope.id : null;
+  const families = (pages?.topics ?? []).filter((t) => t.family === true).map((t) => t.id);
+  // A master list (D215): its rows, and the chosen one (the first, as soon as the list has one); its topic a family's
+  // member on a scoped page, or its rows read a page at a time.
   const master = page?.master;
-  const masterData = useLiveTopic(route?.space ?? "", master?.topic, page?.live === true);
-  const masterKeys = master ? masterRows(master, masterData).map((r) => r.key) : [];
+  const masterTopic = master?.topic !== undefined && scoped && families.includes(master.topic)
+    ? (scopeIn !== null ? `${master.topic}/${scopeIn}` : undefined) : master?.topic;
+  const masterData = useLiveTopic(route?.space ?? "", masterTopic, page?.live === true);
+  const barKey = route && page && master ? masterBarKey(route.space, page, master) : "";
+  const masterPaged = usePaged(route?.space ?? "", `${route?.space ?? ""}/${page?.id ?? ""}.list`, master?.page,
+                               master?.filter_bar, filters.value.get(barKey) ?? FRESH, scoped ? scopeIn : null,
+                               !scoped || scope.come, page?.live === true);
+  const masterBody: { [key: string]: Json } | undefined = master?.page !== undefined
+    ? (masterPaged.body !== null ? { columns: masterPaged.body.columns, rows: masterPaged.body.rows } : undefined)
+    : masterData?.kind === "state" ? masterData.body : undefined;
+  const masterKeys = master ? masterRows(master, masterBody).map((r) => r.key) : [];
   const held = route && page ? chosen.value.get(`${route.space}/${page.id}`) : undefined;
   const wanted = route && page ? expected.value.get(`${route.space}/${page.id}`) : undefined;
   const current = master ? rowToShow(masterKeys, held, wanted) : null;
@@ -382,7 +414,10 @@ export function PageView() {
     return null;
   }
   const stateBody = stateData?.kind === "state" ? stateData.body : undefined;
-  const greyed = { page: page.id, words: (id: string) => greyedWords(stateBody, id) };
+  // An earlier scope the space marks read only greys the page as the space's own words would (D188, D254).
+  const readOnly = scoped && scope.choice?.readOnly === true ? `${scope.choice.label} is read only.` : null;
+  const greyed = { page: page.id,
+                   words: (id: string) => greyedWords(stateBody, id) ?? (id === page.id ? readOnly : null) };
   const pageWords = greyed.words(page.id);
   const space = route.space;
   const sections = sectionsOf(page, route.tab);
@@ -433,16 +468,17 @@ export function PageView() {
         )}
       </header>
       <div class={master ? "master-detail" : "single"}>
-      {master && <MasterList space={space} page={page} master={master} data={masterData} current={current} />}
+      {master && <MasterList space={space} page={page} master={master} body={masterBody} current={current}
+                             paged={master.page !== undefined ? masterPaged : null} />}
       <div class="detail" id={domId("detail", space, page.id)}>
       {master && current === null && (
         <p class="detail__none" role="status">{master.none ?? "Choose one in the list."}</p>
       )}
       <MasterContext.Provider value={master ? {
         family: master.detail, member: current !== null ? `${master.detail}/${current}` : null, key: current,
-        families: (pages?.topics ?? []).filter((t) => t.family === true).map((t) => t.id),
-        page: page.id, keys: masterRows(master, masterData).map((r) => r.key),
+        families, page: page.id, keys: masterKeys,
       } : null}>
+      <ScopeContext.Provider value={scoped ? { id: scopeIn, families, ready: scope.come } : null}>
       {(!master || current !== null) && tabs.length > 0 && (
         <div class="tabs" role="tablist" aria-label={page.name}>
           {tabs.map((tab, i) => (
@@ -470,6 +506,7 @@ export function PageView() {
           sections.map((section) => <SectionCard key={section.id} space={space} page={page} section={section} />)}
         <RelatedCard space={space} page={page} />
       </div>
+      </ScopeContext.Provider>
       </MasterContext.Provider>
       </div>
       </div>

@@ -8,7 +8,7 @@ import { useContext, useEffect } from "preact/hooks";
 import type { PageBlock } from "../protocol.ts";
 import { parseDocument } from "../model/document.ts";
 import type { DocBlock, Span } from "../model/document.ts";
-import { MasterContext, topicFor } from "./context.ts";
+import { MasterContext, ScopeContext, topicFor } from "./context.ts";
 import { useLiveTopic } from "./components.tsx";
 import { chooseByHand, domId } from "./view-state.ts";
 import { signal } from "@preact/signals";
@@ -84,7 +84,7 @@ function Block({ b, space, page, doc, keys }: { b: DocBlock; space: string; page
 
 export function DocumentBlock({ space, block }: { space: string; block: PageBlock }) {
   const master = useContext(MasterContext);
-  const topic = topicFor(master, block.topic);
+  const topic = topicFor(master, block.topic, useContext(ScopeContext));
   const data = useLiveTopic(space, topic);
   const body = data?.kind === "state" ? data.body : undefined;
   const view = parseDocument(body);

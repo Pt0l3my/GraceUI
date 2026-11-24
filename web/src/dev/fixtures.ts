@@ -13,13 +13,17 @@ import graceuiTopics from "../../../fixtures/graceui/topics.json";
 import demoPages from "../../../fixtures/demo/pages.json";
 import demoSettings from "../../../fixtures/demo/settings.json";
 import demoTopics from "../../../fixtures/demo/topics.json";
+import demoPaged from "../../../fixtures/demo/paged.json";
 
 export function fixtureSpaces(): FixtureSpaceData[] {
   return [
     { pages: graceuiPages as unknown as SpacePages, settings: graceuiSettings as unknown as SettingsDescription,
       topics: graceuiTopics as unknown as { [topic: string]: Json } },
     { pages: demoPages as unknown as SpacePages, settings: demoSettings as unknown as SettingsDescription,
-      topics: demoTopics as unknown as { [topic: string]: Json }, inherited: FIXTURE_INHERITED.demo ?? [] },
+      // The demo's topics and the members its paged lightings name (D254), and the rows its page command answers.
+      topics: { ...(demoTopics as unknown as { [topic: string]: Json }),
+                ...(demoPaged.members as unknown as { [topic: string]: Json }) },
+      paged: demoPaged.commands as unknown as FixtureSpaceData["paged"], inherited: FIXTURE_INHERITED.demo ?? [] },
   ];
 }
 

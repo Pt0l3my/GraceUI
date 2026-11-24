@@ -497,6 +497,48 @@ ul, ol {
   color: var(--ink-hi);
 }
 
+/* The top bar's scope (D254): its label, then a select of its choices drawn as the control's own words. */
+.topbar__scope {
+  padding-right: var(--space-4);
+}
+
+.topbar__label {
+  color: var(--ink-mute);
+}
+
+.topbar__select {
+  height: 28px;
+  padding: 0 var(--space-4);
+  background: transparent;
+  border: 0;
+  color: var(--ink-hi);
+  font: inherit;
+}
+
+.topbar__select option {
+  background: var(--ground-2);
+  color: var(--ink-body);
+}
+
+/* A list read a page at a time (D254): "New rows · Show" at its top; Loading…, Show more and how many at its foot. */
+.paging {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  margin: var(--space-8) 0;
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+  color: var(--ink-mute);
+}
+
+.paging--top {
+  color: var(--ink-body);
+}
+
+.paging__total {
+  margin-left: auto;
+}
+
 /* The top bar's Quick switches (D252): a panel under its button, a row a switch, where it lives under its words. */
 .quick {
   position: relative;

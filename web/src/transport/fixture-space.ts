@@ -13,6 +13,8 @@ import { sameJson, triValues } from "../model/format.ts";
 import { countChars, countWords, fits, listItem, parseDocument } from "../model/editor.ts";
 import type { EditorField } from "../model/editor.ts";
 import type { Answer } from "./transport.ts";
+import { answerPage } from "../model/paging.ts";
+import type { PagedFixture } from "../model/paging.ts";
 import { PAGES_TOPIC, SETTINGS_TOPIC } from "./transport.ts";
 
 export interface FixtureSpaceData {
@@ -24,6 +26,8 @@ export interface FixtureSpaceData {
   inherited?: InheritedValue[];
   version?: string;
   increment?: string;
+  /** fixtures/<id>/paged.json: the rows a page command answers a page at a time (D254), by command. */
+  paged?: { [command: string]: PagedFixture };
 }
 
 /** What a command did: its answer, and the state frames the space publishes after it. */
@@ -261,6 +265,10 @@ export class FixtureSpace {
           };
         }
       }
+    }
+    const paged = this.data.paged?.[name];
+    if (paged !== undefined) {
+      return { answer: { ok: true, body: answerPage(paged, args) }, publish: [] };  // a page of its rows (D254)
     }
     const editor = this.editorFor(name);
     if (editor) {

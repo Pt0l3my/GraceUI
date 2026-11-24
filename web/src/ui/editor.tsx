@@ -14,7 +14,7 @@ import {
   cleared, countChars, countWords, dirty, docOf, draftOf, editorKey, listItem, listJson, messagesOf, oneParagraph,
   parseDocument, setValue, stateOf, update, valueOf,
 } from "../model/editor.ts";
-import { GreyedContext, MasterContext, topicFor, useSession } from "./context.ts";
+import { GreyedContext, MasterContext, ScopeContext, topicFor, useSession } from "./context.ts";
 import { useTopic } from "./components.tsx";
 import { ConfirmDialog } from "./modal.tsx";
 import type { Confirmable } from "./modal.tsx";
@@ -304,7 +304,7 @@ export function EditorBlockView({ space, block }: { space: string; block: PageBl
   const greyed = useContext(GreyedContext);
   const inert = greyed.words(greyed.page) !== null;
   const master = useContext(MasterContext);
-  const topic = topicFor(master, block.topic);
+  const topic = topicFor(master, block.topic, useContext(ScopeContext));
   const data = useTopic(space, topic);
   const [running, setRunning] = useState<ReadonlySet<Part>>(new Set());
   const [confirming, setConfirming] = useState<Confirmable | null>(null);

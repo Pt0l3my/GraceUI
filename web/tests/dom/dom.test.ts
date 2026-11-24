@@ -1091,6 +1091,86 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("a scoped page: the season in the top bar, a list read a page at a time, Show more, a read-only season (D254)", async () => {
+    const { page, close } = await fresh();
+    const pages = () => host.received.filter((f) => f.t === "cmd" && f.name === "lightings.page")
+      .map((f) => f.args as { [key: string]: unknown }).filter((a) => a.view === "list");
+    try {
+      await openFromRail(page, "records", "demo.lightings");
+      const scope = page.locator("select[data-scope]");
+      await scope.waitFor();
+      assert.equal(await page.locator(".topbar__scope .topbar__label").textContent(), "Season");
+      assert.deepEqual(await scope.locator("option").allTextContents(), ["This winter", "Last autumn"]);
+      assert.equal(await scope.inputValue(), "winter");  // the space's current
+      await page.locator(".master__row[aria-selected=true]").waitFor();
+      const rows = page.locator(".master__row");
+      assert.equal(await rows.count(), 25);
+      assert.equal(await page.locator(".master__row[aria-selected=true] .master__name").textContent(), "Night 60, at dusk");
+      assert.equal(await page.locator(".master .paging__total").textContent(), "40 in all");
+      assert.deepEqual(pages()[0], { view: "list", sort: { key: "at_ms", direction: "descending" }, scope: "winter" });
+      // The detail: the chosen lighting's member, and the season's (a family on a scoped page draws the scope's).
+      await page.locator("[data-section='lighting'] .kv__value", { hasText: "Night 60, at dusk" }).waitFor();
+      await page.locator("[data-section='season'] .kv__value", { hasText: "40" }).waitFor();
+      // Show more: the next page below, then no more.
+      await page.locator(".master [data-paging='more']").click();
+      await page.waitForFunction(() => document.querySelectorAll(".master__row").length === 40);
+      assert.equal(await page.locator(".master [data-paging='more']").count(), 0);
+      assert.equal(pages().at(-1)?.cursor, "o25");
+      // A filter goes to the space with the first page asked again: the North light's lightings alone.
+      assert.deepEqual(await page.locator(".master select[data-filter='lamp'] option").allTextContents(),
+                       ["All", "North light", "Harbour wall", "Store room"]);
+      await page.locator(".master select[data-filter='lamp']").selectOption("North light");
+      await page.waitForFunction(() => document.querySelectorAll(".master__row").length === 14);
+      assert.deepEqual(pages().at(-1)?.filters, { lamp: "North light" });
+      assert.equal(await page.locator(".master .filter-bar__count").count(), 0);  // the space filtered: no "of" line
+      await page.locator(".master select[data-filter='lamp']").selectOption("");
+      // Last autumn: its own lightings and season, and the page read only.
+      await scope.selectOption("autumn");
+      await page.locator("[data-greyed]").waitFor();
+      assert.equal(await page.locator("[data-greyed]").textContent(), "Last autumn is read only.");
+      await page.waitForFunction(() => document.querySelector(".master__row[aria-selected=true] .master__name")
+        ?.textContent === "Night 20, at dusk");
+      assert.equal(pages().at(-1)?.scope, "autumn");
+      await page.locator("[data-section='season'] .kv__value", { hasText: "20" }).waitFor();
+      assert.deepEqual(await violations(page), []);
+      // A page with no scope has no chooser.
+      await openFromRail(page, "records", "demo.lamps");
+      assert.equal(await page.locator("select[data-scope]").count(), 0);
+    } finally {
+      await close();
+    }
+  });
+
+  test("a table read a page at a time: its filter's choices from a topic, New rows past its first page (D254)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "records", "demo.log");
+      const history = page.locator("[data-section='history']");
+      await history.locator(".table tbody tr").first().waitFor();
+      assert.equal(await history.locator(".table tbody tr").count(), 25);
+      assert.equal(await history.locator(".paging__total").textContent(), "60 in all");
+      assert.deepEqual(await history.locator("select[data-filter='lamp'] option").allTextContents(),
+                       ["All", "North light", "Harbour wall", "Store room"]);
+      // New rows: showing only its first page, a change of its topic asks for it again; past it, it says so.
+      await history.locator("[data-paging='more']").click();
+      await page.waitForFunction(() => document.querySelectorAll("[data-section='history'] .table tbody tr").length === 50);
+      host.push("demo", "lantern.status", { sentence: "A lamp was lit.", hushed: false,
+                                            lamps: ["North light", "Harbour wall", "Store room"] });
+      await history.locator("[data-paging='fresh']").waitFor();
+      assert.equal(await history.locator(".table tbody tr").count(), 50);  // nothing moved until asked
+      await history.locator("[data-paging='fresh']").click();
+      await page.waitForFunction(() => document.querySelectorAll("[data-section='history'] .table tbody tr").length === 25);
+      // Its search goes to the space once the typing stops.
+      await history.locator(".filter-bar__search").fill("Ada");
+      await page.waitForFunction(() => [...document.querySelectorAll("[data-section='history'] .table tbody tr")]
+        .every((tr) => tr.textContent?.includes("Ada Marsh")));
+      const last = host.received.filter((f) => f.t === "cmd" && f.name === "lightings.page").at(-1);
+      assert.equal((last?.args as { search?: string } | undefined)?.search, "Ada");
+    } finally {
+      await close();
+    }
+  });
+
   test("a space's foot categories sit at the rail's foot, under its rule, above GraceUI's own (D248)", async () => {
     const { page, close } = await fresh();
     try {
