@@ -52,6 +52,8 @@ export interface FakeHost {
   uploads: { name: string; bytes: Buffer }[];
   /** The view welcome names from the next connection on (1.9): this PC's browser, or a paired device. */
   setView(view: "browser" | "device"): void;
+  /** A state topic's new body, as the space publishes it by itself, to every connection that watches it (D252). */
+  push(space: string, topic: string, body: JsonObject): void;
   close(): Promise<void>;
 }
 
@@ -134,6 +136,8 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
   const refuse = new Map<string, string>();
   const bodies = new Map<string, JsonObject>();
   const sockets = new Set<Socket>();
+  const watchers = new Set<{ subs: Map<number, { space: string; topic: string }>; send: (frame: object) => void }>();
+  let pushRev = 1000;
   let origin = "";
   let host = "";
   let view: "browser" | "device" = "browser";
@@ -241,6 +245,9 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
                  `Sec-WebSocket-Accept: ${accept}\r\n\r\n`);
     const send = (frame: object) => socket.write(encodeFrame(JSON.stringify(frame)));
     const subs = new Map<number, { space: string; topic: string }>();
+    const watcher = { subs, send };
+    watchers.add(watcher);
+    socket.on("close", () => watchers.delete(watcher));
     let welcomed = false;
     let pending = Buffer.alloc(0);
     const helloTimer = setTimeout(() => socket.end(), 2000);
@@ -336,6 +343,14 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
     origin, requests, received, spaces, refuse, bodies, uploads,
     setView: (v) => {
       view = v;
+    },
+    push: (space, topic, body) => {
+      pushRev += 1;
+      for (const w of watchers) {
+        if ([...w.subs.values()].some((sub) => sub.space === space && sub.topic === topic)) {
+          w.send({ v: 1, t: "state", space, topic, rev: pushRev, body });
+        }
+      }
     },
     close: () => new Promise<void>((resolve) => {
       for (const socket of sockets) {

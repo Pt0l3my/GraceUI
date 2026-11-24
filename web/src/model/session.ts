@@ -113,6 +113,8 @@ export class Session {
   readonly ended = signal<Ended | null>(null);
   readonly welcome = signal<Welcome | null>(null);
   readonly route = signal<Route | null>(null);
+  /** Counts the commands this view has sent: Live updates holds nothing for 3 s after one (D252). */
+  readonly sent = signal(0);
   readonly edits = signal<ReadonlyMap<string, Edit>>(new Map());
   readonly refusals = signal<ReadonlyMap<string, string>>(new Map());
   readonly focusRequest = signal<FocusRequest | null>(null);
@@ -528,6 +530,7 @@ export class Session {
       return;
     }
     const args: JsonObject = kind === "set" ? { key, value } : { scope: "key", target: key };
+    this.sent.value += 1;
     const answer = await transport.command(space, kind === "set" ? "settings.set" : "settings.reset", args);
     const edit = this.edit(space, key);
     if (!edit) {
@@ -566,6 +569,7 @@ export class Session {
     if (!this.transport) {
       return { ok: false, error: "not_now", local: "Not connected to the game." };
     }
+    this.sent.value += 1;
     return this.transport.command(space, name, args, this.slow(space, name));
   }
 
@@ -574,6 +578,7 @@ export class Session {
     if (!this.transport) {
       return { ok: false, error: "not_now", local: "Not connected to the game." };
     }
+    this.sent.value += 1;
     return this.transport.upload(space, name, args, file);
   }
 
@@ -588,6 +593,7 @@ export class Session {
       return { ok: false, error: "not_now", local: "Not connected to the game." };
     }
     // A destructive action's command carries its confirmation, given by its second press (§7.3, D173).
+    this.sent.value += 1;
     return this.transport.command(space, action.command, action.tone === "destructive" ? { confirm: true } : {},
                                   this.slow(space, action.command));
   }

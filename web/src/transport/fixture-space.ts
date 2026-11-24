@@ -266,6 +266,19 @@ export class FixtureSpace {
     if (editor) {
       return this.editorCommand(editor.block, editor.part, args);
     }
+    const quick = (this.data.pages.quick ?? []).find((q) => q.command === name && q.state !== undefined);
+    if (quick?.state) {
+      // A session switch (D252): the space publishes its state as asked, as the demo space does.
+      if (typeof args.on !== "boolean") {
+        return refuse("bad_message");
+      }
+      const fixture = this.docs.get(quick.state.topic) ?? this.data.topics?.[quick.state.topic];
+      const body = typeof fixture === "object" && fixture !== null && !Array.isArray(fixture) ? fixture : {};
+      const next: JsonObject = { ...body, [quick.state.field]: args.on };
+      this.docs.set(quick.state.topic, next);
+      this.rev += 1;
+      return { answer: { ok: true }, publish: [this.stateFrame(quick.state.topic, next)] };
+    }
     return { answer: { ok: true }, publish: [] };  // the space's own commands: accepted, with nothing to show here
   }
 

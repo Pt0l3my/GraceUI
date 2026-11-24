@@ -2,7 +2,7 @@
 // topbar.tsx: the top bar (DESIGN §4.2.3, §4.3): global search at the left; at the right the status lamp, only for a
 // space that publishes a `status` topic (otherwise nothing, invariant 2), and the theme switch, a shortcut of
 // ui.menu.theme. There is no Close in the browser.
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { Signal } from "@preact/signals";
 import { formatValue, nextValue } from "../model/format.ts";
 import { pageById } from "../model/layout.ts";
@@ -11,7 +11,10 @@ import type { SearchResult, SearchSpace } from "../model/search.ts";
 import type { TopicData } from "../model/session.ts";
 import { GRACEUI_SPACE } from "../model/session.ts";
 import { useSession } from "./context.ts";
-import { Cross, Palette, SearchGlass } from "./icons.tsx";
+import { Clock, Cross, Palette, Power, SearchGlass } from "./icons.tsx";
+import type { Json, QuickSwitch, SpacePages } from "../protocol.ts";
+import { useTopic } from "./components.tsx";
+import { LIVE_WORDS, heldNew, liveMode, nextLiveMode, setLiveMode } from "./live.ts";
 import { focusHeading, revealSetting } from "./navigate.ts";
 
 function Search() {
@@ -172,13 +175,166 @@ function ThemeSwitch() {
   );
 }
 
+/** Live updates (G45, D252), on a page that says it is live: a press steps Live, Every 5 s, Paused, as Enter does in
+ * game; while it holds, its words count what came meanwhile. */
+function LiveUpdates() {
+  const session = useSession();
+  const route = session.route.value;
+  const pages = route ? session.space(route.space)?.pages.value : undefined;
+  const page = route && pages ? pageById(pages, route.page) : undefined;
+  if (page?.live !== true) {
+    return null;
+  }
+  const mode = liveMode.value;
+  const count = heldNew.value;
+  const words = LIVE_WORDS[mode] + (mode !== "live" && count > 0 ? ` \u00B7 ${count} new` : "");
+  return (
+    <button type="button" class="topbar__control" data-live={mode}
+            aria-label={`Live updates: ${words}. Press for the next.`}
+            onClick={() => setLiveMode(nextLiveMode(mode))}>
+      <Clock />
+      <span class="topbar__value">Updates: {words}</span>
+    </button>
+  );
+}
+
+/** One quick switch's row: a setting's switch or choice as its row has it, or a session switch the space owns, which
+ * sends its command with {on} and shows the state the space publishes (invariant 1); where it lives, as a link. */
+function QuickRow({ space, q, pages, done }: { space: string; q: QuickSwitch; pages: SpacePages; done: () => void }) {
+  const session = useSession();
+  const state = useTopic(space, q.key === undefined ? q.state?.topic : undefined);
+  const id = `quick-${q.key ?? q.id ?? ""}`.replace(/[^a-z0-9_-]/gi, "-");
+  const s = q.key !== undefined ? session.setting(space, q.key) : undefined;
+  if (q.key !== undefined && (!s || (s.type !== "bool" && s.type !== "choice"))) {
+    return null;
+  }
+  const homeId = s ? s.home : q.home ?? "";
+  const home = pageById(pages, homeId);
+  const label = s ? s.label : q.label ?? "";
+  const lives = home && (
+    <button type="button" class="quick__home" onClick={() => {
+      if (session.open(space, home.id)) {
+        done();
+        focusHeading();
+      }
+    }}>
+      Lives in {home.name}
+    </button>
+  );
+  let control;
+  if (s && s.type === "choice") {
+    const shown = session.shown(space, s.key);
+    control = (
+      <select class="field quick__select" aria-labelledby={id} value={typeof shown === "string" ? shown : ""}
+              onChange={(e) => session.set(space, s.key, e.currentTarget.value)}>
+        {(s.choices ?? []).map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+      </select>
+    );
+  } else {
+    let on = false;
+    let known = true;
+    if (s) {
+      on = session.shown(space, s.key) === true;
+    } else {
+      const body = state?.kind === "state" ? state.body : undefined;
+      const value: Json | undefined = body && q.state ? body[q.state.field] : undefined;
+      known = typeof value === "boolean";
+      on = value === true;
+    }
+    control = (
+      <span class="switch-wrap">
+        {!known && <span class="switch__word">Not known yet</span>}
+        <button type="button" role="switch" class="switch" aria-checked={on} aria-labelledby={id}
+                aria-disabled={known ? undefined : "true"}
+                onClick={() => {
+                  if (s) {
+                    session.set(space, s.key, !on);
+                  } else if (known && q.command !== undefined) {
+                    void session.command(space, q.command, { on: !on });  // the space's next state shows it
+                  }
+                }}>
+          <span class="switch__knob" />
+        </button>
+      </span>
+    );
+  }
+  return (
+    <li class="quick__row">
+      <span class="quick__words">
+        <span class="quick__label" id={id}>{label}</span>
+        {lives}
+      </span>
+      {control}
+    </li>
+  );
+}
+
+/** Quick switches (G45, D252), where the space in view has some: a panel under its button. Esc, the button again or a
+ * press outside closes it, focus going back to the button. */
+function QuickSwitches() {
+  const session = useSession();
+  const space = session.railSpace.value;
+  const pages = space ? session.space(space)?.pages.value : undefined;
+  const quick = pages?.quick ?? [];
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    panel.current?.querySelector<HTMLElement>("button, select")?.focus();
+    const away = (e: MouseEvent) => {
+      const at = e.target as Node | null;
+      if (!panel.current?.contains(at) && !button.current?.contains(at)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  if (!space || !pages || quick.length === 0) {
+    return null;
+  }
+  const close = () => {
+    setOpen(false);
+    button.current?.focus();
+  };
+  return (
+    <div class="quick">
+      <button ref={button} type="button" class="topbar__control" aria-expanded={open} aria-controls="quick-switches"
+              onClick={() => setOpen(!open)}>
+        <Power />
+        <span class="topbar__value">Quick switches</span>
+      </button>
+      {open && (
+        <div ref={panel} id="quick-switches" class="quick__panel" role="dialog" aria-label="Quick switches"
+             onKeyDown={(e) => {
+               if (e.key === "Escape") {
+                 e.preventDefault();
+                 e.stopPropagation();
+                 close();
+               }
+             }}>
+          <ul class="quick__list">
+            {quick.map((q) => <QuickRow key={q.key ?? q.id ?? ""} space={space} q={q} pages={pages}
+                                        done={() => setOpen(false)} />)}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TopBar() {
   return (
     <header class="topbar">
       <Search />
       <div class="topbar__right">
         <Lamp />
+        <LiveUpdates />
         <ThemeSwitch />
+        <QuickSwitches />
       </div>
     </header>
   );

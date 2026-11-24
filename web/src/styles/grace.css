@@ -497,6 +497,75 @@ ul, ol {
   color: var(--ink-hi);
 }
 
+/* The top bar's Quick switches (D252): a panel under its button, a row a switch, where it lives under its words. */
+.quick {
+  position: relative;
+}
+
+.topbar__control[aria-expanded="true"] {
+  background: var(--tint-select);
+  color: var(--gold-hi);
+}
+
+.quick__panel {
+  position: absolute;
+  top: calc(100% + var(--space-4));
+  right: 0;
+  z-index: 5;
+  width: 440px;
+  max-width: 90vw;
+  padding: var(--space-4) 0;
+  background: var(--ground-2);
+  border: var(--size-edge-width) solid var(--rule-strong);
+  border-radius: var(--radius-card);
+  box-shadow: 0 8px 24px var(--shadow);
+  animation: grace-fade var(--dur-reveal) ease-out;
+}
+
+.quick__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quick__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-8) var(--space-16);
+}
+
+.quick__words {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.quick__label {
+  color: var(--ink-hi);
+}
+
+.quick__home {
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+  color: var(--ink-mute);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.quick__home:hover {
+  color: var(--ink-hi);
+}
+
+.quick__select {
+  max-width: 50%;
+}
+
 .lamp__dot {
   width: 8px;
   height: 8px;

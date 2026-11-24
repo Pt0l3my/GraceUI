@@ -15,6 +15,7 @@ import { Warning } from "./icons.tsx";
 import { CaptureDialog } from "./capture.tsx";
 import { ConfirmDialog } from "./modal.tsx";
 import { FilterBar, useFilterBar } from "./filter-bar.tsx";
+import { LivePage, countHeld, holdsNow, liveMode, released } from "./live.ts";
 
 function text(value: Json | undefined): string | null {
   return typeof value === "string" ? value : typeof value === "number" ? String(value) : null;
@@ -51,6 +52,28 @@ export function useTopic(space: string, topic: string | undefined): TopicData | 
   }, [space, topic]);
   // Only the topic asked for: never the last one's body for a render after it changes (a master's new row, D215).
   return watched !== null && watched.id === `${space}\u0000${topic ?? ""}` ? watched.data.value : undefined;
+}
+
+/** A topic's data as a live page draws it (D252): held while Live updates holds, the newest otherwise. A topic's first
+ * body is always drawn; `live`, if given, says whether the page is live where no LivePage context reaches. */
+export function useLiveTopic(space: string, topic: string | undefined, live?: boolean): TopicData | undefined {
+  const data = useTopic(space, topic);
+  const onLivePage = useContext(LivePage);
+  const tick = released.value;
+  void liveMode.value;  // drawn again when the mode changes
+  const key = `${space}\u0000${topic ?? ""}`;
+  const shown = useRef<{ data: TopicData | undefined; tick: number; key: string }>({ data: undefined, tick: -1, key: "" });
+  const holding = (live ?? onLivePage) && holdsNow() && data !== undefined && shown.current.data !== undefined &&
+    shown.current.key === key && shown.current.tick === tick;
+  if (!holding) {
+    shown.current = { data, tick, key };
+  }
+  useEffect(() => {
+    if (holding && data !== undefined && data !== shown.current.data) {
+      countHeld(key, data);
+    }
+  });
+  return shown.current.data;
 }
 
 function StatTiles({ body, empty }: { body: JsonObject; empty: JSX.Element }) {
@@ -461,7 +484,7 @@ export function ComponentBlock({ space, block }: { space: string; block: PageBlo
   // A block bound to the page's master family draws the chosen row's member (D215).
   const master = useContext(MasterContext);
   const topic = topicFor(master, block.topic);  // since D217, any family the page's blocks name
-  const data = useTopic(space, block.component === "statement" ? undefined : topic);
+  const data = useLiveTopic(space, block.component === "statement" ? undefined : topic);
   const props = block.props ?? {};
   // D185: one topic feeding several blocks, each drawing the member its props.field names.
   const field = typeof props.field === "string" ? props.field : undefined;
