@@ -11,7 +11,7 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 16 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 17 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
@@ -31,6 +31,8 @@ protocol = { major = 1, minor = 16 }  # 1.1 (D172): result.detail; a stream clea
                                      # a page at a time; a filter's own choices (D254)
                                      # 1.15: a header action that is a switch on a state topic's boolean (D256)
                                      # 1.16: a filter bar on a stream, a live feed or a log tail (D257)
+                                     # 1.17: a page in the browser alone, shown with a setting, gated, with a ribbon
+                                     # (D258)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -392,6 +394,17 @@ fields = [
   { name = "master", type = "type.page_master", optional = true },  # 1.5 (D215)
   { name = "live", type = "bool", optional = true },  # 1.13 (D252): its topics move by themselves; Live updates holds them
   { name = "scoped", type = "bool", optional = true },  # 1.14 (D254): it follows the space's scope (EldenNet's Journey)
+  { name = "browser_only", type = "bool", optional = true },  # 1.17 (D258): absent in game (D5's Workshop)
+  { name = "shown_with", type = "id", optional = true },  # 1.17 (D258): present only while this switch setting is on
+  { name = "gate", type = "type.page_gate", optional = true },  # 1.17 (D258): asked once a session before it opens
+  { name = "ribbon", type = "string", max = 32, optional = true },  # 1.17 (D258): a band at its top while it is open
+]
+
+[types.page_gate]
+doc = "A page's gate (1.17, D258): the space's words, asked once a session before the page opens, and its confirm button's label; going back leaves it shut"
+fields = [
+  { name = "words", type = "string", max = 256 },
+  { name = "confirm", type = "string", max = 32 },
 ]
 
 [types.category]

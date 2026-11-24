@@ -81,7 +81,8 @@ async function lowContrast(page: PwPage): Promise<string[]> {
 }
 
 function allPages(): { space: string; category: string; page: string; name: string; tabs: number }[] {
-  return builtinSpaces().flatMap((s) => s.pages.pages.map((p) => ({
+  // Every page in game too: a browser-only one (D258) has no line in grace-view's golden, and opens behind its gate.
+  return builtinSpaces().flatMap((s) => s.pages.pages.filter((p) => p.browser_only !== true).map((p) => ({
     space: s.pages.space, category: p.category, page: p.id, name: p.name, tabs: p.tabs?.length ?? 0,
   })));
 }
@@ -1232,6 +1233,32 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("a gated page: its words once a session before anything shows, its ribbon, and present only with its setting (D258)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "records", "demo.workbench");
+      await page.locator("[data-gate='open']").waitFor();
+      assert.match((await page.locator(".gate").textContent()) ?? "", /raw readings, unworded/);
+      assert.equal(await page.locator(".tiles, .kv, [data-ribbon]").count(), 0);  // nothing of it until opened
+      assert.equal(host.received.filter((f) => f.t === "sub" && f.topic === "lantern.status").length > 0, true);  // (the lamp's)
+      await page.locator("[data-gate='open']").click();
+      await page.locator("[data-ribbon]").waitFor();
+      assert.equal(await page.locator("[data-ribbon]").textContent(), "Raw readings");
+      await page.locator(".kv__value", { hasText: "412 °C" }).waitFor();
+      // Once a session: away and back, no gate.
+      await openFromRail(page, "records", "demo.log");
+      await openFromRail(page, "records", "demo.workbench");
+      assert.equal(await page.locator("[data-gate]").count(), 0);
+      assert.deepEqual(await violations(page), []);
+      // Its setting off: the page goes from the rail, and the view leaves it.
+      await openFromRail(page, "lanterns", "demo.behaviour");
+      await page.locator("[data-row='setting:lantern.enabled'] [role=switch]").click();
+      await page.waitForFunction(() => document.querySelector("[data-rail='page:demo.workbench']") === null);
+    } finally {
+      await close();
+    }
+  });
+
   test("a space's foot categories sit at the rail's foot, under its rule, above GraceUI's own (D248)", async () => {
     const { page, close } = await fresh();
     try {
@@ -1261,7 +1288,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.equal(await page.locator(".mark").count(), 3);
       await page.locator("[data-rail='category:records']").click();
       await page.locator(".flyout").waitFor();
-      assert.equal(await page.locator(".flyout .flyout__page").count(), 5);  // Log, Festival, Lamps, Lightings, Handbook
+      assert.equal(await page.locator(".flyout .flyout__page").count(), 6);  // Log, Festival, Lamps, Lightings, Handbook, Workbench
       await page.waitForFunction(() => document.activeElement?.classList.contains("flyout__page") === true);
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => document.querySelector(".flyout") === null);

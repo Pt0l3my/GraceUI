@@ -133,3 +133,11 @@ export function chooseScope(space: string, id: string): void {
   next.set(space, id);
   scopes.value = next;
 }
+
+/** The gated pages opened this session (D258), by "space/page": asked once a session, never stored. */
+export const gatesOpened = signal<ReadonlySet<string>>(new Set());
+
+export function openGate(space: string, page: string): void {
+  gatesOpened.value = new Set([...gatesOpened.value, `${space}/${page}`]);
+}
+

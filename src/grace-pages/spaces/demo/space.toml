@@ -100,7 +100,7 @@ pages = ["demo.overview", "demo.behaviour", "demo.keepers"]
 [[category]]
 id = "records"
 name = "Records"
-pages = ["demo.log", "demo.festival", "demo.lamps", "demo.lightings", "demo.handbook"]
+pages = ["demo.log", "demo.festival", "demo.lamps", "demo.lightings", "demo.handbook", "demo.workbench"]
 foot = true  # at the rail's foot, under a rule (D248)
 
 # ---- Settings: one of every type (§6.9).
@@ -473,4 +473,23 @@ master = { topic = "lantern.guides", key = "id", detail = "lantern.guide", label
 id = "guide"
 title = "Guide"
 blocks = [{ kind = "document", topic = "lantern.guide" }]
+
+[[page]]
+id = "demo.workbench"
+category = "records"
+name = "Workbench"
+description = "The lantern's raw readings, for those who mend it."
+increment = "0.2"
+related = ["demo.overview", "demo.log"]
+help.purpose = "See the lantern's readings as its instruments give them, before the menu words them."
+help.steps = ["Turn the lantern on in Behaviour to find this page.", "Confirm once a session that you want the raw readings.", "Read them here; nothing on this page changes the lantern."]
+browser_only = true  # in the browser alone (D258), as EldenNet's Workshop
+shown_with = "lantern.enabled"  # present only while the lantern is enabled
+gate = { words = "The workbench shows the lantern's raw readings, unworded. Open it for this session?", confirm = "Open the workbench" }
+ribbon = "Raw readings"
+
+[[page.sections]]
+id = "readings"
+title = "Readings"
+blocks = [{ kind = "component", component = "stat_tiles", topic = "lantern.status" }, { kind = "component", component = "key_value_list", topic = "lantern.status", props = { field = "raw" } }]
 

@@ -1619,3 +1619,18 @@ Found by a review of 0.2.47's code; nothing changes on your side, and the protoc
    ["line"], label = "Find in the log" } }` on Logs' `log_tail`, with a `level` field on each row (`error`, `warning`,
    `info`, `debug`, `trace`); no sort (the rows come in time's order). Both views filter what they hold. Page data with
    it is minor 16.
+
+## 84. Workshop's gate: a page in the browser alone, shown with a setting, gated, with a ribbon (2026-11-24, D258; GraceUI 0.2.51, protocol 1.17)
+
+For Tools › Workshop (PAGES §4.6.8, SP8), four fields on its page:
+
+```toml
+browser_only = true                 # absent in game: rail, search, Related
+shown_with = "debug.panel"          # present in both views only while the switch is on
+gate = { words = "Workshop shows unfiltered data and contains spoilers. Open it for this session?", confirm = "Open Workshop" }
+ribbon = "Spoilers"                 # a band at the page's top while it is open
+```
+
+The gate stands in for the page once a browser session, and nothing of the page is drawn or watched until it is
+confirmed. No setting and no quick switch may have a browser-only page as its home. Page data with these fields is
+minor 17. The words above are only an example: they are yours to write.

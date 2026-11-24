@@ -26,7 +26,8 @@ import { UploadBlock } from "./upload.tsx";
 import { FilterBar, useFilterBar } from "./filter-bar.tsx";
 import type { Paged } from "./paged.tsx";
 import { PagingFoot, PagingTop, pagedWords, useOwnChoices, usePaged, useScope } from "./paged.tsx";
-import { filters } from "./view-state.ts";
+import { filters, gatesOpened, openGate } from "./view-state.ts";
+import { railOrder } from "../model/layout.ts";
 import { FRESH } from "../model/filter.ts";
 import { DocumentBlock } from "./document.tsx";
 import { dropDrafts } from "../model/editor.ts";
@@ -443,6 +444,36 @@ export function PageView() {
   if (!route || !page) {
     return null;
   }
+  if (page.gate !== undefined && !gatesOpened.value.has(`${route.space}/${page.id}`)) {
+    // Its gate (D258): the space's words, once a session, before anything of the page is drawn or watched.
+    const back = pages ? railOrder(pages).find((p) => p.id !== page.id) : undefined;
+    return (
+      <main class="page page--gate" id="page" data-page={page.id} data-space={route.space} aria-labelledby="page-title">
+        <header class="page__head">
+          <h1 id="page-title" class="page__title" tabIndex={-1}>{page.name}</h1>
+        </header>
+        <div class="card gate" role="alertdialog" aria-labelledby="page-title" aria-describedby="gate-words">
+          <p id="gate-words" class="prose">{page.gate.words}</p>
+          <div class="gate__actions">
+            <button type="button" class="button button--primary" data-gate="open"
+                    onClick={() => openGate(route.space, page.id)}>
+              {page.gate.confirm}
+            </button>
+            {back && (
+              <button type="button" class="button button--secondary" data-gate="back"
+                      onClick={() => {
+                        if (session.open(route.space, back.id)) {
+                          focusHeading();
+                        }
+                      }}>
+                Go back
+              </button>
+            )}
+          </div>
+        </div>
+      </main>
+    );
+  }
   const stateBody = stateData?.kind === "state" ? stateData.body : undefined;
   // An earlier scope the space marks read only greys the page as the space's own words would (D188, D254).
   const readOnly = scoped && scope.choice?.readOnly === true ? `${scope.choice.label} is read only.` : null;
@@ -468,6 +499,7 @@ export function PageView() {
     <main class={pageWords !== null ? "page page--greyed" : "page"} id="page" data-page={page.id} data-space={space}
           aria-labelledby="page-title">
       <header class="page__head">
+        {page.ribbon !== undefined && <p class="page__ribbon" role="note" data-ribbon="">{page.ribbon}</p>}
         <div class="page__line">
           <h1 id="page-title" class="page__title" tabIndex={-1}>{page.name}</h1>
           <TagMark tag={page.tag} />

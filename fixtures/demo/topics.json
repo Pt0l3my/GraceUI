@@ -363,7 +363,23 @@
       "North light",
       "Harbour wall",
       "Store room"
-    ]
+    ],
+    "raw": {
+      "items": [
+        {
+          "label": "Wick temperature",
+          "value": "412 °C"
+        },
+        {
+          "label": "Oil level",
+          "value": "0.62"
+        },
+        {
+          "label": "Draught",
+          "value": "0.8 m/s"
+        }
+      ]
+    }
   },
   "lantern.log": [
     {

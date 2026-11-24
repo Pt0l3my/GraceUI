@@ -1990,6 +1990,36 @@ Json encode(const PageMaster& in) {
   return out;
 }
 
+bool decode(const Json& in, PageGate& out, const std::string& path, DecodeError& e) {
+  if (!in.is_object()) {
+    return fail(e, path, "not an object");
+  }
+  if (const Json* v = field(in, "words", true, path, e)) {
+    const std::string p = path.empty() ? std::string("words") : path + ".words";
+    if (!read_string(*v, 256, out.words, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "confirm", true, path, e)) {
+    const std::string p = path.empty() ? std::string("confirm") : path + ".confirm";
+    if (!read_string(*v, 32, out.confirm, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  return true;
+}
+
+Json encode(const PageGate& in) {
+  Json out = Json::object();
+  out["words"] = Json(in.words);
+  out["confirm"] = Json(in.confirm);
+  return out;
+}
+
 bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e) {
   if (!in.is_object()) {
     return fail(e, path, "not an object");
@@ -2114,6 +2144,42 @@ bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e) 
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "browser_only", false, path, e)) {
+    const std::string p = path.empty() ? std::string("browser_only") : path + ".browser_only";
+    out.browser_only.emplace();
+    if (!read_bool(*v, *out.browser_only, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "shown_with", false, path, e)) {
+    const std::string p = path.empty() ? std::string("shown_with") : path + ".shown_with";
+    out.shown_with.emplace();
+    if (!read_id(*v, *out.shown_with, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "gate", false, path, e)) {
+    const std::string p = path.empty() ? std::string("gate") : path + ".gate";
+    out.gate.emplace();
+    if (!decode(*v, *out.gate, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "ribbon", false, path, e)) {
+    const std::string p = path.empty() ? std::string("ribbon") : path + ".ribbon";
+    out.ribbon.emplace();
+    if (!read_string(*v, 32, *out.ribbon, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -2148,6 +2214,18 @@ Json encode(const Page& in) {
   }
   if (in.scoped) {
     out["scoped"] = Json(*in.scoped);
+  }
+  if (in.browser_only) {
+    out["browser_only"] = Json(*in.browser_only);
+  }
+  if (in.shown_with) {
+    out["shown_with"] = Json(*in.shown_with);
+  }
+  if (in.gate) {
+    out["gate"] = encode(*in.gate);
+  }
+  if (in.ribbon) {
+    out["ribbon"] = Json(*in.ribbon);
   }
   return out;
 }

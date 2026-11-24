@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 16;
-inline constexpr std::string_view kProtocolVersion = "1.16";
+inline constexpr std::uint32_t kProtocolMinor = 17;
+inline constexpr std::string_view kProtocolVersion = "1.17";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -516,6 +516,15 @@ struct PageMaster {
 bool decode(const Json& in, PageMaster& out, const std::string& path, DecodeError& e);
 Json encode(const PageMaster& in);
 
+// A page's gate (1.17, D258): the space's words, asked once a session before the page opens, and its confirm button's label; going back leaves it shut.
+struct PageGate {
+  std::string words{};
+  std::string confirm{};
+  bool operator==(const PageGate&) const = default;
+};
+bool decode(const Json& in, PageGate& out, const std::string& path, DecodeError& e);
+Json encode(const PageGate& in);
+
 // A page: its place, its header, its help, its Related links, and its tabs or its sections; a master list, its tabs and sections then its detail (1.5).
 struct Page {
   std::string id{};
@@ -532,6 +541,10 @@ struct Page {
   std::optional<PageMaster> master{};
   std::optional<bool> live{};
   std::optional<bool> scoped{};
+  std::optional<bool> browser_only{};
+  std::optional<std::string> shown_with{};
+  std::optional<PageGate> gate{};
+  std::optional<std::string> ribbon{};
   bool operator==(const Page&) const = default;
 };
 bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e);

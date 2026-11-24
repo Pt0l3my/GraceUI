@@ -336,6 +336,29 @@ class Seeded(unittest.TestCase):
         page(sp, "demo.behaviour")["live"] = True  # settings rows alone: nothing moves by itself
         self.expect("demo.behaviour: a live page draws a topic of the space's", sp, desc, fx)
 
+    def test_a_gated_page(self):  # D258
+        def bench(sp):
+            return page(sp, "demo.workbench")
+        for key in ("lantern.colour", "lantern.nowhere"):
+            sp, desc, fx = demo()
+            bench(sp)["shown_with"] = key
+            self.expect("it is shown with a switch of the space's settings (D258)", sp, desc, fx)
+        sp, desc, fx = demo()
+        del bench(sp)["browser_only"]
+        self.expect("a gate is a browser-only page's (D258)", sp, desc, fx)
+        sp, desc, fx = demo()
+        bench(sp)["gate"]["confirm"] = ""
+        self.expect("its gate has its words (1 to 256 characters) and a confirm label (1 to 32)", sp, desc, fx)
+        sp, desc, fx = demo()
+        bench(sp)["ribbon"] = ""
+        self.expect("its ribbon is 1 to 32 characters", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.behaviour")["browser_only"] = True
+        self.expect("a browser-only page is no setting's home", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["quick"][2]["home"] = "demo.workbench"
+        self.expect("its home is a page in game too, not a browser-only one (D258)", sp, desc, fx)
+
     def test_a_header_switch(self):  # D256
         def hush(sp):
             return next(a for a in page(sp, "demo.overview")["actions"] if a["id"] == "hush")
