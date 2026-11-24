@@ -605,6 +605,27 @@ void test_fill_input(GraceUiTestInput& out) noexcept {
   out.masked_keyboard_free = counters::masked_after[counters::dinput_keyboard].load(std::memory_order_relaxed);
   out.masked_mouse_free = counters::masked_after[counters::dinput_mouse].load(std::memory_order_relaxed);
   out.masked_pad_free = counters::masked_after[counters::xinput].load(std::memory_order_relaxed);
+  // D238: the window's place now, read from the system (its thread's focus and activation), and the counts.
+  const HWND window = input::window();
+  if (window != nullptr) {
+    out.foreground = GetForegroundWindow() == window ? 1u : 0u;
+    GUITHREADINFO gui{};
+    gui.cbSize = sizeof gui;
+    if (GetGUIThreadInfo(GetWindowThreadProcessId(window, nullptr), &gui)) {
+      out.has_focus = gui.hwndFocus != nullptr && (gui.hwndFocus == window || IsChild(window, gui.hwndFocus)) ? 1u : 0u;
+      out.active = gui.hwndActive == window ? 1u : 0u;
+    }
+  }
+  const auto focus = [](counters::Focus kind) { return counters::focus_events[kind].load(std::memory_order_relaxed); };
+  out.focus_gained = focus(counters::focus_gained);
+  out.focus_lost = focus(counters::focus_lost);
+  out.app_active = focus(counters::app_active);
+  out.app_inactive = focus(counters::app_inactive);
+  const auto downs = [](counters::FreeDown kind) { return counters::free_downs[kind].load(std::memory_order_relaxed); };
+  out.free_dinput_keys = downs(counters::dinput_key);
+  out.free_dinput_buttons = downs(counters::dinput_button);
+  out.free_window_keys = downs(counters::window_key);
+  out.free_window_buttons = downs(counters::window_button);
 }
 
 std::uint32_t test_copy_chars(std::uint32_t* out, std::uint32_t capacity) noexcept {

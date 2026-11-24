@@ -503,6 +503,31 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
   }
 }
 
+#if defined(GRACEUI_TEST_EXPORTS)
+// D238: the window's focus messages, and with no holder the presses that reach the game.
+void count_window(UINT message, WPARAM wparam, LPARAM lparam, const Outcome& outcome) noexcept {
+  switch (message) {
+    case WM_SETFOCUS: counters::count_focus(counters::focus_gained); return;
+    case WM_KILLFOCUS: counters::count_focus(counters::focus_lost); return;
+    case WM_ACTIVATEAPP: counters::count_focus(wparam != FALSE ? counters::app_active : counters::app_inactive); return;
+    default: break;
+  }
+  if (outcome.route != Route::game || input::capture().holder().holds()) {
+    return;
+  }
+  if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) && (lparam & (LPARAM{1} << 30)) == 0) {
+    counters::count_free_down(counters::window_key);
+  } else if (message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN || message == WM_MBUTTONDOWN ||
+             message == WM_XBUTTONDOWN) {
+    counters::count_free_down(counters::window_button);
+  }
+}
+
+// D238: what a thread's previous DirectInput read gave the game, to count the downs that follow.
+constinit thread_local std::uint8_t t_keys_given[256] = {};
+constinit thread_local std::uint8_t t_buttons_given[8] = {};
+#endif
+
 template <bool kUnicode, int kSlot>
 LRESULT CALLBACK window_filter(HWND window, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
   Outcome outcome;
@@ -518,6 +543,7 @@ LRESULT CALLBACK window_filter(HWND window, UINT message, WPARAM wparam, LPARAM 
         if (outcome.route == Route::game && outcome.passed >= 0 && input::capture().holder().takes(outcome.device)) {
           counters::count_passed(static_cast<counters::Passed>(outcome.passed));
         }
+        count_window(message, wparam, lparam, outcome);
 #endif
         input::tick();
       } catch (...) {
@@ -571,6 +597,16 @@ void filter_device_state(IDirectInputDevice8W* device, DWORD size, void* data) n
         if (std::memcmp(before, keys, sizeof before) != 0) {
           counters::count_masked(counters::dinput_keyboard, input::capture().holder().holds());
         }
+        if (!input::capture().holder().holds()) {
+          std::uint32_t downs = 0;
+          for (unsigned k = 0; k < 256; ++k) {
+            downs += (keys[k] & 0x80u) != 0 && (t_keys_given[k] & 0x80u) == 0 ? 1u : 0u;
+          }
+          if (downs != 0) {
+            counters::count_free_down(counters::dinput_key, downs);
+          }
+        }
+        std::memcpy(t_keys_given, keys, sizeof t_keys_given);
 #endif
       } else if (type == DI8DEVTYPE_MOUSE && (size == sizeof(DIMOUSESTATE) || size == sizeof(DIMOUSESTATE2))) {
         DIMOUSESTATE2 mouse{};
@@ -594,6 +630,18 @@ void filter_device_state(IDirectInputDevice8W* device, DWORD size, void* data) n
         }
         if (changed) {
           counters::count_masked(counters::dinput_mouse, input::capture().holder().holds());
+        }
+        if (!input::capture().holder().holds()) {
+          std::uint32_t downs = 0;
+          for (unsigned i = 0; i < 8; ++i) {
+            downs += (view.buttons[i] & 0x80u) != 0 && (t_buttons_given[i] & 0x80u) == 0 ? 1u : 0u;
+          }
+          if (downs != 0) {
+            counters::count_free_down(counters::dinput_button, downs);
+          }
+        }
+        for (unsigned i = 0; i < 8; ++i) {
+          t_buttons_given[i] = view.buttons[i];
         }
 #endif
         mouse.lX = view.x;

@@ -107,3 +107,10 @@ own `graceui.pdb` (`llvm-symbolizer --obj=graceui.dll --relative-address 0x5161`
 A quit's crash with no `heap_guard` line means no block of GraceUI's own was found damaged. The guard slows GraceUI's
 warm-up a little (each block costs a few times malloc's time); `GRACEUI_TEST_HEAP_GUARD=off` in the run's environment
 turns it off.
+
+Since GraceUI 0.2.34 (D238) each state line also carries `window_focus`: whether the game's window is the foreground
+window, its thread's active window and the keyboard's focus at that moment, then its focus messages so far (gained,
+lost, the game activated, deactivated); and `free_downs`: the presses that reached the game while no one held input,
+as DirectInput read them (keys, buttons) and as window messages (keys, buttons). `report.py` lists the state lines on
+which the window was not in front or had no focus, and the counts. If a press did not register, note roughly when: a
+state line near it says whether the window was in front and whether the game read the press.

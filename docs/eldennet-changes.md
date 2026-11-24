@@ -1360,3 +1360,11 @@ From the three things the owner saw by hand in spikes.5 (your message of 2026-11
   decided (GraceUI's G42) that in game it shows only once a key or the pad is used and goes with the mouse, as in
   the browser view (D237). Your space's pages in GraceUI's menu follow it; nothing for EldenNet to change.
 
+## 67. The window's focus and the presses that reach the game, in the spike report (2026-11-24, D238; GraceUI 0.2.34)
+
+For A1's missed presses (your spikes.6 report): nothing in EldenNet changes. The test build's state lines gain
+`window_focus` (foreground, active, focused; focus gained, lost; the game activated, deactivated) and `free_downs` (the
+presses that reached the game with no holder: DirectInput keys and buttons, window keys and buttons), and `report.py`
+lists them. If the launcher's run notes ask the owner what happened, asking roughly when a press did not register lets a
+state line place it.
+

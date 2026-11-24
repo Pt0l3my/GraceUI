@@ -199,7 +199,20 @@ typedef struct GraceUiTestInput {
   uint32_t masked_keyboard_free;
   uint32_t masked_mouse_free;
   uint32_t masked_pad_free;
-  uint32_t reserved2;
+  /* Appended for the owner's missed presses (D238). The game's window as the system has it when this is read: */
+  uint32_t foreground;          /* 1 if it is the foreground window */
+  uint32_t active;              /* 1 if it is its thread's active window */
+  uint32_t has_focus;           /* 1 if the keyboard's focus is on it, or on a child of it */
+  /* Its focus messages so far: */
+  uint32_t focus_gained;        /* WM_SETFOCUS */
+  uint32_t focus_lost;          /* WM_KILLFOCUS */
+  uint32_t app_active;          /* WM_ACTIVATEAPP, activated (another program's window had been active) */
+  uint32_t app_inactive;        /* WM_ACTIVATEAPP, deactivated */
+  /* Presses that reached the game while no one held input: */
+  uint32_t free_dinput_keys;    /* a key down in a DirectInput read that was up in the same thread's previous one */
+  uint32_t free_dinput_buttons; /* a mouse button likewise */
+  uint32_t free_window_keys;    /* WM_KEYDOWN and WM_SYSKEYDOWN, repeats left out */
+  uint32_t free_window_buttons; /* WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN and WM_XBUTTONDOWN */
 } GraceUiTestInput;
 
 /* request_input (D77): fills *out; answers 1, or 0 if `out` is null. */

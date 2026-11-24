@@ -1855,11 +1855,14 @@ void run_input(const std::wstring& dll) {
   settle();
   reads.keys();
   reads.mouse();
+  const GraceUiTestInput before_again = grace.input();  // D238: what reaches the game with no holder, counted
   inject_key('A', kScanA, true);
   inject_mouse(0, 0, MOUSEEVENTF_LEFTDOWN);
   settle();
   keys = reads.keys();
   const DIMOUSESTATE2 pressed_again = reads.mouse();
+  frames(game, 1);
+  const GraceUiTestInput after_again = grace.input();
   const bool games_again = (keys[DIK_A] & 0x80) != 0 && pressed_again.rgbButtons[0] == 0x80;
   inject_key('A', kScanA, false);
   inject_mouse(0, 0, MOUSEEVENTF_LEFTUP);
@@ -1873,6 +1876,19 @@ void run_input(const std::wstring& dll) {
         "after the close, DirectInput reads masked until the press was released: %u of the keyboard, %u of the mouse",
         input.masked_keyboard_free - before_close.masked_keyboard_free,
         input.masked_mouse_free - before_close.masked_mouse_free);
+  check(after_again.free_dinput_keys > before_again.free_dinput_keys &&
+            after_again.free_dinput_buttons > before_again.free_dinput_buttons &&
+            after_again.free_window_keys > before_again.free_window_keys &&
+            after_again.free_window_buttons > before_again.free_window_buttons && after_again.foreground == 1 &&
+            after_again.has_focus == 1,
+        "spike counters: presses with no holder (D238)",
+        "A and the left button pressed with no holder: DirectInput %u key(s) and %u button(s) down, window messages %u "
+        "key(s) and %u button(s); the window %s, %s",
+        after_again.free_dinput_keys - before_again.free_dinput_keys,
+        after_again.free_dinput_buttons - before_again.free_dinput_buttons,
+        after_again.free_window_keys - before_again.free_window_keys,
+        after_again.free_window_buttons - before_again.free_window_buttons,
+        after_again.foreground == 1 ? "in front" : "NOT IN FRONT", after_again.has_focus == 1 ? "focused" : "NOT FOCUSED");
   check(closed && masked && still_masked && games_again && g_seen.key_down['A'] == 1 && g_seen.key_up['A'] == 1 &&
             input.last_close_reason == GRACEUI_TEST_CLOSED_RELEASED && input.holder_owner == 0,
         "closing press",
@@ -6909,6 +6925,7 @@ void run_menu_away(const std::wstring& dll) {
     pump_messages();
     frames(game, 3);
   };
+  const GraceUiTestInput before_away = grace.input();
   HWND other = take_focus();
   const GraceUiTestMenu away = grace.menu();
   const GraceUiTestInput away_input = grace.input();
@@ -6924,6 +6941,16 @@ void run_menu_away(const std::wstring& dll) {
         "away: menu %s, holder %u (%s); back: menu %s on %s at %s, holder %u", away.open == 1 ? "HOLDING" : "let go",
         away_input.holder_kind, reason_name(away_input.last_close_reason), menu.open == 1 ? "open" : "CLOSED",
         menu.page, menu.focused, back_input.holder_kind);
+  // The window's place and its focus messages, as the spike observer reports them (D238).
+  check(before_away.foreground == 1 && before_away.has_focus == 1 && away_input.foreground == 0 &&
+            away_input.has_focus == 0 && away_input.focus_lost > before_away.focus_lost && back_input.foreground == 1 &&
+            back_input.has_focus == 1 && back_input.focus_gained > away_input.focus_gained,
+        "menu away: the window's focus counted (D238)",
+        "before: %s, %s; away: %s, %s, focus lost %u time(s); back: %s, %s, focus gained %u time(s)",
+        before_away.foreground == 1 ? "in front" : "NOT IN FRONT", before_away.has_focus == 1 ? "focused" : "NOT FOCUSED",
+        away_input.foreground == 0 ? "behind" : "STILL IN FRONT", away_input.has_focus == 0 ? "unfocused" : "STILL FOCUSED",
+        away_input.focus_lost - before_away.focus_lost, back_input.foreground == 1 ? "in front" : "NOT IN FRONT",
+        back_input.has_focus == 1 ? "focused" : "NOT FOCUSED", back_input.focus_gained - away_input.focus_gained);
 
   // 4. Away again, and danger meanwhile: the menu closes, and the return finds it closed (invariant 9).
   other = take_focus();

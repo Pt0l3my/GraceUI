@@ -162,6 +162,22 @@ class Reader(unittest.TestCase):
         older = report.judge(self.write("s0e-i", [header("s0e"), state()]), {})
         self.assertIsNone(older["heap_guard"])
 
+    def test_the_games_window_is_listed_when_it_was_not_in_front(self):  # D238
+        lines = [header("s0e"),
+                 state(t=1000, window_focus=[1, 1, 1, 1, 0, 0, 0], free_downs=[3, 1, 3, 1]),
+                 state(t=6000, window_focus=[0, 0, 0, 1, 1, 0, 1], free_downs=[3, 1, 3, 1]),
+                 state(t=11000, window_focus=[1, 1, 1, 2, 1, 1, 1], free_downs=[9, 4, 9, 4])]
+        verdict = report.judge(self.write("s0e-w", lines), {})
+        window = verdict["window"]
+        self.assertEqual(window["not_foreground"], [6000])
+        self.assertEqual(window["no_focus"], [6000])
+        self.assertEqual((window["focus_lost"], window["focus_gained"], window["app_inactive"]), (1, 2, 1))
+        self.assertEqual(window["free_downs"], {"dinput_keys": 9, "dinput_buttons": 4, "window_keys": 9,
+                                                "window_buttons": 4})
+        clean = report.judge(self.write("s0e-x", [header("s0e"), state()]), {})
+        self.assertEqual(verdict["verdict"], clean["verdict"])
+        self.assertIsNone(clean["window"])
+
     def test_the_atlas_at_150_is_judged_against_its_limit(self):
         lines = [header("s4"), state(ui_scale_x100=150, atlas=[4096, 8192]), typing(), state()]
         self.assertEqual(self.results(report.judge(self.write("s4-1", lines), {}))["atlas_150"], "failed")

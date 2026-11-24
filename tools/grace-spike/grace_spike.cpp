@@ -839,6 +839,11 @@ void write_state(const Report& report, const Counters& counters) {
       .nums("masked_held", {in.masked_keyboard_held, in.masked_mouse_held, in.masked_pad_held})
       .nums("masked_free", {in.masked_keyboard_free, in.masked_mouse_free, in.masked_pad_free})
       .num("chars_seen", in.chars_seen)
+      // D238: the game's window now (foreground, active, focus) and its focus messages (gained, lost, the app on, off);
+      // the presses that reached the game with no holder (DirectInput keys, buttons; window keys, buttons).
+      .nums("window_focus", {in.foreground, in.active, in.has_focus, in.focus_gained, in.focus_lost, in.app_active,
+                             in.app_inactive})
+      .nums("free_downs", {in.free_dinput_keys, in.free_dinput_buttons, in.free_window_keys, in.free_window_buttons})
       .num("menu_open", menu.open)
       .num("menu_scale_x100", static_cast<std::uint64_t>(menu.scale * 100.0f + 0.5f))
       .num("ui_scale_x100", counters.ui_scale_x100())
