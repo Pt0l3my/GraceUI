@@ -1492,3 +1492,32 @@ The owner chose G43 (a). So, for Requests (0.2), Named NPCs and Memories (0.3):
    actions still receive their own row's key.
 4. **Your goldens move only where a page carries a bar.** The protocol is 1.11.
 
+## 77. Documents, a prose form field and the report preview (2026-11-24, G44, D251; GraceUI 0.2.44, protocol 1.12)
+
+The owner chose G44 (a). So, for Docs and Tools › Bug report (0.2), both drawn in game too from now:
+
+1. **Docs is a master page.** Its `master` topic's rows are `{id, title, headings}`, `headings` one string of the
+   document's headings (joined as you like, such as " · "), and each document is the family member `<detail>/<id>`,
+   `{"title": "...", "blocks": [...]}`. Its one section holds one block, `{ kind = "document", topic = "<detail>" }`,
+   alone: the lint and registration refuse a document block anywhere else or beside another block.
+2. **Blocks**: `{"heading": "...", "level": 2}` (or 3), `{"paragraph": spans}`, `{"list": [spans, ...], "ordered":
+   false}`, `{"note": spans}`, `{"code": "..."}` and `{"table": {"columns": [{id, label}], "rows": [...]}}`. Spans are one
+   string, or a list of `{"text": "..."}`, each with at most one of `"strong": true`, `"code": true`, or `"doc": "<id>"` with an optional
+   `"heading": "<its words>"`. Never a URL. A link to a document your list does not hold is drawn as plain words; a
+   heading the document lacks opens it at its top.
+3. **Limits**: 64 KiB of JSON a document (beyond it the reader says the document is too large to show), 400 blocks,
+   2000 characters a paragraph, item or note, 120 a heading, 16 KiB a code block (your licence texts fit), 100 items, 8
+   columns, 200 rows. A block that breaks a rule is left out, the rest drawn.
+4. **Search** is the list's own: give the master `filter_bar = { search = { columns = ["title", "headings"], label =
+   "Find a page" } }` (D250), and a document is found by its title or a heading, never by its body. The global search
+   (D219) is unchanged: it indexes page data and never a topic, so it does not reach documents.
+5. **"What happened" is a form field with `prose = true`**, its `max` up to 2000; the caution goes in the section's
+   `description`. A form sends every field, an empty one as `""`, in both views.
+6. **The bundle's preview is `{ kind = "component", component = "report_preview", topic = "...", command = "..." }`.**
+   Its topic's body is `{"parts": [{"id", "label", "optional", "included", "fields": [{"label", "value", "code"}]}]}`;
+   `"code": true` draws a field in the mono face with its line breaks (your recent log lines). An optional part's switch
+   sends your command with `{"id": "<part>", "on": true|false}`: declare it in your commands, never as a file command.
+   The view changes nothing itself: publish the body again with the part's `included`, and a part left out is then drawn
+   in the muted ink with its fields hidden. Your scan before copying or saving stays a check list beside it.
+7. **Your goldens move only where a page carries these.** The protocol is 1.12; no change of the ABI.
+
