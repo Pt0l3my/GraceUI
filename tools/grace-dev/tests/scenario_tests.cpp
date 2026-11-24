@@ -62,7 +62,10 @@ TEST_CASE("the demo's own scenario is whole: its steps in time order, its reacti
   CHECK_FALSE(scenario.loop);
   CHECK(scenario.steps.size() == 9);
   CHECK(scenario.steps.front().line == 10);
-  CHECK(scenario.reactions.size() == 2);
+  CHECK(scenario.reactions.size() == 3);
+  REQUIRE(scenario.reaction("lightings.page") != nullptr);
+  REQUIRE(scenario.reaction("lightings.page")->body.has_value());  // ok, with a page of rows (D254)
+  CHECK((*scenario.reaction("lightings.page")->body)["total"] == 1);
   REQUIRE(scenario.reaction("lantern.clear_log") != nullptr);
   CHECK(scenario.reaction("lantern.clear_log")->actions.front().kind == Action::Kind::clear);
   REQUIRE(scenario.inherited.size() == 1);
@@ -197,6 +200,8 @@ TEST_CASE("a bad scenario fails its check, naming its file, its line and its ste
        "reaction 2: lantern.trim has a reaction already"},
       {R"({"scenario": 1, "space": "demo", "reactions": [{"on": "lantern.trim", "answer": {"error": "sulking"}}]})",
        "answer's error is not one of the protocol's codes"},
+      {R"({"scenario": 1, "space": "demo", "reactions": [{"on": "lightings.page", "answer": {"body": [1]}}]})",
+       "answer's body is an object of at most 256 KiB"},
       {R"({"scenario": 1, "space": "demo", "reactions": [{"on": "lantern.trim", "do": [{"at": 4, "clear": "lantern.log"}]}]})",
        "action 1: a reaction's action has no time"},
       {R"({"scenario": 1, "space": "demo", "inherited": [{"key": "lantern.mode", "on": true, "source": "x"}]})",

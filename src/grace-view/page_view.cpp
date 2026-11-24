@@ -4061,6 +4061,9 @@ std::vector<PageView::PageRequest> PageView::take_page_requests() {
     if (current().scoped.value_or(false) && pages_.scope && latest(pages_.scope->topic) == nullptr) {
       continue;  // its scope's topic has not come: nothing is asked until it has; with no choices, none is sent
     }
+    if (src.bar != nullptr && edit_.kind == EditKind::filter_search && edit_.id == src.bar_key + "/search") {
+      continue;  // its search goes when its field closes (proposal 0014 §4), not at each key
+    }
     Paged& p = paged_[src.key];
     Json args = page_args(src);
     const std::string signature = args.dump();
@@ -5191,7 +5194,11 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         right = stop("Show more", key + "/more");
       }
       if (p.total) {
-        const std::string all = std::to_string(static_cast<long long>(*p.total)) + " in all";
+        std::string digits = std::to_string(static_cast<long long>(*p.total));
+        for (std::size_t at = digits.size(); at > 3; at -= 3) {
+          digits.insert(at - 3, ",");  // "1,234 in all", as the browser writes it
+        }
+        const std::string all = digits + " in all";
         c.text(all, TypeRole::ui_sm, right + std::round(16 * s), y + std::round((h - lh) / 2),
                std::max(0.0f, x + w - right - std::round(16 * s)), Colour::ink_mute);
       }

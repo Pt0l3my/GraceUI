@@ -6776,6 +6776,7 @@ void publish_state(const GraceUiApi1* table, GraceUiConsumer mod, const std::str
 }
 
 void run_master(const std::wstring& dll) {
+  using grace::protocol::Json;
   Game game(false, 1920, 1080);
   const HWND window = game.window();
   cursor_into(window);
@@ -6844,6 +6845,56 @@ void run_master(const std::wstring& dll) {
   check(into && back && member_gone, "master: into the detail and back; the close lets the member go",
         "→ into the detail %s; Esc back to the row %s; F5: the member unwatched %s", into ? "yes" : "NO",
         back ? "yes" : "NO", member_gone ? "yes" : "NO");
+  frames(game, 5);
+
+  // 4. A scoped page read a page at a time (G45, D254): Lightings asks for nothing until its scope's topic comes, then
+  // for its first page of the season in view; the answer's rows are drawn with Show more, whose press asks with the
+  // space's cursor and adds the next page below.
+  press(window, VK_F5, kScanF5);
+  menu = menu_after(game, grace, menu.lists);
+  for (int i = 0; i < 5 && std::strcmp(grace.menu().page, "demo.lightings") != 0; ++i) {
+    press(window, VK_NEXT, 0x51);
+    menu = menu_after(game, grace, grace.menu().lists);
+  }
+  const bool on_lightings = std::strcmp(grace.menu().page, "demo.lightings") == 0;
+  const bool scope_watched = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.seasons");
+  publish_state(table, mod, "lantern.seasons", 1,
+                R"({"choices":[{"id":"winter","label":"This winter"},{"id":"autumn","label":"Last autumn","read_only":true}],"current":"winter"})");
+  const bool chooser = until_shows(game, grace, "Season: This winter");
+  const SpaceEvent first_page = wait_kind(game, table, mod, GRACEUI_EVENT_COMMAND);
+  const Json asked = Json::parse(first_page.frame, nullptr, false);
+  const bool asked_winter = asked.is_object() && asked.value("name", "") == "lightings.page" &&
+                            asked["args"] == Json::parse(R"({"view":"list","sort":{"key":"at_ms","direction":"descending"},"scope":"winter"})");
+  const std::string page_one =
+      R"({"v":1,"t":"result","space":"demo","id":0,"ok":true,"body":{"columns":[{"id":"lit","label":"Lit"},{"id":"lamp","label":"Lamp"}],"rows":[{"id":"l60","lit":"Night 60, at dusk","lamp":"North light"},{"id":"l59","lit":"Night 59, in fog","lamp":"Store room"}],"next":"c2","total":3}})";
+  const GraceUiStatus answered_one = first_page.kind == GRACEUI_EVENT_COMMAND
+                                         ? table->answer(mod, first_page.reply, page_one.data(), page_one.size())
+                                         : GRACEUI_REFUSED;
+  const bool rows_drawn = until_shows(game, grace, "Night 60, at dusk") && until_shows(game, grace, "3 in all") &&
+                          grace.menu_shows("Show more") != 0;
+  const bool member_watched = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.lighting/l60");
+  const bool on_more = down_to(game, grace, window, "paging:demo.lightings.list/more", 8);
+  press(window, VK_RETURN, 0x1C);
+  const SpaceEvent second_page = wait_kind(game, table, mod, GRACEUI_EVENT_COMMAND);
+  const Json more = Json::parse(second_page.frame, nullptr, false);
+  const bool asked_more = more.is_object() && more["args"].value("cursor", "") == "c2";
+  const std::string page_two =
+      R"({"v":1,"t":"result","space":"demo","id":0,"ok":true,"body":{"columns":[{"id":"lit","label":"Lit"},{"id":"lamp","label":"Lamp"}],"rows":[{"id":"l58","lit":"Night 58, after the storm","lamp":"Harbour wall"}],"total":3}})";
+  const GraceUiStatus answered_two = second_page.kind == GRACEUI_EVENT_COMMAND
+                                         ? table->answer(mod, second_page.reply, page_two.data(), page_two.size())
+                                         : GRACEUI_REFUSED;
+  const bool added = until_shows(game, grace, "Night 58, after the storm") && grace.menu_shows("Night 60, at dusk") != 0 &&
+                     until_shows(game, grace, "Show more", true);
+  check(on_lightings && scope_watched && chooser && asked_winter && answered_one == GRACEUI_OK && rows_drawn &&
+            member_watched && on_more && asked_more && answered_two == GRACEUI_OK && added,
+        "master: a scoped list read a page at a time (D254)",
+        "on Lightings %s; its scope watched %s, its chooser %s; asked %s; its rows %s, l60 watched %s; Show more %s, "
+        "asked %s; the next page added below %s",
+        on_lightings ? "yes" : "NO", scope_watched ? "yes" : "NO", chooser ? "shown" : "NOT SHOWN",
+        asked.is_object() ? asked["args"].dump().c_str() : "NOTHING", rows_drawn ? "drawn" : "NOT DRAWN",
+        member_watched ? "yes" : "NO", on_more ? "focused" : "NOT FOCUSED",
+        more.is_object() ? more["args"].dump().c_str() : "NOTHING", added ? "yes" : "NO");
+  press(window, VK_F5, kScanF5);
   frames(game, 5);
 }
 

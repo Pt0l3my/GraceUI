@@ -16,6 +16,7 @@ using protocol::Json;
 constexpr std::size_t kMaxSteps = 10000;
 constexpr std::size_t kMaxActions = 16;  // a reaction's
 constexpr std::size_t kMaxDetail = 256;  // a refusal's words, as the protocol's error detail
+constexpr std::size_t kMaxBody = 256 * 1024;  // an answer's body, as the protocol's result body (§4 of proposal 0014)
 constexpr std::uint64_t kMaxTime = 7ull * 24 * 3600 * 1000;  // a step's time and a pass's length: a week at most
 
 bool only_keys(const Json& object, std::initializer_list<std::string_view> keys, std::string& why) {
@@ -125,8 +126,17 @@ bool read_answer(const Json& answer, Reaction& out, std::string& why) {
   if (answer.is_string() && answer.get_ref<const std::string&>() == "ok") {
     return true;
   }
+  if (answer.is_object() && answer.size() == 1 && answer.contains("body")) {
+    // Ok with a body, as a space answers a page command (D254): {"columns", "rows", "next", "total"}.
+    if (!answer["body"].is_object() || answer["body"].dump().size() > kMaxBody) {
+      why = "answer's body is an object of at most " + std::to_string(kMaxBody / 1024) + " KiB";
+      return false;
+    }
+    out.body = answer["body"];
+    return true;
+  }
   if (!answer.is_object() || !only_keys(answer, {"error", "detail"}, why) || !answer.contains("error")) {
-    why = "answer is \"ok\", or an object with an error code and its detail in words";
+    why = "answer is \"ok\", {\"body\": {...}}, or an object with an error code and its detail in words";
     return false;
   }
   protocol::DecodeError error;

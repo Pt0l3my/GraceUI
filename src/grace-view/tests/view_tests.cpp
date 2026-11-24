@@ -3026,8 +3026,9 @@ TEST_CASE("a table read a page at a time in game: its filter's choices from a to
   CHECK(asked[0].where == "page:page.lightings.page.table#1");
   CHECK(asked[0].command.args == Json::object({{"view", "table"},
                                                {"sort", Json::object({{"key", "at_ms"}, {"direction", "descending"}})}}));
-  view.page_answer(asked[0].where, page_of({60, 59}, "c2", 60));
+  view.page_answer(asked[0].where, page_of({60, 59}, "c2", 1234));
   CHECK(shows(laid_out(view), "Night 60"));
+  CHECK(shows(laid_out(view), "1,234 in all"));
   // Its filter: All, then the topic's lamps; a choice asks for the first page again, filtered by the space.
   REQUIRE(move_to(view, "filter:page.lightings.page.table/f0"));
   press(view, Key::right);
@@ -3039,5 +3040,16 @@ TEST_CASE("a table read a page at a time in game: its filter's choices from a to
   // Its changes topic: showing its first page, it asks for it again.
   view.set_topic("lantern.status", Json::object({{"sentence", "A lamp was lit."}, {"hushed", false},
                                                  {"lamps", Json::array({"North light", "Harbour wall"})}}));
-  CHECK(view.take_page_requests().size() == 1);
+  asked = view.take_page_requests();
+  REQUIRE(asked.size() == 1);
+  view.page_answer(asked[0].where, page_of({60}, nullptr, 20));
+  // Its search goes to the space when the field closes, not at each key.
+  REQUIRE(move_to(view, "filter:page.lightings.page.table/search"));
+  press(view, Key::activate);
+  type(view, " Orla ");
+  CHECK(view.take_page_requests().empty());
+  press(view, Key::activate);  // done typing
+  asked = view.take_page_requests();
+  REQUIRE(asked.size() == 1);
+  CHECK(asked[0].command.args["search"] == "Orla");  // trimmed, as the browser sends it
 }

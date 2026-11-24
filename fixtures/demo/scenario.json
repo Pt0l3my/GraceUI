@@ -53,6 +53,11 @@
       }},
       {"rows": "lantern.log", "add": [{"time": "Just now", "line": "The wick was trimmed."}]}
     ]},
+    {"on": "lightings.page", "do": [], "answer": {"body": {
+      "columns": [{"id": "lit", "label": "Lit"}, {"id": "lamp", "label": "Lamp"}, {"id": "keeper", "label": "Keeper"}],
+      "rows": [{"id": "l60", "lit": "Night 60, at dusk", "lamp": "North light", "keeper": "Orla Venn", "at_ms": 5184000000}],
+      "total": 1
+    }}},
     {"on": "lantern.clear_log", "do": [
       {"clear": "lantern.log"},
       {"rows": "lantern.log", "add": [{"time": "Just now", "line": "The log was cleared. The journal is kept."}]}
