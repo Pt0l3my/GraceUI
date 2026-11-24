@@ -1,6 +1,7 @@
 # Proposal 0012: Filtering and sorting a table
 
-**Status: proposal, 2026-11-24, put to the owner and EldenNet's session (G43). EldenNet's session answered §6 the same day (§7). The owner chose (a) the same day, as recommended; where this text and the design differ, the design holds once built.** EldenNet's PAGES gives four pages a
+**Status: proposal, 2026-11-24, put to the owner and EldenNet's session (G43). EldenNet's session answered §6 the same day (§7). The owner chose (a) the same day, as recommended. Built as D250 in GraceUI 0.2.43 (protocol 1.11); where this
+text and the design differ, the design holds.** EldenNet's PAGES gives four pages a
 filter bar above their table: Requests (0.2), Named NPCs and Memories (0.3), and Events (0.4). §2.5 lists a filter
 bar and a table "with sort" among the components, and §3.8 and §4.2 describe how they look. `filter_bar` has been a
 name in the protocol's component list since 1.0. But neither view draws one: a `filter_bar` block shows "Not shown in
