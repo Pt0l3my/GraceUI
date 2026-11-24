@@ -135,6 +135,36 @@ TEST_CASE("presses are counted for their hotkey and taken by its mod alone") {
   CHECK_FALSE(hotkeys.pressed(0xFFFFu));
 }
 
+TEST_CASE("what pressed a hotkey is taken with its presses: its key, its chord or both (D243)") {
+  Hotkeys hotkeys;
+  std::uint32_t talk = 0;
+  REQUIRE(hotkeys.add(1, "talk", kK, 0, kF5, talk) == Added::bound);
+  Press press;
+  CHECK(hotkeys.pressed(talk));  // by its key, as the window filter counts it
+  REQUIRE(hotkeys.take(1, press));
+  CHECK(press.count == 1);
+  CHECK(press.by == kByKey);
+  CHECK(hotkeys.pressed(talk, kByChord));
+  REQUIRE(hotkeys.take(1, press));
+  CHECK(press.by == kByChord);
+  CHECK(hotkeys.pressed(talk, kByChord));
+  CHECK(hotkeys.pressed(talk, kByKey));
+  REQUIRE(hotkeys.take(1, press));
+  CHECK(press.count == 2);
+  CHECK(press.by == (kByKey | kByChord));
+  CHECK_FALSE(hotkeys.take(1, press));  // taken with the presses: nothing left to say for the next
+  CHECK(hotkeys.pressed(talk));
+  REQUIRE(hotkeys.take(1, press));
+  CHECK(press.by == kByKey);
+  // The rebinding of its key keeps the press waiting and what made it.
+  CHECK(hotkeys.pressed(talk, kByChord));
+  Taken other;
+  CHECK(hotkeys.rebind_key(talk, kF11, 0, kF5, false, other) == Rebound::done);
+  REQUIRE(hotkeys.take(1, press));
+  CHECK(press.count == 1);
+  CHECK(press.by == kByChord);
+}
+
 TEST_CASE("a hotkey removed, or its slot given to another, counts no press of the old one") {
   Hotkeys hotkeys;
   std::uint32_t old_id = 0;

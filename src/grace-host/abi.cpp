@@ -227,6 +227,22 @@ bool relative_name(HMODULE module, char* out, int capacity) {
   return true;
 }
 
+// Whether a copy's relative name is GraceUI's own, GraceUI\graceui.dll in the game's folder (D72, D83), in any case.
+bool own_copy(std::string_view relative) noexcept {
+  constexpr std::string_view kOwn = "graceui\\graceui.dll";
+  if (relative.size() != kOwn.size()) {
+    return false;
+  }
+  for (std::size_t i = 0; i < kOwn.size(); ++i) {
+    char c = relative[i];
+    c = c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c == '/' ? '\\' : c;
+    if (c != kOwn[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 constexpr int kNamedCopies = 8;
 constinit HMODULE g_named[kNamedCopies] = {};
 constinit std::atomic<std::uint32_t> g_named_count{0};
@@ -246,9 +262,20 @@ void name_other_copies() noexcept {
       if (!named && count < kNamedCopies && relative_name(copy, name, sizeof name)) {
         g_named[count] = copy;
         g_named_count.store(count + 1, std::memory_order_release);
-        log_line("a second copy of GraceUI is loaded, and idle: %s", name);
-        session::own_notice(0, GRACEUI_TONE_WARNING,
-                            "A second copy of GraceUI was loaded from another folder and is idle: %s", name);
+        // GraceUI's own copy idles when another was asked first (D244): the notice then names the copy in use, which
+        // is the one to remove, rather than calling GraceUI's own the stray one.
+        char own[400];
+        if (own_copy(name) && relative_name(this_module(), own, sizeof own) && !own_copy(own)) {
+          log_line("GraceUI's own copy (%s) is loaded and idle; another copy, asked first, is in use: %s", name, own);
+          session::own_notice(0, GRACEUI_TONE_WARNING,
+                              "GraceUI's own copy is idle: another copy was started first and is in use, %s. Remove "
+                              "that copy to use GraceUI's own.",
+                              own);
+        } else {
+          log_line("a second copy of GraceUI is loaded, and idle: %s", name);
+          session::own_notice(0, GRACEUI_TONE_WARNING,
+                              "A second copy of GraceUI was loaded from another folder and is idle: %s", name);
+        }
       }
       FreeLibrary(copy);
     }

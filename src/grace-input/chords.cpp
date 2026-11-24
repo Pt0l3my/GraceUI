@@ -83,7 +83,7 @@ ChordStep PadChords::step(One& one, std::uint16_t real, Aside aside, Hotkeys& ho
       begin_tap(one, now_ms);
       result = ChordStep::failed;
     } else if (now_ms - one.at >= kChordCompleteMs) {
-      if (hotkeys.pressed(one.id)) {
+      if (hotkeys.pressed(one.id, kByChord)) {
         one.phase = Phase::idle;
         one.hidden = static_cast<std::uint16_t>(one.hidden | one.key | one.anchor);
         ++one.steps;  // the anchor the game saw held is hidden from now on

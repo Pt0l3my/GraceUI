@@ -92,9 +92,14 @@ struct Listed {
   char name_bytes[kHotkeyNameMax] = {};
 };
 
+// What pressed a hotkey (D243): its key, its pad chord, or both among the presses one event counts.
+inline constexpr std::uint8_t kByKey = 1;
+inline constexpr std::uint8_t kByChord = 2;
+
 struct Press {
   std::uint32_t id = 0;     // the hotkey's id: never 0
   std::uint32_t count = 0;  // presses since its last one was taken
+  std::uint8_t by = 0;      // kByKey and kByChord: what made those presses
 };
 
 // What a change of binding did (D208).
@@ -170,8 +175,8 @@ class Hotkeys {
   std::uint32_t match(Key key, std::uint8_t modifiers) const noexcept;
   // The owner of hotkey `id`, or 0 if no hotkey has it now: read without the lock, to set its mod's wait handle (D212).
   std::uint16_t owner_of(std::uint32_t id) const noexcept;
-  // Counts a press of `id` (from its key or its chord); false if it was removed meanwhile.
-  bool pressed(std::uint32_t id) noexcept;
+  // Counts a press of `id`, by its key or its chord (kByKey, kByChord); false if it was removed meanwhile.
+  bool pressed(std::uint32_t id, std::uint8_t by = kByKey) noexcept;
 
   // ---- XInput's readers.
 
@@ -195,7 +200,8 @@ class Hotkeys {
   std::uint32_t count() const noexcept;  // hotkeys added and not yet removed, bound or not
 
  private:
-  // A hotkey's word: bits 0-1 its state, 2-9 its key, 10-12 its modifiers, 13-31 its generation, 32-63 its presses.
+  // A hotkey's word: bits 0-1 its state, 2-9 its key, 10-12 its modifiers, 13-31 its generation, 32-61 its presses, 62-63
+  // what made them (kByKey, kByChord; D243), taken with them in one compare-and-swap.
   enum State : std::uint64_t { free = 0, bound = 1, unbound = 2 };
   static constexpr std::uint64_t pack(State state, Key key, std::uint8_t modifiers, std::uint32_t generation) noexcept {
     return std::uint64_t{state} | (std::uint64_t{key} << 2) | (std::uint64_t{static_cast<std::uint8_t>(modifiers & kModAll)} << 10) |
@@ -209,7 +215,11 @@ class Hotkeys {
   static constexpr std::uint32_t generation_of(std::uint64_t word) noexcept {
     return static_cast<std::uint32_t>((word >> 13) & 0x7FFFFu);
   }
-  static constexpr std::uint32_t presses_of(std::uint64_t word) noexcept { return static_cast<std::uint32_t>(word >> 32); }
+  static constexpr std::uint32_t kMaxPresses = 0x3FFFFFFFu;
+  static constexpr std::uint32_t presses_of(std::uint64_t word) noexcept {
+    return static_cast<std::uint32_t>(word >> 32) & kMaxPresses;
+  }
+  static constexpr std::uint8_t by_of(std::uint64_t word) noexcept { return static_cast<std::uint8_t>(word >> 62); }
   static constexpr std::uint32_t id_of(std::uint32_t index, std::uint32_t generation) noexcept {
     return (generation << 8) | (index + 1);
   }

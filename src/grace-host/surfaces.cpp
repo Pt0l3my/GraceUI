@@ -637,6 +637,9 @@ void display_at_connect(GraceUiConnectAnswer& out) noexcept {
   out.display_height = now.height;
 }
 
+static_assert(grace::input::kByKey == GRACEUI_HOTKEY_BY_KEY && grace::input::kByChord == GRACEUI_HOTKEY_BY_CHORD,
+              "grace-input says what pressed a hotkey in ABI 1.7's own bits (D243)");
+
 GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, bool holder, bool display_ok,
                    bool files) noexcept {
   GraceUiStatus status = GRACEUI_OK;
@@ -672,6 +675,7 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, b
     out.kind = GRACEUI_EVENT_HOTKEY;
     out.hotkey_id = press.id;
     out.count = press.count;
+    out.hotkey_by = press.by;  // ABI 1.7 (D243): written to an event of 1.2's size or more, as the display's fields
     return GRACEUI_OK;
   }
   // The player changed one of its hotkeys (D210): to a mod built for ABI 1.4 or later, which knows the kind.

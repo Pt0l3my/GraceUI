@@ -8667,13 +8667,22 @@ void run_copy_beside_mod(const std::wstring& dll, bool reversed) {
   const HWND window = game.window();
   cursor_into(window);
   pump_messages();
+  // Reversed, the game's folder's copy is GraceUI's own, GraceUI\graceui.dll (D83), so that its notice says so (D244);
+  // the parent process takes the file away after this process ends (absent wants no GraceUI\ in the folder).
+  std::wstring own = dll;
+  if (reversed) {
+    own = folder_of_this_program() + L"GraceUI\\graceui.dll";
+    CreateDirectoryW((folder_of_this_program() + L"GraceUI").c_str(), nullptr);
+    if (!CopyFileW(dll.c_str(), own.c_str(), FALSE)) {
+      fatal("GraceUI\\graceui.dll could not be made in the harness's folder");
+    }
+  }
   GraceUi canonical;
-  if (!canonical.load(dll) || canonical.module == beside.module) {
+  if (!canonical.load(own) || canonical.module == beside.module) {
     fatal("graceui.dll did not load as a module of its own");
   }
   GraceUi& grace = reversed ? beside : canonical;  // the copy asked first, which holds the mutex
   GraceUi& second = reversed ? canonical : beside;
-  const std::string idle_name = reversed ? ": graceui.dll" : ": beside-copy\\graceui.dll";
   const GraceUiApi1* table = grace.table();  // the process's first request
   if (table == nullptr) {
     fatal("no table");
@@ -8751,10 +8760,13 @@ void run_copy_beside_mod(const std::wstring& dll, bool reversed) {
   const std::size_t idle_leads = second.leads().size();
   const GraceUiTestState active = grace.state();
   const std::vector<GraceUiTestNotice> named = grace.notices();
+  // In order, the second copy is named as idle; reversed, GraceUI's own is said to idle and the copy in use is named,
+  // the one to remove (D244). Never a whole path.
   const std::string_view text = named.empty() ? std::string_view() : std::string_view(named[0].text);
-  const bool named_once = named.size() == 1 && named[0].owner == 0 && named[0].tone == GRACEUI_TONE_WARNING &&
-                          text.size() > idle_name.size() &&
-                          text.substr(text.size() - idle_name.size()) == idle_name &&
+  const bool words = reversed ? text.find("GraceUI's own copy is idle") != std::string_view::npos &&
+                                    text.find("in use, beside-copy\\graceui.dll.") != std::string_view::npos
+                              : text.find("is idle: beside-copy\\graceui.dll") != std::string_view::npos;
+  const bool named_once = named.size() == 1 && named[0].owner == 0 && named[0].tone == GRACEUI_TONE_WARNING && words &&
                           text.find(":\\") == std::string_view::npos;
   check(asked == nullptr && asked_again == nullptr && idle.host == GRACEUI_TEST_HOST_IDLE_COPY &&
             idle.init_threads_started == 0 && idle.hook_install_runs == 0 && idle.hooks_installed == 0 &&
@@ -8922,13 +8934,16 @@ void run_chords(const std::wstring& dll) {
     seen.buttons = grace.pad_read(0, buttons, &seen.packet);
     return seen;
   };
+  std::uint32_t last_by = 0;  // what pressed the hotkey, as the events presses() took said (ABI 1.7, D243)
   const auto presses = [&](GraceUiConsumer mod, std::uint32_t id) {
     std::uint32_t count = 0;
+    last_by = 0;
     GraceUiEvent event{};
     event.size = sizeof event;
     for (int i = 0; i < 16 && table->poll(mod, &event) == GRACEUI_OK && event.kind != GRACEUI_EVENT_NONE; ++i) {
       if (event.kind == GRACEUI_EVENT_HOTKEY && event.hotkey_id == id) {
         count += event.count;
+        last_by |= event.hotkey_by;
       }
     }
     return count;
@@ -8952,6 +8967,7 @@ void run_chords(const std::wstring& dll) {
   wait(400);
   const Seen fired = read(kUp | kView);
   const std::uint32_t fired_presses = presses(first.answer.consumer, talk);
+  const std::uint32_t fired_by = last_by;
   const Seen long_hold = read(kUp | kView);
   const Seen view_up = read(kUp);
   const Seen both_up = read(0);
@@ -8965,6 +8981,19 @@ void run_chords(const std::wstring& dll) {
         "hotkey %u time(s); held on %#x, View up %#x, both up %#x, Up afresh %#x",
         anchor.buttons, held.buttons, still.buttons, fired.buttons, still.packet, fired.packet, fired_presses,
         long_hold.buttons, view_up.buttons, both_up.buttons, fresh.buttons);
+
+  // What pressed it (ABI 1.7, D243): the chord, above; a key, the second mod's F9 here.
+  press(game.window(), VK_F9, 0x43);
+  frames(game, 3);
+  const std::uint32_t key_presses = presses(second.answer.consumer, shout);
+  const bool by_cap = table->has_cap(GRACEUI_CAP_HOTKEY_BY, std::strlen(GRACEUI_CAP_HOTKEY_BY)) != 0;
+  check(by_cap && table->abi_minor >= 7u && fired_by == GRACEUI_HOTKEY_BY_CHORD && key_presses == 1 &&
+            last_by == GRACEUI_HOTKEY_BY_KEY,
+        "chords: what pressed a hotkey",
+        "has_cap(\"%s\") %s, the table's minor %u; the chord's press said %u (%u for the chord); F9's %u press said %u "
+        "(%u for the key)",
+        GRACEUI_CAP_HOTKEY_BY, by_cap ? "yes" : "NO", table->abi_minor, fired_by, GRACEUI_HOTKEY_BY_CHORD, key_presses,
+        last_by, GRACEUI_HOTKEY_BY_KEY);
 
   // 2. A key released before 0.4 s: one tap, of two reads and 50 ms, the packet number changing at each step.
   const Seen up_again = read(kUp);
@@ -9764,6 +9793,10 @@ int wmain(int argc, wchar_t** argv) {
             L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-focus-ring", L"menu-pad", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
             L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake", L"heap-guard", L"heap-guard-off"}) {
         run(child_scenario, dll, this_program());
+        if (std::wstring_view(child_scenario) == L"copy-beside-mod-reversed") {
+          DeleteFileW((folder_of_this_program() + L"GraceUI\\graceui.dll").c_str());  // its GraceUI\ copy (D244)
+          RemoveDirectoryW((folder_of_this_program() + L"GraceUI").c_str());
+        }
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.
       run(L"pages", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
