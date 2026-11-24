@@ -1,6 +1,6 @@
 # Proposal 0014: The top bar's controls for a space, and tables read a page at a time
 
-**Status: proposal, 2026-11-24, put to the owner (G45) and to EldenNet's session for its formats. The owner chose (a) the same day, as recommended: §1 and §2 in one protocol minor, then §3 and §4 in the next; where this text and the design differ, the design holds once built.** §4.2.3 names six
+**Status: proposal, 2026-11-24, put to the owner (G45) and to EldenNet's session for its formats. The owner chose (a) the same day, as recommended: §1 and §2 in one protocol minor, then §3 and §4 in the next. §1 and §2 were built as D252 in GraceUI 0.2.45 (protocol 1.13); §3 and §4 wait for EldenNet's answers. Where this text and the design differ, the design holds once built.** §4.2.3 names six
 top bar controls: search, the status lamp, Live updates, Journey, the theme and Quick switches. Search, the lamp and
 the theme are built. The other three are described as EldenNet's controls (its quick switches, its journeys), but no
 form exists for a mod's space to declare them, and in game "Start waits for the quick switches" (§5.4). EldenNet's
@@ -95,3 +95,24 @@ the game's top bar stops and Start; the held topics; the scoped members; the pag
 refusal); the demo space's examples (a quick switch of each kind, the lamp log live, a "Season" scope over the lamp
 records, a paged history of lamp lightings with a filter bar), served by the demo space's own handler; the view's, the
 web's, grace-dev's and the harness's tests and goldens. No change of the ABI. About the size of G43 and G44 together.
+
+## 7. EldenNet's answers (2026-11-24)
+
+EldenNet's session found the four parts suit its pages, and answered the five questions put to it:
+
+- **(a) The scope's topic.** A topic of its own, `journeys`, its whole body `{"choices": [{id, label, read_only}],
+  "current"}`, rather than a member of `status`: the labels carry the character's name, which EldenNet shows only in
+  the Journey control and on pages about the player's own story, and `status` goes to every view and changes often. So
+  §3's `field` is optional, the body itself when absent.
+- **(b) Per-journey state.** A family member per journey (`playthrough/<journey>`, `memories/<journey>`), published only
+  while watched, as §3 has it.
+- **(c) Paged history.** 200 rows a page suits it, and `total` is safe for EldenNet, whose History holds only perceived
+  events; `total` stays optional for other mods.
+- **(d) Pause AI.** `ai.pause` with `{"on": bool}`, its state `status.ai_paused` (false at every start); not
+  sensitive, so a paired device may pause and resume. This needs nothing beyond §1 as built (D252).
+- **(e) Named NPCs' chips.** The roster is the same in every journey but its Met column follows the journey in view, so
+  the page is `scoped = true` and its master list reads a family member per journey (`characters.named/<journey>`),
+  each the roster with that journey's `met` column; an earlier journey's member leaves out Nearby, so its chip is not
+  offered (invariant 2). §3 therefore lets a scoped page's master list bind a family, the member named by the scope.
+
+The order, §1 and §2 for EldenNet's 0.2, then §3 and §4 for its 0.3, suits it.
