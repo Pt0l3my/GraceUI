@@ -120,6 +120,7 @@ class PageView {
   // rail, Page Up and Page Down, search, related links and shortcuts, until that increment (§4.2.2, D173). Empty, the
   // default: every page is present.
   void set_increment(std::string_view increment);
+  void leave_absent_page();  // the open page gone (a later increment, its setting off): the first present one
   // Whether a page is present in the space's increment.
   bool present(std::string_view page_id) const;
   // Opens a page (its first tab), focus on its first control; false for no such page, or one absent.

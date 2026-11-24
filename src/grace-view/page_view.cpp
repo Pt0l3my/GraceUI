@@ -537,12 +537,31 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
                          usable(*q.command) && *q.command != "settings.set" && *q.command != "settings.reset" &&
                          std::find(slow.begin(), slow.end(), *q.command) == slow.end() && own_state(q.state->topic) &&
                          name_ok(q.state->field) &&
-                         std::any_of(pages.pages.begin(), pages.pages.end(),
-                                     [&](const protocol::Page& p) { return p.id == *q.home; });
+                         std::any_of(pages.pages.begin(), pages.pages.end(), [&](const protocol::Page& p) {
+                           return p.id == *q.home && !p.browser_only.value_or(false);  // a home in game too (D258)
+                         });
     if (!session) {
       why = "quick switch " + q.id.value_or("") + " is a session switch: an id, a label, a command of the space's own "
             "(not a settings, file or slow command), its state a member of a state topic of the space's and its home a "
             "page of the space's";
+      return false;
+    }
+  }
+  // A page in the browser alone, shown with a setting, gated, with a ribbon (D258), as the page lint checks them.
+  for (const protocol::Page& page : pages.pages) {
+    const auto setting = page.shown_with ? std::find_if(settings.begin(), settings.end(),
+                                                        [&](const protocol::Setting& one) { return one.key == *page.shown_with; })
+                                         : settings.end();
+    if (page.shown_with && (setting == settings.end() || setting->type != protocol::SettingType::bool_)) {
+      why = page.id + " is shown with a switch of the space's settings";
+      return false;
+    }
+    if (page.gate && (!page.browser_only.value_or(false) || page.gate->words.empty() || page.gate->confirm.empty())) {
+      why = page.id + ": a gate is a browser-only page's, with its words and a confirm label";
+      return false;
+    }
+    if (page.ribbon && page.ribbon->empty()) {
+      why = page.id + ": its ribbon has words";
       return false;
     }
   }
@@ -864,6 +883,11 @@ void PageView::set_values(const Json& values) {
       values_[it.key()] = it.value();
     }
   }
+  // A page shown with a setting comes and goes with it (D258).
+  if (std::any_of(pages_.pages.begin(), pages_.pages.end(), [](const protocol::Page& p) { return p.shown_with.has_value(); })) {
+    leave_absent_page();
+    rebuild();
+  }
 }
 
 namespace {
@@ -901,6 +925,32 @@ void PageView::set_increment(std::string_view increment) {
       }
     }
   }
+  leave_absent_page();
+  rebuild();
+}
+
+bool PageView::present(std::string_view page_id) const {
+  if (absent_.find(page_id) != absent_.end()) {
+    return false;  // of a later increment (D173)
+  }
+  // In the browser alone, or shown with a switch that is off (D258): absent in game, from the rail, search and Related.
+  for (const protocol::Page& page : pages_.pages) {
+    if (page.id != page_id) {
+      continue;
+    }
+    if (page.browser_only.value_or(false)) {
+      return false;
+    }
+    if (page.shown_with) {
+      const auto value = values_.find(*page.shown_with);
+      return value != values_.end() && *value == true;
+    }
+    return true;
+  }
+  return true;
+}
+
+void PageView::leave_absent_page() {
   if (!pages_.pages.empty() && !present(pages_.pages[page_].id)) {
     for (std::size_t p = 0; p < pages_.pages.size(); ++p) {
       if (present(pages_.pages[p].id)) {
@@ -911,10 +961,7 @@ void PageView::set_increment(std::string_view increment) {
       }
     }
   }
-  rebuild();
 }
-
-bool PageView::present(std::string_view page_id) const { return absent_.find(page_id) == absent_.end(); }
 
 bool PageView::open(std::string_view page_id) {
   for (std::size_t i = 0; i < pages_.pages.size(); ++i) {
@@ -5418,6 +5465,14 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     c.line(x0, y, content_w, Colour::rule_strong);
     c.diamond(Rect{x0, y - std::round(4 * s), std::round(9 * s), std::round(9 * s)}, Colour::gold_deep);
     y += std::round(20 * s);
+    // Its ribbon (D258): the space's words in a band at the top, while the page is open.
+    if (page.ribbon && !page.ribbon->empty()) {
+      const Rect band{x0, y, content_w, std::round(32 * s)};
+      c.fill(band, Colour::rot_fill, std::round(tokens::radius::control * s));
+      c.text(*page.ribbon, TypeRole::ui_sm, band.x + std::round(16 * s),
+             band.y + std::round((band.h - line_height(TypeRole::ui_sm, s)) / 2), band.w - std::round(32 * s), Colour::ink_hi);
+      y += band.h + std::round(12 * s);
+    }
     // A page its space has greyed (D188): the space's words over it, its controls inert and faint.
     if (const std::string words = greyed_words(page.id); !words.empty()) {
       const Rect band{x0, y, content_w, std::round(44 * s)};

@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 16,
+  "minor": 17,
   "categories": [
     {
       "id": "lanterns",
@@ -20,7 +20,8 @@
         "demo.festival",
         "demo.lamps",
         "demo.lightings",
-        "demo.handbook"
+        "demo.handbook",
+        "demo.workbench"
       ],
       "foot": true
     }
@@ -753,6 +754,53 @@
           }
         }
       }
+    },
+    {
+      "id": "demo.workbench",
+      "category": "records",
+      "name": "Workbench",
+      "description": "The lantern's raw readings, for those who mend it.",
+      "help": {
+        "purpose": "See the lantern's readings as its instruments give them, before the menu words them.",
+        "steps": [
+          "Turn the lantern on in Behaviour to find this page.",
+          "Confirm once a session that you want the raw readings.",
+          "Read them here; nothing on this page changes the lantern."
+        ]
+      },
+      "related": [
+        "demo.overview",
+        "demo.log"
+      ],
+      "increment": "0.2",
+      "sections": [
+        {
+          "id": "readings",
+          "title": "Readings",
+          "blocks": [
+            {
+              "kind": "component",
+              "component": "stat_tiles",
+              "topic": "lantern.status"
+            },
+            {
+              "kind": "component",
+              "component": "key_value_list",
+              "topic": "lantern.status",
+              "props": {
+                "field": "raw"
+              }
+            }
+          ]
+        }
+      ],
+      "browser_only": true,
+      "shown_with": "lantern.enabled",
+      "gate": {
+        "words": "The workbench shows the lantern's raw readings, unworded. Open it for this session?",
+        "confirm": "Open the workbench"
+      },
+      "ribbon": "Raw readings"
     }
   ],
   "topics": [

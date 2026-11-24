@@ -601,6 +601,9 @@ TEST_CASE("every page's rows in their focus order, the golden the web view's par
   for (const char* id : {"graceui", "demo"}) {
     const auto pages = test::decoded<grace::protocol::SpacePages>(test::space(id).pages);
     for (const grace::protocol::Page& page : pages.pages) {
+      if (page.browser_only.value_or(false)) {
+        continue;  // in the browser alone (D258): the web view's test leaves it out too
+      }
       const std::size_t tabs = page.tabs ? page.tabs->size() : 1;
       for (std::size_t t = 0; t < tabs; ++t) {
         PageView view = loaded(id, page.id);
@@ -3190,4 +3193,31 @@ TEST_CASE("a stream in game: its rows newest first, its time and line; its bar f
   type(view, "zz");
   press(view, Key::activate);
   CHECK(shows(laid_out(view), "Nothing matches these filters."));
+}
+
+TEST_CASE("a browser-only page is absent in game; a page shown with a setting comes and goes with it, its ribbon drawn (D258)") {
+  PageView view = loaded("demo", "demo.overview");
+  view.set_values(Json::object({{"lantern.enabled", true}}));
+  CHECK_FALSE(view.open("demo.workbench"));  // in the browser alone
+  CHECK(laid_out(view).find("Workbench") == std::string::npos);  // nor in the rail
+  // The same page, shown in game too: present only while the lantern is enabled.
+  const auto& s = test::space("demo");
+  Json pages = Json::parse(s.pages);
+  for (Json& p : pages["pages"]) {
+    if (p["id"] == "demo.workbench") {
+      p.erase("browser_only");
+      p.erase("gate");  // a gate is a browser-only page's
+    }
+  }
+  PageView shown;
+  std::string why;
+  REQUIRE(shown.load(test::decoded<grace::protocol::SpacePages>(pages.dump()),
+                     test::decoded<grace::protocol::SettingsDescription>(s.settings), why));
+  shown.set_values(Json::object({{"lantern.enabled", false}}));
+  CHECK_FALSE(shown.open("demo.workbench"));
+  shown.set_values(Json::object({{"lantern.enabled", true}}));
+  REQUIRE(shown.open("demo.workbench"));
+  CHECK(shows(laid_out(shown), "Raw readings"));  // its ribbon
+  shown.set_values(Json::object({{"lantern.enabled", false}}));  // turned off while open: the first present page
+  CHECK(shown.page() != "demo.workbench");
 }

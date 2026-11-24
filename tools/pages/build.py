@@ -56,7 +56,7 @@ NUMERIC = {"integer", "number", "duration_s"}
 TRI_THIRDS = ("auto", "inherit")
 AVAILABILITY = re.compile(r"live|later|inert|check:[a-z0-9._-]{1,48}|version:\d+\.\d+|requires:[a-z0-9._/-]{1,64}")
 PAGE_FIELDS = ("id", "category", "name", "description", "help", "related", "increment", "tag", "actions", "tabs",
-               "sections", "master", "live", "scoped")
+               "sections", "master", "live", "scoped", "browser_only", "shown_with", "gate", "ribbon")
 SETTING_FIELDS = ("key", "type", "default", "min", "max", "step", "unit", "choices", "choices_from", "third", "label", "help", "synonyms",
                   "home", "effect", "availability", "locked", "sensitive")
 
@@ -315,6 +315,8 @@ def lint(space_pages, description, fixtures, known_spaces):
             failures.append(f"{qwhere}: its state field is a name (a-z, 0-9, _; 1 to 32)")
         if q["home"] not in pages:
             failures.append(f"{qwhere}: its home {q['home']} is not a page of the space's (D252)")
+        elif pages[q["home"]].get("browser_only"):
+            failures.append(f"{qwhere}: its home is a page in game too, not a browser-only one (D258)")
         if not q["label"]:
             failures.append(f"{qwhere}: has a label")
     unique("quick switch", [q.get("key") or q.get("id") for q in quick], space)
@@ -398,6 +400,23 @@ def lint(space_pages, description, fixtures, known_spaces):
         unique("tab", [t["id"] for t in p.get("tabs", [])], where)
         unique("section", [s["id"] for s in sections], where)
         unique("action", [a["id"] for a in p.get("actions", [])], where)
+        # A page in the browser alone, shown with a setting, gated, with a ribbon (D258; D5, D10's Workshop).
+        if "shown_with" in p:
+            setting = settings.get(p["shown_with"])
+            if setting is None or setting["type"] != "bool":
+                failures.append(f"{where}: it is shown with a switch of the space's settings (D258)")
+        if "gate" in p:
+            if not p.get("browser_only"):
+                failures.append(f"{where}: a gate is a browser-only page's (D258)")
+            if not 1 <= len(p["gate"].get("words", "")) <= 256 or not 1 <= len(p["gate"].get("confirm", "")) <= 32:
+                failures.append(f"{where}: its gate has its words (1 to 256 characters) and a confirm label (1 to 32)")
+        if "ribbon" in p and not 1 <= len(p["ribbon"]) <= 32:
+            failures.append(f"{where}: its ribbon is 1 to 32 characters")
+        if p.get("browser_only"):
+            homed_here = [k for k, st in settings.items() if st.get("home") == p["id"]]
+            if homed_here:
+                failures.append(f"{where}: a browser-only page is no setting's home, for every setting is reachable "
+                                f"in game ({homed_here[0]}) (D258)")
         for section in sections:  # a section's chip, live status and own actions (D202)
             swhere = f"{where}, section {section['id']}"
             if "chip" in section and not 1 <= len(section["chip"]) <= 24:

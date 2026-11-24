@@ -2,7 +2,7 @@
 // layout.ts: a page's structure from its description alone (DESIGN §2.5, §9.3; invariant 12): its tabs, sections and
 // rows in grace-view's order (page_view.cpp's rebuild), the rail's order across categories for Page Up and Page Down, and
 // where a setting lives. The browser draws exactly this structure, so both views show the same rows in the same order.
-import type { Category, Page, PageBlock, PageSection, SpacePages } from "../protocol.ts";
+import type { Category, Json, Page, PageBlock, PageSection, SpacePages } from "../protocol.ts";
 
 export interface RowRef {
   kind: "setting" | "shortcut";
@@ -96,6 +96,22 @@ export function withinIncrement(pages: SpacePages, increment: string): SpacePage
   return {
     ...pages,
     categories,
+    pages: pages.pages.filter((p) => !absent.has(p.id)).map((p) => ({ ...p, related: p.related.filter((id) => !absent.has(id)) })),
+  };
+}
+
+/** The page data as its settings show it (D258): a page shown with a switch is absent while the switch is off, from
+ * its category, from Related links and from search, as a page of a later increment is. */
+export function withShown(pages: SpacePages, values: { [key: string]: Json } | undefined): SpacePages {
+  const absent = new Set(pages.pages.filter((p) => p.shown_with !== undefined && values?.[p.shown_with] !== true)
+    .map((p) => p.id));
+  if (absent.size === 0) {
+    return pages;
+  }
+  return {
+    ...pages,
+    categories: pages.categories.map((c) => ({ ...c, pages: c.pages.filter((id) => !absent.has(id)) }))
+      .filter((c) => c.pages.length > 0),
     pages: pages.pages.filter((p) => !absent.has(p.id)).map((p) => ({ ...p, related: p.related.filter((id) => !absent.has(id)) })),
   };
 }

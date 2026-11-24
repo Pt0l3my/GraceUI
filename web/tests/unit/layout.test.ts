@@ -10,7 +10,7 @@ import { builtinSpaces, goldenLines } from "../support/fixtures.ts";
 test("every page's rows in grace-view's order, every section and Advanced open (§9.3)", () => {
   const ours: string[] = [];
   for (const space of builtinSpaces()) {
-    for (const page of space.pages.pages) {
+    for (const page of space.pages.pages.filter((p) => p.browser_only !== true)) {  // the game's pages (D258)
       for (let tab = 0; tab < tabCount(page); ++tab) {
         ours.push(orderLine(space.pages.space, page, tab));
       }
@@ -23,7 +23,8 @@ test("Page Up and Page Down go in rail order across categories, as grace-view's"
   const demo = builtinSpaces()[1];
   assert.ok(demo);
   assert.deepEqual(railOrder(demo.pages).map((p) => p.id), ["demo.overview", "demo.behaviour", "demo.keepers", "demo.log", "demo.festival", "demo.lamps",
-                                                            "demo.lightings", "demo.handbook"]);
+                                                            "demo.lightings", "demo.handbook", "demo.workbench"]);
+  // In game the browser-only Workbench is absent (D258); the rest is grace-view's order.
 });
 
 test("every setting sits on exactly its home page, on one tab", () => {

@@ -10,7 +10,7 @@ import type {
   ErrorCode, Json, JsonObject, PageAction, Rows, Setting, SettingsBody, SpaceInfo, SpacePages, State, Welcome,
 } from "../protocol.ts";
 import { formatValue, isNumeric } from "./format.ts";
-import { pageById, placeOf, railOrder, sectionsOf, tabCount, withinIncrement } from "./layout.ts";
+import { pageById, placeOf, railOrder, sectionsOf, tabCount, withShown, withinIncrement } from "./layout.ts";
 import type { Answer, Ended, Transport, TransportEvents } from "../transport/transport.ts";
 import { PAGES_TOPIC, SETTINGS_TOPIC } from "../transport/transport.ts";
 
@@ -24,6 +24,8 @@ export type TopicData =
 export interface SpaceView {
   info: SpaceInfo;
   pages: Signal<SpacePages | null>;
+  /** Its page data as it came, before its increment and its settings (D258) leave pages out. */
+  raw?: SpacePages;
   settings: Signal<SettingsBody | null>;
   settingsRev: number;
 }
@@ -269,7 +271,8 @@ export class Session {
       return;
     }
     if (state.topic === PAGES_TOPIC) {
-      view.pages.value = withinIncrement(state.body as unknown as SpacePages, view.info.increment);  // §4.2.2, D173
+      view.raw = state.body as unknown as SpacePages;
+      this.showPages(view);
       this.chooseStart();
       return;
     }
@@ -277,6 +280,7 @@ export class Session {
       view.settingsRev = state.rev;
       batch(() => {
         view.settings.value = state.body as unknown as SettingsBody;
+        this.showPages(view);  // a page shown with a setting comes and goes with it (D258)
         // Confirmed edits give way to the space's own values.
         const edits = new Map(this.edits.value);
         let changed = false;
@@ -393,6 +397,27 @@ export class Session {
   }
 
   // ---- Where the view is.
+
+  /** A space's pages as its increment (§4.2.2, D173) and its settings (D258) show them; the open page, if it has gone,
+   * gives way to the space's first. */
+  private showPages(view: SpaceView): void {
+    if (view.raw === undefined) {
+      return;
+    }
+    const next = withShown(withinIncrement(view.raw, view.info.increment), view.settings.value?.values);
+    const before = view.pages.value;
+    if (before !== null && JSON.stringify(before) === JSON.stringify(next)) {
+      return;  // the same pages: nothing to draw again
+    }
+    view.pages.value = next;
+    const route = this.route.value;
+    if (route && route.space === view.info.id && !pageById(next, route.page)) {
+      const first = railOrder(next)[0];
+      if (first) {
+        this.open(view.info.id, first.id);
+      }
+    }
+  }
 
   private chooseStart(): void {
     if (this.route.value) {

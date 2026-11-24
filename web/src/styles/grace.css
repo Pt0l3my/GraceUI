@@ -497,6 +497,26 @@ ul, ol {
   color: var(--ink-hi);
 }
 
+/* A page's ribbon (D258): the space's words in a band at its top, in the destructive tone; and its gate. */
+.page__ribbon {
+  margin: 0 0 var(--space-12);
+  padding: var(--space-8) var(--space-16);
+  background: var(--rot-fill);
+  border-radius: var(--radius-control);
+  color: var(--ink-hi);
+  font-size: var(--type-ui-sm-size);
+}
+
+.gate {
+  max-width: 40em;
+}
+
+.gate__actions {
+  display: flex;
+  gap: var(--space-12);
+  margin-top: var(--space-16);
+}
+
 /* A header switch (D256): its label, then a switch as a setting's row draws one. */
 .header-switch {
   display: inline-flex;
