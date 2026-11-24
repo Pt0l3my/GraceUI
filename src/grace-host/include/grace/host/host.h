@@ -154,6 +154,7 @@ std::uint32_t test_frame_step() noexcept;  // D230
 void test_fill_server(GraceUiTestServer& out) noexcept;
 void test_fill_heap_guard(GraceUiTestHeapGuard& out) noexcept;                // D235
 std::uint32_t test_heap_guard_probe(std::uint32_t kind, std::uint32_t raise) noexcept;
+bool test_fill_hook_lead(std::uint32_t index, GraceUiTestHookLead& out) noexcept;     // D240
 #endif
 
 }  // namespace grace::host

@@ -537,6 +537,22 @@ std::uint32_t test_copy_hook_name(std::uint32_t index, char* out, std::uint32_t 
   return length;
 }
 
+bool test_fill_hook_lead(std::uint32_t index, GraceUiTestHookLead& out) noexcept {
+  bool here = false;
+  std::uint32_t jumps = 0;
+  std::uintptr_t base = 0;
+  char module[GRACEUI_TEST_MODULE_NAME_MAX + 1] = {};
+  if (!hooks::hook_lead(index, here, jumps, base, module, sizeof module)) {
+    return false;
+  }
+  out.leads_here = here ? 1 : 0;
+  out.jumps = jumps;
+  out.reserved = 0;
+  out.module_base = base;
+  std::memcpy(out.module, module, sizeof module);
+  return true;
+}
+
 void test_request_input(std::uint32_t owner, std::uint32_t kind, std::uint32_t wants, GraceUiTestAnswer& out) noexcept {
   const grace::input::Request answer = input::request(static_cast<std::uint16_t>(owner),
                                                       static_cast<grace::input::Kind>(kind <= 3 ? kind : 0),

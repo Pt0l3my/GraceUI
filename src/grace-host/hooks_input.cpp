@@ -916,4 +916,23 @@ bool filter_window(HWND window) noexcept {
   return true;
 }
 
+#if defined(GRACEUI_TEST_EXPORTS)
+bool window_lead(const void*& procedure, bool& ours) noexcept {
+  const HWND window = input::window();
+  const int count = g_filter_count.load(std::memory_order_acquire);
+  for (int slot = 0; window != nullptr && slot < count; ++slot) {
+    if (g_filtered[slot].load(std::memory_order_acquire) != window) {
+      continue;
+    }
+    const bool unicode = IsWindowUnicode(window) != FALSE;
+    const LONG_PTR now = unicode ? GetWindowLongPtrW(window, GWLP_WNDPROC) : GetWindowLongPtrA(window, GWLP_WNDPROC);
+    ours = now == (unicode ? filter_for<true>(slot) : filter_for<false>(slot));
+    // SAFETY: the window's procedure as an address, read only to find the module it lies in (D240).
+    procedure = reinterpret_cast<const void*>(now);
+    return true;
+  }
+  return false;
+}
+#endif
+
 }  // namespace grace::host::hooks_input

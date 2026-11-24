@@ -81,6 +81,17 @@ GRACEUI_API uint32_t GraceUI_Test_GetHookName(uint32_t index, char* out, uint32_
   }
 }
 
+GRACEUI_API uint32_t GraceUI_Test_GetHookLead(uint32_t index, GraceUiTestHookLead* out) {
+  try {
+    if (out == nullptr || out->size < sizeof(GraceUiTestHookLead)) {
+      return 0;
+    }
+    return grace::host::test_fill_hook_lead(index, *out) ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
 GRACEUI_API uint32_t GraceUI_Test_RequestInput(uint32_t owner, uint32_t kind, uint32_t wants, GraceUiTestAnswer* out) {
   try {
     if (out == nullptr) {

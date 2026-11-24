@@ -451,6 +451,24 @@ GRACEUI_API uint32_t GraceUI_Test_GetHeapGuard(GraceUiTestHeapGuard* out);
  * breach does. */
 GRACEUI_API uint32_t GraceUI_Test_HeapGuardProbe(uint32_t kind, uint32_t raise);
 
+/* ---- One hook holder in the process (EldenNet's S10.3.d, invariant 16, D240). */
+
+#define GRACEUI_TEST_MODULE_NAME_MAX 63
+
+typedef struct GraceUiTestHookLead {
+  uint32_t size;       /* set by the caller to sizeof(GraceUiTestHookLead) */
+  uint32_t leads_here; /* 1 if the function's entry leads now to this copy's detour (the window procedure: its filter) */
+  uint32_t jumps;      /* jumps followed from the entry: MinHook's makes 2 (its jump, then its relay's) */
+  uint32_t reserved;
+  uint64_t module_base; /* the module the entry leads into, as its HMODULE (a copy's own, to compare); 0 for none */
+  char module[GRACEUI_TEST_MODULE_NAME_MAX + 1]; /* its base name, UTF-8; "" for none */
+} GraceUiTestHookLead;
+
+/* Where installed hook `index` (GraceUI_Test_GetHookName's order) leads now: the function's first instructions read
+ * and each jump followed, at most four, the window procedure's as GetWindowLongPtr answers it. Fills *out (out->size set
+ * by the caller); answers 1, or 0 past the last hook (an idle copy has none) or if the size is too small. */
+GRACEUI_API uint32_t GraceUI_Test_GetHookLead(uint32_t index, GraceUiTestHookLead* out);
+
 #ifdef __cplusplus
 }
 #endif

@@ -23,6 +23,11 @@ void wake() noexcept;
 bool installed_hook(std::uint32_t index, const char*& name, const char*& module) noexcept;
 // Present's first bytes as GraceUI found them at install (GRACEUI_TEST_PROLOGUE_*; D86, D175).
 std::uint32_t present_prologue() noexcept;
+// Where installed hook `index` leads now (D240): whether its entry still reaches this copy's detour (the window
+// procedure's: its filter), the jumps followed from the entry, and the module it leads into, as its handle in `base`
+// (0 for none) and its base name, UTF-8, in `module` ("" for none); false past the last.
+bool hook_lead(std::uint32_t index, bool& here, std::uint32_t& jumps, std::uintptr_t& base, char* module,
+               std::uint32_t capacity) noexcept;
 #endif
 
 }  // namespace grace::host::hooks
