@@ -71,6 +71,7 @@ struct MenuInput {
 constinit std::atomic<bool> g_awaiting_key{false};
 // Whether one of its fields edits (G38 (a)), likewise: its keys then go to the field, and characters to the menu.
 constinit std::atomic<bool> g_editing{false};
+constinit std::atomic<bool> g_timer{false};  // Live updates holds bodies Every 5 s (D252): wake once a second
 // The clipboard's text for a paste, read on the window procedure's thread at Ctrl+V and taken on GraceUI's.
 constinit grace::abi::SpinLock g_paste_lock;
 constinit std::string* g_paste = nullptr;  // made at the first paste, never freed
@@ -959,6 +960,7 @@ void serve_menu() {
       m.open = false;
       m.away = away;
       g_editing.store(false, std::memory_order_release);  // no key reaches a field while nothing holds input
+      g_timer.store(false, std::memory_order_release);    // and nothing is applied on time while it is closed
       input::set_caret(0, 0, 0);
       active_view(m).pointer(grace::view::Pointer{grace::view::Pointer::Kind::leave, 0, 0, 0});  // no hover, no drag
       watch(m, false);                       // a mod builds nothing the menu no longer shows
@@ -978,6 +980,13 @@ void serve_menu() {
     sync_spaces(m);
   }
   bool dirty = false;
+  // The time, for Live updates' Every 5 s (D252): given before this wake's topics, which a view may then hold.
+  const std::int64_t now = input::now_ms();
+  for (const auto& space : m.spaces) {
+    if (space->view.tick(now) && space.get() == m.spaces[m.active].get()) {
+      dirty = true;
+    }
+  }
   if (m.revision != own_space().revision()) {
     take_effects(m);  // a browser changed a setting: the menu shows it, and its scale and theme follow (D169)
     dirty = true;
@@ -1031,6 +1040,10 @@ void serve_menu() {
   // A mod's answer may have closed the capture, or the menu closed with it open (D209).
   g_awaiting_key.store(m.open && active_view(m).awaiting_key(), std::memory_order_release);
   g_editing.store(m.open && active_view(m).editing(), std::memory_order_release);
+  // Every 5 s holding bodies: GraceUI's thread wakes once a second to apply them on time (D252).
+  g_timer.store(m.open && active_view(m).holding() &&
+                    active_view(m).live_mode() == grace::view::PageView::LiveMode::every_5s,
+                std::memory_order_release);
   if (dirty && m.open) {
     publish(m);
   }
@@ -1087,7 +1100,8 @@ void pad_inputs(std::uint32_t generation) noexcept {
       {0x0001, Key::up},           {0x0002, Key::down},    {0x0004, Key::left},     {0x0008, Key::right},
       {0x1000, Key::activate},     {0x2000, Key::back},    {0x0100, Key::previous_tab},
       {0x0200, Key::next_tab},     {0x4000, Key::reset},   {0x8000, Key::search},   // Y (D242)
-      {0x0020, Key::toggle_hints},  // View: the key hints off and on (D242); Start's quick switches are not in game yet
+      {0x0020, Key::toggle_hints},  // View: the key hints off and on (D242)
+      {0x0010, Key::quick},         // Start: the space's Quick switches (D252); like B, it never reaches the game
   };
   bool any = false;
   for (const Map& map : kButtons) {
@@ -1373,6 +1387,8 @@ grace::abi::DrawListData* frame(std::uint32_t width, std::uint32_t height) noexc
   g_frames.fetch_add(1, std::memory_order_relaxed);
   return &data;
 }
+
+bool wants_timer() noexcept { return g_timer.load(std::memory_order_acquire); }
 
 void serve() noexcept {
   if (g_off.load(std::memory_order_acquire)) {

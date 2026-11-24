@@ -921,7 +921,7 @@ void move_filter() noexcept {
 #else
       const DWORD idle = INFINITE;
 #endif
-      WaitForSingleObject(g_wake, spaces::wants_timer() ? 1000 : idle);
+      WaitForSingleObject(g_wake, spaces::wants_timer() || menu::wants_timer() ? 1000 : idle);
     } else {
       Sleep(50);
     }

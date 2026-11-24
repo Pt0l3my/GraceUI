@@ -14,6 +14,10 @@ text    ink.mute       17, 561   41x17   glyphs 7 "Records"
 fill    ground.well   189,   6  194x20   r1
 text    ink.faint     196,   9   28x14   glyphs 6 "Search"
 text    ink.faint     736,   9   42x14   glyphs 7 "F5  Close"
+fill    ground.well   636,   6   83x20   r1
+text    ink.body      644,   9   66x14   glyphs 13 "Quick switches"
+fill    ground.well   550,   6   78x20   r1
+text    ink.body      558,   9   61x14   glyphs 12 "Updates: Live"
 line    rule          167,  31  633x1   
 text    ink.hi        189,  49   88x25   clip1 glyphs 8 "Overview"
 fill    gold          688,  50   90x22   r1 clip1
@@ -63,4 +67,4 @@ stroke  edge          258, 580   23x15   r1 w1
 text    ink.body      262, 581   15x14   glyphs 3 "Esc"
 text    ink.faint     285, 581   19x14   glyphs 4 "Back"
 stroke  gold.hi       687,  49   92x24   r3 w1 clip1
-# 64 items, 2196 vertices, 4854 indices, 4 commands; check_draw_list: passes
+# 68 items, 2344 vertices, 5208 indices, 4 commands; check_draw_list: passes

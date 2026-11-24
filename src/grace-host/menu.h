@@ -45,6 +45,8 @@ grace::abi::DrawListData* frame(std::uint32_t width, std::uint32_t height) noexc
 
 // GraceUI's own thread, when woken.
 void serve() noexcept;
+// Whether the menu wants GraceUI's thread to wake once a second by itself: Live updates' Every 5 s holds bodies (D252).
+bool wants_timer() noexcept;
 
 #if defined(GRACEUI_TEST_EXPORTS)
 struct TestView {

@@ -9,7 +9,8 @@ import { pageById, parseLink, sectionsOf } from "../model/layout.ts";
 import { refusalWords } from "../model/session.ts";
 import type { TopicData } from "../model/session.ts";
 import { GreyedContext, MasterContext, useSession } from "./context.ts";
-import { ComponentBlock, useTopic } from "./components.tsx";
+import { ComponentBlock, useLiveTopic, useTopic } from "./components.tsx";
+import { LivePage, release } from "./live.ts";
 import { Arrow, Chevron, Cross, HelpMark, Lozenge, Warning } from "./icons.tsx";
 import { focusHeading } from "./navigate.ts";
 import { SettingRow } from "./row.tsx";
@@ -107,7 +108,7 @@ function SectionCard({ space, page, section }: { space: string; page: Page; sect
   const inert = greyed.words(greyed.page) !== null;
   const [asking, setAsking] = useState<PageAction | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const status = sectionStatus(useTopic(space, section.status?.topic), section.status?.field);
+  const status = sectionStatus(useLiveTopic(space, section.status?.topic), section.status?.field);
   const actions = section.actions ?? [];
   const act = async (action: PageAction) => {
     setRefusal(null);
@@ -360,12 +361,13 @@ export function PageView() {
   const stateData = useTopic(route?.space ?? "", route && declaresState ? SPACE_STATE : undefined);
   // A master list (D215): its rows, and the chosen one (the first, as soon as the list has one).
   const master = page?.master;
-  const masterData = useTopic(route?.space ?? "", master?.topic);
+  const masterData = useLiveTopic(route?.space ?? "", master?.topic, page?.live === true);
   const masterKeys = master ? masterRows(master, masterData).map((r) => r.key) : [];
   const held = route && page ? chosen.value.get(`${route.space}/${page.id}`) : undefined;
   const wanted = route && page ? expected.value.get(`${route.space}/${page.id}`) : undefined;
   const current = master ? rowToShow(masterKeys, held, wanted) : null;
   useEffect(() => dropDrafts(), [route?.space, page?.id]);  // a draft lives while its page is open (D217)
+  useEffect(() => release(), [route?.space, page?.id]);  // another page: what was held is drawn (D252)
   useEffect(() => {
     if (route && page && master && current !== null) {
       if (current === wanted) {
@@ -396,6 +398,7 @@ export function PageView() {
     }
   };
   return (
+    <LivePage.Provider value={page.live === true}>
     <GreyedContext.Provider value={greyed}>
     <main class={pageWords !== null ? "page page--greyed" : "page"} id="page" data-page={page.id} data-space={space}
           aria-labelledby="page-title">
@@ -475,5 +478,6 @@ export function PageView() {
                      onConfirm={(action) => void run(action, true)} />
     </main>
     </GreyedContext.Provider>
+    </LivePage.Provider>
   );
 }

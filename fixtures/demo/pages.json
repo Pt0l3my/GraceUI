@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 12,
+  "minor": 13,
   "categories": [
     {
       "id": "lanterns",
@@ -74,7 +74,8 @@
             }
           ]
         }
-      ]
+      ],
+      "live": true
     },
     {
       "id": "demo.behaviour",
@@ -230,7 +231,8 @@
             }
           ]
         }
-      ]
+      ],
+      "live": true
     },
     {
       "id": "demo.festival",
@@ -661,7 +663,8 @@
     "note.restore",
     "note.draft",
     "keepers.import",
-    "report.part"
+    "report.part",
+    "bell.hush"
   ],
   "slow_commands": [
     "oil.order",
@@ -672,5 +675,23 @@
   ],
   "file_commands": [
     "keepers.import"
+  ],
+  "quick": [
+    {
+      "key": "lantern.enabled"
+    },
+    {
+      "key": "lantern.colour"
+    },
+    {
+      "id": "hush",
+      "label": "Hush the bell for this session",
+      "command": "bell.hush",
+      "state": {
+        "topic": "lantern.status",
+        "field": "hushed"
+      },
+      "home": "demo.overview"
+    }
   ]
 }

@@ -484,6 +484,39 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       return false;
     }
   }
+  // The top bar's Quick switches (G45, D252), as the page lint checks them: a shortcut to a switch or a choice of the
+  // space's, by its key alone; or a session switch of the space's own, its command neither a settings, a file nor a slow
+  // command, its state a member of a state topic of the space's own, its home a page of the space's.
+  for (const protocol::QuickSwitch& q : pages.quick.value_or(std::vector<protocol::QuickSwitch>{})) {
+    if (q.key) {
+      const auto setting = std::find_if(settings.begin(), settings.end(),
+                                        [&](const protocol::Setting& one) { return one.key == *q.key; });
+      if (q.id || q.label || q.command || q.state || q.home || setting == settings.end() ||
+          (setting->type != protocol::SettingType::bool_ && setting->type != protocol::SettingType::choice)) {
+        why = "quick switch " + *q.key + " is a shortcut to a switch or a choice of the space's, by its key alone";
+        return false;
+      }
+      continue;
+    }
+    const auto state_topic = [&](const std::string& id) {
+      return id != "settings" && id != "space.state" &&
+             std::any_of(pages.topics.begin(), pages.topics.end(), [&](const protocol::TopicInfo& t) {
+               return t.id == id && t.shape == protocol::TopicShape::state && !t.family.value_or(false);
+             });
+    };
+    const bool session = q.id && q.label && !q.label->empty() && q.command && q.state && q.home &&
+                         usable(*q.command) && *q.command != "settings.set" && *q.command != "settings.reset" &&
+                         std::find(slow.begin(), slow.end(), *q.command) == slow.end() && state_topic(q.state->topic) &&
+                         name_ok(q.state->field) &&
+                         std::any_of(pages.pages.begin(), pages.pages.end(),
+                                     [&](const protocol::Page& p) { return p.id == *q.home; });
+    if (!session) {
+      why = "quick switch " + q.id.value_or("") + " is a session switch: an id, a label, a command of the space's own "
+            "(not a settings, file or slow command), its state a member of a state topic of the space's and its home a "
+            "page of the space's";
+      return false;
+    }
+  }
   const auto block_ok = [&](const protocol::Page& page, const protocol::PageBlock& block) {
     const std::string where = page.id + ": ";
     const bool table = block.kind == protocol::BlockKind::component && block.component == protocol::Component::table;
@@ -817,6 +850,8 @@ bool PageView::present(std::string_view page_id) const { return absent_.find(pag
 bool PageView::open(std::string_view page_id) {
   for (std::size_t i = 0; i < pages_.pages.size(); ++i) {
     if (pages_.pages[i].id == page_id && present(page_id)) {
+      release_held();  // what the last page held is applied (D252)
+      quick_open_ = false;
       page_ = i;
       tab_ = 0;
       page_focus_ = 0;
@@ -917,6 +952,11 @@ void PageView::set_topic(std::string_view topic, const Json& body) {
     if (!confirming_.empty() && !greyed_words(current().id).empty()) {
       confirming_.clear();  // a destructive action asking for its second press goes inert with its page
     }
+    return;
+  }
+  if (hold(topic)) {
+    pending_[std::string(topic)] = body;  // held by Live updates (D252): the newest of each topic
+    ++held_new_;
     return;
   }
   const std::string was = focused();
@@ -1284,6 +1324,11 @@ std::vector<std::string> PageView::component_topics() const {
   for (const protocol::TopicInfo& topic : pages_.topics) {
     if (topic.id == "space.state" && topic.shape == protocol::TopicShape::state) {
       out.push_back(topic.id);  // its greyed pages (D188), watched with every page
+    }
+  }
+  for (const protocol::QuickSwitch& q : pages_.quick.value_or(std::vector<protocol::QuickSwitch>{})) {
+    if (q.state && std::find(out.begin(), out.end(), q.state->topic) == out.end()) {
+      out.push_back(q.state->topic);  // a session switch's state (D252), on every page: Start opens them anywhere
     }
   }
   if (const protocol::PageMaster* m = master(); m != nullptr) {
@@ -1876,12 +1921,12 @@ std::size_t PageView::rail_index_of_page() const {
 }
 
 std::string PageView::focused() const {
-  return name_of(scope_, scope_ == Scope::rail ? rail_focus_ : page_focus_);
+  return name_of(scope_, scope_ == Scope::rail ? rail_focus_ : scope_ == Scope::top ? top_focus_ : page_focus_);
 }
 
 std::string PageView::name_of(Scope scope, std::size_t index) const {
   if (scope == Scope::top) {
-    return "search";
+    return index == kTopLive ? "top:live" : index == kTopQuick ? "top:quick" : "search";  // the top bar's (D252)
   }
   if (scope == Scope::rail) {
     if (index >= rail_.size()) {
@@ -2170,6 +2215,10 @@ Action PageView::pointer_body(const Pointer& in) {
       hit = hit_at(in.x, in.y);
     }
   }
+  if (quick_open_ && (hit == nullptr || hit->scope != Scope::top || hit->index < kTopQuick)) {
+    quick_open_ = false;  // a press outside the Quick switches menu closes it, and does nothing else (D252)
+    return {};
+  }
   if (hit == nullptr) {
     return {};
   }
@@ -2180,8 +2229,26 @@ Action PageView::pointer_body(const Pointer& in) {
     rail_focus_ = target.index;
     return input(Input{Key::activate, false});
   }
+  if (target.scope == Scope::top && target.index >= kTopLive) {
+    // The top bar's Live updates and Quick switches, and the menu's rows (D252).
+    if (target.index == kQuickRow - 1) {
+      return {};  // the menu's ground, between its rows
+    }
+    if (target.index >= kQuickRow) {
+      quick_focus_ = target.index - kQuickRow;
+      return flip_quick(quick_focus_, 1);
+    }
+    scope_ = Scope::top;
+    top_focus_ = target.index;
+    if (target.index == kTopQuick && quick_open_) {
+      quick_open_ = false;
+      return {};
+    }
+    return input(Input{Key::activate, false});
+  }
   if (target.scope == Scope::top) {
     scope_ = Scope::top;
+    top_focus_ = kTopSearch;
     if (target.index > 0 && target.index - 1 < search_hits_.size()) {
       // One of search's results (§4.3): its home page, the row focused.
       const SearchHit picked = search_hits_[target.index - 1];
@@ -2557,6 +2624,7 @@ Action PageView::input(const Input& in) {
   const std::string sender = focused();
   Action action = input_body(in);
   note_running(action, sender);
+  note_sent(action);
   if (on_master_row() && master() != nullptr) {
     expected_.erase(current().id);  // the player chooses by hand: a save's choice waiting for its row goes (D218)
   }
@@ -2581,6 +2649,7 @@ Action PageView::pointer(const Pointer& in) {
   if (action.kind == Action::Kind::command) {
     note_running(action, focused());  // a click focuses what it acts on
   }
+  note_sent(action);  // a command the mouse sent: its answer is never held (D252)
   if (in.kind == Pointer::Kind::press) {
     if (on_master_row() && master() != nullptr) {
       expected_.erase(current().id);  // as a key's (D218)
@@ -3545,10 +3614,133 @@ void PageView::cancel_confirmation() noexcept {
   }
 }
 
+// ---- The top bar's Live updates and Quick switches (G45, D252).
+
+void PageView::set_live_mode(LiveMode mode) {
+  live_mode_ = mode;
+  applied_ms_ = now_ms_;
+  if (mode != LiveMode::paused) {
+    release_held();  // Live, or Every 5 s from Paused: what came meanwhile is drawn now
+  }
+}
+
+bool PageView::tick(std::int64_t now_ms) {
+  now_ms_ = now_ms;
+  if (live_mode_ == LiveMode::every_5s && !pending_.empty() && now_ms_ - applied_ms_ >= 5000) {
+    release_held();
+    return true;
+  }
+  return false;
+}
+
+bool PageView::hold(std::string_view topic) {
+  if (releasing_ || live_mode_ == LiveMode::live || !current().live.value_or(false) || now_ms_ < release_until_ ||
+      topics_.find(topic) == topics_.end()) {
+    return false;  // not live, or Live; the player's own command answered; a topic's first body is always drawn
+  }
+  // (A quick switch's state may be held with its page: the Quick switches menu reads the newest body, held or not.)
+  const std::vector<std::string> mine = component_topics();
+  if (topic == "space.state" || std::find(mine.begin(), mine.end(), topic) == mine.end()) {
+    return false;
+  }
+  if (live_mode_ == LiveMode::every_5s && pending_.empty() && now_ms_ - applied_ms_ >= 5000) {
+    applied_ms_ = now_ms_;  // five seconds since the last: this one is drawn now, the next ones wait
+    return false;
+  }
+  return true;
+}
+
+void PageView::release_held() {
+  auto pending = std::move(pending_);
+  pending_.clear();
+  held_new_ = 0;
+  releasing_ = true;
+  for (const auto& [topic, body] : pending) {
+    set_topic(topic, body);
+  }
+  releasing_ = false;
+  applied_ms_ = now_ms_;
+}
+
+void PageView::note_sent(const Action& action) {
+  if (action.kind == Action::Kind::command) {
+    release_until_ = now_ms_ + 3000;  // its answer is never held, nor what else comes while it is answered
+    release_held();
+  }
+}
+
+const protocol::Json* PageView::latest(std::string_view topic) const {
+  if (const auto held = pending_.find(topic); held != pending_.end()) {
+    return &held->second;
+  }
+  const auto found = topics_.find(topic);
+  return found != topics_.end() ? &found->second : nullptr;
+}
+
+std::vector<std::size_t> PageView::top_stops() const {
+  std::vector<std::size_t> stops{kTopSearch};
+  if (current().live.value_or(false)) {
+    stops.push_back(kTopLive);
+  }
+  if (has_quick()) {
+    stops.push_back(kTopQuick);
+  }
+  return stops;
+}
+
+Action PageView::flip_quick(std::size_t index, int step) {
+  const auto& quick = pages_.quick.value_or(std::vector<protocol::QuickSwitch>{});
+  if (index >= quick.size()) {
+    return {};
+  }
+  const protocol::QuickSwitch& q = quick[index];
+  if (q.key) {
+    const Setting* st = setting(*q.key);
+    return st != nullptr ? change(*st, step, false) : Action{};  // as its row does: a switch turns, a choice steps
+  }
+  const protocol::Json* body = q.state ? latest(q.state->topic) : nullptr;
+  if (body == nullptr || !body->is_object() || !body->contains(q.state->field) || !(*body)[q.state->field].is_boolean()) {
+    return {};  // its state has not come: nothing is sent, nothing is claimed
+  }
+  Action action;
+  action.kind = Action::Kind::command;
+  action.command.space = pages_.space;
+  action.command.name = *q.command;
+  action.command.args = Json::object({{"on", !(*body)[q.state->field].get<bool>()}});
+  return action;  // the space's next state shows it (invariant 1)
+}
+
+Action PageView::quick_input(const Input& in) {
+  const std::size_t n = pages_.quick ? pages_.quick->size() : 0;
+  switch (in.key) {
+    case Key::up:
+    case Key::previous:
+      quick_focus_ = quick_focus_ > 0 ? quick_focus_ - 1 : 0;
+      return {};
+    case Key::down:
+    case Key::next:
+      quick_focus_ = n > 0 ? std::min(quick_focus_ + 1, n - 1) : 0;
+      return {};
+    case Key::activate:
+    case Key::right:
+      return flip_quick(quick_focus_, 1);
+    case Key::left:
+      return flip_quick(quick_focus_, -1);
+    case Key::back:
+    case Key::quick:
+      quick_open_ = false;
+      return {};
+    default:
+      return {};
+  }
+}
+
 // ---- Input (§5.3, §5.4, §5.7).
 
 // The first control of the page's focus order: past the section labels where there is one (§5.7).
 Action PageView::open_index(std::size_t index, Scope scope) {
+  release_held();  // what the last page held is applied: the next page draws it as it is (D252)
+  quick_open_ = false;
   page_ = index;
   tab_ = 0;
   page_focus_ = 0;
@@ -3598,9 +3790,21 @@ Action PageView::input_body(const Input& in) {
       default: return {};
     }
   }
+  if (quick_open_) {
+    return quick_input(in);  // the Quick switches menu has every key until it closes (D252)
+  }
+  if (in.key == Key::quick) {
+    if (has_quick()) {
+      confirming_.clear();
+      quick_open_ = true;
+      quick_focus_ = 0;
+    }
+    return {};
+  }
   if (in.key == Key::search) {
     // `/` or Ctrl+F (§4.3): search's field, from anywhere in the menu.
     confirming_.clear();
+    top_focus_ = kTopSearch;
     scope_ = Scope::top;
     start_edit(EditKind::search, "search", search_query_, kSearchMax, false);
     edited();
@@ -3717,6 +3921,12 @@ Action PageView::input_body(const Input& in) {
     }
   }
   if (scope_ == Scope::top) {
+    const std::vector<std::size_t> stops = top_stops();
+    auto at = std::find(stops.begin(), stops.end(), top_focus_);
+    if (at == stops.end()) {
+      top_focus_ = kTopSearch;  // a stop the page no longer has (another page, not live)
+      at = stops.begin();
+    }
     switch (in.key) {
       case Key::next:
       case Key::down:
@@ -3727,7 +3937,27 @@ Action PageView::input_body(const Input& in) {
         scope_ = Scope::rail;
         rail_focus_ = rail_index_of_page();
         return {};
+      case Key::right:
+        if (at + 1 != stops.end()) {
+          top_focus_ = *(at + 1);  // the top bar's next stop (D252)
+        }
+        return {};
+      case Key::left:
+        if (at != stops.begin()) {
+          top_focus_ = *(at - 1);
+        }
+        return {};
       case Key::activate:
+        if (top_focus_ == kTopLive) {
+          set_live_mode(live_mode_ == LiveMode::live ? LiveMode::every_5s
+                        : live_mode_ == LiveMode::every_5s ? LiveMode::paused : LiveMode::live);
+          return {};
+        }
+        if (top_focus_ == kTopQuick) {
+          quick_open_ = true;
+          quick_focus_ = 0;
+          return {};
+        }
         start_edit(EditKind::search, "search", search_query_, kSearchMax, false);
         edited();
         return {};
@@ -4215,13 +4445,42 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
              search.x + std::round(10 * s), search.y + std::round((search.h - line_height(TypeRole::ui_sm, s)) / 2),
              search.w - std::round(20 * s), search_query_.empty() ? Colour::ink_faint : Colour::ink_body);
     }
-    if (scope_ == Scope::top) {
+    if (scope_ == Scope::top && top_focus_ == kTopSearch) {
       c.focused(search);
     }
     const char* close_hint = "F5  Close";
     const float close_w = c.width(close_hint, TypeRole::ui_sm);
     c.text(close_hint, TypeRole::ui_sm, page_x + page_w - gutter - close_w,
            std::round((bar_h - line_height(TypeRole::ui_sm, s)) / 2), close_w + 1, Colour::ink_faint);
+    // Live updates, on a live page, and Quick switches, where the space has some (D252): pills at the right, before
+    // the key that closes, in the top bar's order.
+    Rect quick_pill{};
+    {
+      float right = page_x + page_w - gutter - close_w - std::round(24 * s);
+      const auto pill = [&](std::string_view words, std::size_t stop, bool on) {
+        const float w = c.width(words, TypeRole::ui_sm) + std::round(24 * s);
+        const Rect box{right - w, search.y, w, search.h};
+        c.fill(box, on ? Colour::tint_select : Colour::ground_well, std::round(tokens::radius::control * s));
+        c.text(words, TypeRole::ui_sm, box.x + std::round(12 * s),
+               box.y + std::round((box.h - line_height(TypeRole::ui_sm, s)) / 2), w, on ? Colour::gold_hi : Colour::ink_body);
+        hit(box, Scope::top, stop);
+        if (scope_ == Scope::top && top_focus_ == stop) {
+          c.focused(box);
+        }
+        right = box.x - std::round(12 * s);
+        return box;
+      };
+      if (has_quick()) {
+        quick_pill = pill("Quick switches", kTopQuick, quick_open_);
+      }
+      if (current().live.value_or(false)) {
+        std::string words = live_mode_ == LiveMode::live ? "Live" : live_mode_ == LiveMode::every_5s ? "Every 5 s" : "Paused";
+        if (live_mode_ != LiveMode::live && held_new_ > 0) {
+          words += " \u00B7 " + std::to_string(held_new_) + " new";
+        }
+        pill("Updates: " + words, kTopLive, false);
+      }
+    }
     c.line(page_x, bar_h, page_w, Colour::rule);
 
     // ---- The page, clipped between the top bar and the key hints, scrolled to keep focus in view.
@@ -5939,7 +6198,10 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     } else if (scope_ == Scope::rail) {
       hints = "↑ ↓  Move    Enter  Open    →  Page    Esc  Close";
     } else if (scope_ == Scope::top) {
-      hints = "Enter  Search    ↓  Page    Esc  Back";
+      hints = top_focus_ == kTopLive    ? "Enter  Change    ← →  Move    ↓  Page    Esc  Back"
+              : top_focus_ == kTopQuick ? "Enter  Open    ← →  Move    ↓  Page    Esc  Back"
+              : top_stops().size() > 1  ? "Enter  Search    →  Next    ↓  Page    Esc  Back"
+                                        : "Enter  Search    ↓  Page    Esc  Back";
     }
     if (editing()) {
       // A field's keys (§5.3): every other key types into it.
@@ -5959,6 +6221,13 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               : capture_.kind == CaptureKind::chord   ? "↑ ↓  Move    ← →  Change    Enter  Use    R  No pad chord    Esc  Cancel"
               : capture_.row                          ? "Press a key    Backspace  No key    Esc  Cancel"
                                                       : "Press a key    Esc  Cancel";
+    }
+    if (quick_open_ && has_quick()) {
+      // The Quick switches menu's keys (D252): a choice steps, a switch flips.
+      const protocol::QuickSwitch& q = (*pages_.quick)[std::min(quick_focus_, pages_.quick->size() - 1)];
+      const Setting* st = q.key ? setting(*q.key) : nullptr;
+      hints = st != nullptr && st->type == SettingType::choice ? "↑ ↓  Choose    ← →  Change    Esc  Close"
+                                                               : "↑ ↓  Choose    Enter  Flip    Esc  Close";
     }
     footer_ = !hints_shown_ ? std::string() : pad_mode_ ? pad_words(hints) : hints;
     if (hints_shown_) {
@@ -6005,6 +6274,100 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                row.y + std::round((rh - line_height(TypeRole::ui_sm, s)) / 2),
                std::max(0.0f, row.w - 2 * pad - label_w - std::round(12 * s)), Colour::ink_mute);
         hit(row, Scope::top, i + 1);
+      }
+    }
+    // The Quick switches menu (D252), over the page under its pill: a row a switch, its words, the page it lives in and
+    // its control; a session switch's state as the space last published it, and none claimed until it has come.
+    if (quick_open_ && has_quick()) {
+      c.clip = 0;
+      const auto& quick = *pages_.quick;
+      const float card_w = std::min(std::round(480 * s), page_w - 2 * gutter);
+      const float pad = std::round(16 * s);
+      const float rh = std::round(60 * s);
+      const float radius = std::round(tokens::radius::card * s);
+      const Rect card{std::max(page_x + gutter, quick_pill.right() - card_w), bar_h + std::round(6 * s), card_w,
+                      rh * static_cast<float>(quick.size()) + 2 * pad};
+      c.fill(card, Colour::ground_2, radius);
+      c.stroke(card, Colour::rule, std::max(1.0f, std::round(s)), radius);
+      hit(card, Scope::top, kQuickRow - 1);  // its ground: a press there keeps it open
+      const auto page_name = [&](const std::string& id) {
+        for (const protocol::Page& p : pages_.pages) {
+          if (p.id == id) {
+            return p.name;
+          }
+        }
+        return id;
+      };
+      for (std::size_t i = 0; i < quick.size(); ++i) {
+        const protocol::QuickSwitch& q = quick[i];
+        const Rect row{card.x, card.y + pad + rh * static_cast<float>(i), card.w, rh};
+        std::string label;
+        std::string home;
+        std::string words;  // a choice's
+        bool is_switch = true;
+        bool known = true;
+        bool on = false;
+        if (q.key) {
+          const Setting* st = setting(*q.key);
+          if (st == nullptr) {
+            continue;
+          }
+          label = st->label;
+          home = st->home;
+          const Json& v = value(*q.key);
+          if (st->type == SettingType::bool_) {
+            on = v.is_boolean() && v.get<bool>();
+          } else {
+            is_switch = false;
+            for (const protocol::Choice& choice : st->choices.value_or(std::vector<protocol::Choice>{})) {
+              if (v.is_string() && choice.value == v.get_ref<const std::string&>()) {
+                words = choice.label;
+              }
+            }
+          }
+        } else {
+          label = *q.label;
+          home = *q.home;
+          const Json* body = latest(q.state->topic);
+          known = body != nullptr && body->is_object() && body->contains(q.state->field) &&
+                  (*body)[q.state->field].is_boolean();
+          on = known && (*body)[q.state->field].get<bool>();
+        }
+        if (i == quick_focus_) {
+          c.fill(row, Colour::tint_select);
+        } else if (hovered(row)) {
+          c.fill(row, Colour::tint_hover);
+        }
+        const float text_w = row.w - 2 * pad - std::round(140 * s);
+        const float ty = row.y + std::round((rh - line_height(TypeRole::ui, s) - line_height(TypeRole::ui_sm, s)) / 2);
+        c.text(label, TypeRole::ui, row.x + pad, ty, text_w, Colour::ink_hi);
+        c.text("Lives in " + page_name(home), TypeRole::ui_sm, row.x + pad, ty + line_height(TypeRole::ui, s), text_w,
+               Colour::ink_faint);
+        const float mid = row.y + rh / 2;
+        if (is_switch && known) {
+          const float edge_w = std::round(tokens::kGrace.size.edge_width * s);
+          const Rect control{row.right() - pad - std::round(40 * s), mid - std::round(11 * s), std::round(40 * s),
+                             std::round(22 * s)};
+          if (on) {
+            c.fill(control, Colour::gold, control.h / 2);
+          } else {
+            c.fill(control, Colour::ground_well, control.h / 2);
+            c.stroke(control, Colour::edge, edge_w, control.h / 2);
+          }
+          const float knob = std::round(16 * s);
+          c.circle(Rect{on ? control.right() - knob - std::round(3 * s) : control.x + std::round(3 * s),
+                        control.y + std::round((control.h - knob) / 2), knob, knob},
+                   on ? Colour::on_gold : Colour::ink_mute);
+        } else {
+          const std::string shown = is_switch ? std::string("Not known yet") : words;
+          const float w = c.width(shown, TypeRole::ui_sm);
+          c.text(shown, TypeRole::ui_sm, row.right() - pad - w, mid - std::round(line_height(TypeRole::ui_sm, s) / 2),
+                 w + 1, is_switch ? Colour::ink_mute : Colour::ink_body);
+        }
+        hit(row, Scope::top, kQuickRow + i);
+        if (i == quick_focus_) {
+          c.focused(row);
+        }
       }
     }
     // The capture's modal (D209), over everything: the page under it takes no pointer.

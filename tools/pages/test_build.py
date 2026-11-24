@@ -292,6 +292,44 @@ class Seeded(unittest.TestCase):
         sp["slow_commands"] = ["oil.order", "oil.order"]
         self.expect("slow command oil.order twice", sp, desc, fx)
 
+    def test_quick_switches(self):  # G45, D252
+        def hush(sp):
+            return next(q for q in sp["quick"] if q.get("id") == "hush")
+        sp, desc, fx = demo()
+        sp["quick"].append({"key": "lantern.keeper"})  # a text setting
+        self.expect("quick switch lantern.keeper: names a switch or a choice", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["quick"].append({"key": "lantern.nowhere"})
+        self.expect("quick switch lantern.nowhere: names a switch or a choice", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["quick"][0]["label"] = "Lantern"
+        self.expect("a setting's shortcut names its key alone", sp, desc, fx)
+        sp, desc, fx = demo()
+        del hush(sp)["home"]
+        self.expect("quick switch hush: a session switch has an id, a label, a command, a state and a home", sp, desc, fx)
+        for command in ("bell.ring", "settings.set", "keepers.import", "oil.order"):
+            sp, desc, fx = demo()
+            hush(sp)["command"] = command
+            self.expect("quick switch hush: sends a command of the space's own", sp, desc, fx)
+        for topic in ("lantern.log", "lantern.guide", "settings", "lantern.nowhere"):
+            sp, desc, fx = demo()
+            hush(sp)["state"]["topic"] = topic
+            self.expect("quick switch hush: its state is on a state topic of the space's own", sp, desc, fx)
+        sp, desc, fx = demo()
+        hush(sp)["state"]["field"] = "Hushed"
+        self.expect("quick switch hush: its state field is a name", sp, desc, fx)
+        sp, desc, fx = demo()
+        hush(sp)["home"] = "demo.nowhere"
+        self.expect("quick switch hush: its home demo.nowhere is not a page", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["quick"].append({"key": "lantern.enabled"})
+        self.expect("quick switch lantern.enabled twice", sp, desc, fx)
+
+    def test_live_pages(self):  # G45, D252
+        sp, desc, fx = demo()
+        page(sp, "demo.behaviour")["live"] = True  # settings rows alone: nothing moves by itself
+        self.expect("demo.behaviour: a live page draws a topic of the space's", sp, desc, fx)
+
     def test_file_commands_and_upload_blocks(self):  # D226
         def roster_block(sp):
             section = next(s for s in page(sp, "demo.keepers")["sections"] if s["id"] == "roster_file")

@@ -961,6 +961,83 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("quick switches: a panel under the top bar's button; a setting's switch and choice; a session switch (D252)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "lanterns", "demo.keepers");
+      const button = page.locator(".topbar .quick > button");
+      assert.equal(await button.getAttribute("aria-expanded"), "false");
+      await button.click();
+      await page.locator("#quick-switches").waitFor();
+      assert.deepEqual(await page.locator(".quick__label").allTextContents(),
+                       ["Lantern lit", "Flame colour", "Hush the bell for this session"]);
+      assert.deepEqual(await page.locator(".quick__home").allTextContents(),
+                       ["Lives in Behaviour", "Lives in Behaviour", "Lives in Overview"]);
+      const sent = (name: string) => host.received.filter((f) => f.t === "cmd" && f.name === name);
+      const until = async (done: () => boolean) => {
+        for (let i = 0; i < 40 && !done(); ++i) {
+          await page.waitForTimeout(50);
+        }
+      };
+      // The bell: its state as the space published it; a flip sends {on}, and the space's next state shows it.
+      const hush = page.locator(".quick__row").nth(2).locator("[role=switch]");
+      await page.waitForFunction(() =>
+        document.querySelectorAll(".quick__row")[2]?.querySelector("[role=switch]")?.getAttribute("aria-disabled") === null);
+      assert.equal(await hush.getAttribute("aria-checked"), "false");
+      await hush.click();
+      await page.waitForFunction(() =>
+        document.querySelectorAll(".quick__row")[2]?.querySelector("[role=switch]")?.getAttribute("aria-checked") === "true");
+      assert.deepEqual(sent("bell.hush")[0]?.args, { on: true });
+      // A setting's switch and its choice, as their rows send them.
+      const before = sent("settings.set").length;
+      await page.locator(".quick__row").nth(0).locator("[role=switch]").click();
+      await until(() => sent("settings.set").length > before);
+      assert.deepEqual(sent("settings.set")[before]?.args, { key: "lantern.enabled", value: false });
+      await page.locator(".quick__select").selectOption("white");
+      await until(() => sent("settings.set").length > before + 1);
+      assert.deepEqual(sent("settings.set")[before + 1]?.args, { key: "lantern.colour", value: "white" });
+      assert.deepEqual(await violations(page), []);
+      // Esc closes it, focus back on its button; "Lives in" opens the page it lives in.
+      await page.keyboard.press("Escape");
+      assert.equal(await page.locator("#quick-switches").count(), 0);
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-controls")), "quick-switches");
+      await button.click();
+      await page.locator(".quick__home").nth(2).click();
+      await page.waitForFunction(() => document.querySelector("#page")?.getAttribute("data-page") === "demo.overview");
+      assert.equal(await page.locator("#quick-switches").count(), 0);
+    } finally {
+      await close();
+    }
+  });
+
+  test("live updates: on a live page, Paused holds its topics and counts them; Live draws them (D252)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "lanterns", "demo.overview");
+      await page.locator(".sentence").waitFor();
+      const first = await page.locator(".sentence").textContent();
+      const control = page.locator(".topbar__control[data-live]");
+      assert.equal(await control.textContent(), "Updates: Live");
+      await control.click();
+      assert.equal(await control.textContent(), "Updates: Every 5 s");
+      await control.click();
+      assert.equal(await control.getAttribute("data-live"), "paused");
+      host.push("demo", "lantern.status", { sentence: "The wind rose.", hushed: false });
+      await page.waitForFunction(() => document.querySelector(".topbar__control[data-live]")?.textContent ===
+                                       "Updates: Paused \u00B7 1 new");
+      assert.equal(await page.locator(".sentence").textContent(), first);  // held
+      await control.click();  // Live again: what came is drawn
+      await page.waitForFunction(() => document.querySelector(".sentence")?.textContent === "The wind rose.");
+      assert.equal(await control.textContent(), "Updates: Live");
+      assert.deepEqual(await violations(page), []);
+      // A page that is not live has no such control.
+      await openFromRail(page, "lanterns", "demo.keepers");
+      assert.equal(await page.locator(".topbar__control[data-live]").count(), 0);
+    } finally {
+      await close();
+    }
+  });
+
   test("a table's filter bar: its selects, its sort and direction, its search, Clear filters (G43, D250)", async () => {
     const { page, close } = await fresh();
     try {

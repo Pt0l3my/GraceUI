@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 12;
-inline constexpr std::string_view kProtocolVersion = "1.12";
+inline constexpr std::uint32_t kProtocolMinor = 13;
+inline constexpr std::string_view kProtocolVersion = "1.13";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -411,6 +411,28 @@ struct SectionStatus {
 bool decode(const Json& in, SectionStatus& out, const std::string& path, DecodeError& e);
 Json encode(const SectionStatus& in);
 
+// A session switch's state (1.13, D252): a boolean at a member of a state topic of the space's.
+struct QuickState {
+  std::string topic{};
+  std::string field{};
+  bool operator==(const QuickState&) const = default;
+};
+bool decode(const Json& in, QuickState& out, const std::string& path, DecodeError& e);
+Json encode(const QuickState& in);
+
+// A quick switch (1.13, D252): a shortcut to a setting of the space's, a switch or a choice, by its key alone; or a session switch the space owns, which sends its command with {on} and shows the state the space publishes, named with the page it lives in.
+struct QuickSwitch {
+  std::optional<std::string> key{};
+  std::optional<std::string> id{};
+  std::optional<std::string> label{};
+  std::optional<std::string> command{};
+  std::optional<QuickState> state{};
+  std::optional<std::string> home{};
+  bool operator==(const QuickSwitch&) const = default;
+};
+bool decode(const Json& in, QuickSwitch& out, const std::string& path, DecodeError& e);
+Json encode(const QuickSwitch& in);
+
 // A section: a card with a label, an optional line, its blocks and an Advanced disclosure; a chip, a live status and actions of its own (D202).
 struct PageSection {
   std::string id{};
@@ -474,6 +496,7 @@ struct Page {
   std::optional<std::vector<PageTab>> tabs{};
   std::optional<std::vector<PageSection>> sections{};
   std::optional<PageMaster> master{};
+  std::optional<bool> live{};
   bool operator==(const Page&) const = default;
 };
 bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e);
@@ -502,6 +525,7 @@ struct SpacePages {
   std::optional<std::vector<std::string>> slow_commands{};
   std::optional<std::vector<std::string>> sensitive_commands{};
   std::optional<std::vector<std::string>> file_commands{};
+  std::optional<std::vector<QuickSwitch>> quick{};
   bool operator==(const SpacePages&) const = default;
 };
 bool decode(const Json& in, SpacePages& out, const std::string& path, DecodeError& e);

@@ -14,6 +14,8 @@ text    ink.mute       40,1030   54x20   glyphs 8 "Handbook"
 fill    ground.well   272,   8  280x28   r2
 text    ink.faint     282,  12   40x20   glyphs 6 "Search"
 text    ink.faint    1827,  12   61x20   glyphs 7 "F5  Close"
+fill    ground.well  1685,   8  118x28   r2
+text    ink.body     1697,  12   94x20   glyphs 13 "Quick switches"
 line    rule          240,  44 1680x1   
 text    ink.hi        272,  69   79x36   clip1 glyphs 5 "Lamps"
 text    ink.mute      272, 109  371x20   clip1 glyphs 45 "Every lamp on the harbour wall, and how each one burns."

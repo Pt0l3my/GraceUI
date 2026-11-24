@@ -14,6 +14,7 @@ import { PageView } from "./page.tsx";
 import { Rail, openSpace } from "./rail.tsx";
 import { TopBar } from "./topbar.tsx";
 import { expanded, menuWidth } from "./view-state.ts";
+import { noteSent } from "./live.ts";
 
 const THEMES = new Set(["grace", "clear"]);
 
@@ -85,6 +86,11 @@ export function App({ session }: { session: Session }) {
       expanded.value = `${route.space}/${page.category}`;
       const space = session.space(route.space)?.info.name ?? "";
       document.title = `${page.name} · ${space}`;
+    }
+  });
+  useSignalEffect(() => {
+    if (session.sent.value > 0) {
+      noteSent();  // a command this view sent: Live updates draws what it held, and holds nothing while it is answered
     }
   });
   useEffect(() => {

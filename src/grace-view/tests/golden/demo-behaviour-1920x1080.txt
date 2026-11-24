@@ -13,6 +13,8 @@ text    ink.mute       24,1024   60x24   glyphs 7 "Records"
 fill    ground.well   272,   8  280x28   r2
 text    ink.faint     282,  12   40x20   glyphs 6 "Search"
 text    ink.faint    1827,  12   61x20   glyphs 7 "F5  Close"
+fill    ground.well  1685,   8  118x28   r2
+text    ink.body     1697,  12   94x20   glyphs 13 "Quick switches"
 line    rule          240,  44 1680x1   
 text    ink.hi        272,  69  143x36   clip1 glyphs 9 "Behaviour"
 text    ink.mute      272, 109  425x20   clip1 glyphs 52 "How the lantern burns, how often it flickers, and who keeps it."

@@ -97,3 +97,21 @@ export function Lozenge({ filled = false }: { filled?: boolean }) {
     </svg>
   );
 }
+
+export function Clock() {
+  return (
+    <svg {...common}>
+      <circle cx="9" cy="9" r="6.5" />
+      <path d="M9 5.5V9l2.5 1.5" />
+    </svg>
+  );
+}
+
+export function Power() {
+  return (
+    <svg {...common}>
+      <path d="M9 2.5v6" />
+      <path d="M5.2 5.2a5.5 5.5 0 1 0 7.6 0" />
+    </svg>
+  );
+}
