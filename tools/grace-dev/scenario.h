@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -42,6 +43,7 @@ struct Reaction {
   bool ok = true;  // the answer: ok, or `error` with `detail` in the result's body
   protocol::ErrorCode error = protocol::ErrorCode::internal;
   std::string detail;
+  std::optional<protocol::Json> body;  // an ok answer's body: a page of rows for a page command (D254)
   std::size_t line = 0;
 };
 

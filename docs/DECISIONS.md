@@ -1155,3 +1155,7 @@ four, in two steps (Recommended)".
 **Built, the first step** (2026-11-24) in GraceUI 0.2.45, protocol 1.13 (DESIGN D252): quick switches and live
 updates. The scope and tables read a page at a time follow in the next minor, once EldenNet's session has answered on
 their formats.
+
+**Built, the second step** (2026-11-24) in GraceUI 0.2.47, protocol 1.14 (DESIGN D254): a space's scope and its
+scoped pages, and tables and master lists read a page at a time, in the formats EldenNet's session answered (proposal
+0014 §7).

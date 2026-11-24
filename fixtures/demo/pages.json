@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 13,
+  "minor": 14,
   "categories": [
     {
       "id": "lanterns",
@@ -19,6 +19,7 @@
         "demo.log",
         "demo.festival",
         "demo.lamps",
+        "demo.lightings",
         "demo.handbook"
       ],
       "foot": true
@@ -215,6 +216,52 @@
               "kind": "component",
               "component": "log_tail",
               "topic": "lantern.journal"
+            }
+          ]
+        },
+        {
+          "id": "history",
+          "title": "Every lighting",
+          "description": "All seasons' lightings, newest first, a page at a time.",
+          "blocks": [
+            {
+              "kind": "component",
+              "component": "table",
+              "props": {
+                "empty": "No lamp has been lit yet."
+              },
+              "filter_bar": {
+                "filters": [
+                  {
+                    "column": "lamp",
+                    "label": "Lamp",
+                    "choices_from": {
+                      "topic": "lantern.status",
+                      "field": "lamps"
+                    }
+                  }
+                ],
+                "sort": [
+                  {
+                    "key": "at_ms",
+                    "label": "Time",
+                    "direction": "descending"
+                  }
+                ],
+                "search": {
+                  "columns": [
+                    "keeper"
+                  ],
+                  "label": "Find a keeper"
+                }
+              },
+              "page": {
+                "command": "lightings.page",
+                "args": {
+                  "view": "table"
+                },
+                "changes": "lantern.status"
+              }
             }
           ]
         },
@@ -544,6 +591,98 @@
       }
     },
     {
+      "id": "demo.lightings",
+      "category": "records",
+      "name": "Lightings",
+      "description": "Every lamp lit in a season, newest first, read a page at a time.",
+      "help": {
+        "purpose": "See when each lamp was lit, and by whom, season by season.",
+        "steps": [
+          "Choose a season in the top bar; a past one is read only.",
+          "Choose a lighting in the list to read it.",
+          "Show more for older lightings, or filter the list by lamp."
+        ]
+      },
+      "related": [
+        "demo.lamps",
+        "demo.log"
+      ],
+      "increment": "0.2",
+      "sections": [
+        {
+          "id": "lighting",
+          "title": "Lighting",
+          "blocks": [
+            {
+              "kind": "component",
+              "component": "key_value_list",
+              "topic": "lantern.lighting"
+            }
+          ]
+        },
+        {
+          "id": "season",
+          "title": "The season",
+          "blocks": [
+            {
+              "kind": "component",
+              "component": "key_value_list",
+              "topic": "lantern.season"
+            }
+          ]
+        }
+      ],
+      "master": {
+        "key": "id",
+        "detail": "lantern.lighting",
+        "label": "Lightings",
+        "empty": "No lamp was lit this season.",
+        "none": "Choose a lighting to read it.",
+        "filter_bar": {
+          "filters": [
+            {
+              "column": "lamp",
+              "label": "Lamp",
+              "choices": [
+                {
+                  "value": "North light",
+                  "label": "North light"
+                },
+                {
+                  "value": "Harbour wall",
+                  "label": "Harbour wall"
+                },
+                {
+                  "value": "Store room",
+                  "label": "Store room"
+                }
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "key": "at_ms",
+              "label": "Time",
+              "direction": "descending"
+            },
+            {
+              "key": "keeper",
+              "label": "Keeper"
+            }
+          ]
+        },
+        "page": {
+          "command": "lightings.page",
+          "args": {
+            "view": "list"
+          },
+          "changes": "lantern.status"
+        }
+      },
+      "live": true,
+      "scoped": true
+    },
+    {
       "id": "demo.handbook",
       "category": "records",
       "name": "Handbook",
@@ -637,6 +776,20 @@
       "shape": "state"
     },
     {
+      "id": "lantern.seasons",
+      "shape": "state"
+    },
+    {
+      "id": "lantern.season",
+      "shape": "state",
+      "family": true
+    },
+    {
+      "id": "lantern.lighting",
+      "shape": "state",
+      "family": true
+    },
+    {
       "id": "lantern.log",
       "shape": "stream",
       "ring": 200
@@ -664,7 +817,8 @@
     "note.draft",
     "keepers.import",
     "report.part",
-    "bell.hush"
+    "bell.hush",
+    "lightings.page"
   ],
   "slow_commands": [
     "oil.order",
@@ -693,5 +847,9 @@
       },
       "home": "demo.overview"
     }
-  ]
+  ],
+  "scope": {
+    "label": "Season",
+    "topic": "lantern.seasons"
+  }
 }

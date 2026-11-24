@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 13;
-inline constexpr std::string_view kProtocolVersion = "1.13";
+inline constexpr std::uint32_t kProtocolMinor = 14;
+inline constexpr std::string_view kProtocolVersion = "1.14";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -344,14 +344,45 @@ struct EditorBlock {
 bool decode(const Json& in, EditorBlock& out, const std::string& path, DecodeError& e);
 Json encode(const EditorBlock& in);
 
-// A filter of a filter bar (1.11, G43, D250): one of its table's columns, its choices the values the rows hold.
+// A state topic of the space's, or one member of its body (1.14, D254).
+struct TopicMember {
+  std::string topic{};
+  std::optional<std::string> field{};
+  bool operator==(const TopicMember&) const = default;
+};
+bool decode(const Json& in, TopicMember& out, const std::string& path, DecodeError& e);
+Json encode(const TopicMember& in);
+
+// A filter of a filter bar (1.11, G43, D250): one of its table's columns, its choices the values the rows hold; on a table read a page at a time (1.14, D254), its own choices, or a state topic's list of them.
 struct FilterOption {
   std::string column{};
   std::string label{};
+  std::optional<std::vector<Choice>> choices{};
+  std::optional<TopicMember> choices_from{};
   bool operator==(const FilterOption&) const = default;
 };
 bool decode(const Json& in, FilterOption& out, const std::string& path, DecodeError& e);
 Json encode(const FilterOption& in);
+
+// Rows read a page at a time (1.14, D254): a command of the space's, sent with its args and the view's cursor, filters, sort, search and scope, which answers {columns, rows, next, total}; and a state topic whose change means new rows.
+struct PageSource {
+  std::string command{};
+  std::optional<Json> args{};
+  std::optional<std::string> changes{};
+  bool operator==(const PageSource&) const = default;
+};
+bool decode(const Json& in, PageSource& out, const std::string& path, DecodeError& e);
+Json encode(const PageSource& in);
+
+// A space's scope (1.14, D254): the top bar's chooser on its scoped pages (EldenNet's Journey), its label, and the state topic (or member) holding {choices: [{id, label, read_only}], current}.
+struct SpaceScope {
+  std::string label{};
+  std::string topic{};
+  std::optional<std::string> field{};
+  bool operator==(const SpaceScope&) const = default;
+};
+bool decode(const Json& in, SpaceScope& out, const std::string& path, DecodeError& e);
+Json encode(const SpaceScope& in);
 
 // A sort option of a filter bar (1.11): a column, or a member of each row that is not shown; ascending unless it says.
 struct SortOption {
@@ -397,6 +428,7 @@ struct PageBlock {
   std::optional<EditorBlock> editor{};
   std::optional<std::string> accept{};
   std::optional<FilterBar> filter_bar{};
+  std::optional<PageSource> page{};
   bool operator==(const PageBlock&) const = default;
 };
 bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError& e);
@@ -470,13 +502,14 @@ Json encode(const PageHelp& in);
 
 // A page's master list (1.5, D215, D36): a table's state topic, the column of each row's key, and the family whose member that key names; the page's tabs and sections are its detail, and a block bound to the family draws the chosen row's member.
 struct PageMaster {
-  std::string topic{};
+  std::optional<std::string> topic{};
   std::string key{};
   std::string detail{};
   std::string label{};
   std::optional<std::string> empty{};
   std::optional<std::string> none{};
   std::optional<FilterBar> filter_bar{};
+  std::optional<PageSource> page{};
   bool operator==(const PageMaster&) const = default;
 };
 bool decode(const Json& in, PageMaster& out, const std::string& path, DecodeError& e);
@@ -497,6 +530,7 @@ struct Page {
   std::optional<std::vector<PageSection>> sections{};
   std::optional<PageMaster> master{};
   std::optional<bool> live{};
+  std::optional<bool> scoped{};
   bool operator==(const Page&) const = default;
 };
 bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e);
@@ -526,6 +560,7 @@ struct SpacePages {
   std::optional<std::vector<std::string>> sensitive_commands{};
   std::optional<std::vector<std::string>> file_commands{};
   std::optional<std::vector<QuickSwitch>> quick{};
+  std::optional<SpaceScope> scope{};
   bool operator==(const SpacePages&) const = default;
 };
 bool decode(const Json& in, SpacePages& out, const std::string& path, DecodeError& e);

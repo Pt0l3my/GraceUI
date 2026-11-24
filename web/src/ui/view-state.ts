@@ -114,11 +114,22 @@ export function domId(...parts: string[]): string {
 }
 
 /** Each filter bar's choices (G43, D250), by "space/topic" (a master list's by "space/master/topic"), for the session
- * only: never sent to the space, put in the address or stored (proposal 0012). */
+ * only: never sent to the space, put in the address or stored (proposal 0012); on a table read a page at a time the
+ * space filters, so its choices go with each page asked for (D254). */
 export const filters = signal<ReadonlyMap<string, FilterState>>(new Map());
 
 export function setFilter(key: string, state: FilterState): void {
   const next = new Map(filters.value);
   next.set(key, state);
   filters.value = next;
+}
+
+/** The scope in view on each space's scoped pages (G45, D254), as the player chose it for the session; a new session
+ * starts at the space's `current`. Never sent but as a page's `scope`, put in the address or stored. */
+export const scopes = signal<ReadonlyMap<string, string>>(new Map());
+
+export function chooseScope(space: string, id: string): void {
+  const next = new Map(scopes.value);
+  next.set(space, id);
+  scopes.value = next;
 }

@@ -500,6 +500,7 @@ struct DevHost::Live {
       }
       if (reaction->ok) {
         result.ok = true;
+        result.body = reaction->body;  // a page of rows, for a page command (D254)
       } else {
         refuse(reaction->error, reaction->detail);
       }

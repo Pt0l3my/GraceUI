@@ -56,7 +56,7 @@ NUMERIC = {"integer", "number", "duration_s"}
 TRI_THIRDS = ("auto", "inherit")
 AVAILABILITY = re.compile(r"live|later|inert|check:[a-z0-9._-]{1,48}|version:\d+\.\d+|requires:[a-z0-9._/-]{1,64}")
 PAGE_FIELDS = ("id", "category", "name", "description", "help", "related", "increment", "tag", "actions", "tabs",
-               "sections", "master", "live")
+               "sections", "master", "live", "scoped")
 SETTING_FIELDS = ("key", "type", "default", "min", "max", "step", "unit", "choices", "choices_from", "third", "label", "help", "synonyms",
                   "home", "effect", "availability", "locked", "sensitive")
 
@@ -96,6 +96,8 @@ def documents(path, schema):
         space_pages["file_commands"] = space["file_commands"]  # D226
     if "quick" in space:
         space_pages["quick"] = space["quick"]  # D252
+    if "scope" in space:
+        space_pages["scope"] = space["scope"]  # D254
     settings = []
     for entry in source.get("setting", []):
         unknown = set(entry) - set(SETTING_FIELDS)
@@ -177,7 +179,7 @@ def lint(space_pages, description, fixtures, known_spaces):
                 failures.append(f"{where}: {kind} {i} twice")
             seen.add(i)
 
-    def filter_bar(bar, where):
+    def filter_bar(bar, where, paged=False):
         # A table's or a master list's filter bar (G43, D250): at least one part; each filter on a column by its name;
         # each sort option on a column or a member of each row by its name; the search on one to four columns. Its
         # columns are the topic's, published later, so a view leaves out any it does not find.
@@ -187,6 +189,23 @@ def lint(space_pages, description, fixtures, known_spaces):
         for f in filters:
             if not FIELD_NAME.match(f.get("column", "")) or not f.get("label"):
                 failures.append(f"{where}: a filter names its column (a name) and has a label (D250)")
+            # Rows read a page at a time (D254): the view holds one page, so a filter names its choices, itself or by a
+            # state topic's list of them; anywhere else they come from the rows.
+            named = [k for k in ("choices", "choices_from") if k in f]
+            if paged and len(named) != 1:
+                failures.append(f"{where}: a filter on rows read a page at a time names its choices, or a state "
+                                "topic's list of them, one of the two (D254)")
+            if not paged and named:
+                failures.append(f"{where}: a filter's own choices are for rows read a page at a time; others' come "
+                                "from the rows (D254)")
+            source = f.get("choices_from")
+            if source is not None and (source.get("topic") not in topics or
+                                       topics[source["topic"]]["shape"] != "state" or
+                                       source["topic"] in ("settings", SPACE_STATE) or
+                                       topics[source["topic"]].get("family") or
+                                       ("field" in source and not FIELD_NAME.match(source["field"]))):
+                failures.append(f"{where}: a filter's choices_from is a state topic of the space's own, not a "
+                                "family, and a member's name (D254)")
         unique("filter on column", [f.get("column") for f in filters], where)
         for s in sorts:
             if not FIELD_NAME.match(s.get("key", "")) or not s.get("label"):
@@ -300,6 +319,31 @@ def lint(space_pages, description, fixtures, known_spaces):
             failures.append(f"{qwhere}: has a label")
     unique("quick switch", [q.get("key") or q.get("id") for q in quick], space)
 
+    # A space's scope (G45, D254): its chooser's label and the state topic (or member) holding its choices; a scoped
+    # page follows it.
+    scope = space_pages.get("scope")
+    if scope is not None:
+        st = scope.get("topic")
+        if st not in topics or topics[st]["shape"] != "state" or st in families or st in ("settings", SPACE_STATE):
+            failures.append(f"{space}: its scope is on a state topic of the space's own, not a family (D254)")
+        if "field" in scope and not FIELD_NAME.match(scope["field"]):
+            failures.append(f"{space}: its scope's field is a name (a-z, 0-9, _; 1 to 32)")
+        if not 1 <= len(scope.get("label", "")) <= 32:
+            failures.append(f"{space}: its scope's label is 1 to 32 characters")
+
+    def page_source(src, where):
+        # Rows read a page at a time (D254): a command of the space's own that answers within 10 s, and a state topic
+        # of the space's own whose change means new rows.
+        name = src.get("command")
+        if (name not in commands or name in ("settings.set", "settings.reset") or name in files or
+                name in space_pages.get("slow_commands", [])):
+            failures.append(f"{where}: its rows come from a command of the space's own, neither a settings, a file "
+                            "nor a slow command (D254)")
+        changes = src.get("changes")
+        if changes is not None and (changes not in topics or topics[changes]["shape"] != "state" or
+                                    changes in families or changes in ("settings", SPACE_STATE)):
+            failures.append(f"{where}: its changes topic is a state topic of the space's own, not a family (D254)")
+
     # 3 and 4: each page, its blocks and its settings.
     homed = {}
     for pid, p in pages.items():
@@ -325,20 +369,28 @@ def lint(space_pages, description, fixtures, known_spaces):
         if p.get("live"):
             # A live page (D252): something on it moves by itself, a topic a block draws or its master list's.
             drawn = [b for sec in sections for b in sec["blocks"] + sec.get("advanced", [])
-                     if b.get("topic") not in (None, "settings")]
+                     if b.get("topic") not in (None, "settings") or "page" in b]
             if not drawn and "master" not in p:
                 failures.append(f"{where}: a live page draws a topic of the space's, which Live updates holds (D252)")
+        if p.get("scoped") and scope is None:
+            failures.append(f"{where}: a scoped page follows the space's scope, which the space does not declare (D254)")
         master = p.get("master")  # a master list, its detail the page's own tabs and sections (D215)
         if master is not None:
             mt = master.get("topic")
-            if mt not in topics or topics[mt]["shape"] != "state" or mt in families or mt in ("settings", SPACE_STATE):
-                failures.append(f"{where}: its master list's topic is a state topic of the space's own, not a family")
+            if ("topic" in master) == ("page" in master):
+                failures.append(f"{where}: its master list reads a topic or a page source, one of the two (D254)")
+            elif "page" in master:
+                page_source(master["page"], f"{where}: its master list")
+            elif (mt not in topics or topics[mt]["shape"] != "state" or mt in ("settings", SPACE_STATE) or
+                  (mt in families and not p.get("scoped"))):
+                failures.append(f"{where}: its master list's topic is a state topic of the space's own; a family only "
+                                "on a scoped page, whose scope names its member (D215, D254)")
             if master.get("detail") not in families:
                 failures.append(f"{where}: its master list's detail is a family the space declares (D215)")
             if not FIELD_NAME.match(master.get("key", "")) or not master.get("label"):
                 failures.append(f"{where}: its master list has a key column (a name) and a label")
             if "filter_bar" in master:
-                filter_bar(master["filter_bar"], f"{where}: its master list")
+                filter_bar(master["filter_bar"], f"{where}: its master list", paged="page" in master)
             for words in ("empty", "none"):
                 if words in master and not 1 <= len(master[words]) <= 160:
                     failures.append(f"{where}: its master list's {words} is 1 to 160 characters")
@@ -414,7 +466,7 @@ def lint(space_pages, description, fixtures, known_spaces):
                     if (topic not in topics or topics[topic]["shape"] != "state" or
                             topic in ("settings", SPACE_STATE)):
                         failures.append(f"{bwhere}: an editor's topic is a state topic or a family of the space's own")
-                    elif topic in families and master is None:
+                    elif topic in families and master is None and not p.get("scoped"):
                         failures.append(f"{bwhere}: an editor draws family {topic} on a page with no master list (D215)")
                     for part in ("save", "check", "reset", "restore", "draft"):
                         if part in ed and ed[part] not in commands:
@@ -432,7 +484,9 @@ def lint(space_pages, description, fixtures, known_spaces):
                 if "filter_bar" in block and (kind != "component" or block.get("component") != "table"):
                     failures.append(f"{bwhere}: a filter bar goes on a table, or on a page's master list (D250)")
                 elif "filter_bar" in block:
-                    filter_bar(block["filter_bar"], bwhere)
+                    filter_bar(block["filter_bar"], bwhere, paged="page" in block)
+                if "page" in block and (kind != "component" or block.get("component") != "table"):
+                    failures.append(f"{bwhere}: a page source belongs to a table block (D254)")
                 if kind == "component" and block.get("component") == "filter_bar":
                     failures.append(f"{bwhere}: a filter bar is a table's own field, filter_bar, not a block of its own "
                                     "(D250)")
@@ -466,7 +520,13 @@ def lint(space_pages, description, fixtures, known_spaces):
                         failures.append(f"{bwhere}: a component block names its component, and no keys")
                         continue
                     topic = block.get("topic")
-                    if component in NO_TOPIC_COMPONENTS:
+                    if "page" in block:
+                        # A table read a page at a time (D254): its source instead of a topic.
+                        if topic is not None:
+                            failures.append(f"{bwhere}: a table reads a topic or a page source, one of the two (D254)")
+                        elif component == "table":
+                            page_source(block["page"], bwhere)
+                    elif component in NO_TOPIC_COMPONENTS:
                         if topic is not None:
                             failures.append(f"{bwhere}: {component} takes no topic")
                     elif topic not in topics:
@@ -475,7 +535,7 @@ def lint(space_pages, description, fixtures, known_spaces):
                         failures.append(f"{bwhere}: {component} cannot draw {topics[topic]['shape']} topic {topic}")
                     elif topic == SPACE_STATE:
                         failures.append(f"{bwhere}: {SPACE_STATE} is the framework's topic, drawn by no component")
-                    elif topic in families and master is None:
+                    elif topic in families and master is None and not p.get("scoped"):
                         failures.append(f"{bwhere}: {component} draws family {topic} on a page with no master list, "
                                         "whose chosen row names its member (D215)")
                     props = block.get("props") or {}
@@ -483,7 +543,7 @@ def lint(space_pages, description, fixtures, known_spaces):
                                              not isinstance(props["field"], str) or
                                              not FIELD_NAME.match(props["field"])):
                         failures.append(f"{bwhere}: props.field is a name (a-z, 0-9, _; 1 to 32) on a state component")
-                    if "empty" in props and (topic is None or not isinstance(props["empty"], str) or
+                    if "empty" in props and ((topic is None and "page" not in block) or not isinstance(props["empty"], str) or
                                              not 1 <= len(props["empty"]) <= 80):
                         failures.append(f"{bwhere}: props.empty is 1 to 80 characters on a component with a topic")
                     if "newest_first" in props and (component != "log_tail" or

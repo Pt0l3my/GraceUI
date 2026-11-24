@@ -1547,3 +1547,39 @@ The owner chose G45 (a); this is its first step. So, for Home, Requests and Paus
 2. **A report preview's fields wrap in game and keep their line breaks in both views**, so "What happened" shows whole.
    Nothing changes on your side. The protocol stays 1.13.
 
+
+## 80. A space's scope, and tables read a page at a time (2026-11-24, G45, D254; GraceUI 0.2.47, protocol 1.14)
+
+G45's second step, in the formats your session gave (proposal 0014 §7). So, for the Journey and History (0.3):
+
+1. **Name your scope in `[space]`**: `scope = { label = "Journey", topic = "journeys" }`. With no `field` the topic's
+   whole body is the scope: `{"choices": [{"id": "j1", "label": "<the character's name> · Journey 1"}, {"id": "j0",
+   "label": "…", "read_only": true}], "current": "j1"}`. An id names a member: not empty, at most 64 bytes, no slash;
+   at most 32 choices are read. Its labels show only in the chooser and in a read-only journey's line (below), never in
+   a title, an address or a log, as PV2 wants.
+2. **Say `scoped = true` on History's pages, Playthrough and Named NPCs.** On such a page a block bound to a family
+   draws its member for the journey in view (`playthrough/<journey>`, `memories/<journey>`), watched like any member,
+   so publish an earlier journey's only while it is watched. Named NPCs' master list may be the family itself
+   (`topic = "characters.named"`): the view reads `characters.named/<journey>`, and leave Nearby out of an earlier
+   journey's member, as you planned. The master's detail family still follows the chosen row.
+3. **A choice marked `read_only`** greys the page, as your `space.state` words would, with "<its label> is read only."
+   Your own `space.state` words, where you give them, come first.
+4. **A paged table**: a table block with no topic and `page = { command = "history.page", args = { view = "events" },
+   changes = "<a state topic of yours>" }`; or a page's master list with `page` in place of its `topic`. The command
+   is declared as any of yours, not a settings, file or slow command. You receive your args and `filters` (each filter's
+   value by its column), `sort` (`key`, `direction`), `search` (trimmed, only if it holds words), `scope` (the journey,
+   on a scoped page) and `cursor` (Show more's, as you gave it in `next`). Answer in the result's body `{"columns",
+   "rows", "next", "total"}`; the view reads at most 200 rows, shows "1,234 in all" from `total`, and offers Show more
+   while there is a `next`. Refuse with your words in the detail ("Load a character to see this.") and they stand in for
+   the rows.
+5. **Nothing is asked before your scope's topic has come** on a scoped page, so publish `journeys` on watch. Any change
+   of filter, sort, search or journey asks for the first page again; a late answer is dropped by the view. When the
+   `changes` topic's body changes, a table showing its first page asks for it again; one showing more says "New rows ·
+   Show". Live updates holds that topic while it holds (D252).
+6. **A filter on a paged bar names its choices**: `choices = [{ value = "…", label = "…" }]`, or `choices_from =
+   { topic = "<yours>", field = "<a list>" }` (strings, or `{value, label}`), for your regions entered. The bar shows no
+   "N of M shown" line, since you filter. The browser sends a search 300 ms after the typing stops; the game when the
+   field closes.
+7. **grace-dev** can preview a paged page: a scenario reaction may answer `{"body": {...}}`, the same page whatever is
+   asked. The protocol is 1.14; no change of the ABI. Your goldens move on scoped and paged pages (the chooser's pill,
+   "Loading…" until a page comes).

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // fixtures.ts: the built-in spaces' fixtures for the tests (fixtures/<id>/, which tools/pages/build.py writes), read
 // from disk, and the golden files grace-view's tests write (src/grace-view/tests/golden/).
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Json, SettingsDescription, SpacePages } from "../../src/protocol.ts";
@@ -26,6 +26,12 @@ export function space(id: string): FixtureSpaceData {
     data.topics = json(join(dir, "topics.json")) as { [topic: string]: Json };
   } catch {
     // a space with no topic fixtures
+  }
+  if (existsSync(join(dir, "paged.json"))) {
+    // The rows its page commands answer, and the family members they name (D254).
+    const paged = json(join(dir, "paged.json")) as { commands: FixtureSpaceData["paged"]; members?: { [topic: string]: Json } };
+    data.paged = paged.commands;
+    data.topics = { ...(data.topics ?? {}), ...(paged.members ?? {}) };
   }
   const inherited = FIXTURE_INHERITED[id];
   if (inherited) {

@@ -23,7 +23,7 @@ test("Page Up and Page Down go in rail order across categories, as grace-view's"
   const demo = builtinSpaces()[1];
   assert.ok(demo);
   assert.deepEqual(railOrder(demo.pages).map((p) => p.id), ["demo.overview", "demo.behaviour", "demo.keepers", "demo.log", "demo.festival", "demo.lamps",
-                                                            "demo.handbook"]);
+                                                            "demo.lightings", "demo.handbook"]);
 });
 
 test("every setting sits on exactly its home page, on one tab", () => {

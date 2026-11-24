@@ -26,9 +26,25 @@ export interface MasterDetail {
 }
 export const MasterContext = createContext<MasterDetail | null>(null);
 
+/** A scoped page's scope (G45, D254): the one in view (null while its topic has not come or lists none), and the
+ * families a block of the page may name, each of which draws the scope's member but the master's detail family. */
+export interface ScopeInPage {
+  id: string | null;
+  families: readonly string[];
+  /** Its topic has come: the page's paged rows are asked for only then. */
+  ready: boolean;
+}
+export const ScopeContext = createContext<ScopeInPage | null>(null);
+
 /** The topic a block draws: its own, or on a master page for a block bound to a family the chosen row's member
- * (undefined while no row is chosen). */
-export function topicFor(master: MasterDetail | null, topic: string | undefined): string | undefined {
+ * (undefined while no row is chosen); on a scoped page a family's member for the scope in view (D254), save the
+ * master's detail family, which follows the chosen row. */
+export function topicFor(master: MasterDetail | null, topic: string | undefined,
+                         scope: ScopeInPage | null = null): string | undefined {
+  if (topic !== undefined && scope !== null && scope.families.includes(topic) &&
+      (master === null || topic !== master.family)) {
+    return scope.id !== null ? `${topic}/${scope.id}` : undefined;
+  }
   if (master === null || topic === undefined || !master.families.includes(topic)) {
     return topic;
   }

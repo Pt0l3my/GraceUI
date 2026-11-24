@@ -455,6 +455,18 @@ TEST_CASE("the scenario's reactions: lantern.clear_log empties the log and start
   CHECK((*trimmed)["body"]["tiles"][2]["value"] == "Just now");
 }
 
+TEST_CASE("a reaction's answer may carry a body: the demo's page of lightings (D254)") {
+  auto dev = serve(options_of({"demo"}));
+  View view(dev->port());
+  const std::optional<Json> answer = view.result(view.cmd("demo", "lightings.page", Json::object({{"view", "list"}})));
+  REQUIRE(answer.has_value());
+  CHECK((*answer)["ok"] == true);
+  REQUIRE((*answer)["body"].is_object());
+  CHECK((*answer)["body"]["rows"][0]["id"] == "l60");
+  CHECK((*answer)["body"]["total"] == 1);
+  CHECK_FALSE((*answer)["body"].contains("next"));
+}
+
 TEST_CASE("with no scenario a space's own command is answered ok, and nothing changes") {
   HostOptions options = options_of({"demo"});
   options.no_scenario = true;

@@ -4,13 +4,14 @@ fill    ground.1        0,   0 1280x720
 fill    ground.0        0,   0  200x720 
 text    gold           20,  20   95x23   glyphs 9 "Demo space"
 text    ink.mute       20,  64   57x20   glyphs 8 "Lanterns"
-line    rule           20, 559  160x1   
-text    ink.hi         20, 566   50x20   glyphs 7 "Records"
-text    ink.mute       33, 597   17x17   glyphs 3 "Log"
-text    ink.mute       33, 624   45x17   glyphs 8 "Festival"
-fill    tint.select     0, 646  200x27  
-fill    gold            0, 646    2x27  
-text    gold.hi        33, 651   28x17   glyphs 5 "Lamps"
+line    rule           20, 532  160x1   
+text    ink.hi         20, 539   50x20   glyphs 7 "Records"
+text    ink.mute       33, 570   17x17   glyphs 3 "Log"
+text    ink.mute       33, 597   45x17   glyphs 8 "Festival"
+fill    tint.select     0, 619  200x27  
+fill    gold            0, 619    2x27  
+text    gold.hi        33, 624   28x17   glyphs 5 "Lamps"
+text    ink.mute       33, 651   51x17   glyphs 9 "Lightings"
 text    ink.mute       33, 678   45x17   glyphs 8 "Handbook"
 fill    ground.well   227,   7  233x24   r2
 text    ink.faint     235,  11   34x17   glyphs 6 "Search"
@@ -95,4 +96,4 @@ stroke  edge          381, 696   28x18   r2 w1
 text    ink.body      386, 697   18x17   glyphs 3 "Esc"
 text    ink.faint     414, 697   22x17   glyphs 4 "Back"
 stroke  gold.hi       232, 226  340x51   r3 w2 clip1
-# 96 items, 2776 vertices, 6492 indices, 4 commands; check_draw_list: passes
+# 97 items, 2812 vertices, 6546 indices, 4 commands; check_draw_list: passes

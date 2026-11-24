@@ -11,7 +11,7 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 13 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 14 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
@@ -27,6 +27,8 @@ protocol = { major = 1, minor = 13 }  # 1.1 (D172): result.detail; a stream clea
                                      # 1.12 (G44): the document block, a form's prose field, the report preview's
                                      # command (D251)
                                      # 1.13 (G45): a space's quick switches, and a page's live updates (D252)
+                                     # 1.14 (G45): a space's scope and its scoped pages; tables and master lists read
+                                     # a page at a time; a filter's own choices (D254)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -228,11 +230,36 @@ fields = [
   { name = "notes_max", type = "u32", optional = true },  # the notes' characters, 1 to 400
 ]
 
+[types.topic_member]
+doc = "A state topic of the space's, or one member of its body (1.14, D254)"
+fields = [
+  { name = "topic", type = "id" },
+  { name = "field", type = "string", max = 32, optional = true },
+]
+
 [types.filter_option]
-doc = "A filter of a filter bar (1.11, G43, D250): one of its table's columns, its choices the values the rows hold"
+doc = "A filter of a filter bar (1.11, G43, D250): one of its table's columns, its choices the values the rows hold; on a table read a page at a time (1.14, D254), its own choices, or a state topic's list of them"
 fields = [
   { name = "column", type = "id" },
   { name = "label", type = "string", max = 32 },
+  { name = "choices", type = "list.type.choice", max = 32, optional = true },  # 1.14 (D254)
+  { name = "choices_from", type = "type.topic_member", optional = true },     # 1.14 (D254)
+]
+
+[types.page_source]
+doc = "Rows read a page at a time (1.14, D254): a command of the space's, sent with its args and the view's cursor, filters, sort, search and scope, which answers {columns, rows, next, total}; and a state topic whose change means new rows"
+fields = [
+  { name = "command", type = "id" },
+  { name = "args", type = "object", max = 4096, optional = true },
+  { name = "changes", type = "id", optional = true },
+]
+
+[types.space_scope]
+doc = "A space's scope (1.14, D254): the top bar's chooser on its scoped pages (EldenNet's Journey), its label, and the state topic (or member) holding {choices: [{id, label, read_only}], current}"
+fields = [
+  { name = "label", type = "string", max = 32 },
+  { name = "topic", type = "id" },
+  { name = "field", type = "string", max = 32, optional = true },
 ]
 
 [types.sort_option]
@@ -275,6 +302,7 @@ fields = [
   # 1.9 (D226): an upload block's file kinds, as the browser's picker takes them (".zip, .toml"); a hint, checked by the space
   { name = "accept", type = "string", max = 128, optional = true },
   { name = "filter_bar", type = "type.filter_bar", optional = true },  # 1.11 (D250): a table block's alone
+  { name = "page", type = "type.page_source", optional = true },  # 1.14 (D254): a table's rows a page at a time
 ]
 
 [types.section_status]
@@ -334,13 +362,14 @@ fields = [
 [types.page_master]
 doc = "A page's master list (1.5, D215, D36): a table's state topic, the column of each row's key, and the family whose member that key names; the page's tabs and sections are its detail, and a block bound to the family draws the chosen row's member"
 fields = [
-  { name = "topic", type = "id" },
+  { name = "topic", type = "id", optional = true },  # optional since 1.14: a list read a page at a time has `page`
   { name = "key", type = "id" },
   { name = "detail", type = "id" },
   { name = "label", type = "string", max = 64 },             # the list's own name, read by screen readers and in game
   { name = "empty", type = "string", max = 160, optional = true },  # the list's words when it has no rows
   { name = "none", type = "string", max = 160, optional = true },   # the detail's words while no row is chosen
   { name = "filter_bar", type = "type.filter_bar", optional = true },  # 1.11 (D250)
+  { name = "page", type = "type.page_source", optional = true },  # 1.14 (D254): its rows a page at a time
 ]
 
 [types.page]
@@ -359,6 +388,7 @@ fields = [
   { name = "sections", type = "list.type.page_section", max = 32, optional = true },
   { name = "master", type = "type.page_master", optional = true },  # 1.5 (D215)
   { name = "live", type = "bool", optional = true },  # 1.13 (D252): its topics move by themselves; Live updates holds them
+  { name = "scoped", type = "bool", optional = true },  # 1.14 (D254): it follows the space's scope (EldenNet's Journey)
 ]
 
 [types.category]
@@ -384,6 +414,7 @@ fields = [
   { name = "sensitive_commands", type = "list.id", max = 16, optional = true },  # 1.8 (D221): from this PC alone, never a paired device
   { name = "file_commands", type = "list.id", max = 4, optional = true },  # 1.9 (D226): each takes one file by the upload route; each sensitive too
   { name = "quick", type = "list.type.quick_switch", max = 12, optional = true },  # 1.13 (D252): the top bar's Quick switches
+  { name = "scope", type = "type.space_scope", optional = true },  # 1.14 (D254): its scoped pages' chooser
 ]
 
 # ---- Message kinds (§6.3). `from` is who sends it: page (a view: the browser or the in-game view), grace (GraceUI),

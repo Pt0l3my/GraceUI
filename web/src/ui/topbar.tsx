@@ -16,6 +16,8 @@ import type { Json, QuickSwitch, SpacePages } from "../protocol.ts";
 import { useTopic } from "./components.tsx";
 import { LIVE_WORDS, heldNew, liveMode, nextLiveMode, setLiveMode } from "./live.ts";
 import { focusHeading, revealSetting } from "./navigate.ts";
+import { useScope } from "./paged.tsx";
+import { chooseScope } from "./view-state.ts";
 
 function Search() {
   const session = useSession();
@@ -198,6 +200,28 @@ function LiveUpdates() {
   );
 }
 
+/** A space's scope (G45, D254; EldenNet's Journey), on its scoped pages once its topic lists a choice: its label and
+ * a select of its choices in the space's words. A choice is for the session; a new one starts at the space's current. */
+function ScopeChooser() {
+  const session = useSession();
+  const route = session.route.value;
+  const pages = route ? session.space(route.space)?.pages.value : undefined;
+  const page = route && pages ? pageById(pages, route.page) : undefined;
+  const scope = useScope(route?.space ?? "", pages);
+  if (!route || page?.scoped !== true || scope === null || scope.choices.length === 0 || scope.id === null) {
+    return null;
+  }
+  return (
+    <label class="topbar__control topbar__scope">
+      <span class="topbar__label">{scope.label}</span>
+      <select class="topbar__select" value={scope.id} data-scope=""
+              onChange={(e) => chooseScope(route.space, (e.currentTarget as HTMLSelectElement).value)}>
+        {scope.choices.map((c) => <option value={c.id} key={c.id}>{c.label}</option>)}
+      </select>
+    </label>
+  );
+}
+
 /** One quick switch's row: a setting's switch or choice as its row has it, or a session switch the space owns, which
  * sends its command with {on} and shows the state the space publishes (invariant 1); where it lives, as a link. */
 function QuickRow({ space, q, pages, done }: { space: string; q: QuickSwitch; pages: SpacePages; done: () => void }) {
@@ -333,6 +357,7 @@ export function TopBar() {
       <div class="topbar__right">
         <Lamp />
         <LiveUpdates />
+        <ScopeChooser />
         <ThemeSwitch />
         <QuickSwitches />
       </div>

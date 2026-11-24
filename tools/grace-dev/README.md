@@ -99,7 +99,7 @@ space demo`).
 | `loop` | Optional: whether it plays again and again (`--loop` makes every scenario loop) |
 | `inherited` | Optional: what each inherit tri-state of the space resolves to while it is on `inherit` (D163): `key`, `on`, `source` in words, and optionally `page` |
 | `steps` | In time order: each has `at`, its time in milliseconds from the pass's start at speed 1, and one action |
-| `reactions` | Each has `on`, one of the space's own commands (not a framework one), `do`, a list of actions (16 at most), and `answer`, `"ok"` (the default) or `{"error": "<a protocol error code>", "detail": "<words>"}` |
+| `reactions` | Each has `on`, one of the space's own commands (not a framework one), `do`, a list of actions (16 at most), and `answer`, `"ok"` (the default), `{"body": {...}}` for ok with a body of at most 256 KiB (a page of rows for a page command, D254: `{"columns", "rows", "next", "total"}`, the same page whatever is asked), or `{"error": "<a protocol error code>", "detail": "<words>"}` |
 
 An action is one of:
 

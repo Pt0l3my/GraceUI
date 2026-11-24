@@ -10,12 +10,16 @@ import type { Signal } from "@preact/signals";
 import type { Json, JsonObject, PageBlock, RowAction, RowSecret } from "../protocol.ts";
 import type { TopicData } from "../model/session.ts";
 import { refusalWords } from "../model/session.ts";
-import { GreyedContext, MasterContext, topicFor, useSession } from "./context.ts";
+import { GreyedContext, MasterContext, ScopeContext, topicFor, useSession } from "./context.ts";
 import { Warning } from "./icons.tsx";
 import { CaptureDialog } from "./capture.tsx";
 import { ConfirmDialog } from "./modal.tsx";
 import { FilterBar, useFilterBar } from "./filter-bar.tsx";
 import { LivePage, countHeld, holdsNow, liveMode, released } from "./live.ts";
+import type { Paged } from "./paged.tsx";
+import { PagingFoot, PagingTop, pagedKey, pagedWords, useOwnChoices, usePaged } from "./paged.tsx";
+import { filters } from "./view-state.ts";
+import { FRESH } from "../model/filter.ts";
 
 function text(value: Json | undefined): string | null {
   return typeof value === "string" ? value : typeof value === "number" ? String(value) : null;
@@ -212,7 +216,27 @@ function SecretCell({ space, secret, row, status, label, inert, onRefusal }: {
 // A table (D166); a column with a switch (D181) shows each row's state as the space published it, never flipped here
 // (invariant 1): a press sends the space's command, and the space's next body shows the change. Its block may add a
 // button on each row (D192), a destructive one asking first as a header action does, and a row secret (D194).
-function Table({ space, block, body, empty }: { space: string; block: PageBlock; body: JsonObject; empty: JSX.Element }) {
+// A table read a page at a time (G45, D254): its rows the space's answers, filtered, sorted and searched by the
+// space; its refusal's words, or "Loading…", in place of rows until it has some.
+function PagedTable({ space, block, own }: { space: string; block: PageBlock; own: string | null }) {
+  const source = block.page!;
+  const scope = useContext(ScopeContext);
+  const live = useContext(LivePage);
+  const key = `${space}/${pagedKey(source)}`;
+  const state = filters.value.get(key) ?? FRESH;
+  const paged = usePaged(space, key, source, block.filter_bar, state, scope?.id ?? null, scope === null || scope.ready,
+                         live);
+  const choices = useOwnChoices(space, block.filter_bar);
+  const body: JsonObject = { columns: paged.body?.columns ?? [], rows: paged.body?.rows ?? [] };
+  const waiting = paged.refused !== null || paged.loading || paged.body === null;
+  const empty = <Empty own={waiting ? pagedWords(paged, "") : own} />;
+  return <Table space={space} block={block} body={body} empty={empty} paged={paged} own={choices} barKey={key} />;
+}
+
+function Table({ space, block, body, empty, paged, own, barKey }: {
+  space: string; block: PageBlock; body: JsonObject; empty: JSX.Element;
+  paged?: Paged; own?: ({ value: string; label: string }[] | null)[]; barKey?: string;
+}) {
   const session = useSession();
   const [busy, setBusy] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -226,9 +250,18 @@ function Table({ space, block, body, empty }: { space: string; block: PageBlock;
   // Its filter bar (G43, D250): the rows that show, in the order they show, by their index in the space's rows.
   const spec = block.filter_bar;
   const field = typeof block.props?.field === "string" ? `#${block.props.field}` : "";
-  const bar = useFilterBar(`${space}/${block.topic ?? ""}${field}`, spec, rows);
+  const bar = useFilterBar(barKey ?? `${space}/${block.topic ?? ""}${field}`, spec, rows, paged !== undefined);
   if (columns.length === 0 || rows.length === 0) {
-    return empty;
+    if (paged === undefined) {
+      return empty;
+    }
+    return (  // its bar stays, for the space filters: a choice that leaves no row can be changed back
+      <>
+        {spec && <FilterBar spec={spec} rows={rows} state={bar.state} shown={0} set={bar.set} label="" own={own} />}
+        <PagingTop paged={paged} />
+        {empty}
+      </>
+    );
   }
   const first = columns.find((c) => switchOf(c) === null && c.numeric !== true);
   const actions = block.row_actions ?? [];
@@ -280,7 +313,9 @@ function Table({ space, block, body, empty }: { space: string; block: PageBlock;
   };
   return (
     <>
-      {spec && <FilterBar spec={spec} rows={rows} state={bar.state} shown={bar.order.length} set={bar.set} label="" />}
+      {spec && <FilterBar spec={spec} rows={rows} state={bar.state} shown={bar.order.length} set={bar.set} label=""
+                          own={own} />}
+      {paged && <PagingTop paged={paged} />}
       {bar.order.length > 0 && <table class="table">
         <thead>
           <tr>
@@ -354,6 +389,7 @@ function Table({ space, block, body, empty }: { space: string; block: PageBlock;
           ))}
         </tbody>
       </table>}
+      {paged && <PagingFoot paged={paged} />}
       {refusal !== null && <p class="table__notice" role="alert"><Warning /> {refusal}</p>}
       <ConfirmDialog space={space} action={asking?.action ?? null} onClose={() => setAsking(null)}
                      onConfirm={(a) => {
@@ -483,7 +519,7 @@ function CheckList({ body, empty }: { body: JsonObject; empty: JSX.Element }) {
 export function ComponentBlock({ space, block }: { space: string; block: PageBlock }) {
   // A block bound to the page's master family draws the chosen row's member (D215).
   const master = useContext(MasterContext);
-  const topic = topicFor(master, block.topic);  // since D217, any family the page's blocks name
+  const topic = topicFor(master, block.topic, useContext(ScopeContext));  // since D217, any family the page's blocks name
   const data = useLiveTopic(space, block.component === "statement" ? undefined : topic);
   const props = block.props ?? {};
   // D185: one topic feeding several blocks, each drawing the member its props.field names.
@@ -513,6 +549,9 @@ export function ComponentBlock({ space, block }: { space: string; block: PageBlo
     case "key_value_list":
       return body ? <KeyValues body={body} empty={empty} /> : empty;
     case "table":
+      if (block.page !== undefined) {
+        return <PagedTable space={space} block={block} own={typeof props.empty === "string" ? props.empty : null} />;
+      }
       return body ? <Table space={space} block={block} body={body} empty={empty} /> : empty;
     case "check_list":
       return body ? <CheckList body={body} empty={empty} /> : empty;

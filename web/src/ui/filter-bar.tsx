@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // filter-bar.tsx: a table's or a master list's filter bar (G43, D250; §3.8's 40 px strip): a select a filter, with
 // "All" and the values its rows hold; the sort's options and its direction; and a search field where the space names
-// one. Done here on the rows already published: nothing is sent to the space, stored or put in the address.
+// one. Done here on the rows already published: nothing is sent to the space, stored or put in the address; on a table
+// read a page at a time the space does it, and its choices go with each page asked for (D254).
 import type { JSX } from "preact";
 import type { Json } from "../protocol.ts";
 import { FRESH, choices, narrowed, visible } from "../model/filter.ts";
@@ -9,17 +10,21 @@ import type { FilterBarSpec, FilterState } from "../model/filter.ts";
 import { filters, setFilter } from "./view-state.ts";
 
 /** A bar's choices for the session, and the rows that show, as indices into `rows` in the order they show. */
-export function useFilterBar(key: string, spec: FilterBarSpec | undefined, rows: readonly Json[]):
+export function useFilterBar(key: string, spec: FilterBarSpec | undefined, rows: readonly Json[], paged = false):
     { state: FilterState; order: number[]; set: (state: FilterState) => void } {
   const state = filters.value.get(key) ?? FRESH;
-  const order = spec ? visible(rows, spec, state) : rows.map((_, i) => i);
+  // Read a page at a time (D254): the space filtered and sorted them, so they show as they came.
+  const order = spec && !paged ? visible(rows, spec, state) : rows.map((_, i) => i);
   return { state, order, set: (next) => setFilter(key, next) };
 }
 
 /** The bar itself, its count line while a filter or the search holds, and nothing when no row is published. */
-export function FilterBar({ spec, rows, state, shown, set, label }: {
+export function FilterBar({ spec, rows, state, shown, set, label, own }: {
   spec: FilterBarSpec; rows: readonly Json[]; state: FilterState; shown: number; set: (state: FilterState) => void;
   label: string;
+  /** On a table read a page at a time (D254): each filter's own choices (null: its rows'), and no count line, for
+   * the space filters and says how many in all. */
+  own?: ({ value: string; label: string }[] | null)[];
 }): JSX.Element {
   const sorts = spec.sort ?? [];
   const option = sorts[state.sort];
@@ -37,10 +42,10 @@ export function FilterBar({ spec, rows, state, shown, set, label }: {
     <>
       <div class="filter-bar" role="group" aria-label={label !== "" ? `Filter and sort: ${label}` : "Filter and sort"}>
         {(spec.filters ?? []).map((f, i) => {
-          const values = choices(rows, f.column);
+          const values = own?.[i] ?? choices(rows, f.column).map((v) => ({ value: v, label: v }));
           const now = state.chosen[i] ?? null;
-          if (now !== null && !values.includes(now)) {
-            values.push(now);  // the player's own choice, kept though no row has it now
+          if (now !== null && !values.some((v) => v.value === now)) {
+            values.push({ value: now, label: now });  // the player's own choice, kept though no row has it now
           }
           return (
             <label class="filter-bar__part" key={`f${i}`}>
@@ -48,7 +53,7 @@ export function FilterBar({ spec, rows, state, shown, set, label }: {
               <select class="field filter-bar__select" value={now ?? ""} data-filter={f.column}
                       onChange={(e) => choose(i, (e.currentTarget as HTMLSelectElement).value)}>
                 <option value="">All</option>
-                {values.map((v) => <option value={v} key={v}>{v}</option>)}
+                {values.map((v) => <option value={v.value} key={v.value}>{v.label}</option>)}
               </select>
             </label>
           );
@@ -77,8 +82,8 @@ export function FilterBar({ spec, rows, state, shown, set, label }: {
                  onInput={(e) => set({ ...state, search: (e.currentTarget as HTMLInputElement).value })} />
         )}
       </div>
-      {narrowed(spec, state) && shown > 0 && <p class="filter-bar__count" aria-live="polite">{shown} of {total} shown</p>}
-      {narrowed(spec, state) && shown === 0 && (
+      {own === undefined && narrowed(spec, state) && shown > 0 && <p class="filter-bar__count" aria-live="polite">{shown} of {total} shown</p>}
+      {own === undefined && narrowed(spec, state) && shown === 0 && (
         <p class="filter-bar__none" aria-live="polite">
           Nothing matches these filters.{" "}
           <button type="button" class="button button--small button--secondary" data-clear-filters=""
