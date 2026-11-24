@@ -1935,6 +1935,7 @@ in the entry with its date, and a later decision amends an earlier one by a note
 | [G42](DECISIONS.md#g42) | Should the menu's focus ring show while the player uses the mouse? | Recommended: as the browser view does, only after a key or the pad is used, gone when the mouse moves or clicks; the focus itself kept | Decided 2026-11-23: as recommended (built in 0.2.33, D237) |
 | [G43](DECISIONS.md#g43) | How should a table filter and sort? | Recommended: a table's own filter bar now, done in the view on the rows already published (filters on its columns, sort options, an optional search); paged history's filtering for 0.4, with its pages | Decided 2026-11-24: as recommended (proposal 0012; built in 0.2.43, D250) |
 | [G44](DECISIONS.md#g44) | Should GraceUI add documents, a multi-line form field and the report preview? | Recommended: all three, in one protocol minor after the filter bar's, in the formats EldenNet agreed | Decided 2026-11-24: as recommended (proposal 0013; built in 0.2.44, D251) |
+| [G45](DECISIONS.md#g45) | Should a space declare the top bar's Quick switches, Live updates and a scope such as the Journey, and should a table read its rows a page at a time? | Recommended: all four, in two protocol minors: Quick switches and Live updates first (EldenNet's 0.2 pages), the scope and paged tables next (its 0.3 History) | Open (proposal 0014) |
 
 ---
 
