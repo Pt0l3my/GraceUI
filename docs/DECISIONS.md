@@ -1151,3 +1151,7 @@ formats agreed with EldenNet's session meanwhile (proposal 0014).
 
 **Owner's words.** Answering the question put to them in this session (its question dialog, 2026-11-24): "(a) All
 four, in two steps (Recommended)".
+
+**Built, the first step** (2026-11-24) in GraceUI 0.2.45, protocol 1.13 (DESIGN D252): quick switches and live
+updates. The scope and tables read a page at a time follow in the next minor, once EldenNet's session has answered on
+their formats.

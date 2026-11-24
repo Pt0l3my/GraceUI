@@ -1521,3 +1521,22 @@ The owner chose G44 (a). So, for Docs and Tools › Bug report (0.2), both drawn
    in the muted ink with its fields hidden. Your scan before copying or saving stays a check list beside it.
 7. **Your goldens move only where a page carries these.** The protocol is 1.12; no change of the ABI.
 
+## 78. Quick switches and Live updates (2026-11-24, G45, D252; GraceUI 0.2.45, protocol 1.13)
+
+The owner chose G45 (a); this is its first step. So, for Home, Requests and Pause AI (0.2):
+
+1. **List your quick switches in `[space]`**: `quick = [...]`, up to 12, in the order shown. A setting's is
+   `{ key = "features.chat" }` alone: a switch or a choice of yours, shown with its own label and "Lives in" its home.
+   Pause AI is a session switch: `{ id = "pause", label = "Pause AI for this session", command = "<yours>",
+   state = { topic = "<a state topic of yours>", field = "<a boolean member>" }, home = "home" }`, all on one line in
+   TOML. Its command is neither a settings, a file nor a slow command.
+2. **Answer the switch's command** `{"on": true|false}` and publish the state topic with the field changed: the view
+   shows only what you publish (invariant 1), and "Not known yet" until it has come. In game that topic is watched on
+   every page, so publish it on watch.
+3. **Say `live = true` on Home and Requests** (and later Events): pages whose topics move by themselves. The player may
+   then pause them or slow them to once every 5 s; nothing changes on your side, and your settings, editors, choice
+   lists and the answers to the player's own commands are never held.
+4. **In game, Start opens the quick switches** from anywhere and never reaches the game; in the browser they are under
+   the top bar's power button. Your goldens move where a page is live or your space has quick switches (the top bar's
+   pills). The protocol is 1.13; no change of the ABI.
+

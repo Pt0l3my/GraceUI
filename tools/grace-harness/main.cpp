@@ -6629,6 +6629,49 @@ void run_typing(const std::wstring& dll) {
         "typing: a row secret", "on Corin's Set %s; its glyphs laid out: %s; sent %s", on_ward ? "yes" : "NO",
         ward_hidden ? "none" : "SOME", ward.is_object() && ward["args"]["id"] == "k1" ? "with the row's key" : "NOT");
 
+  // 6b. Quick switches (G45, D252): the pad's Start opens them from anywhere, and the game never sees it; the bell's
+  // switch reads "Not known yet" until the mod publishes its state, then A sends its command with {on}; B closes them.
+  const auto pad_tap = [&](std::uint32_t buttons) {
+    const std::uint64_t lists = grace.menu().lists;
+    grace.pad_state(0, buttons, 0, 0, 0, 0, 0, 0);
+    frames(game, 2);
+    grace.pad_state(0, 0, 0, 0, 0, 0, 0, 0);
+    frames(game, 2);
+    menu = menu_after(game, grace, lists);
+  };
+  grace.pad_state(0, 0, 0, 0, 0, 0, 0, 0);  // the pad's first look takes what is held (nothing), and does nothing
+  frames(game, 2);
+  std::uint32_t packet = 1;
+  grace.pad_state(0, XINPUT_GAMEPAD_START, 0, 0, 0, 0, 0, 0);
+  frames(game, 2);
+  const std::uint32_t start_seen = grace.pad_read(0, XINPUT_GAMEPAD_START, &packet);
+  grace.pad_state(0, 0, 0, 0, 0, 0, 0, 0);
+  frames(game, 2);
+  grace.pad_read(0, 0, &packet);
+  const bool quick_open = until_shows(game, grace, "Hush the bell for this session") &&
+                          until_shows(game, grace, "Not known yet");
+  const std::string hushed =
+      R"({"v":1,"t":"state","space":"demo","topic":"lantern.status","rev":1,"body":{"sentence":"Steady.","hushed":false}})";
+  bool state_shown = false;
+  for (int i = 0; i < 5 && !state_shown; ++i) {  // once the menu watches the bell's topic
+    table->publish(mod, hushed.data(), hushed.size());
+    state_shown = until_shows(game, grace, "Not known yet", true);
+  }
+  pad_tap(XINPUT_GAMEPAD_DPAD_DOWN);
+  pad_tap(XINPUT_GAMEPAD_DPAD_DOWN);
+  pad_tap(XINPUT_GAMEPAD_A);
+  const Json hush = take_command(game, table, mod);
+  pad_tap(XINPUT_GAMEPAD_B);
+  const bool quick_closed = until_shows(game, grace, "Hush the bell for this session", true);
+  check(start_seen == 0 && quick_open && state_shown && hush.is_object() && hush["name"] == "bell.hush" &&
+            hush["args"] == Json::object({{"on", true}}) && quick_closed,
+        "typing: quick switches by the pad's Start",
+        "the game saw %#x for Start; the switches %s, the bell's state %s once published; A sent %s; B: %s",
+        start_seen, quick_open ? "shown" : "NOT SHOWN", state_shown ? "shown" : "NOT SHOWN",
+        hush.is_object() ? hush.dump().c_str() : "NOTHING", quick_closed ? "closed" : "STILL OPEN");
+  press(window, VK_DOWN, 0x50);  // a key: the keyboard's hints again for what follows
+  menu = menu_after(game, grace, menu.lists);
+
   // 7. Search: `/` opens it from the page, its results as it is typed; Enter opens the setting's page on its row.
   post_text(window, L"/");
   const bool search_open = until_shows(game, grace, "↑ ↓  Choose    Enter  Open    Esc  Close");
