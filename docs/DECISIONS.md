@@ -1079,7 +1079,7 @@ published, and Events' paged filtering designed with its pages for 0.4. EldenNet
 will be one NPC's memories whole; its hidden sort keys are `last_met_s`, `first_met_s`, `at_ms`, `first_token_ms`,
 `total_ms`, `tokens`, and a memory's time and weight, as numbers; "names as shown" is the search over the name column,
 which only ever holds a name as the game shows it or the veiled label. A row with no value for the sort key sorts last
-in either direction, as it asked.
+in either direction, as it asked. Built in GraceUI 0.2.43, protocol 1.11 (DESIGN D250).
 
 **Owner's words.** Answering the question put to them in EldenNet's session (its question dialog, 2026-11-24,
 relayed by that session and read in its transcript): "(a) Filter bar now, Events later (Recommended)".

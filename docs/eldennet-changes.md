@@ -1478,3 +1478,17 @@ Your two questions from Content packs. So:
    their own (`props.empty`) don't change.
 3. **The protocol is 1.10**: the welcome and hello say "1.10". A space built for 1.9 runs unchanged.
 
+## 76. A filter bar on a table or a master list (2026-11-24, G43, D250; GraceUI 0.2.43, protocol 1.11)
+
+The owner chose G43 (a). So, for Requests (0.2), Named NPCs and Memories (0.3):
+
+1. **Give the table block, or the page's `master`, a `filter_bar`**: `filters` (up to four, each `{column, label}`),
+   `sort` (up to four, each `{key, label, direction}`, `direction` "descending" or left out for ascending; the first is
+   the default), and `search` (`{columns, label}`, one to four columns; never one holding chat or story text). Column
+   and key names are lowercase names (`a-z`, `0-9`, `_`). A `filter_bar` block of its own is refused.
+2. **Put your hidden sort keys in each row** as numbers (`last_met_s`, `first_met_s`, `at_ms`, `first_token_ms`,
+   `total_ms`, `tokens`, a memory's time and weight). A row without the key sorts last in either direction.
+3. **Nothing comes to your space**: filtering and sorting happen in the view, so no command needs handling. Your row
+   actions still receive their own row's key.
+4. **Your goldens move only where a page carries a bar.** The protocol is 1.11.
+
