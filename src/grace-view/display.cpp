@@ -15,7 +15,8 @@ double whole(float value) noexcept { return std::nearbyint(static_cast<double>(v
 }  // namespace
 
 std::string DisplayList::dump() const {
-  static constexpr const char* kShape[] = {"fill", "stroke", "line", "circle", "text", "diamond"};
+  static constexpr const char* kShape[] = {"fill", "stroke", "line", "circle", "text", "diamond", "tri"};
+  static constexpr const char* kFacing[] = {">", "v", "<", "^"};
   std::string out;
   char line[160];
   for (const Item& item : items) {
@@ -38,6 +39,10 @@ std::string DisplayList::dump() const {
     if (item.clip != 0) {
       std::snprintf(line, sizeof line, " clip%u", item.clip);
       out += line;
+    }
+    if (item.shape == Shape::triangle) {
+      out += ' ';
+      out += kFacing[static_cast<int>(item.facing)];
     }
     if (item.shape == Shape::text) {
       std::snprintf(line, sizeof line, " glyphs %u \"", item.glyph_count);

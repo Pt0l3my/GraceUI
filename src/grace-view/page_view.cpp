@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <optional>
 
 namespace grace::view {
 namespace {
@@ -110,6 +111,15 @@ struct Cursor {
     item.clip = clip;
     item.rect = r;
     item.width = std::max(1.0f, std::round(s));
+    out.items.push_back(item);
+  }
+  void triangle(Rect r, Facing facing, Colour c) {
+    Item item;
+    item.shape = Shape::triangle;
+    item.colour = c;
+    item.clip = clip;
+    item.rect = r;
+    item.facing = facing;
     out.items.push_back(item);
   }
   float text(std::string_view t, TypeRole role, float x, float y, float max_width, Colour c, std::uint8_t alpha = 255) {
@@ -266,17 +276,111 @@ void dpad(Cursor& c, Rect r, PadGlyph button) {
   }
 }
 
-// A key cap (§3.8, D246): the keys' names in the mono face, on ground.well in an edge border with the control's radius,
-// `h` high from `y`; answers its width.
+// The arrow a key's name starts with at `at` (← ↑ → ↓, U+2190 to U+2193, three bytes in UTF-8), or none.
+std::optional<Facing> arrow_at(std::string_view keys, std::size_t at) noexcept {
+  if (at + 3 > keys.size() || keys[at] != '\xE2' || keys[at + 1] != '\x86') {
+    return std::nullopt;
+  }
+  switch (keys[at + 2]) {
+    case '\x90': return Facing::left;
+    case '\x91': return Facing::up;
+    case '\x92': return Facing::right;
+    case '\x93': return Facing::down;
+    default: return std::nullopt;
+  }
+}
+
+// A drawn arrow's shaft, as thick as the mono face's strokes about.
+float arrow_shaft(float s) noexcept { return std::max(1.0f, std::round(1.5f * s)); }
+
+// A drawn arrow's box (D247): 12 by 10 at a scale of 1 for ← and →, 10 by 12 for ↑ and ↓; its breadth a pixel more
+// where that centres the shaft on the head's point.
+Rect arrow_box(Facing facing, float s) noexcept {
+  const float along = std::round(12 * s);
+  float across = std::round(10 * s);
+  if (std::fmod(across - arrow_shaft(s), 2.0f) != 0) {
+    across += 1;
+  }
+  return facing == Facing::left || facing == Facing::right ? Rect{0, 0, along, across} : Rect{0, 0, across, along};
+}
+
+// An arrow (D247): a shaft and a head, the head as long as half the box is broad, its point a right angle.
+void arrow(Cursor& c, Rect r, Facing facing, Colour ink) {
+  const bool flat = facing == Facing::left || facing == Facing::right;
+  const float broad = flat ? r.h : r.w;
+  const float head = std::round(broad / 2);
+  const float t = arrow_shaft(c.s);
+  const float mid = std::round((broad - t) / 2);
+  const float shaft = (flat ? r.w : r.h) - head + 1;  // into the head by a pixel, so no seam shows between them
+  switch (facing) {
+    case Facing::right:
+      c.fill(Rect{r.x, r.y + mid, shaft, t}, ink);
+      c.triangle(Rect{r.right() - head, r.y, head, r.h}, facing, ink);
+      break;
+    case Facing::left:
+      c.fill(Rect{r.x + head - 1, r.y + mid, shaft, t}, ink);
+      c.triangle(Rect{r.x, r.y, head, r.h}, facing, ink);
+      break;
+    case Facing::down:
+      c.fill(Rect{r.x + mid, r.y, t, shaft}, ink);
+      c.triangle(Rect{r.x, r.bottom() - head, r.w, head}, facing, ink);
+      break;
+    case Facing::up:
+      c.fill(Rect{r.x + mid, r.y + head - 1, t, shaft}, ink);
+      c.triangle(Rect{r.x, r.y, r.w, head}, facing, ink);
+      break;
+  }
+}
+
+// The keys' names as a cap draws them (D247): runs of text in the mono face, and each arrow drawn in its box. Calls
+// `run(text, x)` and `drawn(facing, x)` from `x` left to right, if given; answers the width.
+template <typename Run, typename Drawn>
+float key_names(Cursor& c, std::string_view keys, float x, Run&& run, Drawn&& drawn) {
+  const float x0 = x;
+  std::size_t from = 0;
+  for (std::size_t i = 0; i <= keys.size(); ++i) {
+    const std::optional<Facing> facing = i < keys.size() ? arrow_at(keys, i) : std::nullopt;
+    if (!facing && i < keys.size()) {
+      continue;
+    }
+    if (i > from) {
+      const std::string_view text = keys.substr(from, i - from);
+      run(text, x);
+      x += c.width(text, TypeRole::num);
+    }
+    if (facing) {
+      drawn(*facing, x);
+      x += arrow_box(*facing, c.s).w;
+      i += 2;
+      from = i + 1;
+    }
+  }
+  return x - x0;
+}
+
+float key_names_width(Cursor& c, std::string_view keys) {
+  return key_names(c, keys, 0, [](std::string_view, float) {}, [](Facing, float) {});
+}
+
+// A key cap (§3.8, D246): the keys' names in the mono face, its arrows drawn (D247), on ground.well in an edge border
+// with the control's radius, `h` high from `y`; answers its width.
 float key_cap(Cursor& c, std::string_view keys, float x, float y, float h) {
   const float s = c.s;
   const float pad = std::round(6 * s);
-  const float w = c.width(keys, TypeRole::num) + 2 * pad;
+  const float w = key_names_width(c, keys) + 2 * pad;
   const Rect cap{x, y, w, h};
   const float radius = std::round(tokens::radius::control * s);
   c.fill(cap, Colour::ground_well, radius);
   c.stroke(cap, Colour::edge, std::max(1.0f, std::round(tokens::kGrace.size.edge_width * s)), radius);
-  c.text(keys, TypeRole::num, x + pad, y + std::round((h - line_height(TypeRole::num, s)) / 2), w, Colour::ink_body);
+  const float ty = y + std::round((h - line_height(TypeRole::num, s)) / 2);
+  key_names(
+      c, keys, x + pad, [&](std::string_view text, float at) { c.text(text, TypeRole::num, at, ty, w, Colour::ink_body); },
+      [&](Facing facing, float at) {
+        Rect box = arrow_box(facing, s);
+        box.x = at;
+        box.y = y + std::round((h - box.h) / 2);
+        arrow(c, box, facing, Colour::ink_body);
+      });
   return w;
 }
 
@@ -297,7 +401,7 @@ void hints_line(Cursor& c, std::string_view hints, bool pad, float x, float top,
     const bool cross = !dpad_words(part.button).empty();
     const float lead = !letter.empty() ? g + std::round(3 * s) + c.width(letter, TypeRole::ui_sm) + gap
                        : cross         ? g + gap
-                       : !part.keys.empty() ? c.width(part.keys, TypeRole::num) + std::round(12 * s) + gap
+                       : !part.keys.empty() ? key_names_width(c, part.keys) + std::round(12 * s) + gap
                                             : 0.0f;
     if (x + lead + c.width(part.label, TypeRole::ui_sm) > right) {
       break;

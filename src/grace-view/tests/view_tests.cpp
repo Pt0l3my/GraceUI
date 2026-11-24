@@ -260,8 +260,8 @@ TEST_CASE("the keyboard's hints as key caps: each key in a cap on ground.well, i
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
   const std::string dump = list.dump();
   CHECK(view.footer() == "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back");
-  // Four caps, each a fill on ground.well under an edge border, with its keys in the mono face.
-  for (const char* keys : {"\"← →\"", "\"Shift+← →\"", "\"R\"", "\"Esc\""}) {
+  // Four caps, each a fill on ground.well under an edge border, with its keys in the mono face; arrows drawn (D247).
+  for (const char* keys : {"\"Shift+\"", "\"R\"", "\"Esc\""}) {
     CHECK(dump.find(keys) != std::string::npos);
   }
   for (const char* label : {"\"Change\"", "\"By ten\"", "\"Reset\"", "\"Back\""}) {
@@ -272,6 +272,68 @@ TEST_CASE("the keyboard's hints as key caps: each key in a cap on ground.well, i
   REQUIRE(esc.found);
   CHECK(cap.found);
   CHECK(dump.find("\"← →  Change") == std::string::npos);  // no longer one run of words
+}
+
+TEST_CASE("a key cap's arrows are drawn, each a shaft and a head centred in its cap (D247)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  const float scale = 1.25f;
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, scale}, test::fonts(), list);
+  const std::string dump = list.dump();
+  // No arrow is left to the mono face: "← →  Change" and "Shift+← →  By ten" have two each, drawn. (The Related card's
+  // arrow, in gold, is a word of its own and stays one.)
+  std::istringstream lines(dump);
+  int left = 0, right = 0;
+  std::vector<DumpRect> wells;
+  for (std::string line; std::getline(lines, line);) {
+    CHECK_FALSE((line.rfind("text    ink.body", 0) == 0 && (line.find("←") != std::string::npos ||
+                                                             line.find("→") != std::string::npos)));
+    left += line.rfind("tri     ink.body", 0) == 0 && line.find(" <") != std::string::npos;
+    right += line.rfind("tri     ink.body", 0) == 0 && line.find(" >") != std::string::npos;
+    if (line.rfind("fill    ground.well", 0) == 0) {
+      wells.push_back(dump_rect(line, "fill    ground.well"));
+    }
+  }
+  CHECK(left == 2);
+  CHECK(right == 2);
+  // The first cap's first arrow: its head within the cap, its box's middle at the cap's middle, to a pixel.
+  const DumpRect head = dump_rect(dump, "tri     ink.body", " <");
+  REQUIRE(head.found);
+  DumpRect cap;
+  for (const DumpRect& well : wells) {
+    if (well.x <= head.x && head.x < well.x + well.w && well.y <= head.y && head.y < well.y + well.h) {
+      cap = well;
+    }
+  }
+  REQUIRE(cap.found);
+  CHECK(head.x >= cap.x);
+  CHECK(head.y >= cap.y);
+  CHECK(head.y + head.h <= cap.y + cap.h);
+  CHECK(std::abs((head.y + head.h / 2) - (cap.y + cap.h / 2)) <= 1.0f);
+  CHECK(head.h >= std::round(10 * scale));  // larger than the mono face's arrow, which stood at about half that
+  // Pad mode draws the D-pad for them instead: no drawn arrow.
+  Input pad;
+  pad.key = Key::down;
+  pad.pad = true;
+  view.input(pad);
+  DisplayList padded;
+  view.layout(Viewport{1920, 1080, scale}, test::fonts(), padded);
+  CHECK(padded.dump().find("tri ") == std::string::npos);
+}
+
+TEST_CASE("a triangle's dump names where it points (D247)") {
+  for (const Facing facing : {Facing::right, Facing::down, Facing::left, Facing::up}) {
+    DisplayList list;
+    list.clips.push_back(Rect{0, 0, 100, 100});
+    Item item;
+    item.shape = Shape::triangle;
+    item.colour = grace::tokens::Colour::ink_body;
+    item.rect = Rect{10, 20, 12, 10};
+    item.facing = facing;
+    list.items.push_back(item);
+    CHECK(list.dump().find(facing == Facing::right ? " >" : facing == Facing::down ? " v" : facing == Facing::left ? " <" : " ^") !=
+          std::string::npos);
+  }
 }
 
 TEST_CASE("back goes to the rail, and back again closes; the rail opens pages") {

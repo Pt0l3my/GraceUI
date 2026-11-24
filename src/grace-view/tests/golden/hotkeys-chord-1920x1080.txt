@@ -66,26 +66,32 @@ text    ink.hi        380, 740  131x28   clip1 glyphs 13 "Installed mods"
 text    ink.mute      862, 741  759x25   clip1 glyphs 76 "Every mod connected to GraceUI this session, what each uses, and whether its notices show."
 text    gold         1820, 740    9x28   clip1 glyphs 1 "→"
 line    rule          300,1035 1620x1   
-fill    ground.well   340,1044   42x28   r3
-stroke  edge          340,1044   42x28   r3 w1
-text    ink.body      348,1046   26x25   glyphs 2 "↑ ↓"
-text    ink.faint     389,1045   34x25   glyphs 4 "Move"
-fill    ground.well   448,1044   42x28   r3
-stroke  edge          448,1044   42x28   r3 w1
-text    ink.body      456,1046   26x25   glyphs 2 "← →"
-text    ink.faint     497,1045   51x25   glyphs 6 "Change"
-fill    ground.well   573,1044   60x28   r3
-stroke  edge          573,1044   60x28   r3 w1
-text    ink.body      581,1046   44x25   glyphs 5 "Enter"
-text    ink.faint     640,1045   25x25   glyphs 3 "Use"
-fill    ground.well   690,1044   25x28   r3
-stroke  edge          690,1044   25x28   r3 w1
-text    ink.body      698,1046    9x25   glyphs 1 "R"
-text    ink.faint     722,1045  101x25   glyphs 10 "No pad chord"
-fill    ground.well   848,1044   42x28   r3
-stroke  edge          848,1044   42x28   r3 w1
-text    ink.body      856,1046   26x25   glyphs 3 "Esc"
-text    ink.faint     897,1045   51x25   glyphs 6 "Cancel"
+fill    ground.well   340,1044   53x28   r3
+stroke  edge          340,1044   53x28   r3 w1
+fill    ink.body      354,1057    2x9   
+tri     ink.body      348,1051   14x7    ^
+fill    ink.body      377,1051    2x9   
+tri     ink.body      371,1059   14x7    v
+text    ink.faint     400,1045   34x25   glyphs 4 "Move"
+fill    ground.well   458,1044   55x28   r3
+stroke  edge          458,1044   55x28   r3 w1
+fill    ink.body      472,1057    9x2   
+tri     ink.body      466,1051    7x14   <
+fill    ink.body      490,1057    9x2   
+tri     ink.body      498,1051    7x14   >
+text    ink.faint     520,1045   51x25   glyphs 6 "Change"
+fill    ground.well   596,1044   60x28   r3
+stroke  edge          596,1044   60x28   r3 w1
+text    ink.body      604,1046   44x25   glyphs 5 "Enter"
+text    ink.faint     663,1045   25x25   glyphs 3 "Use"
+fill    ground.well   713,1044   25x28   r3
+stroke  edge          713,1044   25x28   r3 w1
+text    ink.body      721,1046    9x25   glyphs 1 "R"
+text    ink.faint     745,1045  101x25   glyphs 10 "No pad chord"
+fill    ground.well   871,1044   42x28   r3
+stroke  edge          871,1044   42x28   r3 w1
+text    ink.body      879,1046   26x25   glyphs 3 "Esc"
+text    ink.faint     920,1045   51x25   glyphs 6 "Cancel"
 stroke  gold.hi      1600, 536  171x41   r5 w3 clip1
 fill    scrim           0,   0 1920x1080 a160
 fill    ground.2      685, 374  850x332  r5
@@ -97,23 +103,29 @@ text    ink.hi       1354, 516  131x28   glyphs 9 "←  D-pad Up  →"
 stroke  gold.hi       720, 506  780x45   r3 w3
 text    ink.mute      735, 570  112x28   glyphs 11 "Then pressed"
 text    ink.hi       1391, 570   94x28   glyphs 6 "←  View  →"
-fill    ground.well   720, 642   42x28   r3
-stroke  edge          720, 642   42x28   r3 w1
-text    ink.body      728, 644   26x25   glyphs 2 "↑ ↓"
-text    ink.faint     769, 644   34x25   glyphs 4 "Move"
-fill    ground.well   828, 642   42x28   r3
-stroke  edge          828, 642   42x28   r3 w1
-text    ink.body      836, 644   26x25   glyphs 2 "← →"
-text    ink.faint     877, 644   51x25   glyphs 6 "Change"
-fill    ground.well   953, 642   60x28   r3
-stroke  edge          953, 642   60x28   r3 w1
-text    ink.body      961, 644   44x25   glyphs 5 "Enter"
-text    ink.faint    1020, 644   25x25   glyphs 3 "Use"
-fill    ground.well  1070, 642   25x28   r3
-stroke  edge         1070, 642   25x28   r3 w1
-text    ink.body     1078, 644    9x25   glyphs 1 "R"
-text    ink.faint    1102, 644  101x25   glyphs 10 "No pad chord"
-fill    ground.well  1228, 642   42x28   r3
-stroke  edge         1228, 642   42x28   r3 w1
-text    ink.body     1236, 644   26x25   glyphs 3 "Esc"
-text    ink.faint    1277, 644   51x25   glyphs 6 "Cancel"
+fill    ground.well   720, 642   53x28   r3
+stroke  edge          720, 642   53x28   r3 w1
+fill    ink.body      734, 656    2x9   
+tri     ink.body      728, 650   14x7    ^
+fill    ink.body      757, 650    2x9   
+tri     ink.body      751, 658   14x7    v
+text    ink.faint     780, 644   34x25   glyphs 4 "Move"
+fill    ground.well   838, 642   55x28   r3
+stroke  edge          838, 642   55x28   r3 w1
+fill    ink.body      852, 656    9x2   
+tri     ink.body      846, 650    7x14   <
+fill    ink.body      870, 656    9x2   
+tri     ink.body      878, 650    7x14   >
+text    ink.faint     900, 644   51x25   glyphs 6 "Change"
+fill    ground.well   976, 642   60x28   r3
+stroke  edge          976, 642   60x28   r3 w1
+text    ink.body      984, 644   44x25   glyphs 5 "Enter"
+text    ink.faint    1043, 644   25x25   glyphs 3 "Use"
+fill    ground.well  1093, 642   25x28   r3
+stroke  edge         1093, 642   25x28   r3 w1
+text    ink.body     1101, 644    9x25   glyphs 1 "R"
+text    ink.faint    1125, 644  101x25   glyphs 10 "No pad chord"
+fill    ground.well  1251, 642   42x28   r3
+stroke  edge         1251, 642   42x28   r3 w1
+text    ink.body     1259, 644   26x25   glyphs 3 "Esc"
+text    ink.faint    1300, 644   51x25   glyphs 6 "Cancel"

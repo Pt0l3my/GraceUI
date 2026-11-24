@@ -114,6 +114,48 @@ TEST_CASE("a hairline is whole pixels at any position") {
   CHECK((out.vertices[0].colour >> 24) == tokens::kGrace.colour.rule.a);
 }
 
+TEST_CASE("a triangle: three points and a fringe outside them, its point where it faces (D247)") {
+  const Rect r{10, 20, 12, 10};
+  const struct {
+    view::Facing facing;
+    float x, y;  // the point
+  } cases[] = {{view::Facing::right, 22, 25}, {view::Facing::down, 16, 30}, {view::Facing::left, 10, 25},
+               {view::Facing::up, 16, 20}};
+  for (const auto& at : cases) {
+    Item triangle;
+    triangle.shape = Shape::triangle;
+    triangle.colour = tokens::Colour::ink_body;
+    triangle.rect = r;
+    triangle.facing = at.facing;
+    abi::DrawListData out;
+    draw::tessellate(one(triangle), tokens::kGrace.colour, kAtlas, out);
+    REQUIRE(out.vertices.size() == 6);  // three solid, three clear
+    CHECK(out.indices.size() == 3 * (1 + 6));
+    // The solid points sit inside the rectangle, half a fringe in; the clear ones half a fringe out, never inward.
+    float cx = 0, cy = 0;
+    for (int i = 0; i < 3; ++i) {
+      cx += out.vertices[i].x / 3;
+      cy += out.vertices[i].y / 3;
+    }
+    bool at_point = false;
+    for (int i = 0; i < 3; ++i) {
+      const GraceUiDrawVert& solid = out.vertices[i];
+      const GraceUiDrawVert& clear = out.vertices[i + 3];
+      CHECK((solid.colour >> 24) == 255);
+      CHECK((clear.colour >> 24) == 0);
+      CHECK(solid.x >= r.x - 0.01f);
+      CHECK(solid.x <= r.right() + 0.01f);
+      CHECK(solid.y >= r.y - 0.01f);
+      CHECK(solid.y <= r.bottom() + 0.01f);
+      const float in = std::hypot(solid.x - cx, solid.y - cy);
+      const float out_ = std::hypot(clear.x - cx, clear.y - cy);
+      CHECK(out_ > in);  // clockwise: the normals point outward
+      at_point = at_point || (std::abs(solid.x - at.x) < 1.5f && std::abs(solid.y - at.y) < 1.5f);
+    }
+    CHECK(at_point);
+  }
+}
+
 TEST_CASE("an item's own alpha multiplies its colour's") {
   Item dimmed;
   dimmed.shape = Shape::fill;

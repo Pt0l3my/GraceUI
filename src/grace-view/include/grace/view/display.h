@@ -29,13 +29,18 @@ enum class Shape : std::uint8_t {
   circle,  // a disc filling the rectangle's square
   text,    // glyphs[glyph_first, +glyph_count), from the atlas `texture`
   diamond, // the lozenge: a hollow diamond filling the rectangle, `width` wide
+  triangle,  // filled, in the rectangle: its base along one side, its point at the middle of the side `facing` names
 };
+
+// Where a triangle points (D247).
+enum class Facing : std::uint8_t { right, down, left, up };
 
 struct Item {
   Shape shape = Shape::fill;
   tokens::Colour colour = tokens::Colour::ink_hi;
   std::uint8_t alpha = 255;       // the element's own opacity (fades, dimmed rows), over the colour's own
   std::uint16_t clip = 0;         // its clip rectangle, an index into DisplayList::clips
+  Facing facing = Facing::right;  // a triangle's point
   Rect rect{};
   float radius = 0;
   float width = 0;

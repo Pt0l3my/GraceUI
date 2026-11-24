@@ -62,20 +62,27 @@ text    ink.hi        456, 918  135x33   clip1 glyphs 11 "Browser view"
 text    ink.mute      693, 919  446x30   clip1 glyphs 34 "The menu in a browser on this PC and on devices at home: its address, the browsers connected and the devices paired."
 text    gold         1160, 918   11x33   clip1 glyphs 1 "→"
 line    rule          360, 746  920x1   
-fill    ground.well   408, 757   50x33   r3
-stroke  edge          408, 757   50x33   r3 w2
-text    ink.body      417, 759   32x30   glyphs 2 "← →"
-text    ink.faint     466, 758   61x30   glyphs 6 "Change"
-fill    ground.well   557, 757  112x33   r3
-stroke  edge          557, 757  112x33   r3 w2
-text    ink.body      566, 759   94x30   glyphs 8 "Shift+← →"
-text    ink.faint     679, 758   61x30   glyphs 5 "By ten"
-fill    ground.well   770, 757   28x33   r3
-stroke  edge          770, 757   28x33   r3 w2
-text    ink.body      778, 759   10x30   glyphs 1 "R"
-text    ink.faint     807, 758   51x30   glyphs 5 "Reset"
-fill    ground.well   888, 757   50x33   r3
-stroke  edge          888, 757   50x33   r3 w2
-text    ink.body      897, 759   32x30   glyphs 3 "Esc"
-text    ink.faint     946, 758   40x30   glyphs 4 "Back"
+fill    ground.well   408, 757   64x33   r3
+stroke  edge          408, 757   64x33   r3 w2
+fill    ink.body      424, 773   11x2   
+tri     ink.body      417, 766    8x16   <
+fill    ink.body      446, 773   11x2   
+tri     ink.body      456, 766    8x16   >
+text    ink.faint     482, 758   61x30   glyphs 6 "Change"
+fill    ground.well   572, 757  128x33   r3
+stroke  edge          572, 757  128x33   r3 w2
+text    ink.body      581, 759   63x30   glyphs 6 "Shift+"
+fill    ink.body      651, 773   11x2   
+tri     ink.body      644, 766    8x16   <
+fill    ink.body      673, 773   11x2   
+tri     ink.body      683, 766    8x16   >
+text    ink.faint     709, 758   61x30   glyphs 5 "By ten"
+fill    ground.well   800, 757   28x33   r3
+stroke  edge          800, 757   28x33   r3 w2
+text    ink.body      808, 759   10x30   glyphs 1 "R"
+text    ink.faint     837, 758   51x30   glyphs 5 "Reset"
+fill    ground.well   918, 757   50x33   r3
+stroke  edge          918, 757   50x33   r3 w2
+text    ink.body      927, 759   32x30   glyphs 3 "Esc"
+text    ink.faint     976, 758   40x30   glyphs 4 "Back"
 stroke  gold.hi       779, 319  426x48   r6 w3 clip1
