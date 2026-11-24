@@ -1,7 +1,8 @@
 # Proposal 0013: Documents, a multi-line form field and the report preview
 
 **Status: proposal, 2026-11-24, put to the owner (G44); EldenNet's session agreed the formats the same day, with three
-additions to the document block and one to the preview, all taken in below.** EldenNet's last two pages for v0.2
+additions to the document block and one to the preview, all taken in below. The owner chose (a) the same day, as
+recommended; where this text and the design differ, the design holds once built.** EldenNet's last two pages for v0.2
 (its roadmap S11.4.a) need what no component offers: Docs, its bundled documentation, offline (in the browser at 0.2,
 in game at 0.6); and Tools › Bug report, a "What happened" box and the bundle's preview with its optional parts
 switchable. G16 keeps HTML out of the page data, and only GraceUI adds a component (§2.5's rule), so each is put here

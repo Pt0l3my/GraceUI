@@ -49,8 +49,9 @@ EldenNet is in [eldennet-changes.md](eldennet-changes.md).
   raised by the owner from the first in-game run and decided the same day, as recommended.
 - **2026-11-24.** G43 (filtering and sorting a table) put with proposal 0012 and decided the same day, as
   recommended.
-- **2026-11-24.** G44 (documents, a multi-line form field and the report preview) put with proposal 0013.
-- **Open.** G44.
+- **2026-11-24.** G44 (documents, a multi-line form field and the report preview) put with proposal 0013 and
+  decided the same day, as recommended.
+- **Open.** None.
 
 ## G1
 
@@ -1086,7 +1087,7 @@ relayed by that session and read in its transcript): "(a) Filter bar now, Events
 ## G44
 
 **Documents, a multi-line form field and the report preview** · *Open since 2026-11-24
-([proposal 0013](proposals/0013-documents-and-report.md))*
+([proposal 0013](proposals/0013-documents-and-report.md)) · Decided by the owner 2026-11-24, as recommended*
 
 **Question.** EldenNet's last v0.2 pages need what no component offers: Docs (its bundled documentation, offline) and
 Tools › Bug report (a "What happened" box, and the bundle's preview with its optional parts switchable). G16 keeps
@@ -1106,4 +1107,10 @@ examples, and the tests and goldens; no change of the ABI. (b): the same without
 
 **Follows from.** §2.5, §4.3, §6; D21, D36, D57, D195, D214, D215, D217, D219; G16; EldenNet's PAGES (Docs, Bug
 report).
+
+**Decision (2026-11-24).** (a), as recommended: the document block, the form field's `"prose"` and the report
+preview, in the formats EldenNet agreed (proposal 0013 §6), in one protocol minor after the filter bar's (G43).
+
+**Owner's words.** Answering the question put to them in EldenNet's session (its question dialog, 2026-11-24,
+relayed by that session and read in its transcript): "(a) All three (Recommended)".
 
