@@ -67,7 +67,7 @@ TEST_CASE("the framework's pages topic: each space's page data, answered by the 
   CHECK((*state)["space"] == "demo");
   CHECK((*state)["topic"] == "pages");
   CHECK((*state)["body"]["space"] == "demo");
-  CHECK((*state)["body"]["pages"].size() == 6);
+  CHECK((*state)["body"]["pages"].size() == 7);
   REQUIRE(ws->send_json(frame("unsub", {{"space", "demo"}, {"id", 4}, {"topic", "pages"}})));
   CHECK(ws->quiet(std::chrono::milliseconds(200)));  // nothing held, nothing refused
   CHECK(fixture.demo->watched().empty());            // the space never saw it

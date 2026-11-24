@@ -16,6 +16,7 @@
 
 #include "grace/protocol/messages.h"
 #include "grace/view/display.h"
+#include "grace/view/document.h"
 #include "grace/view/editor.h"
 #include "grace/view/filter.h"
 #include "grace/view/text.h"
@@ -297,7 +298,9 @@ class PageView {
  private:
   enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related, cell, row_action,
                                         section_action, form_field, form_submit, row_secret, master_row, editor,
-                                        filter };  // a filter bar's control (G43, D250)
+                                        filter,  // a filter bar's control (G43, D250)
+                                        link,    // a document's link (G44, D251)
+                                        part };  // a report preview's optional part's switch (D251)
   struct Focus {
     FocusKind kind;
     std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
@@ -343,6 +346,12 @@ class PageView {
   void push_bar(const Bar& bar, const protocol::PageBlock* block);
   Action filter_input(const Focus& focus, Key key);
   void refocus(const std::string& id);
+  // A document's links (D251): each to a document the page's list holds; and a report preview's switches.
+  bool listed(const std::string& key) const;
+  void push_doc_links(const protocol::PageBlock& block);
+  void push_parts(const protocol::PageBlock& block);
+  Action follow_link(const Focus& focus);
+  Action flip_part(const Focus& focus) const;
   static bool drawn_in_game(protocol::Component component);
   // A component's body (D185: its topic's body, or the member props.field names), and whether its topic has
   // published anything yet (D186: the block's own empty words only then).
@@ -412,6 +421,12 @@ class PageView {
   void editor_store();  // the edited editor text into its document's edits (or the draft's notes)
   std::map<std::string, std::string, std::less<>> form_values_;  // a form field's text, by its focus id
   std::map<std::string, FilterState, std::less<>> filters_;      // each filter bar's choices, by its key (D250)
+  struct DocLink {
+    std::string doc;
+    std::string heading;
+  };
+  std::vector<DocLink> doc_links_;  // the document's links, by their focus stops' index (D251)
+  std::string doc_heading_;         // a followed link's heading, scrolled to once its document is laid out
   std::string search_query_;
   std::vector<SearchHit> search_hits_;
   std::vector<SearchOther> search_others_;

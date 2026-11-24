@@ -15,3 +15,4 @@ demo demo.keepers: setting:lantern.oil_kind
 demo demo.lamps#lamp:
 demo demo.lamps#notes:
 demo demo.lamps#yours:
+demo demo.handbook:
