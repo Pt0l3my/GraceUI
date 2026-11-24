@@ -17,6 +17,7 @@
 #include "grace/protocol/messages.h"
 #include "grace/view/display.h"
 #include "grace/view/editor.h"
+#include "grace/view/filter.h"
 #include "grace/view/text.h"
 #include "grace/view/text_field.h"
 
@@ -295,7 +296,8 @@ class PageView {
 
  private:
   enum class FocusKind : std::uint8_t { action, tab, section, advanced, setting, shortcut, related, cell, row_action,
-                                        section_action, form_field, form_submit, row_secret, master_row, editor };
+                                        section_action, form_field, form_submit, row_secret, master_row, editor,
+                                        filter };  // a filter bar's control (G43, D250)
   struct Focus {
     FocusKind kind;
     std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
@@ -323,6 +325,24 @@ class PageView {
   Action open_index(std::size_t index, Scope scope);
   // A table component's body, if the view has its topic's and it has columns and rows; and its switch column, if any.
   const protocol::Json* table_of(const protocol::PageBlock& block) const;
+  // A filter bar (G43, D250): its key (the table's topic, or "master:" and the master's), its description, and the
+  // rows it filters; none where the block or the page has no bar or no rows.
+  struct Bar {
+    std::string key;
+    const protocol::FilterBar* bar = nullptr;
+    const protocol::Json* rows = nullptr;
+    explicit operator bool() const noexcept { return bar != nullptr && rows != nullptr; }
+  };
+  Bar bar_of_table(const protocol::PageBlock& block) const;
+  Bar bar_of_master() const;
+  Bar bar_of(const Focus& focus) const;
+  // A table's rows that show, by index into its rows, in the order they show: every row where it has no bar.
+  std::vector<std::size_t> shown_rows(const protocol::PageBlock& block, const protocol::Json& rows) const;
+  // A bar's controls, in the focus order: "f0" to "f3", "sort", "dir", "search", and "clear" while it hides every row.
+  std::vector<std::string> bar_parts(const Bar& bar) const;
+  void push_bar(const Bar& bar, const protocol::PageBlock* block);
+  Action filter_input(const Focus& focus, Key key);
+  void refocus(const std::string& id);
   static bool drawn_in_game(protocol::Component component);
   // A component's body (D185: its topic's body, or the member props.field names), and whether its topic has
   // published anything yet (D186: the block's own empty words only then).
@@ -368,7 +388,8 @@ class PageView {
   // A table's row secret's id (D194): its cell base and the row's key, or the row's index.
   static std::string secret_id(const protocol::PageBlock& block, const protocol::Json& row, std::size_t r);
 
-  enum class EditKind : std::uint8_t { none, setting, form_field, row_secret, search, editor_text, editor_notes };
+  enum class EditKind : std::uint8_t { none, setting, form_field, row_secret, search, editor_text, editor_notes,
+                                       filter_search };
   struct Edit {
     EditKind kind = EditKind::none;
     std::string id;                              // a setting's key, a form field's or a row secret's focus id
@@ -390,6 +411,7 @@ class PageView {
   void edited();    // after a change: a form field's or an editor's text kept, search's hits found again
   void editor_store();  // the edited editor text into its document's edits (or the draft's notes)
   std::map<std::string, std::string, std::less<>> form_values_;  // a form field's text, by its focus id
+  std::map<std::string, FilterState, std::less<>> filters_;      // each filter bar's choices, by its key (D250)
   std::string search_query_;
   std::vector<SearchHit> search_hits_;
   std::vector<SearchOther> search_others_;

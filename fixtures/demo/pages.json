@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 10,
+  "minor": 11,
   "categories": [
     {
       "id": "lanterns",
@@ -302,6 +302,31 @@
                 "column": "ward",
                 "command": "keepers.ward",
                 "key": "id"
+              },
+              "filter_bar": {
+                "filters": [
+                  {
+                    "column": "post",
+                    "label": "Post"
+                  }
+                ],
+                "sort": [
+                  {
+                    "key": "kept_days",
+                    "label": "Time kept",
+                    "direction": "descending"
+                  },
+                  {
+                    "key": "name",
+                    "label": "Name"
+                  }
+                ],
+                "search": {
+                  "columns": [
+                    "name"
+                  ],
+                  "label": "Find a keeper"
+                }
               }
             }
           ],
@@ -474,7 +499,26 @@
         "detail": "lantern.lamp",
         "label": "Lamps",
         "empty": "No lamp is lit on the wall yet.",
-        "none": "Choose a lamp to see how it burns."
+        "none": "Choose a lamp to see how it burns.",
+        "filter_bar": {
+          "sort": [
+            {
+              "key": "along_m",
+              "label": "Along the wall"
+            },
+            {
+              "key": "name",
+              "label": "Name"
+            }
+          ],
+          "search": {
+            "columns": [
+              "name",
+              "place"
+            ],
+            "label": "Find a lamp"
+          }
+        }
       }
     }
   ],

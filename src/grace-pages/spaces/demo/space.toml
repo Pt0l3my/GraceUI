@@ -333,7 +333,7 @@ help.steps = ["Read the roster: each keeper's post, and whether their ward word 
 [[page.sections]]
 id = "roster"
 title = "Roster"
-blocks = [{ kind = "component", component = "table", topic = "lantern.keepers", props = { empty = "No keeper yet: hire one below." }, row_actions = [{ id = "dismiss", label = "Dismiss", command = "keepers.dismiss", key = "id", tone = "destructive", confirm = "The keeper leaves the roster, with their ward word." }], row_secret = { column = "ward", command = "keepers.ward", key = "id" } }]
+blocks = [{ kind = "component", component = "table", topic = "lantern.keepers", props = { empty = "No keeper yet: hire one below." }, row_actions = [{ id = "dismiss", label = "Dismiss", command = "keepers.dismiss", key = "id", tone = "destructive", confirm = "The keeper leaves the roster, with their ward word." }], row_secret = { column = "ward", command = "keepers.ward", key = "id" }, filter_bar = { filters = [{ column = "post", label = "Post" }], sort = [{ key = "kept_days", label = "Time kept", direction = "descending" }, { key = "name", label = "Name" }], search = { columns = ["name"], label = "Find a keeper" } } }]
 actions = [{ id = "dismiss_all", label = "Dismiss all", command = "keepers.dismiss_all", tone = "destructive", confirm = "Every keeper leaves the roster, with their ward words." }]
 
 [[page.sections]]
@@ -364,7 +364,7 @@ increment = "0.2"
 related = ["demo.overview", "demo.log"]
 help.purpose = "Look over the harbour wall's lamps, one at a time."
 help.steps = ["Choose a lamp in the list.", "Read how it burns on the Lamp tab, and its keeper's notes on the Notes tab.", "Write your own notes on a lamp on the Your notes tab: check them, then save."]
-master = { topic = "lantern.lamps", key = "id", detail = "lantern.lamp", label = "Lamps", empty = "No lamp is lit on the wall yet.", none = "Choose a lamp to see how it burns." }
+master = { topic = "lantern.lamps", key = "id", detail = "lantern.lamp", label = "Lamps", empty = "No lamp is lit on the wall yet.", none = "Choose a lamp to see how it burns.", filter_bar = { sort = [{ key = "along_m", label = "Along the wall" }, { key = "name", label = "Name" }], search = { columns = ["name", "place"], label = "Find a lamp" } } }
 
 [[page.tabs]]
 id = "lamp"

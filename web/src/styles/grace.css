@@ -1441,6 +1441,49 @@ ul, ol {
   border-collapse: collapse;
 }
 
+/* A table's or a master list's filter bar (G43, D250; §3.8): a ground.2 strip of compact selects, the sort's direction
+   and a search field, 40 px tall. */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-16);
+  min-height: 40px;
+  margin-bottom: var(--space-8);
+  padding: var(--space-4) var(--space-12);
+  background: var(--ground-2);
+  border-radius: var(--radius-control);
+}
+
+.filter-bar__part {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.filter-bar__label {
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+  color: var(--ink-mute);
+}
+
+.filter-bar__select {
+  width: auto;
+  min-width: 8em;
+}
+
+.filter-bar__search {
+  flex: 1 1 12em;
+  max-width: 20em;
+}
+
+.filter-bar__count, .filter-bar__none {
+  margin: 0 0 var(--space-8);
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+  color: var(--ink-mute);
+}
+
 .table th {
   height: var(--size-row-head);
   border-bottom: var(--size-edge-width) solid var(--rule-strong);

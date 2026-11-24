@@ -455,11 +455,48 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       return false;
     }
   }
+  // A filter bar (G43, D250), as the page lint checks it: a part at least; columns, keys and search columns names.
+  const auto name_ok = [](const std::string& n) {
+    return !n.empty() && n.size() <= 32 &&
+           std::all_of(n.begin(), n.end(), [](char ch) { return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_'; });
+  };
+  const auto bar_ok = [&](const protocol::FilterBar& bar, const std::string& where) {
+    const bool parts = (bar.filters && !bar.filters->empty()) || (bar.sort && !bar.sort->empty()) || bar.search;
+    bool names = true;
+    for (const protocol::FilterOption& f : bar.filters.value_or(std::vector<protocol::FilterOption>{})) {
+      names = names && name_ok(f.column) && !f.label.empty();
+    }
+    for (const protocol::SortOption& o : bar.sort.value_or(std::vector<protocol::SortOption>{})) {
+      names = names && name_ok(o.key) && !o.label.empty();
+    }
+    if (bar.search) {
+      names = names && !bar.search->columns.empty() && !bar.search->label.empty() &&
+              std::all_of(bar.search->columns.begin(), bar.search->columns.end(), name_ok);
+    }
+    if (!parts || !names) {
+      why = where + "a filter bar has a filter, a sort option or a search, each naming its columns";
+      return false;
+    }
+    return true;
+  };
+  for (const protocol::Page& page : pages.pages) {
+    if (page.master && page.master->filter_bar && !bar_ok(*page.master->filter_bar, page.id + ": its master list: ")) {
+      return false;
+    }
+  }
   const auto block_ok = [&](const protocol::Page& page, const protocol::PageBlock& block) {
     const std::string where = page.id + ": ";
     const bool table = block.kind == protocol::BlockKind::component && block.component == protocol::Component::table;
     if ((block.row_actions || block.row_secret) && !table) {
       why = where + "row actions and a row secret go on a table";
+      return false;
+    }
+    if (block.filter_bar && (!table || !bar_ok(*block.filter_bar, where))) {
+      why = table ? why : where + "a filter bar goes on a table, or on a page's master list";
+      return false;
+    }
+    if (block.kind == protocol::BlockKind::component && block.component == protocol::Component::filter_bar) {
+      why = where + "a filter bar is a table's own field, filter_bar, not a block of its own";
       return false;
     }
     std::vector<std::string> ids;
@@ -1299,6 +1336,145 @@ const Json* PageView::table_of(const protocol::PageBlock& block) const {
              : nullptr;
 }
 
+// ---- Filter bars (G43, D250): done here on the rows the space published, never sent to it.
+
+PageView::Bar PageView::bar_of_table(const protocol::PageBlock& block) const {
+  Bar out;
+  const Json* table = block.filter_bar ? table_of(block) : nullptr;
+  if (table == nullptr || (*table)["rows"].empty()) {
+    return out;
+  }
+  out.key = cell_base(block);
+  out.bar = &*block.filter_bar;
+  out.rows = &(*table)["rows"];
+  return out;
+}
+
+PageView::Bar PageView::bar_of_master() const {
+  Bar out;
+  const protocol::PageMaster* m = master();
+  if (m == nullptr || !m->filter_bar) {
+    return out;
+  }
+  const auto found = topics_.find(m->topic);
+  if (found == topics_.end() || !found->second.is_object() || !found->second.contains("rows") ||
+      !found->second["rows"].is_array() || found->second["rows"].empty()) {
+    return out;
+  }
+  out.key = "master:" + m->topic;
+  out.bar = &*m->filter_bar;
+  out.rows = &found->second["rows"];
+  return out;
+}
+
+PageView::Bar PageView::bar_of(const Focus& f) const {
+  return f.block != nullptr ? bar_of_table(*f.block) : bar_of_master();
+}
+
+std::vector<std::size_t> PageView::shown_rows(const protocol::PageBlock& block, const Json& rows) const {
+  if (const Bar bar = bar_of_table(block); bar) {
+    const auto state = filters_.find(bar.key);
+    return visible_rows(rows, *bar.bar, state != filters_.end() ? state->second : FilterState{});
+  }
+  std::vector<std::size_t> all;
+  for (std::size_t r = 0; r < rows.size(); ++r) {
+    all.push_back(r);
+  }
+  return all;
+}
+
+std::vector<std::string> PageView::bar_parts(const Bar& bar) const {
+  std::vector<std::string> parts;
+  const std::size_t filters = bar.bar->filters ? bar.bar->filters->size() : 0;
+  for (std::size_t i = 0; i < filters; ++i) {
+    parts.push_back("f" + std::to_string(i));
+  }
+  if (bar.bar->sort && !bar.bar->sort->empty()) {
+    parts.emplace_back("sort");
+    parts.emplace_back("dir");
+  }
+  if (bar.bar->search) {
+    parts.emplace_back("search");
+  }
+  const auto state = filters_.find(bar.key);
+  const FilterState none;
+  const FilterState& st = state != filters_.end() ? state->second : none;
+  if (narrowed(*bar.bar, st) && visible_rows(*bar.rows, *bar.bar, st).empty()) {
+    parts.emplace_back("clear");
+  }
+  return parts;
+}
+
+void PageView::push_bar(const Bar& bar, const protocol::PageBlock* block) {
+  if (!bar) {
+    return;
+  }
+  const std::vector<std::string> parts = bar_parts(bar);
+  for (std::size_t i = 0; i < parts.size(); ++i) {
+    focus_.push_back({FocusKind::filter, bar.key + "/" + parts[i], i, block});
+  }
+}
+
+void PageView::refocus(const std::string& id) {
+  for (std::size_t i = 0; i < focus_.size(); ++i) {
+    if (focus_[i].id == id) {
+      page_focus_ = i;
+      return;
+    }
+  }
+}
+
+Action PageView::filter_input(const Focus& f, Key key) {
+  const Bar bar = bar_of(f);
+  if (!bar) {
+    return {};
+  }
+  const std::string part = f.id.substr(f.id.rfind('/') + 1);
+  FilterState& st = filters_[bar.key];
+  const int step = key == Key::left ? -1 : 1;
+  const bool sideways = key == Key::left || key == Key::right;
+  if (part[0] == 'f' && sideways) {
+    // A filter's choices: All, then the values its rows hold, and the player's own though no row holds it now.
+    const std::size_t i = static_cast<std::size_t>(std::stoul(part.substr(1)));
+    std::vector<std::string> values = filter_choices(*bar.rows, (*bar.bar->filters)[i].column);
+    if (st.chosen.size() <= i) {
+      st.chosen.resize(i + 1);
+    }
+    if (st.chosen[i] && std::find(values.begin(), values.end(), *st.chosen[i]) == values.end()) {
+      values.push_back(*st.chosen[i]);
+    }
+    const std::ptrdiff_t at = st.chosen[i] ? std::find(values.begin(), values.end(), *st.chosen[i]) - values.begin() + 1
+                                           : 0;
+    const std::ptrdiff_t next = std::clamp<std::ptrdiff_t>(at + step, 0, static_cast<std::ptrdiff_t>(values.size()));
+    st.chosen[i] = next == 0 ? std::nullopt : std::optional<std::string>(values[static_cast<std::size_t>(next - 1)]);
+  } else if (part == "sort" && sideways) {
+    const std::ptrdiff_t next = std::clamp<std::ptrdiff_t>(static_cast<std::ptrdiff_t>(st.sort) + step, 0,
+                                                           static_cast<std::ptrdiff_t>(bar.bar->sort->size()) - 1);
+    if (static_cast<std::size_t>(next) != st.sort) {
+      st.sort = static_cast<std::size_t>(next);
+      st.reversed = false;
+    }
+  } else if (part == "dir" && (sideways || key == Key::activate)) {
+    st.reversed = !st.reversed;
+  } else if (part == "search" && key == Key::activate) {
+    start_edit(EditKind::filter_search, f.id, st.search, 64, false, f.block);
+    return {};
+  } else if (part == "clear" && key == Key::activate) {
+    st.chosen.clear();
+    st.search.clear();
+    const std::string to = bar.key + "/" + bar_parts(bar).front();
+    rebuild();
+    refocus(to);
+    return {};
+  } else {
+    return {};
+  }
+  const std::string id = f.id;
+  rebuild();
+  refocus(id);
+  return {};
+}
+
 Action PageView::toggle_cell(const Focus& f) const {
   if (!greyed_words(current().id).empty()) {
     return {};  // a greyed page's controls are inert (D188)
@@ -1392,7 +1568,9 @@ void PageView::rebuild() {
     focus_.push_back({FocusKind::action, (*page.actions)[a].id, a});
   }
   if (const protocol::PageMaster* m = master(); m != nullptr) {
-    // The master list's rows (D215), before its detail: by the list's topic and each row's key.
+    // The master list's filter bar (D250), then its rows (D215), before its detail: by the list's topic and each row's
+    // key.
+    push_bar(bar_of_master(), nullptr);
     const auto rows = master_rows();
     for (std::size_t r = 0; r < rows.size(); ++r) {
       focus_.push_back({FocusKind::master_row, m->topic + "/" + rows[r].first, r});
@@ -1490,7 +1668,8 @@ void PageView::rebuild() {
             }
           }
           const std::size_t actions = block.row_actions ? block.row_actions->size() : 0;
-          for (std::size_t r = 0; r < (*table)["rows"].size(); ++r) {
+          push_bar(bar_of_table(block), &block);  // its filter bar first (D250), then its rows as they show
+          for (const std::size_t r : shown_rows(block, (*table)["rows"])) {
             const Json& row = (*table)["rows"][r];
             if (sw != nullptr) {
               const std::string id = row.is_object() ? cell_words(row, (*sw)["key"].get<std::string>()) : std::string();
@@ -1582,7 +1761,8 @@ std::string PageView::name_of(Scope scope, std::size_t index) const {
     return "";
   }
   static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
-                                          "cell", "row", "section-action", "field", "submit", "secret", "item", "editor"};
+                                          "cell", "row", "section-action", "field", "submit", "secret", "item", "editor",
+                                          "filter"};
   const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -1934,6 +2114,10 @@ Action PageView::pointer_body(const Pointer& in) {
       return toggle_cell(f);
     case FocusKind::master_row:
       return {};  // focused: the row is chosen (D215); Enter would go into the detail
+    case FocusKind::filter:
+      // A filter bar's select (D250): a press takes its next choice; its direction, search and Clear filters, as Enter.
+      return filter_input(f, f.id.ends_with("/search") || f.id.ends_with("/clear") || f.id.ends_with("/dir")
+                                 ? Key::activate : Key::right);
     default:
       return input(Input{Key::activate, false});  // an action, a tab, a section, a shortcut, a related page: as Enter
   }
@@ -2089,7 +2273,19 @@ std::vector<std::pair<std::string, const Json*>> PageView::master_rows() const {
       !found->second["rows"].is_array()) {
     return out;
   }
-  for (const Json& row : found->second["rows"]) {
+  // Through its filter bar, if it has one (G43, D250): the rows that show, in the order they show.
+  const Json& rows = found->second["rows"];
+  std::vector<std::size_t> order;
+  if (const Bar bar = bar_of_master(); bar) {
+    const auto state = filters_.find(bar.key);
+    order = visible_rows(rows, *bar.bar, state != filters_.end() ? state->second : FilterState{});
+  } else {
+    for (std::size_t r = 0; r < rows.size(); ++r) {
+      order.push_back(r);
+    }
+  }
+  for (const std::size_t r : order) {
+    const Json& row = rows[r];
     if (!row.is_object()) {
       continue;
     }
@@ -2879,6 +3075,13 @@ void PageView::edited() {
     search_query_ = edit_.field.text();
     search_hits_ = search_all(search_query_, kSearchHits);  // every space's the menu shows (D219)
     search_pick_ = 0;
+  } else if (edit_.kind == EditKind::filter_search) {
+    // A filter bar's search (D250), applied as it is typed; its rows and the bar's own stops follow.
+    const std::string key = edit_.id.substr(0, edit_.id.rfind('/'));  // "<key>/search"
+    filters_[key].search = edit_.field.text();
+    const std::string id = edit_.id;
+    rebuild();
+    refocus(id);
   }
 }
 
@@ -2932,6 +3135,18 @@ Action PageView::finish_edit(bool keep, int move_on) {
         }
       }
       break;
+    case EditKind::filter_search:
+      if (!keep) {
+        // Escape empties the search, as the browser's search field does (D250).
+        const std::string key = edit_.id.substr(0, edit_.id.rfind('/'));
+        const std::string id = edit_.id;
+        filters_[key].search.clear();
+        end_edit();
+        rebuild();
+        refocus(id);
+        return action;
+      }
+      break;  // its text is applied at each change (edited)
     case EditKind::editor_notes:
     case EditKind::search:
     case EditKind::none:
@@ -3415,6 +3630,9 @@ Action PageView::input_body(const Input& in) {
     if (on_row && (in.key == Key::up || in.key == Key::down)) {
       if (in.key == Key::up && page_focus_ > first) {
         --page_focus_;
+      } else if (in.key == Key::up && page_focus_ == first && first > 0 &&
+                 focus_[first - 1].kind == FocusKind::filter) {
+        --page_focus_;  // up from the first row to the list's filter bar (D250)
       } else if (in.key == Key::down && page_focus_ < last) {
         ++page_focus_;
       }
@@ -3426,7 +3644,7 @@ Action PageView::input_body(const Input& in) {
       }
       return {};
     }
-    const bool takes_sideways = f.kind == FocusKind::cell ||
+    const bool takes_sideways = f.kind == FocusKind::cell || f.kind == FocusKind::filter ||
                                 (s != nullptr && s->type != SettingType::key_name &&
                                  (s->type != SettingType::text || s->choices_from) && s->type != SettingType::secret);
     if (!on_row && chosen_at < focus_.size() &&
@@ -3461,6 +3679,9 @@ Action PageView::input_body(const Input& in) {
         refusals_.erase(f.id);  // a new try: the last refusal's line goes
         return toggle_cell(f);  // a switch turns with ← and →, as a setting's does
       }
+      if (f.kind == FocusKind::filter && !f.id.ends_with("/search") && !f.id.ends_with("/clear")) {
+        return filter_input(f, in.key);  // a filter bar's select or direction (D250)
+      }
       if (in.key == Key::left) {
         scope_ = Scope::rail;  // ← at the page's left edge goes back to the rail
         rail_focus_ = rail_index_of_page();
@@ -3489,6 +3710,8 @@ Action PageView::input_body(const Input& in) {
           return {};  // handled above, with the master's keys (D215) or the editor's (D217)
         case FocusKind::row_action:
           return row_action(f);
+        case FocusKind::filter:
+          return filter_input(f, Key::activate);
         case FocusKind::section_action:
           return section_action(f);
         case FocusKind::action: {
@@ -3865,6 +4088,122 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     const auto page_focus = [&](FocusKind kind, std::string_view id) {
       return scope_ == Scope::page && !focus_.empty() && focus_[page_focus_].kind == kind && focus_[page_focus_].id == id;
     };
+    // A filter bar (G43, D250): its controls left to right from (x, y) within w, wrapping where they do not fit; then,
+    // while a filter or the search holds, "12 of 40 shown", or "Nothing matches these filters." and Clear filters.
+    // Answers the y below it.
+    const auto draw_bar = [&](const Bar& bar, float x, float y, float w) {
+      const auto state = filters_.find(bar.key);
+      const FilterState none;
+      const FilterState& st = state != filters_.end() ? state->second : none;
+      const float h = std::round(28 * s);
+      const float gap = std::round(8 * s);
+      const float r = std::round(tokens::radius::control * s);
+      const float edge = std::round(tokens::kGrace.size.edge_width * s);
+      float cx = x;
+      float cy = y;
+      const auto place = [&](float width) {
+        if (cx > x && cx + width > x + w) {
+          cx = x;
+          cy += h + gap;
+        }
+        const Rect box{cx, cy, width, h};
+        cx += width + std::round(16 * s);
+        return box;
+      };
+      const auto mid = [&](const Rect& box, TypeRole role) {
+        return box.y + std::round((box.h - line_height(role, s)) / 2);
+      };
+      // A select: its label, then its value in a well between ‹ and ›.
+      const auto select = [&](const std::string& part, std::string_view label, std::string_view value) {
+        const std::string id = bar.key + "/" + part;
+        const float lw = c.width(label, TypeRole::ui_sm);
+        const float vw = std::max(c.width(value, TypeRole::ui_sm) + std::round(44 * s), std::round(96 * s));
+        const Rect all = place(lw + gap + vw);
+        c.text(label, TypeRole::ui_sm, all.x, mid(all, TypeRole::ui_sm), lw + 1, Colour::ink_mute);
+        const Rect box{all.x + lw + gap, all.y, vw, h};
+        c.fill(box, Colour::ground_well, r);
+        c.stroke(box, Colour::edge, edge, r);
+        c.text("‹", TypeRole::ui_sm, box.x + std::round(8 * s), mid(box, TypeRole::ui_sm), box.w, Colour::ink_faint);
+        c.text(value, TypeRole::ui_sm, box.x + std::round(22 * s), mid(box, TypeRole::ui_sm), box.w - std::round(44 * s),
+               Colour::ink_hi);
+        c.text("›", TypeRole::ui_sm, box.right() - std::round(16 * s), mid(box, TypeRole::ui_sm), box.w,
+               Colour::ink_faint);
+        hit(box, Scope::page, focus_index(FocusKind::filter, id));
+        if (page_focus(FocusKind::filter, id)) {
+          c.focused(box);
+        }
+      };
+      const std::size_t filters = bar.bar->filters ? bar.bar->filters->size() : 0;
+      for (std::size_t i = 0; i < filters; ++i) {
+        const bool chosen_one = i < st.chosen.size() && st.chosen[i].has_value();
+        select("f" + std::to_string(i), (*bar.bar->filters)[i].label, chosen_one ? *st.chosen[i] : std::string("All"));
+      }
+      if (bar.bar->sort && !bar.bar->sort->empty()) {
+        const std::size_t at = std::min(st.sort, bar.bar->sort->size() - 1);
+        select("sort", "Sort", (*bar.bar->sort)[at].label);
+        // Its direction: a square button with an arrow up (ascending) or down (descending).
+        const std::string id = bar.key + "/dir";
+        const Rect box = place(h);
+        c.stroke(box, Colour::edge, edge, r);
+        const bool down = descending(*bar.bar, st);
+        Rect a = arrow_box(down ? Facing::down : Facing::up, s);
+        a.x = box.x + std::round((box.w - a.w) / 2);
+        a.y = box.y + std::round((box.h - a.h) / 2);
+        arrow(c, a, down ? Facing::down : Facing::up, Colour::ink_hi);
+        hit(box, Scope::page, focus_index(FocusKind::filter, id));
+        if (page_focus(FocusKind::filter, id)) {
+          c.focused(box);
+        }
+      }
+      if (bar.bar->search) {
+        const std::string id = bar.key + "/search";
+        const Rect box = place(std::min(w, std::round(220 * s)));
+        const bool editing_it = edit_.kind == EditKind::filter_search && edit_.id == id;
+        if (editing_it) {
+          draw_field(box, st.search, Colour::ink_hi, true, 255, TypeRole::ui_sm);
+        } else {
+          c.fill(box, Colour::ground_well, r);
+          c.stroke(box, Colour::edge, edge, r);
+          c.text(st.search.empty() ? std::string_view(bar.bar->search->label) : std::string_view(st.search),
+                 TypeRole::ui_sm, box.x + std::round(10 * s), mid(box, TypeRole::ui_sm), box.w - std::round(20 * s),
+                 st.search.empty() ? Colour::ink_faint : Colour::ink_body);
+        }
+        hit(box, Scope::page, focus_index(FocusKind::filter, id));
+        if (page_focus(FocusKind::filter, id)) {
+          c.focused(box);
+        }
+      }
+      cy += h + gap;
+      if (narrowed(*bar.bar, st)) {
+        std::size_t total = 0;
+        for (const Json& row : *bar.rows) {
+          total += row.is_object() ? 1 : 0;
+        }
+        const std::size_t shown = visible_rows(*bar.rows, *bar.bar, st).size();
+        if (shown > 0) {
+          c.text(std::to_string(shown) + " of " + std::to_string(total) + " shown", TypeRole::ui_sm, x, cy, w,
+                 Colour::ink_mute);
+          cy += std::round(line_height(TypeRole::ui_sm, s) + 4 * s);
+        } else {
+          const std::string words = "Nothing matches these filters.";
+          c.text(words, TypeRole::ui_sm, x, cy + std::round((h - line_height(TypeRole::ui_sm, s)) / 2), w,
+                 Colour::ink_mute);
+          const std::string id = bar.key + "/clear";
+          const std::string label = "Clear filters";
+          const float bw = c.width(label, TypeRole::ui_sm) + std::round(24 * s);
+          const Rect button{x + c.width(words, TypeRole::ui_sm) + std::round(12 * s), cy, bw, h};
+          c.stroke(button, Colour::edge, edge, r);
+          c.text(label, TypeRole::ui_sm, button.x + std::round(12 * s), mid(button, TypeRole::ui_sm), bw,
+                 Colour::ink_hi);
+          hit(button, Scope::page, focus_index(FocusKind::filter, id));
+          if (page_focus(FocusKind::filter, id)) {
+            c.focused(button);
+          }
+          cy += h + gap;
+        }
+      }
+      return cy;
+    };
     // The header: title, description, actions, the lozenge rule.
     c.text(page.name, TypeRole::display_lg, x0, y, content_w / 2, Colour::ink_hi);
     float action_x = x0 + content_w;
@@ -3928,6 +4267,10 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       float my = y + std::round(16 * s);
       c.text(m->label, TypeRole::eyebrow, x0 + mpad, my, mw - 2 * mpad, Colour::gold);
       my += std::round(line_height(TypeRole::eyebrow, s) + 8 * s);
+      const Bar master_bar = bar_of_master();  // its filter bar (D250), above its rows
+      if (master_bar) {
+        my = draw_bar(master_bar, x0 + mpad, my, mw - 2 * mpad);
+      }
       const auto rows = master_rows();
       std::string first_column;
       std::string second_column;
@@ -3967,7 +4310,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         }
         my += row_hm;
       }
-      if (rows.empty()) {
+      if (rows.empty() && !master_bar) {
         // Its own words once its topic has spoken (D186), nothing else until then (invariant 2).
         const bool published = topics_.count(m->topic) != 0;
         c.text(published && m->empty ? *m->empty : std::string("Nothing to show."), TypeRole::ui_sm, x0 + mpad,
@@ -4733,7 +5076,10 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               y += row_h;
               continue;
             }
-            for (std::size_t r = 0; r < rows.size(); ++r) {
+            if (const Bar table_bar = bar_of_table(block); table_bar) {
+              y = draw_bar(table_bar, x0 + card_pad, y + std::round(4 * s), content_w - 2 * card_pad);  // D250
+            }
+            for (const std::size_t r : shown_rows(block, rows)) {
               const Json& line = rows[r];
               if (!line.is_object()) {
                 continue;
@@ -5177,6 +5523,12 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         hints = confirming_ == "section:" + f.id ? "Enter  Confirm    Esc  Back" : "Enter  Press    Esc  Back";
       } else if (f.kind == FocusKind::row_action) {
         hints = confirming_ == "row:" + f.id ? "Enter  Confirm    Esc  Back" : "Enter  Press    Esc  Back";
+      } else if (f.kind == FocusKind::filter) {
+        // A filter bar's control (D250).
+        hints = f.id.ends_with("/search") ? "Enter  Type    Esc  Back"
+                : f.id.ends_with("/clear") ? "Enter  Clear filters    Esc  Back"
+                : f.id.ends_with("/dir")   ? "Enter  Reverse    Esc  Back"
+                                           : "← →  Change    Esc  Back";
       } else {
         hints = "Enter  Open    Esc  Back";
       }
@@ -5188,6 +5540,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     if (editing()) {
       // A field's keys (§5.3): every other key types into it.
       hints = edit_.kind == EditKind::search       ? "↑ ↓  Choose    Enter  Open    Esc  Close"
+              : edit_.kind == EditKind::filter_search ? "Enter  Done    Esc  Clear    Ctrl+V  Paste"
               : edit_.kind == EditKind::form_field ? "Enter  Next    Esc  Done    Ctrl+V  Paste"
               : edit_.kind == EditKind::editor_notes || (edit_.kind == EditKind::editor_text && edit_.prose)
                   ? "↑ ↓  Line    Enter  Done    Esc  Done    Ctrl+V  Paste"

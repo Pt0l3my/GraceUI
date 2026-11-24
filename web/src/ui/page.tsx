@@ -22,6 +22,7 @@ import { ConfirmDialog, Modal } from "./modal.tsx";
 import { FormBlock } from "./form.tsx";
 import { EditorBlockView } from "./editor.tsx";
 import { UploadBlock } from "./upload.tsx";
+import { FilterBar, useFilterBar } from "./filter-bar.tsx";
 import { dropDrafts } from "../model/editor.ts";
 
 // The framework topic a space's greyed pages come on (D188): {"greyed": {page: words}, "inactive": words}.
@@ -291,7 +292,10 @@ function masterRows(master: PageMaster, data: TopicData | undefined): { key: str
  * Home and End move the choice, → or Enter go into the detail. */
 function MasterList({ space, page, master, data, current }: { space: string; page: Page; master: PageMaster;
                                                               data: TopicData | undefined; current: string | null }) {
-  const rows = masterRows(master, data);
+  // Its filter bar (G43, D250): the rows that show, in the order they show; the chosen row stays chosen if hidden.
+  const all = masterRows(master, data);
+  const bar = useFilterBar(`${space}/master/${master.topic}`, master.filter_bar, all.map((r) => r.row));
+  const rows = bar.order.map((i) => all[i]!);
   const columns = data?.kind === "state" && Array.isArray(data.body.columns) ? data.body.columns : [];
   const ids = columns.flatMap((c) => (typeof c === "object" && c !== null && !Array.isArray(c) && typeof c.id === "string"
     ? [c.id] : []));
@@ -307,10 +311,14 @@ function MasterList({ space, page, master, data, current }: { space: string; pag
   return (
     <nav class="master" aria-label={master.label}>
       <h2 class="master__label">{master.label}</h2>
-      {rows.length === 0
+      {master.filter_bar && all.length > 0 && (
+        <FilterBar spec={master.filter_bar} rows={all.map((r) => r.row)} state={bar.state} shown={rows.length}
+                   set={bar.set} label={master.label} />
+      )}
+      {all.length === 0
         ? <p class="master__empty">{data !== undefined && master.empty !== undefined ? master.empty : "Nothing to show."}</p>
         : (
-          <ul class="master__list" role="listbox" aria-label={master.label}>
+          rows.length > 0 && <ul class="master__list" role="listbox" aria-label={master.label}>
             {rows.map(({ key, row }, i) => (
               <li key={key} id={optionId(key)} role="option" class="master__row" aria-selected={key === current}
                   data-key={key} tabIndex={key === current || (at < 0 && i === 0) ? 0 : -1}

@@ -19,19 +19,22 @@
         "id": "k1",
         "name": "Orla Venn",
         "post": "North light",
-        "ward": "set"
+        "ward": "set",
+        "kept_days": 40
       },
       {
         "id": "k2",
         "name": "Tamsin Reed",
         "post": "Harbour wall",
-        "ward": ""
+        "ward": "",
+        "kept_days": 12
       },
       {
         "id": "k3",
         "name": "Ada Marsh",
         "post": "Store room",
-        "ward": "none"
+        "ward": "none",
+        "kept_days": 3
       }
     ]
   },
@@ -70,17 +73,20 @@
       {
         "id": "harbour-mouth",
         "name": "Harbour mouth",
-        "place": "The north end of the wall"
+        "place": "The north end of the wall",
+        "along_m": 0
       },
       {
         "id": "fish-steps",
         "name": "Fish steps",
-        "place": "Halfway along, above the steps"
+        "place": "Halfway along, above the steps",
+        "along_m": 120
       },
       {
         "id": "old-crane",
         "name": "Old crane",
-        "place": "The inner end, by the crane"
+        "place": "The inner end, by the crane",
+        "along_m": 260
       }
     ]
   },

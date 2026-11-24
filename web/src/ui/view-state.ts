@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 // view-state.ts: what the browser view remembers for the session only, never in browser storage (DESIGN §4.2.2,
 // §4.2.4; PV3): which sections are folded, which Advanced disclosures are open, the rail's collapse and its open
-// category, and the row a search or a shortcut found.
+// category, the row a search or a shortcut found, and each filter bar's choices.
 import { signal } from "@preact/signals";
 import type { PageSection } from "../protocol.ts";
+import type { FilterState } from "../model/filter.ts";
 
 /** Sections whose open or closed state the player flipped from its description's, by "space/page/section". */
 export const flipped = signal<ReadonlySet<string>>(new Set());
@@ -110,4 +111,14 @@ export function railCollapsed(): boolean {
 /** An id safe for an element: letters, digits and dashes. */
 export function domId(...parts: string[]): string {
   return parts.join("-").replace(/[^A-Za-z0-9-]/g, "_");
+}
+
+/** Each filter bar's choices (G43, D250), by "space/topic" (a master list's by "space/master/topic"), for the session
+ * only: never sent to the space, put in the address or stored (proposal 0012). */
+export const filters = signal<ReadonlyMap<string, FilterState>>(new Map());
+
+export function setFilter(key: string, state: FilterState): void {
+  const next = new Map(filters.value);
+  next.set(key, state);
+  filters.value = next;
 }

@@ -11,7 +11,7 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 10 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 11 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
@@ -23,6 +23,7 @@ protocol = { major = 1, minor = 10 }  # 1.1 (D172): result.detail; a stream clea
                                      # 1.9 (G28): a space's file commands, the upload block, the upload's ticket,
                                      # and the welcome's view (D226)
                                      # 1.10: a category at the rail's foot (D248)
+                                     # 1.11 (G43): a table's or a master list's filter bar (D250)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -75,6 +76,9 @@ values = ["settings", "shortcuts", "component", "form", "editor", "upload"]  # u
 
 [enums.action_tone]
 values = ["primary", "secondary", "destructive"]
+
+[enums.sort_direction]
+values = ["ascending", "descending"]  # 1.11 (G43, D250): a sort option's own direction
 
 [enums.row_capture]
 values = ["key", "chord"]
@@ -219,6 +223,36 @@ fields = [
   { name = "notes_max", type = "u32", optional = true },  # the notes' characters, 1 to 400
 ]
 
+[types.filter_option]
+doc = "A filter of a filter bar (1.11, G43, D250): one of its table's columns, its choices the values the rows hold"
+fields = [
+  { name = "column", type = "id" },
+  { name = "label", type = "string", max = 32 },
+]
+
+[types.sort_option]
+doc = "A sort option of a filter bar (1.11): a column, or a member of each row that is not shown; ascending unless it says"
+fields = [
+  { name = "key", type = "id" },
+  { name = "label", type = "string", max = 32 },
+  { name = "direction", type = "enum.sort_direction", optional = true },
+]
+
+[types.filter_search]
+doc = "A filter bar's search (1.11): the columns it reads, never one holding chat or story text, and its field's label"
+fields = [
+  { name = "columns", type = "list.id", max = 4 },
+  { name = "label", type = "string", max = 64 },
+]
+
+[types.filter_bar]
+doc = "A table's or a master list's filter bar (1.11, G43, D250), done in the view on the rows published, never sent"
+fields = [
+  { name = "filters", type = "list.type.filter_option", max = 4, optional = true },
+  { name = "sort", type = "list.type.sort_option", max = 4, optional = true },
+  { name = "search", type = "type.filter_search", optional = true },
+]
+
 [types.page_block]
 doc = "A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, a component bound to a topic (a table with its row actions and row secret), or a small form"
 fields = [
@@ -235,6 +269,7 @@ fields = [
   { name = "editor", type = "type.editor_block", optional = true },  # 1.7 (D217)
   # 1.9 (D226): an upload block's file kinds, as the browser's picker takes them (".zip, .toml"); a hint, checked by the space
   { name = "accept", type = "string", max = 128, optional = true },
+  { name = "filter_bar", type = "type.filter_bar", optional = true },  # 1.11 (D250): a table block's alone
 ]
 
 [types.section_status]
@@ -282,6 +317,7 @@ fields = [
   { name = "label", type = "string", max = 64 },             # the list's own name, read by screen readers and in game
   { name = "empty", type = "string", max = 160, optional = true },  # the list's words when it has no rows
   { name = "none", type = "string", max = 160, optional = true },   # the detail's words while no row is chosen
+  { name = "filter_bar", type = "type.filter_bar", optional = true },  # 1.11 (D250)
 ]
 
 [types.page]

@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 10;
-inline constexpr std::string_view kProtocolVersion = "1.10";
+inline constexpr std::uint32_t kProtocolMinor = 11;
+inline constexpr std::string_view kProtocolVersion = "1.11";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -153,6 +153,13 @@ enum class ActionTone : std::uint8_t {
 };
 std::string_view to_string(ActionTone value) noexcept;
 bool from_string(std::string_view text, ActionTone& out) noexcept;
+
+enum class SortDirection : std::uint8_t {
+  ascending,
+  descending,
+};
+std::string_view to_string(SortDirection value) noexcept;
+bool from_string(std::string_view text, SortDirection& out) noexcept;
 
 enum class RowCapture : std::uint8_t {
   key,
@@ -335,6 +342,44 @@ struct EditorBlock {
 bool decode(const Json& in, EditorBlock& out, const std::string& path, DecodeError& e);
 Json encode(const EditorBlock& in);
 
+// A filter of a filter bar (1.11, G43, D250): one of its table's columns, its choices the values the rows hold.
+struct FilterOption {
+  std::string column{};
+  std::string label{};
+  bool operator==(const FilterOption&) const = default;
+};
+bool decode(const Json& in, FilterOption& out, const std::string& path, DecodeError& e);
+Json encode(const FilterOption& in);
+
+// A sort option of a filter bar (1.11): a column, or a member of each row that is not shown; ascending unless it says.
+struct SortOption {
+  std::string key{};
+  std::string label{};
+  std::optional<SortDirection> direction{};
+  bool operator==(const SortOption&) const = default;
+};
+bool decode(const Json& in, SortOption& out, const std::string& path, DecodeError& e);
+Json encode(const SortOption& in);
+
+// A filter bar's search (1.11): the columns it reads, never one holding chat or story text, and its field's label.
+struct FilterSearch {
+  std::vector<std::string> columns{};
+  std::string label{};
+  bool operator==(const FilterSearch&) const = default;
+};
+bool decode(const Json& in, FilterSearch& out, const std::string& path, DecodeError& e);
+Json encode(const FilterSearch& in);
+
+// A table's or a master list's filter bar (1.11, G43, D250), done in the view on the rows published, never sent.
+struct FilterBar {
+  std::optional<std::vector<FilterOption>> filters{};
+  std::optional<std::vector<SortOption>> sort{};
+  std::optional<FilterSearch> search{};
+  bool operator==(const FilterBar&) const = default;
+};
+bool decode(const Json& in, FilterBar& out, const std::string& path, DecodeError& e);
+Json encode(const FilterBar& in);
+
 // A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, a component bound to a topic (a table with its row actions and row secret), or a small form.
 struct PageBlock {
   BlockKind kind{};
@@ -349,6 +394,7 @@ struct PageBlock {
   std::optional<std::string> submit{};
   std::optional<EditorBlock> editor{};
   std::optional<std::string> accept{};
+  std::optional<FilterBar> filter_bar{};
   bool operator==(const PageBlock&) const = default;
 };
 bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError& e);
@@ -406,6 +452,7 @@ struct PageMaster {
   std::string label{};
   std::optional<std::string> empty{};
   std::optional<std::string> none{};
+  std::optional<FilterBar> filter_bar{};
   bool operator==(const PageMaster&) const = default;
 };
 bool decode(const Json& in, PageMaster& out, const std::string& path, DecodeError& e);
