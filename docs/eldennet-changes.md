@@ -1454,3 +1454,15 @@ GraceUI's menu now draws its keyboard hints as §3.8's key caps: each key in a c
 2. **A test that looks for a whole hints line** on the screen (`GraceUI_Test_MenuShows("Enter  Save    Esc  Cancel")`)
    no longer finds it in one text: read `GraceUiTestMenu.footer` instead, which holds the line's words as before. A
    label alone ("Cancel") is still drawn as its own text.
+
+## 74. The key caps' arrows drawn (2026-11-24, D247; GraceUI 0.2.41)
+
+A key cap in the menu's footer now draws its arrows (← ↑ → ↓) as shapes, a shaft and a head centred in the cap,
+instead of the mono face's small, low glyphs. So:
+
+1. **Your goldens' footers move once more**, where a footer has an arrow in it ("← →  Change", "↑ ↓  Move"): each
+   arrow is now a `fill` and a `tri` line instead of part of a `text` line, and those caps are wider. Pin 0.2.41
+   rather than 0.2.40, and regenerate them once.
+2. **Nothing else changes**: `GraceUiTestMenu.footer` and the view's `footer()` hold the keyboard's hints line as
+   before, and the Related card's arrow and every other arrow in the menu's words stay text.
+
