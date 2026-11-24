@@ -281,6 +281,13 @@ label = "Trim the wick"
 command = "lantern.trim"
 tone = "primary"
 
+[[page.actions]]
+id = "hush"
+label = "Hush the bell"
+command = "bell.hush"
+tone = "secondary"
+state = { topic = "lantern.status", field = "hushed" }  # a header switch (D256), beside its quick switch
+
 [[page.sections]]
 id = "now"
 title = "Now"

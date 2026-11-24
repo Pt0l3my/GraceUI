@@ -213,6 +213,13 @@ Stats tessellate(const view::DisplayList& list, const tokens::Palette& palette, 
     if ((colour >> 24) == 0 || item.rect.w <= 0 || item.rect.h <= 0) {
       continue;  // nothing to draw
     }
+    // Wholly outside its clip (a long page's rows above or below the view): nothing of it would show, so no vertex is
+    // spent on it. A stroke's width reaches past its rectangle, hence the margin.
+    const float margin = std::max(item.width, 1.0f) + 1.0f;
+    if (item.rect.right() + margin < clip.x || item.rect.x - margin > clip.right() ||
+        item.rect.bottom() + margin < clip.y || item.rect.y - margin > clip.bottom()) {
+      continue;
+    }
     ++stats.items;
     const Rect& r = item.rect;
     switch (item.shape) {

@@ -53,6 +53,36 @@ export function greyedWords(body: { [key: string]: Json } | undefined, page: str
   return wordsOf(body.inactive);
 }
 
+/** A header switch (D256): its label and a switch showing the state the space publishes ("Not known yet" until it has
+ * come); a press sends its command with {on} flipped, and nothing changes until the space publishes (invariant 1). */
+function HeaderSwitch({ space, action, inert, onRefusal }: {
+  space: string; action: PageAction; inert: boolean; onRefusal: (words: string) => void;
+}) {
+  const session = useSession();
+  const data = useTopic(space, action.state?.topic);
+  const raw = data?.kind === "state" && action.state ? data.body[action.state.field] : undefined;
+  const on = typeof raw === "boolean" ? raw : null;
+  const flip = async () => {
+    if (on === null || inert) {
+      return;
+    }
+    const answer = await session.command(space, action.command, { on: !on });
+    if (!answer.ok) {
+      onRefusal(refusalWords(answer));
+    }
+  };
+  return (
+    <button type="button" role="switch" class="button button--secondary header-switch" data-action={action.id}
+            aria-checked={on ?? false} aria-disabled={inert || on === null || undefined}
+            onClick={() => void flip()}>
+      <span>{action.label}</span>
+      {on === null
+        ? <span class="header-switch__unknown">Not known yet</span>
+        : <span class="switch header-switch__switch" aria-hidden="true"><span class="switch__knob" /></span>}
+    </button>
+  );
+}
+
 function TagMark({ tag }: { tag: Page["tag"] }) {
   if (tag === undefined) {
     return null;
@@ -447,7 +477,10 @@ export function PageView() {
           </button>
           {(page.actions ?? []).length > 0 && (
             <div class="page__actions">
-              {(page.actions ?? []).map((action) => (
+              {(page.actions ?? []).map((action) => action.state !== undefined ? (
+                <HeaderSwitch key={action.id} space={space} action={action} inert={pageWords !== null}
+                              onRefusal={(text) => setNotice({ page: page.id, text })} />
+              ) : (
                 <button type="button" key={action.id} data-action={action.id}
                         class={`button button--${action.tone === "destructive" ? "danger" : action.tone}`}
                         aria-disabled={pageWords !== null || undefined}

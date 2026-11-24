@@ -497,6 +497,62 @@ ul, ol {
   color: var(--ink-hi);
 }
 
+/* A header switch (D256): its label, then a switch as a setting's row draws one. */
+.header-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.header-switch__unknown {
+  color: var(--ink-mute);
+}
+
+.header-switch__switch {
+  display: inline-block;
+}
+
+.header-switch[aria-checked="true"] .header-switch__switch {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+.header-switch[aria-checked="true"] .switch__knob {
+  left: calc(100% - 18px);
+  background: var(--on-gold);
+}
+
+/* A table's row drawer (D256): a mark at the row's start; its drawer a row of its own, each part's label above its
+ * words, their line breaks kept. */
+.table__mark {
+  width: 32px;
+}
+
+.table__drawer td {
+  padding-top: 0;
+  background: var(--ground-2);
+}
+
+.drawer {
+  margin: 0;
+  padding: var(--space-8) 0 var(--space-12) 32px;
+}
+
+.drawer__part + .drawer__part {
+  margin-top: var(--space-8);
+}
+
+.drawer__label {
+  font-size: var(--type-ui-sm-size);
+  color: var(--ink-faint);
+}
+
+.drawer__value {
+  margin: var(--space-4) 0 0;
+  white-space: pre-line;
+  color: var(--ink-body);
+}
+
 /* The top bar's scope (D254): its label, then a select of its choices drawn as the control's own words. */
 .topbar__scope {
   padding-right: var(--space-4);

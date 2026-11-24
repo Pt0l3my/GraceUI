@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 14;
-inline constexpr std::string_view kProtocolVersion = "1.14";
+inline constexpr std::uint32_t kProtocolMinor = 15;
+inline constexpr std::string_view kProtocolVersion = "1.15";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -283,13 +283,23 @@ struct TopicInfo {
 bool decode(const Json& in, TopicInfo& out, const std::string& path, DecodeError& e);
 Json encode(const TopicInfo& in);
 
-// A header action: a command of the space's, with a confirmation for a destructive one.
+// A session switch's state (1.13, D252): a boolean at a member of a state topic of the space's.
+struct QuickState {
+  std::string topic{};
+  std::string field{};
+  bool operator==(const QuickState&) const = default;
+};
+bool decode(const Json& in, QuickState& out, const std::string& path, DecodeError& e);
+Json encode(const QuickState& in);
+
+// A header action: a command of the space's, with a confirmation for a destructive one; since 1.15 (D256) a header action may be a switch, its state a boolean member of a state topic of the space's, its command sent with {on}.
 struct PageAction {
   std::string id{};
   std::string label{};
   std::string command{};
   ActionTone tone{};
   std::optional<std::string> confirm{};
+  std::optional<QuickState> state{};
   bool operator==(const PageAction&) const = default;
 };
 bool decode(const Json& in, PageAction& out, const std::string& path, DecodeError& e);
@@ -442,15 +452,6 @@ struct SectionStatus {
 };
 bool decode(const Json& in, SectionStatus& out, const std::string& path, DecodeError& e);
 Json encode(const SectionStatus& in);
-
-// A session switch's state (1.13, D252): a boolean at a member of a state topic of the space's.
-struct QuickState {
-  std::string topic{};
-  std::string field{};
-  bool operator==(const QuickState&) const = default;
-};
-bool decode(const Json& in, QuickState& out, const std::string& path, DecodeError& e);
-Json encode(const QuickState& in);
 
 // A quick switch (1.13, D252): a shortcut to a setting of the space's, a switch or a choice, by its key alone; or a session switch the space owns, which sends its command with {on} and shows the state the space publishes, named with the page it lives in.
 struct QuickSwitch {

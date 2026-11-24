@@ -546,6 +546,33 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       return false;
     }
   }
+  // A header switch (D256): a session switch's form, as a quick switch's, drawn in the page's header; never on a
+  // section, never destructive or confirmed, since it sends {on} at once.
+  for (const protocol::Page& page : pages.pages) {
+    for (const protocol::PageAction& a : page.actions.value_or(std::vector<protocol::PageAction>{})) {
+      if (a.state && (!usable(a.command) || a.command == "settings.set" || a.command == "settings.reset" ||
+                      std::find(slow.begin(), slow.end(), a.command) != slow.end() || !own_state(a.state->topic) ||
+                      !name_ok(a.state->field) || a.tone == protocol::ActionTone::destructive || a.confirm)) {
+        why = page.id + ": action " + a.id + " is a switch: a command of the space's own (not a settings, file or slow "
+              "command), its state a member of a state topic of the space's, neither destructive nor confirmed";
+        return false;
+      }
+    }
+    const auto sections = [&](const std::vector<protocol::PageSection>& list) {
+      return std::any_of(list.begin(), list.end(), [](const protocol::PageSection& sec) {
+        const auto& acts = sec.actions.value_or(std::vector<protocol::PageAction>{});
+        return std::any_of(acts.begin(), acts.end(), [](const protocol::PageAction& a) { return a.state.has_value(); });
+      });
+    };
+    bool on_section = sections(page.sections.value_or(std::vector<protocol::PageSection>{}));
+    for (const protocol::PageTab& tab : page.tabs.value_or(std::vector<protocol::PageTab>{})) {
+      on_section = on_section || sections(tab.sections);
+    }
+    if (on_section) {
+      why = page.id + ": a section's action has a state; a switch is a header action's alone";
+      return false;
+    }
+  }
   const auto block_ok = [&](const protocol::Page& page, const protocol::PageBlock& block) {
     const std::string where = page.id + ": ";
     const bool table = block.kind == protocol::BlockKind::component && block.component == protocol::Component::table;
@@ -887,6 +914,7 @@ bool PageView::open(std::string_view page_id) {
       release_held();  // what the last page held is applied (D252)
       quick_open_ = false;
       paged_.clear();  // nothing a page answered is kept past leaving it (D254)
+  drawer_open_.clear();  // nor an open row drawer (D256)
       page_ = i;
       tab_ = 0;
       page_focus_ = 0;
@@ -1414,6 +1442,11 @@ std::vector<std::string> PageView::component_topics() const {
   for (const protocol::QuickSwitch& q : pages_.quick.value_or(std::vector<protocol::QuickSwitch>{})) {
     if (q.state && std::find(out.begin(), out.end(), q.state->topic) == out.end()) {
       out.push_back(q.state->topic);  // a session switch's state (D252), on every page: Start opens them anywhere
+    }
+  }
+  for (const protocol::PageAction& a : current().actions.value_or(std::vector<protocol::PageAction>{})) {
+    if (a.state && std::find(out.begin(), out.end(), a.state->topic) == out.end()) {
+      out.push_back(a.state->topic);  // a header switch's state (D256)
     }
   }
   const auto want = [&](const std::string& topic) {
@@ -2011,8 +2044,13 @@ void PageView::rebuild() {
           if (paged != nullptr && paged->fresh) {
             focus_.push_back({FocusKind::paging, cell_base(block) + "/fresh", 0, &block});  // "New rows · Show" (D254)
           }
+          const bool drawers = has_drawer(*table);
           for (const std::size_t r : shown_rows(block, (*table)["rows"])) {
             const Json& row = (*table)["rows"][r];
+            if (drawers && row.is_object()) {
+              // The row itself first, where its table has drawer columns: Enter opens its drawer (D256).
+              focus_.push_back({FocusKind::drawer, cell_base(block) + "/" + drawer_key(row, r), r, &block});
+            }
             if (sw != nullptr) {
               const std::string id = row.is_object() ? cell_words(row, (*sw)["key"].get<std::string>()) : std::string();
               focus_.push_back({FocusKind::cell, cell_base(block) + "/" + (id.empty() ? std::to_string(r) : id), r});
@@ -2062,8 +2100,13 @@ void PageView::rebuild() {
 }
 
 void PageView::focus_first_control() {
+  // The page's first control past its section labels and tabs (§5.7); with none above Related, the page's first stop,
+  // at its top (a section's label), rather than the Related card at its foot with the header scrolled away (D256).
   page_focus_ = 0;
   for (std::size_t i = 0; i < focus_.size(); ++i) {
+    if (focus_[i].kind == FocusKind::related) {
+      return;
+    }
     if (focus_[i].kind != FocusKind::section && focus_[i].kind != FocusKind::tab) {
       page_focus_ = i;
       return;
@@ -2110,7 +2153,7 @@ std::string PageView::name_of(Scope scope, std::size_t index) const {
   }
   static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
                                           "cell", "row", "section-action", "field", "submit", "secret", "item", "editor",
-                                          "filter", "link", "part", "paging"};
+                                          "filter", "link", "part", "paging", "drawer"};
   const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -3848,6 +3891,7 @@ void PageView::cancel_confirmation() noexcept {
   confirming_.clear();
   scope_choice_.clear();  // the scope's current one again at the next open (D254)
   paged_.clear();         // and pages asked for afresh
+  drawer_open_.clear();
   capture_ = Capture{};  // and an open capture: nothing changes (D209)
   if (editing()) {
     // As Escape, whatever closed the menu (§5.1, G38 (2)): a form's fields keep their text for the next open (kept at
@@ -3935,6 +3979,30 @@ std::vector<std::size_t> PageView::top_stops() const {
     stops.push_back(kTopQuick);
   }
   return stops;
+}
+
+bool PageView::has_drawer(const Json& table) {
+  if (!table.is_object() || !table.contains("columns") || !table["columns"].is_array()) {
+    return false;
+  }
+  return std::any_of(table["columns"].begin(), table["columns"].end(), [](const Json& c) {
+    return c.is_object() && c.contains("drawer") && c["drawer"] == true;
+  });
+}
+
+std::string PageView::drawer_key(const Json& row, std::size_t index) {
+  // The row's id where it has one (a member's characters, no slash), else its place: the drawer follows its row.
+  const std::string id = row.is_object() && row.contains("id") && row["id"].is_string() ? row["id"].get<std::string>()
+                                                                                         : std::string();
+  return !id.empty() && id.size() <= 64 && id.find('/') == std::string::npos ? id : "#" + std::to_string(index);
+}
+
+std::optional<bool> PageView::header_state(const protocol::PageAction& a) const {
+  const Json* body = a.state ? latest(a.state->topic) : nullptr;
+  if (body == nullptr || !body->is_object() || !body->contains(a.state->field) || !(*body)[a.state->field].is_boolean()) {
+    return std::nullopt;  // not come, or not a boolean: "Not known yet", and nothing sent
+  }
+  return (*body)[a.state->field].get<bool>();
 }
 
 Action PageView::flip_quick(std::size_t index, int step) {
@@ -4184,6 +4252,7 @@ Action PageView::open_index(std::size_t index, Scope scope) {
   release_held();  // what the last page held is applied: the next page draws it as it is (D252)
   quick_open_ = false;
   paged_.clear();  // nothing a page answered is kept past leaving it (D254)
+  drawer_open_.clear();  // nor an open row drawer (D256)
   page_ = index;
   tab_ = 0;
   page_focus_ = 0;
@@ -4487,6 +4556,15 @@ Action PageView::input_body(const Input& in) {
       return {};
     }
   }
+  // Esc or B on a row whose drawer is open closes the drawer first (§5.3's Esc: a drawer, then up a level; D256).
+  if (f.kind == FocusKind::drawer && in.key == Key::back) {
+    const std::size_t slash = f.id.rfind('/');
+    if (const auto open = drawer_open_.find(f.id.substr(0, slash));
+        open != drawer_open_.end() && open->second == f.id.substr(slash + 1)) {
+      drawer_open_.erase(open);
+      return {};
+    }
+  }
   // A shortcut row's control changes as its home's does (D189); Enter follows its link.
   const Setting* changeable = f.kind == FocusKind::setting || f.kind == FocusKind::shortcut ? &settings_[f.index] : nullptr;
   switch (in.key) {
@@ -4552,6 +4630,19 @@ Action PageView::input_body(const Input& in) {
           return follow_link(f);
         case FocusKind::part:
           return flip_part(f);
+        case FocusKind::drawer: {
+          // A row's drawer (D256): opened under it, one a table; Enter again closes it.
+          const std::size_t slash = f.id.rfind('/');
+          const std::string base = f.id.substr(0, slash);
+          const std::string key = f.id.substr(slash + 1);
+          const auto open = drawer_open_.find(base);
+          if (open != drawer_open_.end() && open->second == key) {
+            drawer_open_.erase(open);
+          } else {
+            drawer_open_[base] = key;
+          }
+          return {};
+        }
         case FocusKind::paging: {
           // Show more, or "New rows · Show": the host takes the request at its next look (D254).
           const std::size_t slash = f.id.rfind('/');
@@ -4570,6 +4661,20 @@ Action PageView::input_body(const Input& in) {
           const protocol::PageAction& a = (*current().actions)[f.index];
           if (!greyed_words(current().id).empty()) {
             return {};  // a greyed page's actions are inert (D188)
+          }
+          if (a.state) {
+            // A header switch (D256): its command with the state flipped, once the space has published it; nothing
+            // changes here until the space publishes the new state (invariant 1).
+            const std::optional<bool> on = header_state(a);
+            if (!on) {
+              return {};
+            }
+            Action action;
+            action.kind = Action::Kind::command;
+            action.command.space = pages_.space;
+            action.command.name = a.command;
+            action.command.args = Json::object({{"on", !*on}});
+            return action;
           }
           if ((a.confirm || a.tone == protocol::ActionTone::destructive) && confirming_ != a.id) {
             confirming_ = a.id;  // the button asks for its second press; a destructive one always (§7.3, D173)
@@ -5217,6 +5322,41 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     float action_x = x0 + content_w;
     for (std::size_t a = page.actions ? page.actions->size() : 0; a-- > 0;) {
       const protocol::PageAction& act = (*page.actions)[a];
+      if (act.state) {
+        // A header switch (D256): its label and a switch showing the state the space publishes, or "Not known yet".
+        const std::optional<bool> on = header_state(act);
+        const std::string words = on ? act.label : act.label + "  \u00B7  Not known yet";
+        const float knob_w = on ? std::round(40 * s) + std::round(12 * s) : 0.0f;
+        const float w = c.width(words, TypeRole::ui) + std::round(32 * s) + knob_w;
+        const Rect button{action_x - w, y + std::round(2 * s), w, std::round(32 * s)};
+        const float r = std::round(tokens::radius::control * s);
+        hit(button, Scope::page, focus_index(FocusKind::action, act.id));
+        if (hovered(button)) {
+          c.fill(button, Colour::tint_hover, r);
+        }
+        c.stroke(button, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), r);
+        c.text(words, TypeRole::ui, button.x + std::round(16 * s),
+               button.y + std::round((button.h - line_height(TypeRole::ui, s)) / 2), w, on ? Colour::ink_hi : Colour::ink_mute);
+        if (on) {
+          const Rect control{button.right() - std::round(16 * s) - std::round(40 * s),
+                             button.y + std::round((button.h - 22 * s) / 2), std::round(40 * s), std::round(22 * s)};
+          if (*on) {
+            c.fill(control, Colour::gold, control.h / 2);
+          } else {
+            c.fill(control, Colour::ground_well, control.h / 2);
+            c.stroke(control, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), control.h / 2);
+          }
+          const float knob = std::round(16 * s);
+          c.circle(Rect{*on ? control.right() - knob - std::round(3 * s) : control.x + std::round(3 * s),
+                        control.y + std::round((control.h - knob) / 2), knob, knob},
+                   *on ? Colour::on_gold : Colour::ink_mute);
+        }
+        if (page_focus(FocusKind::action, act.id)) {
+          c.focused(button);
+        }
+        action_x = button.x - std::round(12 * s);
+        continue;
+      }
       const bool asking = confirming_ == act.id;
       const std::string label = running("action:" + act.id) ? "Working…" : asking ? "Press again to confirm" : act.label;
       const float w = c.width(label, TypeRole::ui) + std::round(32 * s);
@@ -6293,6 +6433,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             // A table in game (D181): a row a row, its first column's words, the others' after them, and a switch
             // column's switch at the right, as a setting's.
             std::vector<std::string> text_columns;
+            std::vector<std::pair<std::string, std::string>> drawer_columns;  // shown in an open row's drawer (D256)
             std::string switch_column;
             std::string secret_label;  // a row secret's column (D194): its status in words, edited in the browser
             const Json* sw = nullptr;
@@ -6303,6 +6444,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               if (const Json* found = switch_of(column); found != nullptr && sw == nullptr) {
                 sw = found;
                 switch_column = column["id"].get<std::string>();
+              } else if (column.contains("drawer") && column["drawer"] == true) {
+                drawer_columns.emplace_back(column["id"].get<std::string>(), cell_words(column, "label"));
               } else {
                 text_columns.push_back(column["id"].get<std::string>());
                 if (block.row_secret && column["id"] == block.row_secret->column) {
@@ -6341,10 +6484,25 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               const std::string cell_id = cell_base(block) + "/" + (row_key.empty() ? std::to_string(r) : row_key);
               const auto refusal = sw != nullptr ? refusals_.find(cell_id) : refusals_.end();
               const Rect row{x0 + card_pad, y, content_w - 2 * card_pad, row_h};
-              if (sw != nullptr && hovered(row)) {
+              // A row with a drawer (D256): a mark at its start, pointing down while its drawer is open.
+              const std::string drawer_id =
+                  drawer_columns.empty() ? std::string() : cell_base(block) + "/" + drawer_key(line, r);
+              const auto open_at = drawer_id.empty() ? drawer_open_.end() : drawer_open_.find(cell_base(block));
+              const bool drawer_shown = open_at != drawer_open_.end() && cell_base(block) + "/" + open_at->second == drawer_id;
+              if ((sw != nullptr || !drawer_id.empty()) && hovered(row)) {
                 c.fill(row, Colour::tint_hover);
               }
               c.line(row.x, row.y, row.w, Colour::rule);
+              const float mark_w = drawer_id.empty() ? 0.0f : std::round(20 * s);
+              if (!drawer_id.empty()) {
+                const float m = std::round(10 * s);
+                c.triangle(Rect{row.x, y + std::round((row_h - m) / 2), m, m}, drawer_shown ? Facing::down : Facing::right,
+                           Colour::ink_mute);
+                hit(row, Scope::page, focus_index(FocusKind::drawer, drawer_id));
+                if (page_focus(FocusKind::drawer, drawer_id)) {
+                  c.focused(row);
+                }
+              }
               const std::string label = text_columns.empty() ? std::string() : cell_words(line, text_columns[0]);
               std::string rest;
               for (std::size_t k = 1; k < text_columns.size(); ++k) {
@@ -6357,7 +6515,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 }
               }
               const float label_y = y + std::round((row_h - line_height(TypeRole::ui, s)) / 2);
-              c.text(label, TypeRole::ui, row.x, label_y, row.w / 3 - std::round(12 * s), Colour::ink_hi);
+              c.text(label, TypeRole::ui, row.x + mark_w, label_y, row.w / 3 - std::round(12 * s) - mark_w, Colour::ink_hi);
               // Its row actions (D192), right-aligned, the last at the row's end; a switch, if any, before them.
               float right = row.right();
               std::string row_refusal_id;
@@ -6455,6 +6613,48 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               if (said != refusals_.end()) {  // the space's reason, under its row (§5.7)
                 c.text(said->second, TypeRole::ui_sm, row.x, y - std::round(8 * s), row.w, Colour::rot);
                 y += std::round(line_height(TypeRole::ui_sm, s));
+              }
+              if (drawer_shown) {
+                // Its drawer (D256): each drawer column's label, then its words wrapped to the row, line breaks kept.
+                const float dx = row.x + mark_w;
+                const float dw = row.w - mark_w;
+                const float lh = std::round(line_height(TypeRole::ui_sm, s));
+                y += std::round(4 * s);
+                for (const auto& [column_id, column_label] : drawer_columns) {
+                  const std::string value = cell_words(line, column_id);
+                  if (value.empty()) {
+                    continue;
+                  }
+                  c.text(column_label, TypeRole::ui_sm, dx, y, dw, Colour::ink_faint);
+                  y += lh;
+                  std::string_view rest = value;
+                  while (true) {
+                    const std::size_t nl = rest.find('\n');
+                    const std::string_view one = rest.substr(0, nl);
+                    std::string run;
+                    std::size_t at = 0;
+                    while (at <= one.size()) {
+                      const std::size_t end = std::min(one.find(' ', at), one.size());
+                      const std::string_view word = one.substr(at, end - at);
+                      std::string tried = run.empty() ? std::string(word) : run + " " + std::string(word);
+                      if (!run.empty() && c.width(tried, TypeRole::ui_sm) > dw) {
+                        c.text(run, TypeRole::ui_sm, dx, y, dw, Colour::ink_body);
+                        y += lh;
+                        run = std::string(word);
+                      } else {
+                        run = std::move(tried);
+                      }
+                      at = end + 1;
+                    }
+                    c.text(run, TypeRole::ui_sm, dx, y, dw, Colour::ink_body);
+                    y += lh;
+                    if (nl == std::string_view::npos) {
+                      break;
+                    }
+                    rest = rest.substr(nl + 1);
+                  }
+                  y += std::round(8 * s);
+                }
               }
             }
             if (paged != nullptr) {
@@ -6742,6 +6942,11 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const Focus& f = focus_[page_focus_];
       if (f.kind == FocusKind::paging) {
         hints = f.id.ends_with("/more") ? "Enter  Show more    Esc  Back" : "Enter  Show the new rows    Esc  Back";
+      } else if (f.kind == FocusKind::drawer) {
+        const std::size_t slash = f.id.rfind('/');
+        const auto open = drawer_open_.find(f.id.substr(0, slash));
+        hints = open != drawer_open_.end() && open->second == f.id.substr(slash + 1) ? "Enter  Close    Esc  Close"
+                                                                                       : "Enter  Open    Esc  Back";
       } else if (f.kind == FocusKind::shortcut) {
         // Its home's control, and its link (D189).
         const Setting& st = settings_[f.index];

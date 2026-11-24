@@ -3086,3 +3086,73 @@ TEST_CASE("rows read a page at a time: an answer from before the menu closed nev
   CHECK(shows(dump, "Night 60"));
   CHECK(shows(dump, "The keeper's book is shut."));
 }
+
+TEST_CASE("a page with no control above its Related card opens at its top, not on Related (D256)") {
+  const auto& s = test::space("demo");
+  Json pages = Json::parse(s.pages);
+  for (Json& p : pages["pages"]) {
+    if (p["id"] == "demo.overview") {
+      p.erase("actions");  // Overview with its cards alone: nothing to press above Related
+      for (Json& section : p["sections"]) {
+        Json kept = Json::array();
+        for (const Json& b : section["blocks"]) {
+          if (b["kind"] == "component") {
+            kept.push_back(b);
+          }
+        }
+        section["blocks"] = kept;
+      }
+    }
+  }
+  PageView view;
+  std::string why;
+  REQUIRE(view.load(test::decoded<grace::protocol::SpacePages>(pages.dump()),
+                    test::decoded<grace::protocol::SettingsDescription>(s.settings), why));
+  REQUIRE(view.open("demo.overview"));
+  CHECK(view.focused().rfind("section:", 0) == 0);  // its first card's label, the header in view
+  CHECK(view.focused().find("related") == std::string::npos);
+}
+
+TEST_CASE("a header switch: Not known yet until its state comes, then Enter sends its command with on flipped (D256)") {
+  PageView view = loaded("demo", "demo.overview");
+  CHECK(has(view.component_topics(), "lantern.status"));  // its state is watched with the page
+  CHECK(shows(laid_out(view), "Hush the bell  \u00B7  Not known yet"));
+  REQUIRE(move_to(view, "action:hush"));
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // no state: nothing is sent, nothing is claimed
+  view.set_topic("lantern.status", Json::object({{"sentence", "Steady."}, {"hushed", false}}));
+  CHECK_FALSE(shows(laid_out(view), "Hush the bell  \u00B7  Not known yet"));
+  const Action sent = press(view, Key::activate);
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.name == "bell.hush");
+  CHECK(sent.command.args == Json::object({{"on", true}}));
+  CHECK(shows(laid_out(view), "Hush the bell"));  // and it shows what the space publishes next, not what was sent
+}
+
+TEST_CASE("a table's row drawer: its columns off the row, opened with Enter under its row, closed with Esc (D256)") {
+  PageView view = loaded("demo", "demo.keepers");
+  view.set_topic("lantern.keepers", Json::parse(R"({"columns": [{"id": "name", "label": "Keeper"},
+    {"id": "post", "label": "Post"}, {"id": "notes", "label": "Notes", "drawer": true}],
+    "rows": [{"id": "k1", "name": "Orla Venn", "post": "North light", "notes": "Keeps the north light.\nTrims at every bell."},
+             {"id": "k2", "name": "Tamsin Reed", "post": "Harbour wall", "notes": "New to the wall."}]})"));
+  std::string dump = laid_out(view);
+  CHECK(shows(dump, "Orla Venn"));
+  CHECK_FALSE(shows(dump, "Keeps the north light."));  // a drawer column is not on the row
+  REQUIRE(move_to(view, "drawer:lantern.keepers/k1"));
+  laid_out(view);
+  CHECK(view.footer().find("Enter  Open") != std::string::npos);
+  press(view, Key::activate);
+  dump = laid_out(view);
+  CHECK(shows(dump, "Notes"));
+  CHECK(shows(dump, "Keeps the north light."));
+  CHECK(shows(dump, "Trims at every bell."));  // its line breaks kept
+  CHECK_FALSE(shows(dump, "New to the wall."));  // one drawer open a table
+  press(view, Key::down);
+  REQUIRE(move_to(view, "drawer:lantern.keepers/k2"));
+  press(view, Key::activate);
+  dump = laid_out(view);
+  CHECK(shows(dump, "New to the wall."));
+  CHECK_FALSE(shows(dump, "Keeps the north light."));
+  press(view, Key::back);  // Esc closes the drawer first, and stays on the row
+  CHECK(view.focused() == "drawer:lantern.keepers/k2");
+  CHECK_FALSE(shows(laid_out(view), "New to the wall."));
+}

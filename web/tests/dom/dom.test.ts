@@ -1045,7 +1045,8 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     const { page, close } = await fresh();
     try {
       await openFromRail(page, "lanterns", "demo.keepers");
-      const names = async () => page.locator(".table tbody tr td:first-child").allTextContents();
+      // The roster's first cell is its drawer's mark (D256), its second the keeper's name.
+      const names = async () => page.locator(".table tbody tr:not(.table__drawer) td:nth-child(2)").allTextContents();
       await page.locator(".filter-bar select[data-filter='post']").waitFor();
       // Time kept, longest first: the space's own order here. The Post filter offers All and the posts the rows hold.
       assert.deepEqual(await names(), ["Orla Venn", "Tamsin Reed", "Ada Marsh"]);
@@ -1174,6 +1175,36 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
         .every((tr) => tr.textContent?.includes("Ada Marsh")));
       const last = host.received.filter((f) => f.t === "cmd" && f.name === "lightings.page").at(-1);
       assert.equal((last?.args as { search?: string } | undefined)?.search, "Ada");
+    } finally {
+      await close();
+    }
+  });
+
+  test("a header switch shows the space's state and sends {on}; a row's drawer opens under it (D256)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "lanterns", "demo.overview");
+      const hush = page.locator(".page__actions [data-action='hush']");
+      await hush.waitFor();
+      assert.equal(await hush.getAttribute("role"), "switch");
+      assert.equal(await hush.getAttribute("aria-checked"), "false");  // the fixture's hushed: false
+      await hush.click();
+      await page.waitForFunction(() => document.querySelector(".page__actions [data-action='hush']")
+        ?.getAttribute("aria-checked") === "true");  // the space published its new state
+      const sent = host.received.filter((f) => f.t === "cmd" && f.name === "bell.hush").at(-1);
+      assert.deepEqual(sent?.args, { on: true });
+      // The keepers' roster: Notes is a drawer column, off the row until its drawer opens.
+      await openFromRail(page, "lanterns", "demo.keepers");
+      await page.locator("[data-drawer='k1']").waitFor();
+      assert.equal(await page.locator(".table th", { hasText: "Notes" }).count(), 0);
+      assert.equal(await page.locator(".drawer").count(), 0);
+      await page.locator("[data-drawer='k1']").click();
+      assert.equal(await page.locator("[data-drawer='k1']").getAttribute("aria-expanded"), "true");
+      assert.match((await page.locator(".drawer__value").first().textContent()) ?? "", /Keeps the north light/);
+      await page.locator("[data-drawer='k2']").click();  // one drawer open a table
+      assert.equal(await page.locator(".drawer").count(), 1);
+      assert.match((await page.locator(".drawer__value").first().textContent()) ?? "", /learning the tides/);
+      assert.deepEqual(await violations(page), []);
     } finally {
       await close();
     }

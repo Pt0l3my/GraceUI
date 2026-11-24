@@ -335,7 +335,8 @@ class PageView {
                                         filter,  // a filter bar's control (G43, D250)
                                         link,    // a document's link (G44, D251)
                                         part,    // a report preview's optional part's switch (D251)
-                                        paging };  // Show more, or "New rows · Show", of rows read a page at a time (D254)
+                                        paging,  // Show more, or "New rows · Show", of rows read a page at a time (D254)
+                                        drawer };  // a table's row, its drawer opened with Enter (D256)
   struct Focus {
     FocusKind kind;
     std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
@@ -620,6 +621,10 @@ class PageView {
     bool fresh = false;      // new rows came past the first page: "New rows · Show"
     int pages = 0;
   };
+  std::optional<bool> header_state(const protocol::PageAction& a) const;  // a header switch's state (D256)
+  static bool has_drawer(const protocol::Json& table);  // a table with drawer columns (D256)
+  static std::string drawer_key(const protocol::Json& row, std::size_t index);
+  std::map<std::string, std::string, std::less<>> drawer_open_;  // a table's open row drawer, by its key (D256)
   std::map<std::string, Paged, std::less<>> paged_;
   std::uint64_t page_serial_ = 0;  // every page asked for, across pages and the menu's closes: never reset
   struct ScopeChoice {

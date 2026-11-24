@@ -5,20 +5,21 @@
 // with nothing published yet shows an empty state, and nothing it might hold (invariant 2). Until protocol.toml defines
 // the components' bodies, each reads the shape the demo space's fixtures give (D166).
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
+import { Fragment } from "preact";
 import type { JSX } from "preact";
 import type { Signal } from "@preact/signals";
 import type { Json, JsonObject, PageBlock, RowAction, RowSecret } from "../protocol.ts";
 import type { TopicData } from "../model/session.ts";
 import { refusalWords } from "../model/session.ts";
 import { GreyedContext, MasterContext, ScopeContext, topicFor, useSession } from "./context.ts";
-import { Warning } from "./icons.tsx";
+import { Chevron, Warning } from "./icons.tsx";
 import { CaptureDialog } from "./capture.tsx";
 import { ConfirmDialog } from "./modal.tsx";
 import { FilterBar, useFilterBar } from "./filter-bar.tsx";
 import { LivePage, countHeld, holdsNow, liveMode, released } from "./live.ts";
 import type { Paged } from "./paged.tsx";
 import { PagingFoot, PagingTop, pagedKey, pagedWords, useOwnChoices, usePaged } from "./paged.tsx";
-import { filters } from "./view-state.ts";
+import { domId, filters } from "./view-state.ts";
 import { FRESH } from "../model/filter.ts";
 
 function text(value: Json | undefined): string | null {
@@ -245,7 +246,11 @@ function Table({ space, block, body, empty, paged, own, barKey }: {
   const [capturing, setCapturing] = useState<{ action: RowAction; row: JsonObject } | null>(null);
   const greyed = useContext(GreyedContext);
   const inert = greyed.words(greyed.page) !== null;  // a greyed page's switches do nothing (D188)
-  const columns = objects(body.columns).filter((c) => text(c.id) !== null && text(c.label) !== null);
+  const labelled = objects(body.columns).filter((c) => text(c.id) !== null && text(c.label) !== null);
+  // A column marked `drawer` shows only in its row's drawer (D256), opened by the row's mark, one a table.
+  const columns = labelled.filter((c) => c.drawer !== true);
+  const drawerColumns = labelled.filter((c) => c.drawer === true);
+  const [openRow, setOpenRow] = useState<string | null>(null);
   const rows = objects(body.rows);
   // Its filter bar (G43, D250): the rows that show, in the order they show, by their index in the space's rows.
   const spec = block.filter_bar;
@@ -319,13 +324,30 @@ function Table({ space, block, body, empty, paged, own, barKey }: {
       {bar.order.length > 0 && <table class="table">
         <thead>
           <tr>
+            {drawerColumns.length > 0 && <th scope="col" class="table__mark"><span class="visually-hidden">Details</span></th>}
             {columns.map((c) => <th scope="col" key={text(c.id)} class={c.numeric === true ? "num" : undefined}>{text(c.label)}</th>)}
             {actions.length > 0 && <th scope="col" class="table__actions"><span class="visually-hidden">Actions</span></th>}
           </tr>
         </thead>
         <tbody>
-          {bar.order.map((i) => rows[i]!).map((r, n) => (
-            <tr key={bar.order[n]}>
+          {bar.order.map((i) => rows[i]!).map((r, n) => {
+            const rowKey = typeof r.id === "string" && r.id !== "" && !r.id.includes("/") ? r.id : `#${bar.order[n]}`;
+            const open = drawerColumns.length > 0 && openRow === rowKey;
+            const drawerId = domId("drawer", space, block.topic ?? "", rowKey);
+            const rowName = first ? text(r[text(first.id) ?? ""]) : null;
+            return (
+            <Fragment key={rowKey}>
+            <tr>
+              {drawerColumns.length > 0 && (
+                <td class="table__mark">
+                  <button type="button" class="icon-button table__drawer-toggle" aria-expanded={open}
+                          aria-controls={open ? drawerId : undefined} data-drawer={rowKey}
+                          aria-label={rowName !== null ? `Details: ${rowName}` : "Details"}
+                          onClick={() => setOpenRow(open ? null : rowKey)}>
+                    <Chevron open={open} />
+                  </button>
+                </td>
+              )}
               {columns.map((c) => {
                 const id = text(c.id) ?? "";
                 const sw = switchOf(c);
@@ -386,7 +408,24 @@ function Table({ space, block, body, empty, paged, own, barKey }: {
                 </td>
               )}
             </tr>
-          ))}
+            {open && (
+              <tr class="table__drawer" id={drawerId}>
+                <td colSpan={columns.length + 1 + (actions.length > 0 ? 1 : 0)}>
+                  <dl class="drawer">
+                    {drawerColumns.filter((c) => text(r[text(c.id) ?? ""]) !== null && text(r[text(c.id) ?? ""]) !== "")
+                      .map((c) => (
+                        <div class="drawer__part" key={text(c.id)}>
+                          <dt class="drawer__label">{text(c.label)}</dt>
+                          <dd class="drawer__value">{text(r[text(c.id) ?? ""])}</dd>
+                        </div>
+                      ))}
+                  </dl>
+                </td>
+              </tr>
+            )}
+            </Fragment>
+            );
+          })}
         </tbody>
       </table>}
       {paged && <PagingFoot paged={paged} />}

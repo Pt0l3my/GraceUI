@@ -12,6 +12,11 @@
       {
         "id": "ward",
         "label": "Ward word"
+      },
+      {
+        "id": "notes",
+        "label": "Notes",
+        "drawer": true
       }
     ],
     "rows": [
@@ -20,21 +25,24 @@
         "name": "Orla Venn",
         "post": "North light",
         "ward": "set",
-        "kept_days": 40
+        "kept_days": 40,
+        "notes": "Keeps the north light since the long winter.\nTrims the wick at every bell."
       },
       {
         "id": "k2",
         "name": "Tamsin Reed",
         "post": "Harbour wall",
         "ward": "",
-        "kept_days": 12
+        "kept_days": 12,
+        "notes": "New to the wall; learning the tides."
       },
       {
         "id": "k3",
         "name": "Ada Marsh",
         "post": "Store room",
         "ward": "none",
-        "kept_days": 3
+        "kept_days": 3,
+        "notes": ""
       }
     ]
   },
