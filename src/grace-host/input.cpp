@@ -69,7 +69,10 @@ constinit std::atomic<std::int32_t> g_motion_dinput_x{0};
 constinit std::atomic<std::int32_t> g_motion_dinput_y{0};
 constinit std::atomic<std::int64_t> g_motion_raw_at{-1000000};
 constinit std::atomic<std::int64_t> g_motion_dinput_at{-1000000};
-constexpr std::int64_t kMotionLiveMs = 1000;
+constexpr std::int64_t kMotionLiveMs = 1000;  // which source to read: raw input's, if it came within this, else DirectInput's
+// The holder whose pointer the mouse's motion drives (D236): set by its first motion and kept for as long as it holds,
+// since a game that recentres its cursor sends WM_MOUSEMOVE at its centre whenever it sets it, still or not; 0 for none.
+constinit std::atomic<std::uint32_t> g_motion_holder{0};
 
 constinit std::atomic<bool> g_menu_away{false};        // G40: let go at the focus's loss, kept for its return
 constinit std::atomic<std::int64_t> g_menu_return{0};  // when the focus came back while away; 0 while it has not
@@ -453,6 +456,7 @@ void relative_motion(MotionSource source, std::int32_t dx, std::int32_t dy) noex
     return;  // the game's motion: GraceUI counts the mouse's only while a holder has it
   }
   const std::int64_t now = now_ms();
+  g_motion_holder.store(holder.generation, std::memory_order_relaxed);
   if (source == MotionSource::raw_input) {
     g_motion_raw_x.fetch_add(dx, std::memory_order_relaxed);
     g_motion_raw_y.fetch_add(dy, std::memory_order_relaxed);
@@ -465,10 +469,11 @@ void relative_motion(MotionSource source, std::int32_t dx, std::int32_t dy) noex
 }
 
 bool pointer_by_motion() noexcept {
-  const std::int64_t now = now_ms();
-  return now - g_motion_raw_at.load(std::memory_order_relaxed) < kMotionLiveMs ||
-         now - g_motion_dinput_at.load(std::memory_order_relaxed) < kMotionLiveMs;
+  const Holder holder = g_capture.holder();
+  return holder.generation != 0 && g_motion_holder.load(std::memory_order_relaxed) == holder.generation;
 }
+
+void absolute_motion() noexcept { g_motion_holder.store(0, std::memory_order_relaxed); }
 
 void push_event(HolderEvent event) noexcept {
   if (!g_events.push(event) && g_events.dropped() == 1) {

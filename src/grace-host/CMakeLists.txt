@@ -26,7 +26,8 @@ target_include_directories(grace_host
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(grace_host
   PUBLIC grace_abi grace_abi_rules
-  PRIVATE grace_input grace_tokens grace_view grace_draw grace_pages grace_spaces gu_imgui gu_minhook user32 imm32)  # no Direct3D import (D170)
+  PRIVATE grace_input grace_tokens grace_view grace_draw grace_pages grace_spaces grace_guard gu_imgui gu_minhook
+          user32 imm32)  # no Direct3D import (D170)
 target_compile_definitions(grace_host PUBLIC
   GRACEUI_BUILD_MAJOR=${PROJECT_VERSION_MAJOR}
   GRACEUI_BUILD_MINOR=${PROJECT_VERSION_MINOR}

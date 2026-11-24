@@ -25,6 +25,7 @@
 #include "MinHook.h"
 #include "counters.h"
 #include "draw.h"
+#include "draw_alloc.h"
 #include "draw_atlas.h"
 #include "hooks_input.h"
 #include "hooks_vtable.h"
@@ -911,11 +912,20 @@ void move_filter() noexcept {
 [[noreturn]] void serve() noexcept {
   for (;;) {
     if (g_wake != nullptr) {
-      // About once a second by itself while the browser view's server runs: its commands' deadlines (D169).
-      WaitForSingleObject(g_wake, spaces::wants_timer() ? 1000 : INFINITE);
+      // About once a second by itself while the browser view's server runs: its commands' deadlines (D169); in a test
+      // build, at least once in each of the heap guard's periods (D235).
+#if defined(GRACEUI_TEST_EXPORTS)
+      const DWORD idle = draw_alloc::check_period_ms();
+#else
+      const DWORD idle = INFINITE;
+#endif
+      WaitForSingleObject(g_wake, spaces::wants_timer() ? 1000 : idle);
     } else {
       Sleep(50);
     }
+#if defined(GRACEUI_TEST_EXPORTS)
+    draw_alloc::check_heap_when_due();
+#endif
     log_drain();
     draw::serve_bake();
     move_filter();

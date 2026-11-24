@@ -3,6 +3,7 @@
 #include "dump.h"
 
 #include <cstdio>
+#include <set>
 
 #include "fake_face.h"  // grace-view's tests' face: the golden dumps' own measures
 #include "grace/abi/drawlist.h"
@@ -44,10 +45,23 @@ bool dump_page(const SpaceData& space, const DumpRequest& request, DumpResult& o
   }
   view.set_values(store.values());
   // The components drawn in game (D181, D184) show their topics' fixtures, as the menu shows what a space publishes.
-  for (const std::string& topic : view.component_topics()) {
-    const auto found = space.fixtures.find(topic);
-    if (found != space.fixtures.end() && found->is_object()) {
-      view.set_topic(topic, *found);
+  // A master list's topic chooses its first row, whose member (<family>/<key>, D215) the page then asks for too: as
+  // the menu watches each topic its components need, the dump gives them until none is new (a few passes at most).
+  std::set<std::string> given;
+  for (int pass = 0; pass < 4; ++pass) {
+    bool more = false;
+    for (const std::string& topic : view.component_topics()) {
+      if (!given.insert(topic).second) {
+        continue;
+      }
+      const auto found = space.fixtures.find(topic);
+      if (found != space.fixtures.end() && found->is_object()) {
+        view.set_topic(topic, *found);
+        more = true;
+      }
+    }
+    if (!more) {
+      break;
     }
   }
   const float scale = request.height / 1080.0f * static_cast<float>(request.ui_scale);  // §3.13, as D167 draws

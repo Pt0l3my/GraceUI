@@ -150,6 +150,8 @@ struct State {
   std::set<std::uint64_t> captures;  // the tickets the capture's modal sent: their answers go back to it (D209)
   bool pairing = false;                 // Pair a device's sheet is open (G9)
   bool away = false;                    // let go of input at an Alt+Tab, kept for the focus's return (G40)
+  bool focus_shown = false;             // the focus ring drawn: after a key or the pad, until the mouse (G42)
+  bool focus_drawn = false;             // the last published layout's, under g_view_lock (the tests')
   grace::view::PageView::Sheet sheet;   // as last shown
   std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
   std::uint64_t states = 0;    // its other topics', as the menu last took them (D181)
@@ -796,6 +798,10 @@ void take(State& m, const MenuInput& in, bool& dirty) {
   if (in.character != 0 && !view.editing() && in.character != U'/') {
     return;  // a menu key's own character (Q, E, Enter): nothing to type it into, nothing to lay out again
   }
+  if (!m.focus_shown) {
+    m.focus_shown = true;  // a key or the pad: the ring shows where they act (G42)
+    dirty = true;
+  }
   grace::view::Action action;
   if (in.captured != grace::input::kNoKey) {
     action = view.captured(grace::input::key_text(in.captured, in.modifiers));
@@ -829,6 +835,9 @@ void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
   if (in.generation != m.generation) {
     return;  // for an earlier holder
   }
+  if (in.pointer.kind != grace::view::Pointer::Kind::leave) {
+    m.focus_shown = false;  // the mouse: the ring goes, the focus stays (G42)
+  }
   const grace::view::Action action = active_view(m).pointer(in.pointer);
   if (in.pointer.kind != grace::view::Pointer::Kind::move) {
     g_inputs.fetch_add(1, std::memory_order_relaxed);
@@ -845,6 +854,7 @@ void publish(State& m) {
   }
   const std::int64_t started = qpc();
   const float scale = static_cast<float>(m.height) / 1080.0f * static_cast<float>(m.ui_scale);  // §3.13
+  active_view(m).set_focus_shown(m.focus_shown);  // the menu's, whichever space's view is drawn (G42)
   active_view(m).layout(grace::view::Viewport{static_cast<float>(m.width), static_cast<float>(m.height), scale},
                         *fonts, m.list);
   grace::draw::Atlas atlas{grace::abi::kAtlasTexture, 0.0f, 0.0f};
@@ -880,6 +890,7 @@ void publish(State& m) {
   g_view_lock.lock();
   m.page.assign(active_view(m).page());
   m.focused = active_view(m).focused();
+  m.focus_drawn = m.focus_shown;
 #if defined(GRACEUI_TEST_EXPORTS)
   m.bounds.swap(bounds);
   m.shown.swap(shown);
@@ -958,6 +969,7 @@ void serve_menu() {
     m.ever_opened = true;
     if (!m.away) {
       active_view(m).cancel_confirmation();
+      m.focus_shown = false;  // a fresh open: no ring until a key or the pad is used (G42)
     }
     m.away = false;  // back from an Alt+Tab: the page, row, confirmation, field and sheet as they were (G40)
     watch(m, true);
@@ -1350,6 +1362,7 @@ void test_view(TestView& out) noexcept {
   if (g_state != nullptr) {
     std::snprintf(out.page, sizeof out.page, "%s", g_state->page.c_str());
     std::snprintf(out.focused, sizeof out.focused, "%s", g_state->focused.c_str());
+    out.focus_shown = g_state->focus_drawn ? 1 : 0;
   }
   g_view_lock.unlock();
 }

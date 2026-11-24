@@ -1,0 +1,68 @@
+# demo demo.lamps: 1280x720, ui.scale 1.25, scale 0.833, theme grace, the fake face, settings at their defaults
+fill    scrim           0,   0 1280x720 
+fill    ground.1        0,   0 1280x720 
+fill    ground.0        0,   0  200x720 
+text    gold           20,  20   95x23   glyphs 9 "Demo space"
+text    ink.mute       20,  64   57x20   glyphs 8 "Lanterns"
+line    rule           20,  90  160x1   
+text    ink.hi         20,  97   50x20   glyphs 7 "Records"
+text    ink.mute       33, 128   17x17   glyphs 3 "Log"
+text    ink.mute       33, 155   45x17   glyphs 8 "Festival"
+fill    tint.select     0, 177  200x27  
+fill    gold            0, 177    2x27  
+text    gold.hi        33, 182   28x17   glyphs 5 "Lamps"
+fill    ground.well   227,   7  233x24   r2
+text    ink.faint     235,  11   34x17   glyphs 6 "Search"
+text    ink.faint    1202,  10   51x17   glyphs 7 "F5  Close"
+line    rule          200,  37 1080x1   
+text    ink.hi        227,  58   66x30   clip1 glyphs 5 "Lamps"
+text    ink.mute      227,  91  309x17   clip1 glyphs 45 "Every lamp on the harbour wall, and how each one burns."
+line    rule.strong   227, 118 1026x1    clip1
+diamond gold.deep     227, 115    8x8    w1 clip1
+fill    ground.2      227, 135  349x184  r3 clip1
+stroke  rule          227, 135  349x184  r3 w1 clip1
+text    gold          244, 148   32x13   clip1 glyphs 5 "Lamps"
+fill    tint.select   234, 168  336x47   clip1
+fill    gold          234, 168    2x47   clip1
+text    gold.hi       244, 174   81x18   clip1 glyphs 12 "Harbour mouth"
+text    ink.mute      244, 192  141x17   clip1 glyphs 20 "The north end of the wall"
+text    ink.hi        244, 221   62x18   clip1 glyphs 9 "Fish steps"
+text    ink.mute      244, 239  169x17   clip1 glyphs 26 "Halfway along, above the steps"
+text    ink.hi        244, 268   56x18   clip1 glyphs 8 "Old crane"
+text    ink.mute      244, 286  152x17   clip1 glyphs 22 "The inner end, by the crane"
+text    gold.hi       596, 135   26x15   clip1 glyphs 4 "Lamp"
+fill    gold          596, 155   25x2    clip1
+text    ink.mute      641, 135   32x15   clip1 glyphs 5 "Notes"
+text    ink.mute      692, 135   65x15   clip1 glyphs 9 "Your notes"
+line    rule          596, 158  657x1    clip1
+fill    ground.2      596, 175  657x197  r3 clip1
+stroke  rule          596, 175  657x197  r3 w1 clip1
+text    gold          613, 188   45x13   clip1 glyphs 7 "Burning"
+text    ink.faint    1228, 188    6x17   clip1 glyphs 1 "-"
+fill    ground.3      613, 217  306x60   r2 clip1
+text    ink.mute      623, 224   28x17   clip1 glyphs 5 "Flame"
+text    ink.hi        623, 241   38x23   clip1 glyphs 4 "Tall"
+fill    ground.3      929, 217  306x60   r2 clip1
+text    ink.mute      939, 224   17x17   clip1 glyphs 3 "Oil"
+text    ink.hi        939, 241   29x23   clip1 glyphs 3 "80%"
+line    rule          613, 282  623x1    clip1
+text    ink.hi        613, 293   31x18   clip1 glyphs 5 "Glass"
+text    ink.body      821, 294  158x17   clip1 glyphs 24 "Green, for the harbour mouth"
+line    rule          613, 322  623x1    clip1
+text    ink.hi        613, 333   19x18   clip1 glyphs 3 "Lit"
+text    ink.body      821, 334   39x17   clip1 glyphs 6 "At dusk"
+fill    ground.2      596, 385  657x117  r3 clip1
+stroke  rule          596, 385  657x117  r3 w1 clip1
+text    gold          613, 398   45x13   clip1 glyphs 7 "Related"
+line    rule          613, 418  623x1    clip1
+text    ink.hi        613, 421   50x18   clip1 glyphs 8 "Overview"
+text    ink.mute      821, 423  349x17   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
+text    gold         1223, 421    6x18   clip1 glyphs 1 "→"
+line    rule          613, 455  623x1    clip1
+text    ink.hi        613, 458   19x18   clip1 glyphs 3 "Log"
+text    ink.mute      821, 460  349x17   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
+text    gold         1223, 458    6x18   clip1 glyphs 1 "→"
+line    rule          200, 690 1080x1   
+text    ink.faint     227, 697  197x17   glyphs 20 "↑ ↓  Choose    →  Open    Esc  Back"
+stroke  gold.hi       232, 166  340x51   r3 w2 clip1
+# 66 items, 2124 vertices, 4206 indices, 4 commands; check_draw_list: passes

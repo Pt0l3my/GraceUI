@@ -785,6 +785,8 @@ struct GraceUi {
   decltype(&GraceUI_Test_MenuShows) menu_shows = nullptr;
   decltype(&GraceUI_Test_InitStep) init_step = nullptr;
   decltype(&GraceUI_Test_GetServer) get_server = nullptr;
+  decltype(&GraceUI_Test_GetHeapGuard) get_heap_guard = nullptr;      // D235
+  decltype(&GraceUI_Test_HeapGuardProbe) heap_guard_probe = nullptr;
   decltype(&GraceUI_Test_GetPairingCode) get_pairing_code = nullptr;
   decltype(&GraceUI_Test_SetNetworkAddresses) set_network_addresses = nullptr;
 
@@ -838,9 +840,11 @@ struct GraceUi {
     menu_shows = function_of<decltype(menu_shows)>(module, "GraceUI_Test_MenuShows");
     init_step = function_of<decltype(init_step)>(module, "GraceUI_Test_InitStep");
     get_server = function_of<decltype(get_server)>(module, "GraceUI_Test_GetServer");
+    get_heap_guard = function_of<decltype(get_heap_guard)>(module, "GraceUI_Test_GetHeapGuard");
+    heap_guard_probe = function_of<decltype(heap_guard_probe)>(module, "GraceUI_Test_HeapGuardProbe");
     get_pairing_code = function_of<decltype(get_pairing_code)>(module, "GraceUI_Test_GetPairingCode");
     set_network_addresses = function_of<decltype(set_network_addresses)>(module, "GraceUI_Test_SetNetworkAddresses");
-    return get_server != nullptr && get_pairing_code != nullptr && set_network_addresses != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
+    return get_server != nullptr && get_heap_guard != nullptr && heap_guard_probe != nullptr && get_pairing_code != nullptr && set_network_addresses != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
            get_menu_bounds != nullptr && set_anti_cheat_recheck != nullptr && menu_shows != nullptr && init_step != nullptr &&
            panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
@@ -903,6 +907,15 @@ struct GraceUi {
     out.size = sizeof out;
     if (get_server(&out) == 0) {
       fatal("GraceUI_Test_GetServer refused");
+    }
+    return out;
+  }
+
+  GraceUiTestHeapGuard heap_guard() const {
+    GraceUiTestHeapGuard out{};
+    out.size = sizeof out;
+    if (get_heap_guard(&out) == 0) {
+      fatal("GraceUI_Test_GetHeapGuard refused");
     }
     return out;
   }
@@ -1842,11 +1855,14 @@ void run_input(const std::wstring& dll) {
   settle();
   reads.keys();
   reads.mouse();
+  const GraceUiTestInput before_again = grace.input();  // D238: what reaches the game with no holder, counted
   inject_key('A', kScanA, true);
   inject_mouse(0, 0, MOUSEEVENTF_LEFTDOWN);
   settle();
   keys = reads.keys();
   const DIMOUSESTATE2 pressed_again = reads.mouse();
+  frames(game, 1);
+  const GraceUiTestInput after_again = grace.input();
   const bool games_again = (keys[DIK_A] & 0x80) != 0 && pressed_again.rgbButtons[0] == 0x80;
   inject_key('A', kScanA, false);
   inject_mouse(0, 0, MOUSEEVENTF_LEFTUP);
@@ -1860,6 +1876,19 @@ void run_input(const std::wstring& dll) {
         "after the close, DirectInput reads masked until the press was released: %u of the keyboard, %u of the mouse",
         input.masked_keyboard_free - before_close.masked_keyboard_free,
         input.masked_mouse_free - before_close.masked_mouse_free);
+  check(after_again.free_dinput_keys > before_again.free_dinput_keys &&
+            after_again.free_dinput_buttons > before_again.free_dinput_buttons &&
+            after_again.free_window_keys > before_again.free_window_keys &&
+            after_again.free_window_buttons > before_again.free_window_buttons && after_again.foreground == 1 &&
+            after_again.has_focus == 1,
+        "spike counters: presses with no holder (D238)",
+        "A and the left button pressed with no holder: DirectInput %u key(s) and %u button(s) down, window messages %u "
+        "key(s) and %u button(s); the window %s, %s",
+        after_again.free_dinput_keys - before_again.free_dinput_keys,
+        after_again.free_dinput_buttons - before_again.free_dinput_buttons,
+        after_again.free_window_keys - before_again.free_window_keys,
+        after_again.free_window_buttons - before_again.free_window_buttons,
+        after_again.foreground == 1 ? "in front" : "NOT IN FRONT", after_again.has_focus == 1 ? "focused" : "NOT FOCUSED");
   check(closed && masked && still_masked && games_again && g_seen.key_down['A'] == 1 && g_seen.key_up['A'] == 1 &&
             input.last_close_reason == GRACEUI_TEST_CLOSED_RELEASED && input.holder_owner == 0,
         "closing press",
@@ -4298,6 +4327,194 @@ SpaceEvent wait_space(Game& game, const GraceUiApi1* table, GraceUiConsumer mod,
   return event;
 }
 
+// A test build's free port (D234): with GRACEUI_TEST_PORT=free the browser view is served on a port the system gave,
+// not the settings' 8642, and the page loads there; GraceUI's settings file is not changed.
+// ---- D235: the test build's heap guard. GraceUI's own blocks are guarded from the DLL's load and checked on GraceUI's
+// thread; each kind of breach a probe makes is found and recorded (not raised), with its block's size and a maker in
+// graceui.dll, and GraceUI goes on drawing. A breach that is not a probe's ends its process: a handler first in the
+// process's list (as the spike observer's recorder is) sees it first, and without one GraceUI's own ends the run.
+bool in_module(std::uint64_t address, HMODULE module) {
+  HMODULE found = nullptr;
+  // SAFETY: an address given as a number, read by GetModuleHandleExW only to find the module it lies in.
+  return address != 0 &&
+         GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(static_cast<std::uintptr_t>(address)), &found) &&
+         found == module;
+}
+
+std::wstring this_program();
+int run_child(const std::wstring& dll, const wchar_t* scenario, std::wstring program);
+
+void run_heap_guard(const std::wstring& dll) {
+  SetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_GUARD", L"on");  // whatever the run: this scenario is the guard's own
+  SetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_CHECK_MS", L"200");
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  frames(game, 5);
+  GraceUiTestHeapGuard on = grace.heap_guard();
+  for (int i = 0; i < 150 && (on.checks < 2 || on.stats_read == 0); ++i) {
+    frames(game, 1);
+    Sleep(20);
+    on = grace.heap_guard();
+  }
+  check(on.on == 1 && on.stats_read == 1 && on.check_period_ms == 200 && on.made > 0 && on.live_blocks > 0 && on.checks >= 2 &&
+            on.blocks_checked > 0 && on.breaches == 0 && on.breach.breach == 0 && on.last_check_ms != 0,
+        "heap guard: GraceUI's own blocks guarded and checked",
+        "%llu blocks made, %llu live (%llu bytes), %llu kept after their free; %llu whole checks every %u ms, over "
+        "%llu blocks; %llu breaches",
+        static_cast<unsigned long long>(on.made), static_cast<unsigned long long>(on.live_blocks),
+        static_cast<unsigned long long>(on.live_bytes), static_cast<unsigned long long>(on.quarantined_blocks),
+        static_cast<unsigned long long>(on.checks), on.check_period_ms,
+        static_cast<unsigned long long>(on.blocks_checked), static_cast<unsigned long long>(on.breaches));
+
+  struct Kind {
+    std::uint32_t kind;
+    const char* name;
+    std::uint64_t size;
+  };
+  const Kind kinds[] = {{1, "written before its start", 24}, {2, "written past its end", 24},
+                        {3, "written after its free", 24},   {4, "freed twice", 24},
+                        {5, "not a block of the guard's", 0}};
+  const std::uint64_t presents = grace.state().presents;
+  bool found_each = true;
+  std::string detail;
+  for (const Kind& k : kinds) {
+    const std::uint32_t found = grace.heap_guard_probe(k.kind, 0);
+    const GraceUiTestHeapGuard after = grace.heap_guard();
+    const bool maker = k.kind == 5 ? after.probe.maker[0] == 0 : in_module(after.probe.maker[0], grace.module);
+    const bool sound = found == k.kind && after.probe.breach == k.kind && after.probe.size == k.size && maker &&
+                       after.breach.breach == 0;
+    found_each = found_each && sound;
+    char line[160];
+    std::snprintf(line, sizeof line, "%s%s: %s (%llu bytes, made %s)", detail.empty() ? "" : "; ", k.name,
+                  sound ? "found" : "NOT FOUND AS IT SHOULD BE", static_cast<unsigned long long>(after.probe.size),
+                  k.kind == 5 ? "by none" : maker ? "in graceui.dll" : "ELSEWHERE");
+    detail += line;
+  }
+  // GraceUI goes on: the game presents through its detour, and its thread checks every block again.
+  const std::uint64_t checks = grace.heap_guard().checks;
+  GraceUiTestHeapGuard later = grace.heap_guard();
+  for (int i = 0; i < 150 && later.checks < checks + 2; ++i) {
+    frames(game, 1);
+    Sleep(20);
+    later = grace.heap_guard();
+  }
+  const std::uint64_t presents_after = grace.state().presents;
+  check(found_each && presents_after > presents && later.checks >= checks + 2 && later.breach.breach == 0,
+        "heap guard: each kind of breach found, with its block",
+        "%s; then %llu presents through GraceUI's detour and %llu more whole checks, the session's breach none",
+        detail.c_str(), static_cast<unsigned long long>(presents_after - presents),
+        static_cast<unsigned long long>(later.checks - checks));
+  SetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_CHECK_MS", nullptr);
+
+  for (const wchar_t* child : {L"heap-guard-seen", L"heap-guard-end"}) {
+    std::fflush(stdout);
+    const auto status = static_cast<DWORD>(run_child(dll, child, this_program()));
+    const bool seen = std::wcscmp(child, L"heap-guard-seen") == 0;
+    // GraceUI's own handler fails fast; Wine's RaiseFailFastException ends a process with STATUS_FAIL_FAST_EXCEPTION.
+    const bool ended = status == GRACEUI_TEST_HEAP_GUARD_BREACH || (!seen && status == 0xC0000602u);
+    check(ended, seen ? "heap guard: a breach seen first by a handler before GraceUI's"
+                      : "heap guard: a breach ends its process, by GraceUI's own handler",
+          "its process ended with %#lx%s", static_cast<unsigned long>(status),
+          status == GRACEUI_TEST_HEAP_GUARD_BREACH ? " (the guard's code)"
+          : status == 0xC0000602u                  ? " (a fail-fast)"
+                                                   : " (NOT A BREACH'S END)");
+  }
+}
+
+// GRACEUI_TEST_HEAP_GUARD=off: the test build makes GraceUI's blocks as a release build does, and the guard says so.
+void run_heap_guard_off(const std::wstring& dll) {
+  SetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_GUARD", L"off");
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  frames(game, 5);
+  const GraceUiTestHeapGuard off = grace.heap_guard();
+  const std::uint32_t probe = grace.heap_guard_probe(2, 0);
+  const bool logged = grace.logged("the heap guard is off (GRACEUI_TEST_HEAP_GUARD=off)");
+  check(off.on == 0 && off.made == 0 && off.live_blocks == 0 && off.checks == 0 && probe == 0 && logged,
+        "heap guard: off when GRACEUI_TEST_HEAP_GUARD=off",
+        "on %u, %llu blocks made by it, %llu whole checks; a probe found %u; the log %s", off.on,
+        static_cast<unsigned long long>(off.made), static_cast<unsigned long long>(off.checks), probe,
+        logged ? "says so" : "DOES NOT SAY SO");
+}
+
+// The first handler in the list, as the spike observer's recorder is: it sees the breach and ends the process with its
+// code, so that the harness knows it was seen before GraceUI's own handler.
+LONG CALLBACK harness_sees_breach(EXCEPTION_POINTERS* pointers) {
+  if (pointers->ExceptionRecord->ExceptionCode == GRACEUI_TEST_HEAP_GUARD_BREACH) {
+    TerminateProcess(GetCurrentProcess(), GRACEUI_TEST_HEAP_GUARD_BREACH);
+  }
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void run_heap_guard_child(const std::wstring& dll, bool seen) {
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  if (grace.request_api(1) == nullptr) {  // the first request: the guard's own handler is added, last
+    fatal("GraceUI_RequestApi(1) answered null");
+  }
+  if (seen) {
+    AddVectoredExceptionHandler(1, &harness_sees_breach);
+  }
+  grace.heap_guard_probe(2, 1);  // a breach raised as a real one: it never returns
+  std::printf("FAIL heap guard: a raised breach returned\n");
+  std::fflush(stdout);
+  ExitProcess(3);
+}
+
+void run_free_port(const std::wstring& dll) {
+  namespace io = grace::serve::iotest;
+  SetEnvironmentVariableW(L"GRACEUI_TEST_PORT", L"free");
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+  const Connected demo = connect(table, request_for("demo", GRACEUI_VERSION_PACK(0, 1, 0), "The demo space", "notices"));
+  const grace::pages::BuiltinSpace& space = grace::pages::builtin_spaces()[1];
+  GraceUiSpaceDesc desc{};
+  desc.size = sizeof desc;
+  desc.views = GRACEUI_VIEW_GAME | GRACEUI_VIEW_BROWSER;
+  desc.version = GRACEUI_VERSION_PACK(1, 0, 0);
+  desc.pages = space.pages.data();
+  desc.pages_length = space.pages.size();
+  desc.settings = space.settings.data();
+  desc.settings_length = space.settings.size();
+  desc.increment = "0.2";
+  desc.increment_length = 3;
+  const GraceUiStatus registered = table->register_pages(demo.answer.consumer, &desc);
+  GraceUiTestServer server = grace.server();
+  for (int i = 0; i < 150 && server.running == 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+    server = grace.server();
+  }
+  io::start_client_network();
+  const auto port = static_cast<std::uint16_t>(server.port);
+  const io::Reply page = server.running != 0 ? io::request(port, io::page_load(port)) : io::Reply{};
+  const std::string kept = grace.setting("dashboard.port");
+  check(registered == GRACEUI_OK && server.running == 1 && server.port != 8642 && server.port >= 1024 &&
+            page.status == 200 && kept == "8642",
+        "free port: the browser view on a port of the system's",
+        "GRACEUI_TEST_PORT=free: the server %s on port %u; its page: %d; the settings' dashboard.port still %s",
+        server.running != 0 ? "runs" : "DOES NOT RUN", server.port, page.status, kept.c_str());
+  SetEnvironmentVariableW(L"GRACEUI_TEST_PORT", nullptr);
+}
+
 void run_pages(const std::wstring& dll) {
   namespace io = grace::serve::iotest;
   using grace::protocol::Json;
@@ -4867,6 +5084,75 @@ std::string lower_text(std::string text) {
   return text;
 }
 
+// ---- D235's breach in the spike observer's report: a child process with GraceUI and the observer raises a probe's
+// breach for real; the observer's recorder, first in the list, writes the fault with the guard's record, and GraceUI's
+// own handler ends the process. The parent reads what the child left.
+std::wstring heap_guard_spike_folder() { return folder_of_this_program() + L"spike-guard\\s4-1"; }
+
+void run_heap_guard_spike(const std::wstring& dll) {
+  using grace::protocol::Json;
+  const std::wstring folder = heap_guard_spike_folder();
+  const std::wstring path = folder + L"\\" + GRACE_SPIKE_FILE;
+  SetEnvironmentVariableW(GRACE_SPIKE_DIR_VARIABLE, folder.c_str());
+  SetEnvironmentVariableW(L"GRACE_SPIKE_STATE_MS", L"300");
+  Game game(false);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  if (!load_spike_tools(game)) {
+    fatal("grace-spike.dll or the stand-in did not load");
+  }
+  for (int i = 0; i < 600 && lines_of(read_report(path), "state").size() < 2; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  grace.heap_guard_probe(2, 1);  // never returns
+  std::printf("FAIL heap guard: a raised breach returned\n");
+  std::fflush(stdout);
+  ExitProcess(3);
+}
+
+void run_heap_guard_observer(const std::wstring& dll) {
+  using grace::protocol::Json;
+  const std::wstring parent = folder_of_this_program() + L"spike-guard";
+  const std::wstring folder = heap_guard_spike_folder();
+  CreateDirectoryW(parent.c_str(), nullptr);
+  DeleteFileW((folder + L"\\" + GRACE_SPIKE_FILE).c_str());
+  DeleteFileW((folder + L"\\" + GRACE_SPIKE_LOG_FILE).c_str());
+  DeleteFileW((folder + L"\\" + GRACE_SPIKE_FAULT_FILE).c_str());
+  std::fflush(stdout);
+  const auto status = static_cast<DWORD>(run_child(dll, L"heap-guard-spike", this_program()));
+  const std::vector<Json> report = read_report(folder + L"\\" + GRACE_SPIKE_FILE);
+  const std::vector<Json> faults = lines_of(report, "fault");
+  const std::vector<Json> states = lines_of(report, "state");
+  const Json fault = faults.empty() ? Json::object() : faults.back();
+  const Json guard = fault.contains("heap_guard") ? fault["heap_guard"] : Json::object();
+  bool made_ours = false;
+  if (guard.contains("made_at") && guard["made_at"].is_array() && !guard["made_at"].empty() &&
+      guard["made_at"][0].is_string()) {
+    made_ours = guard["made_at"][0].get<std::string>().rfind("graceui+", 0) == 0;
+  }
+  bool counted = false;
+  if (!states.empty() && states.back().contains("heap") && states.back()["heap"].is_array() &&
+      states.back()["heap"].size() == 6) {
+    counted = states.back()["heap"][0].get<std::uint64_t>() > 0 && states.back().value("heap_breach", "") == "none";
+  }
+  const std::string text = lower_text(read_text(folder + L"\\" + GRACE_SPIKE_FAULT_FILE));
+  const bool ended = status == GRACEUI_TEST_HEAP_GUARD_BREACH || status == 0xC0000602u;  // Wine's fail-fast
+  check(ended && fault.value("code", std::uint64_t{0}) == GRACEUI_TEST_HEAP_GUARD_BREACH &&
+            guard.value("breach", std::string()) == "past_end" && guard.value("size", std::uint64_t{0}) == 24 &&
+            made_ours && counted && text.find("heap guard: a block written past its end, 24 bytes") != std::string::npos &&
+            text.find("made at graceui.dll+0x") != std::string::npos,
+        "heap guard: a breach in the spike observer's report",
+        "the process ended with %#lx; its fault line: %s; the state lines %s the guard's counts; the text file %s",
+        static_cast<unsigned long>(status), fault.dump().c_str(), counted ? "carry" : "DO NOT CARRY",
+        text.find("made at graceui.dll+0x") != std::string::npos ? "names the maker in graceui.dll"
+                                                                  : "DOES NOT NAME THE MAKER");
+}
+
 void run_spike(const std::wstring& dll, bool tools_first) {
   using grace::protocol::Json;
   const std::wstring parent = folder_of_this_program() + (tools_first ? L"spike-first" : L"spike-after");
@@ -5007,8 +5293,8 @@ void run_spike(const std::wstring& dll, bool tools_first) {
         faults.size(), fault.dump().c_str(),
         fault_text.find("grace-harness.exe+0x") != std::string::npos ? "names" : "DOES NOT NAME");
 
-  // 3. The typing test (with the tools first): F9 opens it, letters and the mouse go to it and none reaches the game,
-  // and it gives the controls back when its time is up.
+  // 3. The typing test (with the tools first): F9 opens it, letters go to it and none reaches the game, the mouse stays
+  // the game's (as EldenNet's chat box leaves it, its O113), and it gives the controls back when its time is up.
   if (tools_first) {
     press(window, VK_F9, 0x43);
     GraceUiTestInput input = grace.input();
@@ -5026,7 +5312,11 @@ void run_spike(const std::wstring& dll, bool tools_first) {
       post_key(window, vk, 0, false, false);
       frames(game, 2);
     }
+    const int mouse_before = g_seen.mouse;
     inject_mouse(30, 10, MOUSEEVENTF_MOVE);
+    settle();
+    frames(game, 2);
+    const bool mouse_to_game = g_seen.mouse > mouse_before;
     std::vector<Json> typed;
     for (int i = 0; i < 300 && typed.empty(); ++i) {
       frames(game, 1);
@@ -5040,14 +5330,16 @@ void run_spike(const std::wstring& dll, bool tools_first) {
     // keys, the pointer, and its end as GraceUI recorded it; and its own Dear ImGui takes every character feed gave it.
     const Json received = typing.value("received", Json::array());
     const bool panel_received = received.size() == 4 && received[0] == typing["chars"] && received[1] >= 10 &&
-                                received[2] >= 1 && typing["end_event"] == "released" &&
+                                received[2] == 0 && typing["end_event"] == "released" &&
                                 number(typing, "dropped") == 0 && typing["imgui_chars"] == received[0];
     check(held && typed.size() == 1 && typing["end"] == "released" && number(typing, "held_ms") >= 3000 &&
-              number(typing, "chars") >= 5 && none_passed && panel_received && g_seen.chars == 0 &&
+              number(typing, "chars") >= 5 && none_passed && panel_received && g_seen.chars == 0 && mouse_to_game &&
               grace.input().holder_kind == 0,
           "spike: the typing test",
-          "F9: the observer's panel %s input; its line: %s; characters reaching the game: %d; the holder after: %u",
-          held ? "took" : "DID NOT TAKE", typing.dump().c_str(), g_seen.chars, grace.input().holder_kind);
+          "F9: the observer's panel %s the keyboard and the pad; its line: %s; characters reaching the game: %d; the "
+          "mouse %s; the holder after: %u",
+          held ? "took" : "DID NOT TAKE", typing.dump().c_str(), g_seen.chars,
+          mouse_to_game ? "the game's" : "NOT THE GAME'S", grace.input().holder_kind);
   }
   grace.print_log();
 }
@@ -6633,6 +6925,7 @@ void run_menu_away(const std::wstring& dll) {
     pump_messages();
     frames(game, 3);
   };
+  const GraceUiTestInput before_away = grace.input();
   HWND other = take_focus();
   const GraceUiTestMenu away = grace.menu();
   const GraceUiTestInput away_input = grace.input();
@@ -6648,6 +6941,16 @@ void run_menu_away(const std::wstring& dll) {
         "away: menu %s, holder %u (%s); back: menu %s on %s at %s, holder %u", away.open == 1 ? "HOLDING" : "let go",
         away_input.holder_kind, reason_name(away_input.last_close_reason), menu.open == 1 ? "open" : "CLOSED",
         menu.page, menu.focused, back_input.holder_kind);
+  // The window's place and its focus messages, as the spike observer reports them (D238).
+  check(before_away.foreground == 1 && before_away.has_focus == 1 && away_input.foreground == 0 &&
+            away_input.has_focus == 0 && away_input.focus_lost > before_away.focus_lost && back_input.foreground == 1 &&
+            back_input.has_focus == 1 && back_input.focus_gained > away_input.focus_gained,
+        "menu away: the window's focus counted (D238)",
+        "before: %s, %s; away: %s, %s, focus lost %u time(s); back: %s, %s, focus gained %u time(s)",
+        before_away.foreground == 1 ? "in front" : "NOT IN FRONT", before_away.has_focus == 1 ? "focused" : "NOT FOCUSED",
+        away_input.foreground == 0 ? "behind" : "STILL IN FRONT", away_input.has_focus == 0 ? "unfocused" : "STILL FOCUSED",
+        away_input.focus_lost - before_away.focus_lost, back_input.foreground == 1 ? "in front" : "NOT IN FRONT",
+        back_input.has_focus == 1 ? "focused" : "NOT FOCUSED", back_input.focus_gained - away_input.focus_gained);
 
   // 4. Away again, and danger meanwhile: the menu closes, and the return finds it closed (invariant 9).
   other = take_focus();
@@ -6662,6 +6965,74 @@ void run_menu_away(const std::wstring& dll) {
   check(after_danger.open == 0 && after_input.holder_kind == 0, "menu away: danger while away closes it",
         "after danger while away and the focus's return: menu %s, holder %u",
         after_danger.open == 1 ? "OPEN AGAIN" : "closed", after_input.holder_kind);
+}
+
+// ---- G42: the menu's focus ring shows after a key or the pad and goes with the mouse; the focus stays. Read from the
+// test export and from the frame's pixels: gold.hi in the band just outside the focused control's box.
+int ring_pixels(const Frame& frame, const MenuBounds& at) {
+  if (!at.found) {
+    return -1;
+  }
+  const auto near_gold_hi = [](std::uint32_t pixel) {
+    return std::abs(channel(pixel, 0) - 0xE3) <= 24 && std::abs(channel(pixel, 8) - 0xC5) <= 24 &&
+           std::abs(channel(pixel, 16) - 0x79) <= 24;
+  };
+  int count = 0;
+  const int y = static_cast<int>(at.control[1] + at.control[3] / 2);
+  const int left = static_cast<int>(at.control[0]);
+  const int right = static_cast<int>(at.control[0] + at.control[2]);
+  for (int d = 1; d <= 12; ++d) {
+    for (const int x : {left - d, right + d - 1}) {
+      if (x >= 0 && y >= 0 && x < static_cast<int>(frame.width) && y < static_cast<int>(frame.height) &&
+          near_gold_hi(frame.at(static_cast<UINT>(x), static_cast<UINT>(y)))) {
+        ++count;
+      }
+    }
+  }
+  return count;
+}
+
+void run_menu_focus_ring(const std::wstring& dll) {
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  frames(game, 3);
+  menu = grace.menu();
+  const std::string first(menu.focused);
+  const int at_open = ring_pixels(game.frame_and_read(kInputColour, PresentWith::present), menu_bounds(grace, menu.focused));
+  const std::uint32_t shown_at_open = menu.focus_shown;
+  // A key: the ring shows where the keys act.
+  press(window, VK_DOWN, 0x50);
+  menu = menu_after(game, grace, menu.lists);
+  frames(game, 2);
+  menu = grace.menu();
+  const std::string after_key(menu.focused);
+  const int with_key = ring_pixels(game.frame_and_read(kInputColour, PresentWith::present), menu_bounds(grace, menu.focused));
+  const std::uint32_t shown_with_key = menu.focus_shown;
+  // The mouse: the ring goes, the focus stays.
+  inject_mouse(6, 3, MOUSEEVENTF_MOVE);
+  settle();
+  menu = menu_after(game, grace, menu.lists);
+  frames(game, 2);
+  menu = grace.menu();
+  const int with_mouse = ring_pixels(game.frame_and_read(kInputColour, PresentWith::present), menu_bounds(grace, menu.focused));
+  check(shown_at_open == 0 && at_open == 0 && shown_with_key == 1 && with_key > 0 && after_key != first &&
+            menu.focus_shown == 0 && with_mouse == 0 && std::string(menu.focused) == after_key,
+        "menu focus ring: after a key, gone with the mouse (G42)",
+        "at open on %s: %s (%d gold pixels beside it); a key, on %s: %s (%d); the mouse: %s (%d), the focus %s",
+        first.c_str(), shown_at_open != 0 ? "SHOWN" : "hidden", at_open, after_key.c_str(),
+        shown_with_key != 0 ? "shown" : "HIDDEN", with_key, menu.focus_shown != 0 ? "SHOWN" : "hidden", with_mouse,
+        std::string(menu.focused) == after_key ? "kept" : "MOVED");
+  press(window, VK_F5, kScanF5);
+  frames(game, 2);
 }
 
 void run_menu_recentred(const std::wstring& dll) {
@@ -6694,6 +7065,14 @@ void run_menu_recentred(const std::wstring& dll) {
   // 2. No motion for a dozen frames: the game goes on recentring, and the pointer stays.
   frames(game, 12);
   const GraceUiTestInput kept = grace.input();
+  // 2b. No motion for 1.5 s, past a second of stillness (the owner's spikes.5: the pointer snapped back to the centre
+  // about a second after the mouse stopped): the game still recentring, the pointer stays.
+  const ULONGLONG still_from = GetTickCount64();
+  while (GetTickCount64() - still_from < 1500) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  const GraceUiTestInput still = grace.input();
   // 3. Left by 800 counts: clamped at the client area's edge, never outside it.
   move_by(-80, 0, 10);
   frames(game, 2);
@@ -6702,12 +7081,13 @@ void run_menu_recentred(const std::wstring& dll) {
   const int right = moved.imgui_mouse_x - start.imgui_mouse_x;
   const int down = moved.imgui_mouse_y - start.imgui_mouse_y;
   check(right >= 200 && right <= 280 && down >= 100 && down <= 140 && kept.imgui_mouse_x == moved.imgui_mouse_x &&
-            kept.imgui_mouse_y == moved.imgui_mouse_y && edge.imgui_mouse_x == 0 && menu.off == 0,
+            kept.imgui_mouse_y == moved.imgui_mouse_y && still.imgui_mouse_x == moved.imgui_mouse_x &&
+            still.imgui_mouse_y == moved.imgui_mouse_y && edge.imgui_mouse_x == 0 && menu.off == 0,
         "menu recentred: the pointer by the mouse's motion",
-        "from %d,%d: moved by 240,120 counts to %d,%d (%+d,%+d); after 12 frames of the game's recentring %d,%d; then "
-        "800 counts left: %d (the client area's edge 0)",
+        "from %d,%d: moved by 240,120 counts to %d,%d (%+d,%+d); after 12 frames of the game's recentring %d,%d, and "
+        "after 1.5 s of it %d,%d; then 800 counts left: %d (the client area's edge 0)",
         start.imgui_mouse_x, start.imgui_mouse_y, moved.imgui_mouse_x, moved.imgui_mouse_y, right, down,
-        kept.imgui_mouse_x, kept.imgui_mouse_y, edge.imgui_mouse_x);
+        kept.imgui_mouse_x, kept.imgui_mouse_y, still.imgui_mouse_x, still.imgui_mouse_y, edge.imgui_mouse_x);
   press(window, VK_F5, kScanF5);
   frames(game, 2);
 }
@@ -7141,6 +7521,18 @@ std::string wait_code(Game& game, const GraceUi& grace) {
   return code;
 }
 
+// True once no pairing code is showing, waited for as long as wait_code waits for one.
+bool wait_no_code(Game& game, const GraceUi& grace) {
+  for (int i = 0; i < 150; ++i) {
+    if (grace.pairing_code().empty()) {
+      return true;
+    }
+    frames(game, 1);
+    Sleep(20);
+  }
+  return grace.pairing_code().empty();
+}
+
 bool wait_shows(Game& game, const GraceUi& grace, const std::string& text) {
   for (int i = 0; i < 150; ++i) {
     if (grace.menu_shows(text.c_str()) != 0) {
@@ -7326,16 +7718,19 @@ void run_pairing_write(const std::wstring& dll) {
         device_joined ? "joined" : "REFUSED", lan_off.c_str(), forget.c_str(), pair.c_str(), disconnect.c_str(),
         menu_key.c_str(), hotkeys.c_str(), notices.c_str(), scale.c_str());
 
-  // 6. The code lives only while its sheet is open (D113): Escape closes it, and closing the menu does too.
+  // 6. The code lives only while its sheet is open (D113): Escape closes it, and closing the menu does too. The lists
+  // are read afresh first: step 5's pairing and its device's ui.scale laid the menu out anew, so the snapshot from
+  // step 4 would let menu_after return before Escape is handled (a load-dependent failure, 2026-11-23); the code's
+  // end is then waited for itself, within wait_code's 3 s.
+  menu = grace.menu();
   press(window, VK_ESCAPE, kScanEscape);
   menu = menu_after(game, grace, menu.lists);
-  const bool gone_on_escape = grace.pairing_code().empty();
+  const bool gone_on_escape = wait_no_code(game, grace);
   press(window, VK_RETURN, 0x1C);  // focus is still on Pair a device
   menu = menu_after(game, grace, menu.lists);
   const std::string second = wait_code(game, grace);
   press(window, VK_F5, kScanF5);
-  frames(game, 3);
-  const bool gone_on_close = grace.pairing_code().empty();
+  const bool gone_on_close = wait_no_code(game, grace);
   const io::Reply stale = io::request_ipv4(
       kHomeAddress, port, home_post(port, "/api/pair", Json{{"code", second}, {"name", "Late phone"}}.dump()));
   check(gone_on_escape && second.size() == 6 && gone_on_close && stale.status == 403 &&
@@ -8687,12 +9082,21 @@ void run_examples(const std::wstring& dll, bool notice_first) {
 int wmain(int argc, wchar_t** argv) {
   std::wstring dll = folder_of_this_program() + L"graceui.dll";
   std::wstring scenario;
+  bool heap_guard = false;
   for (int i = 1; i + 1 < argc; i += 2) {
     if (std::wcscmp(argv[i], L"--dll") == 0) {
       dll = argv[i + 1];
     } else if (std::wcscmp(argv[i], L"--scenario") == 0) {
       scenario = argv[i + 1];
+    } else if (std::wcscmp(argv[i], L"--heap-guard") == 0) {
+      heap_guard = std::wcscmp(argv[i + 1], L"on") == 0;
     }
+  }
+  // D235: the regression run times GraceUI's warm-up, so it makes GraceUI's blocks as a release build does; with
+  // --heap-guard on (the breach sweep), every scenario runs with the guard. Children inherit what the first process set.
+  wchar_t inherited[8] = {};
+  if (GetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_GUARD", inherited, 8) == 0) {
+    SetEnvironmentVariableW(L"GRACEUI_TEST_HEAP_GUARD", heap_guard ? L"on" : L"off");
   }
   if (scenario == L"two-queues") {
     std::printf("-- scenario: two direct queues\n");
@@ -8796,6 +9200,25 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"settings-bad") {
     std::printf("-- scenario: a settings file that is not GraceUI's (D179)\n");
     run_settings_bad(dll);
+  } else if (scenario == L"free-port") {
+    std::printf("-- scenario: a test build's free port for the browser view (D234)\n");
+    run_free_port(dll);
+  } else if (scenario == L"heap-guard") {
+    std::printf("-- scenario: the test build's heap guard (D235)\n");
+    run_heap_guard(dll);
+    run_heap_guard_observer(dll);
+  } else if (scenario == L"heap-guard-spike") {
+    run_heap_guard_spike(dll);
+  } else if (scenario == L"menu-focus-ring") {
+    std::printf("-- scenario: the menu's focus ring after a key, not with the mouse (G42)\n");
+    run_menu_focus_ring(dll);
+  } else if (scenario == L"heap-guard-off") {
+    std::printf("-- scenario: the test build's heap guard turned off (D235)\n");
+    run_heap_guard_off(dll);
+  } else if (scenario == L"heap-guard-seen") {
+    run_heap_guard_child(dll, true);
+  } else if (scenario == L"heap-guard-end") {
+    run_heap_guard_child(dll, false);
   } else if (scenario == L"pairing") {
     std::printf("-- scenario: another device at home, paired with a code shown in game (G9)\n");
     run_pairing(dll);
@@ -8858,8 +9281,8 @@ int wmain(int argc, wchar_t** argv) {
       for (const wchar_t* child_scenario :
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
-            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake"}) {
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-focus-ring", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
+            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake", L"heap-guard", L"heap-guard-off"}) {
         run(child_scenario, dll, this_program());
       }
       // pages runs GraceUI from the build's GraceUI folder, whose graceui.toml lists the web page the browser loads.
@@ -8867,6 +9290,7 @@ int wmain(int argc, wchar_t** argv) {
       run(L"anti-cheat-flag", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
       run(L"anti-cheat-recheck", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
       run(L"pairing", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());  // G9: the app's page
+      run(L"free-port", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());  // D234
       DeleteFileW(settings_file_of(folder_of_this_program() + L"..\\GraceUI\\graceui.dll").c_str());  // D179: none left
       // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in
       // GraceUI\graceui.dll, which nothing else loads.

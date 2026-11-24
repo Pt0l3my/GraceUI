@@ -74,6 +74,35 @@ TEST_CASE("the Menu page: focus on its first control, and each key's command") {
   CHECK(a.command.args == Json::object({{"key", "ui.menu.reduce_motion"}, {"value", true}}));
 }
 
+TEST_CASE("the focus ring: drawn after a key or the pad, gone with the mouse, the focus kept (G42)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  const auto rings = [&] {
+    DisplayList list;
+    view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+    const std::string dump = list.dump();
+    int count = 0;
+    for (std::size_t at = dump.find("stroke  gold.hi"); at != std::string::npos; at = dump.find("stroke  gold.hi", at + 1)) {
+      ++count;
+    }
+    return count;
+  };
+  CHECK(rings() == 1);  // a view starts as a keyboard player sees it (grace-dev's dumps)
+  const std::string focus = view.focused();
+  view.pointer(Pointer{Pointer::Kind::move, 5, 5});
+  CHECK(rings() == 0);
+  CHECK(view.focused() == focus);  // the ring goes, the focus stays
+  press(view, Key::down);
+  CHECK(rings() == 1);
+  CHECK(view.focused() != focus);
+  view.pointer(Pointer{Pointer::Kind::press, 5, 5});
+  CHECK(rings() == 0);
+  view.set_focus_shown(true);
+  view.pointer(Pointer{Pointer::Kind::leave, 0, 0});
+  CHECK(rings() == 1);  // the pointer leaving the menu is no use of the mouse
+  view.set_focus_shown(false);  // the host's word (its menu opens with no ring)
+  CHECK(rings() == 0);
+}
+
 TEST_CASE("back goes to the rail, and back again closes; the rail opens pages") {
   PageView view = loaded("graceui", "graceui.menu");
   press(view, Key::back);
@@ -764,7 +793,13 @@ TEST_CASE("the mouse (§5.5): a press focuses and acts on what it is on, a slide
   fresh.pointer(Pointer{Pointer::Kind::leave, 0, 0, 0});
   DisplayList left;
   fresh.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), left);
-  CHECK(left.dump() == before);
+  // As before but for the focus ring, which the mouse's use put away (G42).
+  PageView unringed = loaded("demo", "demo.behaviour");
+  unringed.set_focus_shown(false);
+  DisplayList quiet;
+  unringed.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), quiet);
+  CHECK(quiet.dump() != before);
+  CHECK(left.dump() == quiet.dump());
 }
 
 TEST_CASE("the wheel scrolls the page, which stays until a key moves focus; a table's switch takes a click (§5.5)") {

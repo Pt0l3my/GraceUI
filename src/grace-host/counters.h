@@ -91,6 +91,18 @@ inline constinit std::atomic<std::uint32_t> masked_held[kMaskedKinds]{};
 inline constinit std::atomic<std::uint32_t> masked_after[kMaskedKinds]{};
 
 inline void count_passed(Passed kind) noexcept { passed_held[kind].fetch_add(1, std::memory_order_relaxed); }
+
+// D238: the game window's focus messages as its filter saw them, and the presses that reached the game while no one
+// held input: a key or button down in a DirectInput read (after GraceUI's filter, against the same thread's previous
+// read), and a WM_KEYDOWN or WM_SYSKEYDOWN (not a repeat) or a button-down message.
+enum Focus : std::uint32_t { focus_gained, focus_lost, app_active, app_inactive, kFocusKinds };
+enum FreeDown : std::uint32_t { dinput_key, dinput_button, window_key, window_button, kFreeDownKinds };
+inline constinit std::atomic<std::uint32_t> focus_events[kFocusKinds]{};
+inline constinit std::atomic<std::uint32_t> free_downs[kFreeDownKinds]{};
+inline void count_focus(Focus kind) noexcept { focus_events[kind].fetch_add(1, std::memory_order_relaxed); }
+inline void count_free_down(FreeDown kind, std::uint32_t count = 1) noexcept {
+  free_downs[kind].fetch_add(count, std::memory_order_relaxed);
+}
 inline void count_masked(Masked kind, bool held) noexcept {
   (held ? masked_held : masked_after)[kind].fetch_add(1, std::memory_order_relaxed);
 }

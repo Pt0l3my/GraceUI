@@ -229,9 +229,46 @@ def judge(path, hand):
     verdict = FAILED if FAILED in results else "incomplete" if NOT_MEASURED in needed else PASSED
     # The faults the observer recorded (D231): listed, never judged, since a game's own first-chance faults are no
     # failure of a run; a run that fell has its last one among them. The modules' names are in graceui-faults.txt.
-    faults = [{"code": f.get("code"), "access": f.get("access"), "null_target": f.get("null_target"),
-               "frame_step": f.get("frame_step"), "at": f.get("at", [])} for f in of(lines, "fault")]
-    return {"run": path.parent.name, "spike": spike, "verdict": verdict, "rules": rules, "faults": faults}
+    faults = []
+    for f in of(lines, "fault"):
+        fault = {"code": f.get("code"), "access": f.get("access"), "null_target": f.get("null_target"),
+                 "frame_step": f.get("frame_step"), "at": f.get("at", [])}
+        if isinstance(f.get("heap_guard"), dict):  # D235: the guard's breach, its block and the code that made it
+            guard = f["heap_guard"]
+            fault["heap_guard"] = {"breach": guard.get("breach"), "size": guard.get("size"),
+                                   "block": guard.get("block"), "made_at": guard.get("made_at", [])}
+        faults.append(fault)
+    return {"run": path.parent.name, "spike": spike, "verdict": verdict, "rules": rules, "faults": faults,
+            "heap_guard": heap_guard_of(states), "window": window_of(states)}
+
+
+def window_of(states):
+    """The game's window across the run (D238), from a build that reports it, else None: the state lines on which it
+    was not the foreground window or had no keyboard focus (with their times), its focus messages and the presses that
+    reached the game while no one held input, at the last state line. Listed, never judged."""
+    seen = [s for s in states if isinstance(s.get("window_focus"), list) and len(s["window_focus"]) == 7]
+    if not seen:
+        return None
+    last = seen[-1]
+    downs = last.get("free_downs", [0, 0, 0, 0])
+    return {"lines": len(seen),
+            "not_foreground": [s.get("t") for s in seen if s["window_focus"][0] == 0],
+            "no_focus": [s.get("t") for s in seen if s["window_focus"][2] == 0],
+            "focus_gained": last["window_focus"][3], "focus_lost": last["window_focus"][4],
+            "app_active": last["window_focus"][5], "app_inactive": last["window_focus"][6],
+            "free_downs": {"dinput_keys": downs[0], "dinput_buttons": downs[1], "window_keys": downs[2],
+                           "window_buttons": downs[3]}}
+
+
+def heap_guard_of(states):
+    """The heap guard's counts at the run's last state line that read them (D235), or None from a build without it.
+    Listed, never judged: a breach ends the run, and its fault line says where."""
+    for s in reversed(states):
+        heap = s.get("heap")
+        if isinstance(heap, list) and len(heap) == 6 and s.get("heap_read", 1) == 1:
+            return {"live_blocks": heap[0], "live_bytes": heap[1], "kept": heap[2], "damaged": heap[3],
+                    "checks": heap[4], "breaches": heap[5], "breach": s.get("heap_breach", "none")}
+    return None
 
 
 def reports_in(paths):
@@ -278,11 +315,32 @@ def run(argv):
             for r in verdict["rules"]:
                 tag = " (if you have one)" if r["optional"] else ""
                 print(f"  {r['rule']}: {r['result']}{tag}: {r['detail']}")
+            guard = verdict["heap_guard"]
+            if guard is not None:
+                print(f"  heap guard (recorded, not judged): {guard['checks']} whole checks; at the last state line "
+                      f"{guard['live_blocks']} live blocks ({guard['live_bytes']} bytes), {guard['kept']} kept after "
+                      f"their free, {guard['damaged']} damaged; breach: {guard['breach']}")
+            w = verdict["window"]
+            if w is not None:
+                def spans(times):
+                    return f"{len(times)} (from t={times[0]} ms to t={times[-1]} ms)" if times else "0"
+                print(f"  the game's window (recorded, not judged): of {w['lines']} state lines, not the foreground "
+                      f"window on {spans(w['not_foreground'])}, without the keyboard's focus on {spans(w['no_focus'])}; "
+                      f"focus lost {w['focus_lost']} and gained {w['focus_gained']} times, the game deactivated "
+                      f"{w['app_inactive']} and activated {w['app_active']} times")
+                d = w["free_downs"]
+                print(f"  presses that reached the game with no holder: DirectInput {d['dinput_keys']} keys and "
+                      f"{d['dinput_buttons']} buttons; window messages {d['window_keys']} keys and "
+                      f"{d['window_buttons']} buttons")
             for f in verdict["faults"]:
                 code = f["code"] if isinstance(f["code"], int) else 0
                 print(f"  fault (recorded, not judged): {code:#x}, {f['access']}"
                       f"{' of the null page' if f['null_target'] else ''}, frame_step {f['frame_step']}, "
                       f"at {', '.join(str(a) for a in f['at'][:6])}")
+                if "heap_guard" in f:
+                    g = f["heap_guard"]
+                    print(f"    heap guard: {g['breach']}, a block of {g['size']} bytes (block {g['block']}), "
+                          f"made at {', '.join(str(a) for a in g['made_at'])}")
     return 1 if any(v["verdict"] == FAILED for v in runs) else 0
 
 

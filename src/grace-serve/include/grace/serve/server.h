@@ -42,6 +42,11 @@ namespace grace::serve {
 inline constexpr std::uint16_t kDefaultPort = 8642;
 inline constexpr std::uint16_t kLowestPort = 1024;
 
+// For a test host alone (D234): a port on 127.0.0.1 that the system holds free now (a socket bound at port 0, its port
+// read, the socket closed), so that two test runs on one machine need not share the default. Another program may take
+// it before the server binds it: start answers port_taken then, and the host asks again. False if none could be had.
+bool free_loopback_port(std::uint16_t& out) noexcept;
+
 // The routes besides the web files; no web file is listed under /api/.
 inline constexpr std::string_view kTicketRoute = "/api/ticket";
 inline constexpr std::string_view kSocketRoute = "/api/ws";

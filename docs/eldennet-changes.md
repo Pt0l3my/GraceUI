@@ -1314,3 +1314,57 @@ that went to 0:
   it names third-party modules by file name, so the owner may read it first.
 - **Routine faults appear too**, once each site and at most 64 a run: the game, its anti-tamper or a driver may raise
   and handle their own. `report.py` lists them under each run and judges none; a run that fell has its last one there.
+
+## 64. A free port for your test runs, and grace-dev's dump of a master's detail (2026-11-23, D234; GraceUI 0.2.31)
+
+Two small things you asked for (your WHY§524 and §526):
+
+- **`GRACEUI_TEST_PORT=free`** in the environment of a process that loads GraceUI's test build serves the browser view
+  on a loopback port the system has free, instead of the settings' 8642; a number from 1024 to 65535 names one. The
+  settings file is never changed, so your editor's case need not write a port into GraceUI's `settings.json` any more.
+  Read the port in use from `GraceUI_Test_GetServer` (its `port`). A release build ignores the variable.
+- **grace-dev `--dump`** now draws a master list's chosen row's detail: it gives the page each topic it asks for until
+  none is new, so a block bound to the master's family shows the first row's member, as the menu does. Your Named
+  NPCs goldens should lose their "Nothing to show yet." lines once regenerated with this grace-dev.
+
+## 65. A heap guard in the test build, for the quit's crashes (2026-11-23, D235; GraceUI 0.2.32)
+
+You asked for it for spikes.6 (your WHY§539). Nothing changes for EldenNet's code; for the spike package:
+
+- **Ship `graceui.pdb` with the test build's `graceui.dll`**, or keep it beside the build you package: a breach names
+  the code that made the damaged block as offsets in graceui.dll, and the PDB of that very build places them
+  (`llvm-symbolizer --obj=graceui.dll --relative-address 0x…`). It holds no machine path (`/pdbaltpath`, sources under
+  `/src`).
+- **A breach ends the run** with `0xE0475548` (GraceUI's own fail-fast; the launcher's crash record shows that code or
+  a fail-fast's). The observer's `graceui-spike.jsonl` then has a `fault` line with `heap_guard` (the breach, the
+  block's size, `made_at`), and `graceui-faults.txt` the same with modules' file names. With no `heap_guard` line, a
+  crash at the quit was not a block of GraceUI's own found damaged.
+- `GRACEUI_TEST_HEAP_CHECK_MS` (100 to 600000; 5000 by default) sets how often GraceUI's thread checks every block.
+  The guard costs memory (up to 64 MiB of freed blocks kept, and 96 bytes a block) and some time at each allocation;
+  the present thread allocates nothing after warm-up, so frames are not slowed, but GraceUI's warm-up takes longer
+  (under Wine a notice came 30 to 80 frames later). If one of your GraceUI cases counts warm-up frames, set
+  `GRACEUI_TEST_HEAP_GUARD=off` in its environment (read at graceui.dll's first allocation); leave the guard on for the
+  spike runs.
+
+## 66. The owner's spikes.5 findings: the pointer, and the typing test's mouse (2026-11-23, D236; GraceUI 0.2.33)
+
+From the three things the owner saw by hand in spikes.5 (your message of 2026-11-23):
+
+- **The pointer no longer snaps back to the centre** a second after the mouse stops, in the menu and in a panel that
+  holds the mouse. Nothing for EldenNet to change: a panel of yours that takes the mouse gets the same pointer.
+- **The observer's typing test (F9) takes the keyboard and the pad only**, as your chat box does (O113); the mouse
+  stays the game's, so the camera may turn during it. The owner's question in GraceUI's `tools/grace-spike/README.md`
+  is now only whether the Tarnished stayed still. If EldenNet's spike package carries its own copy of that checklist,
+  bring it into line.
+- **The highlight border was the focus ring**, drawn from the menu's open and while the mouse was used. The owner
+  decided (GraceUI's G42) that in game it shows only once a key or the pad is used and goes with the mouse, as in
+  the browser view (D237). Your space's pages in GraceUI's menu follow it; nothing for EldenNet to change.
+
+## 67. The window's focus and the presses that reach the game, in the spike report (2026-11-24, D238; GraceUI 0.2.34)
+
+For A1's missed presses (your spikes.6 report): nothing in EldenNet changes. The test build's state lines gain
+`window_focus` (foreground, active, focused; focus gained, lost; the game activated, deactivated) and `free_downs` (the
+presses that reached the game with no holder: DirectInput keys and buttons, window keys and buttons), and `report.py`
+lists them. If the launcher's run notes ask the owner what happened, asking roughly when a press did not register lets a
+state line place it.
+

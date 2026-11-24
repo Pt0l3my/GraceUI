@@ -64,6 +64,7 @@ struct TestView {
   float baked_scale;            // the effective scale they were baked at (0 if left out)
   char page[64];
   char focused[96];
+  std::uint32_t focus_shown;    // 1 while the focus ring is drawn (G42)
 };
 void test_view(TestView& out) noexcept;
 // A setting of GraceUI's own space as JSON text (a secret's as its status); answers its length, 0 for none.

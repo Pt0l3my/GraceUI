@@ -83,7 +83,8 @@ EXCLUDED_PROJECTS = re.compile(r"\bme3\b|fromsoftware-rs|fromsoftware_rs", re.IG
 PURE_MODULES = {"src/grace-input/": ("grace_input",), "src/grace-abi/": ("grace_abi", "grace_abi_rules"),
                 "src/grace-tokens/": ("grace_tokens",), "src/grace-protocol/": ("grace_protocol",),
                 "src/grace-serve/": ("grace_serve_core",), "src/grace-pages/": ("grace_pages",),
-                "src/grace-view/": ("grace_view",), "src/grace-draw/": ("grace_draw",)}
+                "src/grace-view/": ("grace_view",), "src/grace-draw/": ("grace_draw",),
+                "src/grace-guard/": ("grace_guard",)}
 # What a pure module may link: nlohmann/json, header-only, for grace-protocol (D159); and other pure modules, for the
 # in-game views (D162) and a space's settings store (D167).
 PURE_MAY_LINK = {"grace_protocol": ("gu_nlohmann_json",), "grace_pages": ("grace_protocol",),

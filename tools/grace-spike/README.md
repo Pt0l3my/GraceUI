@@ -16,8 +16,9 @@ command; this page says what each run is for and what to do in the game.
 - `grace-standin.dll`: a stand-in for another overlay, of our own, that counts the game's frames on their way to the
   screen. It is never part of a release.
 
-Neither reads the game's memory or calls the game's code. EldenNet makes no call into the game in these runs (its
-banner says "spike: no call").
+Neither reads the game's memory or calls the game's code. EldenNet makes no call into the game in these runs: its
+banner, EldenNet's own and not GraceUI's, says "EldenNet test run: it makes no call into the game", in the normal tone,
+whatever stopped its reading (from EldenNet's spike package after 0.1.0-spikes.6; the reason is in its log).
 
 ## The runs, in order
 
@@ -52,8 +53,9 @@ fault of GraceUI's own from one that comes only with EldenNet beside it.
 With EldenNet, injected early.
 
 1. Load a save and stand somewhere safe, away from enemies.
-2. Press F9: the typing test opens in the middle of the screen and takes the keyboard, the mouse and the pad.
-3. For 60 seconds, type anything (W, A, S and D among it, and some held down) and move the mouse about. What you type
+2. Press F9: the typing test opens in the middle of the screen and takes the keyboard and the pad. The mouse stays
+   the game's, as it does while EldenNet's chat box is open, so moving it turns the camera.
+3. For 60 seconds, type anything (W, A, S and D among it, and some held down). What you type
    shows in the test's own field (GraceUI 0.2.1 and later), on screen only: the report counts it and never keeps it.
    The test closes by itself after 60 seconds; holding Esc for a second stops it early.
 4. Note whether the Tarnished moved or the camera turned at any time while the test was open.
@@ -71,7 +73,7 @@ If you have them, the Steam floating keyboard and Proton are rows of their own: 
 
 Send the files in `%APPDATA%\EldenNet\spikes\` as EldenNet's README says, with your answers to:
 
-- Did the Tarnished stay still and the camera stay put during the typing test (run B)? (yes or no)
+- Did the Tarnished stay still during the typing test (run B)? (yes or no; the camera may turn if you moved the mouse)
 - If the Steam overlay showed: was GraceUI still drawing after it closed? (yes or no)
 
 We read the reports with `python3 -I tools/grace-spike/report.py <the spikes folder> --by-hand movement=yes` (and
@@ -92,3 +94,23 @@ records faults, never handling one: a `fault` line in the report for each access
 heap's corruption or the like, with the faulting thread's frames as fixed words and offsets, and `graceui-faults.txt` beside it with the
 modules' file names; a run that fell has its last fault there. The game's own routine faults show up too, once each:
 `report.py` lists them and judges none.
+
+Since GraceUI 0.2.32 (D235) a test build guards its own heap blocks: every block graceui.dll's own code makes has
+guard bytes before and after it and is kept a while after its free, and each is checked when freed, when it leaves
+that quarantine, and every 5 s on GraceUI's thread (`GRACEUI_TEST_HEAP_CHECK_MS`, 100 to 600000, changes it). Each
+state line carries the guard's counts (`heap`: live blocks, their bytes, blocks kept after their free, damaged blocks,
+whole checks, breaches; `heap_breach`). A breach ends the run with `0xE0475548`, the guard's own code (Wine shows a
+fail-fast's code instead): its `fault` line carries `heap_guard`, the breach (`before_start`, `past_end`,
+`after_free`, `freed_twice` or `not_ours`), the block's size and number, and `made_at`, the code that made the block,
+as offsets; the frames above it say where the breach was found. An offset in graceui.dll is placed with the build's
+own `graceui.pdb` (`llvm-symbolizer --obj=graceui.dll --relative-address 0x5161`): keep the PDB of the build you ship.
+A quit's crash with no `heap_guard` line means no block of GraceUI's own was found damaged. The guard slows GraceUI's
+warm-up a little (each block costs a few times malloc's time); `GRACEUI_TEST_HEAP_GUARD=off` in the run's environment
+turns it off.
+
+Since GraceUI 0.2.34 (D238) each state line also carries `window_focus`: whether the game's window is the foreground
+window, its thread's active window and the keyboard's focus at that moment, then its focus messages so far (gained,
+lost, the game activated, deactivated); and `free_downs`: the presses that reached the game while no one held input,
+as DirectInput read them (keys, buttons) and as window messages (keys, buttons). `report.py` lists the state lines on
+which the window was not in front or had no focus, and the counts. If a press did not register, note roughly when: a
+state line near it says whether the window was in front and whether the game read the press.

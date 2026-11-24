@@ -188,3 +188,15 @@ TEST_CASE("no cookie, ticket, payload or path in any log line") {
     CHECK(line.find(fixture.folder->path.string()) == std::string::npos);
   }
 }
+
+TEST_CASE("a test host's free port: the system's choice on 127.0.0.1, within the players' range, and bindable (D234)") {
+  std::uint16_t port = 0;
+  REQUIRE(free_loopback_port(port));
+  CHECK(port >= kLowestPort);
+  CHECK(port != kDefaultPort);
+  const PortHolder holder(port);  // free when asked: another program, or the server, may take it next
+  CHECK(holder.held());
+  std::uint16_t again = 0;
+  REQUIRE(free_loopback_port(again));
+  CHECK(again != port);  // the held one is not offered again
+}

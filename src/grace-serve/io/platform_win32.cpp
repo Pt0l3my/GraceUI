@@ -168,6 +168,17 @@ Socket listen_loopback(bool ipv6, std::uint16_t port, BindError& error) noexcept
   return socket;
 }
 
+std::uint16_t local_port(const Socket& socket) noexcept {
+  Address address{};
+  int size = sizeof address;
+  if (::getsockname(socket.handle(), &address.any, &size) != 0) {
+    return 0;
+  }
+  return address.any.sa_family == AF_INET    ? ntohs(address.v4.sin_port)
+         : address.any.sa_family == AF_INET6 ? ntohs(address.v6.sin6_port)
+                                             : 0;
+}
+
 Socket listen_ipv4(std::array<std::uint8_t, 4> ip, std::uint16_t port, BindError& error) noexcept {
   error = BindError::none;
   Socket socket(make_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
