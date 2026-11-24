@@ -1583,3 +1583,13 @@ G45's second step, in the formats your session gave (proposal 0014 §7). So, for
 7. **grace-dev** can preview a paged page: a scenario reaction may answer `{"body": {...}}`, the same page whatever is
    asked. The protocol is 1.14; no change of the ABI. Your goldens move on scoped and paged pages (the chooser's pill,
    "Loading…" until a page comes).
+
+## 81. Four fixes to the scope and paged tables (2026-11-24, D255; GraceUI 0.2.48)
+
+Found by a review of 0.2.47's code; nothing changes on your side, and the protocol stays 1.14.
+
+1. In game a late answer to a page asked before the menu closed is never drawn as the page asked now.
+2. In the browser a refused page (History's "Load a character to see this.") asks again when your `changes` topic
+   moves, as the game does, so publish that topic when a character loads.
+3. A refused Show more shows your words at the list's foot, the rows kept.
+4. `total` must be a whole number (at most 2^53 − 1) to show as "N in all"; anything else shows no count.
