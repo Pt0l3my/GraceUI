@@ -1368,3 +1368,9 @@ presses that reached the game with no holder: DirectInput keys and buttons, wind
 lists them. If the launcher's run notes ask the owner what happened, asking roughly when a press did not register lets a
 state line place it.
 
+Then, from the owner's answers (a missed press worked when pressed again, so the window had the keyboard), D239 adds to
+the same state lines each input detour's longest call and its calls over 2 ms and 8 ms (`stall_max_us`,
+`stalls_over`), the longest gaps between the game's DirectInput reads and those over 100 ms (`poll_gaps`), the heap
+guard's longest time in a detour and its longest check (`guard_in_detour_us`, `heap_check_us`). For the next A1, the
+owner's rough time of a missed press, set against the state line near it, says whether a read came late.
+

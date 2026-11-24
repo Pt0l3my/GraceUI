@@ -526,6 +526,21 @@ void count_window(UINT message, WPARAM wparam, LPARAM lparam, const Outcome& out
 // D238: what a thread's previous DirectInput read gave the game, to count the downs that follow.
 constinit thread_local std::uint8_t t_keys_given[256] = {};
 constinit thread_local std::uint8_t t_buttons_given[8] = {};
+// D239: when this thread last read each kind of device, in QueryPerformanceCounter's ticks (0 before its first read).
+constinit thread_local std::int64_t t_last_read[counters::kPollKinds] = {};
+
+void note_read(counters::Poll kind, std::int64_t now_ticks) noexcept {
+  const std::int64_t last = t_last_read[kind];
+  t_last_read[kind] = now_ticks;
+  if (last == 0) {
+    return;
+  }
+  LARGE_INTEGER frequency{};
+  QueryPerformanceFrequency(&frequency);
+  if (frequency.QuadPart > 0 && now_ticks > last) {
+    counters::record_poll_gap(kind, static_cast<std::uint64_t>((now_ticks - last) * 1'000'000 / frequency.QuadPart));
+  }
+}
 #endif
 
 template <bool kUnicode, int kSlot>
@@ -585,6 +600,9 @@ void filter_device_state(IDirectInputDevice8W* device, DWORD size, void* data) n
       const auto type = static_cast<std::uint8_t>(caps.dwDevType & 0xFFu);
       const std::int64_t now = input::now_ms();
       if (type == DI8DEVTYPE_KEYBOARD && size == 256) {
+#if defined(GRACEUI_TEST_EXPORTS)
+        note_read(counters::poll_keyboard, start);
+#endif
         // SAFETY: DirectInput has just written the caller's 256 bytes at `data`, c_dfDIKeyboard's layout.
         auto& keys = *static_cast<std::uint8_t(*)[256]>(data);
         input::capture().escape(grace::input::Source::direct_input, (keys[grace::input::kEscape] & 0x80u) != 0, now);
@@ -609,6 +627,9 @@ void filter_device_state(IDirectInputDevice8W* device, DWORD size, void* data) n
         std::memcpy(t_keys_given, keys, sizeof t_keys_given);
 #endif
       } else if (type == DI8DEVTYPE_MOUSE && (size == sizeof(DIMOUSESTATE) || size == sizeof(DIMOUSESTATE2))) {
+#if defined(GRACEUI_TEST_EXPORTS)
+        note_read(counters::poll_mouse, start);
+#endif
         DIMOUSESTATE2 mouse{};
         // SAFETY: DirectInput has just written `size` bytes at `data`: a DIMOUSESTATE or a DIMOUSESTATE2, whose first
         // `size` bytes DIMOUSESTATE2 shares.

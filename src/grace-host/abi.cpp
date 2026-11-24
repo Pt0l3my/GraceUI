@@ -626,6 +626,25 @@ void test_fill_input(GraceUiTestInput& out) noexcept {
   out.free_dinput_buttons = downs(counters::dinput_button);
   out.free_window_keys = downs(counters::window_key);
   out.free_window_buttons = downs(counters::window_button);
+  // D239: the input detours' longest calls, and DirectInput's longest gaps between a thread's reads.
+  const auto us = [](std::uint64_t ns) { return static_cast<std::uint32_t>(std::min<std::uint64_t>(ns / 1000, 0xFFFFFFFFu)); };
+  out.window_max_us = us(counters::input_cost_max_ns[0].load(std::memory_order_relaxed));
+  out.dinput_max_us = us(counters::input_cost_max_ns[1].load(std::memory_order_relaxed));
+  out.xinput_max_us = us(counters::input_cost_max_ns[2].load(std::memory_order_relaxed));
+  out.window_over_2ms = counters::input_over_2ms[0].load(std::memory_order_relaxed);
+  out.dinput_over_2ms = counters::input_over_2ms[1].load(std::memory_order_relaxed);
+  out.xinput_over_2ms = counters::input_over_2ms[2].load(std::memory_order_relaxed);
+  out.window_over_8ms = counters::input_over_8ms[0].load(std::memory_order_relaxed);
+  out.dinput_over_8ms = counters::input_over_8ms[1].load(std::memory_order_relaxed);
+  out.xinput_over_8ms = counters::input_over_8ms[2].load(std::memory_order_relaxed);
+  const auto ms = [](std::uint64_t us_value) {
+    return static_cast<std::uint32_t>(std::min<std::uint64_t>(us_value / 1000, 0xFFFFFFFFu));
+  };
+  out.keyboard_gap_max_ms = ms(counters::poll_gap_max_us[counters::poll_keyboard].load(std::memory_order_relaxed));
+  out.mouse_gap_max_ms = ms(counters::poll_gap_max_us[counters::poll_mouse].load(std::memory_order_relaxed));
+  out.keyboard_gaps_over_100ms = counters::poll_gaps_over_100ms[counters::poll_keyboard].load(std::memory_order_relaxed);
+  out.mouse_gaps_over_100ms = counters::poll_gaps_over_100ms[counters::poll_mouse].load(std::memory_order_relaxed);
+  out.guard_in_detour_max_us = us(counters::guard_in_detour_max_ns.load(std::memory_order_relaxed));
 }
 
 std::uint32_t test_copy_chars(std::uint32_t* out, std::uint32_t capacity) noexcept {

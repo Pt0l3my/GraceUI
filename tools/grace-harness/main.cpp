@@ -1889,6 +1889,16 @@ void run_input(const std::wstring& dll) {
         after_again.free_window_keys - before_again.free_window_keys,
         after_again.free_window_buttons - before_again.free_window_buttons,
         after_again.foreground == 1 ? "in front" : "NOT IN FRONT", after_again.has_focus == 1 ? "focused" : "NOT FOCUSED");
+  // D239: the detours' longest calls are kept, and the 300 ms between two of the harness's keyboard reads above is a
+  // gap over 100 ms.
+  check(after_again.window_max_us > 0 && after_again.dinput_max_us > 0 && after_again.keyboard_gap_max_ms >= 250 &&
+            after_again.keyboard_gaps_over_100ms >= 1 && after_again.mouse_gap_max_ms > 0,
+        "spike counters: the detours' longest calls and the reads' gaps (D239)",
+        "longest calls: window filter %u us, DirectInput %u us, XInput %u us (over 8 ms: %u, %u, %u); longest gaps "
+        "between reads: keyboard %u ms (%u over 100 ms), mouse %u ms",
+        after_again.window_max_us, after_again.dinput_max_us, after_again.xinput_max_us, after_again.window_over_8ms,
+        after_again.dinput_over_8ms, after_again.xinput_over_8ms, after_again.keyboard_gap_max_ms,
+        after_again.keyboard_gaps_over_100ms, after_again.mouse_gap_max_ms);
   check(closed && masked && still_masked && games_again && g_seen.key_down['A'] == 1 && g_seen.key_up['A'] == 1 &&
             input.last_close_reason == GRACEUI_TEST_CLOSED_RELEASED && input.holder_owner == 0,
         "closing press",
@@ -4362,15 +4372,16 @@ void run_heap_guard(const std::wstring& dll) {
     Sleep(20);
     on = grace.heap_guard();
   }
-  check(on.on == 1 && on.stats_read == 1 && on.check_period_ms == 200 && on.made > 0 && on.live_blocks > 0 && on.checks >= 2 &&
+  check(on.on == 1 && on.stats_read == 1 && on.check_period_ms == 200 && on.check_max_us > 0 && on.made > 0 && on.live_blocks > 0 && on.checks >= 2 &&
             on.blocks_checked > 0 && on.breaches == 0 && on.breach.breach == 0 && on.last_check_ms != 0,
         "heap guard: GraceUI's own blocks guarded and checked",
         "%llu blocks made, %llu live (%llu bytes), %llu kept after their free; %llu whole checks every %u ms, over "
-        "%llu blocks; %llu breaches",
+        "%llu blocks, the longest %llu us; %llu breaches",
         static_cast<unsigned long long>(on.made), static_cast<unsigned long long>(on.live_blocks),
         static_cast<unsigned long long>(on.live_bytes), static_cast<unsigned long long>(on.quarantined_blocks),
         static_cast<unsigned long long>(on.checks), on.check_period_ms,
-        static_cast<unsigned long long>(on.blocks_checked), static_cast<unsigned long long>(on.breaches));
+        static_cast<unsigned long long>(on.blocks_checked), static_cast<unsigned long long>(on.check_max_us),
+        static_cast<unsigned long long>(on.breaches));
 
   struct Kind {
     std::uint32_t kind;

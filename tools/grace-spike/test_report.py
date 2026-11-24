@@ -178,6 +178,23 @@ class Reader(unittest.TestCase):
         self.assertEqual(verdict["verdict"], clean["verdict"])
         self.assertIsNone(clean["window"])
 
+    def test_the_input_detours_stalls_and_the_reads_gaps_are_listed(self):  # D239
+        lines = [header("s0e"),
+                 state(t=1000, stall_max_us=[40, 30, 20], stalls_over=[0, 0, 0, 0, 0, 0], poll_gaps=[17, 17, 0, 0],
+                       guard_in_detour_us=0, heap_check_us=[900, 900]),
+                 state(t=6000, stall_max_us=[40, 9100, 20], stalls_over=[0, 1, 0, 0, 1, 0], poll_gaps=[17, 17, 0, 0],
+                       guard_in_detour_us=12, heap_check_us=[800, 1500]),
+                 state(t=11000, stall_max_us=[40, 9100, 20], stalls_over=[0, 1, 0, 0, 1, 0], poll_gaps=[240, 17, 1, 0],
+                       guard_in_detour_us=12, heap_check_us=[700, 1500])]
+        stalls = report.judge(self.write("s0e-s", lines), {})["stalls"]
+        self.assertEqual(stalls["max_us"], {"window": 40, "dinput": 9100, "xinput": 20})
+        self.assertEqual(stalls["over_8ms"], {"window": 0, "dinput": 1, "xinput": 0})
+        self.assertEqual(stalls["slow_calls_at"], [6000])
+        self.assertEqual(stalls["gap_max_ms"], {"keyboard": 240, "mouse": 17})
+        self.assertEqual(stalls["long_gaps_at"], [11000])
+        self.assertEqual((stalls["guard_in_detour_us"], stalls["heap_check_max_us"]), (12, 1500))
+        self.assertIsNone(report.judge(self.write("s0e-t", [header("s0e"), state()]), {})["stalls"])
+
     def test_the_atlas_at_150_is_judged_against_its_limit(self):
         lines = [header("s4"), state(ui_scale_x100=150, atlas=[4096, 8192]), typing(), state()]
         self.assertEqual(self.results(report.judge(self.write("s4-1", lines), {}))["atlas_150"], "failed")

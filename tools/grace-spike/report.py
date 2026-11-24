@@ -239,7 +239,29 @@ def judge(path, hand):
                                    "block": guard.get("block"), "made_at": guard.get("made_at", [])}
         faults.append(fault)
     return {"run": path.parent.name, "spike": spike, "verdict": verdict, "rules": rules, "faults": faults,
-            "heap_guard": heap_guard_of(states), "window": window_of(states)}
+            "heap_guard": heap_guard_of(states), "window": window_of(states), "stalls": stalls_of(states)}
+
+
+def stalls_of(states):
+    """The input detours' longest calls and the game's longest gaps between DirectInput reads (D239), at the run's
+    last state line, with the times of the state lines at which a call over 8 ms or a gap over 100 ms was first
+    counted; None from a build without them. Listed, never judged: a loading screen makes long gaps too."""
+    seen = [s for s in states if isinstance(s.get("stall_max_us"), list) and isinstance(s.get("poll_gaps"), list)]
+    if not seen:
+        return None
+    last = seen[-1]
+    over = [s.get("stalls_over", [0] * 6) for s in seen]
+    gaps = [s["poll_gaps"] for s in seen]
+    slow_at = [seen[i].get("t") for i in range(1, len(seen)) if sum(over[i][3:6]) > sum(over[i - 1][3:6])]
+    gap_at = [seen[i].get("t") for i in range(1, len(seen)) if gaps[i][2] + gaps[i][3] > gaps[i - 1][2] + gaps[i - 1][3]]
+    return {"max_us": dict(zip(("window", "dinput", "xinput"), last["stall_max_us"])),
+            "over_2ms": dict(zip(("window", "dinput", "xinput"), last.get("stalls_over", [0] * 6)[0:3])),
+            "over_8ms": dict(zip(("window", "dinput", "xinput"), last.get("stalls_over", [0] * 6)[3:6])),
+            "gap_max_ms": {"keyboard": last["poll_gaps"][0], "mouse": last["poll_gaps"][1]},
+            "gaps_over_100ms": {"keyboard": last["poll_gaps"][2], "mouse": last["poll_gaps"][3]},
+            "guard_in_detour_us": last.get("guard_in_detour_us", 0),
+            "heap_check_max_us": (last.get("heap_check_us") or [0, 0])[1],
+            "slow_calls_at": slow_at, "long_gaps_at": gap_at}
 
 
 def window_of(states):
@@ -332,6 +354,19 @@ def run(argv):
                 print(f"  presses that reached the game with no holder: DirectInput {d['dinput_keys']} keys and "
                       f"{d['dinput_buttons']} buttons; window messages {d['window_keys']} keys and "
                       f"{d['window_buttons']} buttons")
+            st = verdict["stalls"]
+            if st is not None:
+                m, o2, o8 = st["max_us"], st["over_2ms"], st["over_8ms"]
+                print(f"  input detours (recorded, not judged): longest call {m['window']} us in the window filter, "
+                      f"{m['dinput']} us in DirectInput's, {m['xinput']} us in XInput's; over 2 ms {o2['window']}, "
+                      f"{o2['dinput']}, {o2['xinput']}; over 8 ms {o8['window']}, {o8['dinput']}, {o8['xinput']}"
+                      f"{' (first counted at t=' + ', '.join(str(t) for t in st['slow_calls_at'][:5]) + ' ms)' if st['slow_calls_at'] else ''}")
+                g, n = st["gap_max_ms"], st["gaps_over_100ms"]
+                print(f"  the game's DirectInput reads: longest gap {g['keyboard']} ms (keyboard), {g['mouse']} ms "
+                      f"(mouse); gaps over 100 ms: {n['keyboard']} and {n['mouse']}"
+                      f"{' (counted at t=' + ', '.join(str(t) for t in st['long_gaps_at'][:8]) + ' ms)' if st['long_gaps_at'] else ''}; "
+                      f"the heap guard's longest time in a detour {st['guard_in_detour_us']} us, its longest check "
+                      f"{st['heap_check_max_us']} us")
             for f in verdict["faults"]:
                 code = f["code"] if isinstance(f["code"], int) else 0
                 print(f"  fault (recorded, not judged): {code:#x}, {f['access']}"

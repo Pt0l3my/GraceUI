@@ -213,6 +213,24 @@ typedef struct GraceUiTestInput {
   uint32_t free_dinput_buttons; /* a mouse button likewise */
   uint32_t free_window_keys;    /* WM_KEYDOWN and WM_SYSKEYDOWN, repeats left out */
   uint32_t free_window_buttons; /* WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN and WM_XBUTTONDOWN */
+  /* Appended for the same (D239). Each input detour's longest call so far (its own work, in microseconds), and its
+   * calls over 2 ms and over 8 ms: */
+  uint32_t window_max_us;
+  uint32_t dinput_max_us;
+  uint32_t xinput_max_us;
+  uint32_t window_over_2ms;
+  uint32_t dinput_over_2ms;
+  uint32_t xinput_over_2ms;
+  uint32_t window_over_8ms;
+  uint32_t dinput_over_8ms;
+  uint32_t xinput_over_8ms;
+  /* The longest gap between one thread's DirectInput reads of the keyboard, and of the mouse, in ms (the game's polls;
+   * loading screens and a window behind others make long ones too), and the gaps over 100 ms: */
+  uint32_t keyboard_gap_max_ms;
+  uint32_t mouse_gap_max_ms;
+  uint32_t keyboard_gaps_over_100ms;
+  uint32_t mouse_gaps_over_100ms;
+  uint32_t guard_in_detour_max_us; /* the heap guard's longest time inside a detour, its lock included (0: never) */
 } GraceUiTestInput;
 
 /* request_input (D77): fills *out; answers 1, or 0 if `out` is null. */
@@ -420,6 +438,8 @@ typedef struct GraceUiTestHeapGuard {
   uint64_t last_check_ms;     /* GetTickCount64 at the last whole check on GraceUI's thread, 0 before the first */
   GraceUiTestHeapFound breach; /* the session's first breach, the one raised */
   GraceUiTestHeapFound probe;  /* the last probe's (GraceUI_Test_HeapGuardProbe) */
+  uint64_t check_last_us;      /* the last whole check's time on GraceUI's thread (D239), and the longest */
+  uint64_t check_max_us;
 } GraceUiTestHeapGuard;
 
 /* Fills *out (out->size set by the caller); answers 1, or 0 if the size is too small. It never waits, so an exception
