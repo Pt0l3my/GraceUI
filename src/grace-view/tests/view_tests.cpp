@@ -1227,7 +1227,8 @@ TEST_CASE("a space's state components in game (D184): a key-value list, a check 
   CHECK(dump.find("\"The lantern burns steady.\"") != std::string::npos);
   PageView log = loaded("demo", "demo.log");
   // A live feed and a log tail: streams, the browser's for now; the lamp report's preview is drawn in game (D251).
-  CHECK(log.component_topics() == std::vector<std::string>{"lantern.report"});
+  // (And lantern.status on every page: the Quick switches' bell, D252.)
+  CHECK(log.component_topics() == std::vector<std::string>{"lantern.status", "lantern.report"});
   log.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
   CHECK(list.dump().find("Shown in the browser view.") != std::string::npos);
 }
@@ -1274,7 +1275,7 @@ TEST_CASE("space.state greys pages (D188): their words, inert controls; a page n
     pages["topics"].push_back(Json{{"id", "space.state"}, {"shape", "state"}});
   };
   PageView view = demo_edited(with_state, "demo.behaviour");
-  CHECK(view.component_topics() == std::vector<std::string>{"space.state"});
+  CHECK(view.component_topics() == std::vector<std::string>{"space.state", "lantern.status"});  // the bell's (D252)
   view.set_topic("space.state", Json{{"greyed", {{"demo.behaviour", "Load a lantern to see this."}}}});
   DisplayList list;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
@@ -2751,4 +2752,131 @@ TEST_CASE("quick switches at registration: a switch's or a choice's shortcut by 
   pages = demo();
   (*pages.quick)[2].home = "demo.nowhere";
   CHECK_FALSE(view.load(pages, settings, why));
+}
+
+namespace {
+
+std::string laid_out(PageView& view) {
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  return list.dump();
+}
+
+bool shows(const std::string& dump, const std::string& words) { return dump.find("\"" + words + "\"") != std::string::npos; }
+
+}  // namespace
+
+TEST_CASE("quick switches in game: Start opens them; a setting's switch and choice; a session switch once its state came (D252)") {
+  PageView view = loaded("demo", "demo.keepers");  // not a live page
+  std::string dump = laid_out(view);
+  CHECK(shows(dump, "Quick switches"));
+  CHECK(dump.find("Updates:") == std::string::npos);
+  const auto watched = view.component_topics();
+  CHECK(std::find(watched.begin(), watched.end(), "lantern.status") != watched.end());  // the session switch's state
+  press(view, Key::quick);
+  REQUIRE(view.quick_open());
+  dump = laid_out(view);
+  for (const char* words : {"Lantern lit", "Flame colour", "Amber", "Hush the bell for this session", "Not known yet",
+                            "Lives in Behaviour", "Lives in Overview"}) {
+    CHECK(shows(dump, words));
+  }
+  CHECK(view.footer() == "↑ ↓  Choose    Enter  Flip    Esc  Close");
+  Action a = press(view, Key::activate);  // the lantern's switch, as its row turns it
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.name == "settings.set");
+  CHECK(a.command.args["key"] == "lantern.enabled");
+  press(view, Key::down);
+  laid_out(view);
+  CHECK(view.footer() == "↑ ↓  Choose    ← →  Change    Esc  Close");
+  a = press(view, Key::right);  // the colour, a step on
+  CHECK(a.command.args == Json::object({{"key", "lantern.colour"}, {"value", "white"}}));
+  press(view, Key::down);
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // its state has not come: nothing sent
+  view.set_topic("lantern.status", Json::object({{"sentence", "Steady."}, {"hushed", false}}));
+  a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.name == "bell.hush");
+  CHECK(a.command.args == Json::object({{"on", true}}));
+  CHECK(view.quick_open());  // it stays open: the space's next state shows the change (invariant 1)
+  view.set_topic("lantern.status", Json::object({{"sentence", "Steady."}, {"hushed", true}}));
+  CHECK_FALSE(shows(laid_out(view), "Not known yet"));
+  press(view, Key::back);
+  CHECK_FALSE(view.quick_open());
+  // From the top bar: → from search reaches Quick switches, and Enter opens them.
+  press(view, Key::search);
+  view.edit(EditInput{EditKey::escape});
+  REQUIRE(view.focused() == "search");
+  press(view, Key::right);
+  CHECK(view.focused() == "top:quick");
+  press(view, Key::activate);
+  CHECK(view.quick_open());
+  press(view, Key::quick);
+  CHECK_FALSE(view.quick_open());
+  // A space with none: no pill, and Start does nothing.
+  PageView own = loaded("graceui", "graceui.menu");
+  CHECK_FALSE(shows(laid_out(own), "Quick switches"));
+  press(own, Key::quick);
+  CHECK_FALSE(own.quick_open());
+}
+
+TEST_CASE("live updates in game: Every 5 s and Paused hold a live page's topics; Live, a command or leaving apply them (D252)") {
+  const auto status = [](const char* sentence, bool hushed) {
+    return Json::object({{"sentence", sentence}, {"hushed", hushed}});
+  };
+  PageView view = loaded("demo", "demo.overview");
+  view.tick(0);
+  view.set_live_mode(PageView::LiveMode::paused);
+  view.set_topic("lantern.status", status("The lantern burns steady.", false));  // a first body is always drawn
+  std::string dump = laid_out(view);
+  CHECK(shows(dump, "The lantern burns steady."));
+  CHECK(shows(dump, "Updates: Paused"));
+  view.set_topic("lantern.status", status("The wind rose.", true));
+  view.set_topic("lantern.status", status("The wind fell.", true));
+  dump = laid_out(view);
+  CHECK(shows(dump, "The lantern burns steady."));
+  CHECK(shows(dump, "Updates: Paused · 2 new"));
+  CHECK(view.holding());
+  press(view, Key::quick);  // the menu shows the newest state, held or not
+  CHECK_FALSE(shows(laid_out(view), "Not known yet"));
+  press(view, Key::quick);
+  // The top bar's Live updates: Enter steps Live, Every 5 s, Paused; from Paused to Live, what was held is drawn.
+  press(view, Key::search);
+  view.edit(EditInput{EditKey::escape});
+  press(view, Key::right);
+  REQUIRE(view.focused() == "top:live");
+  press(view, Key::activate);
+  CHECK(view.live_mode() == PageView::LiveMode::live);
+  dump = laid_out(view);
+  CHECK(shows(dump, "The wind fell."));
+  CHECK(shows(dump, "Updates: Live"));
+  CHECK_FALSE(view.holding());
+  // Every 5 s: at most one body every five seconds.
+  press(view, Key::activate);
+  CHECK(view.live_mode() == PageView::LiveMode::every_5s);
+  view.tick(1000);
+  view.set_topic("lantern.status", status("A moth.", true));
+  CHECK(view.holding());
+  CHECK_FALSE(view.tick(4000));
+  CHECK(view.tick(5000));
+  CHECK(shows(laid_out(view), "A moth."));
+  view.tick(6000);
+  view.set_topic("lantern.status", status("Gulls.", true));
+  CHECK(shows(laid_out(view), "A moth."));
+  // The player's own command applies what is held, and what comes in the next 3 s is not held.
+  press(view, Key::quick);
+  CHECK(press(view, Key::activate).kind == Action::Kind::command);
+  press(view, Key::quick);
+  CHECK(shows(laid_out(view), "Gulls."));
+  view.set_topic("lantern.status", status("Rain.", true));
+  CHECK(shows(laid_out(view), "Rain."));
+  view.tick(9500);
+  view.set_topic("lantern.status", status("Fog.", true));
+  CHECK(shows(laid_out(view), "Rain."));
+  // Leaving the page applies what it held; a page that is not live holds nothing.
+  REQUIRE(view.open("demo.keepers"));
+  CHECK_FALSE(view.holding());
+  view.set_live_mode(PageView::LiveMode::paused);
+  view.set_topic("lantern.status", status("Clear.", false));
+  CHECK_FALSE(view.holding());
+  CHECK(laid_out(view).find("Updates:") == std::string::npos);
 }

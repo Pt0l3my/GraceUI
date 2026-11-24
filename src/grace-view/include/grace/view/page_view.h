@@ -37,6 +37,7 @@ struct Viewport {
 enum class Key : std::uint8_t {
   up, down, left, right, next, previous, activate, back, previous_tab, next_tab, previous_page, next_page, reset, search,
   scroll_up, scroll_down, toggle_hints,
+  quick,  // the pad's Start (§5.4): the space's Quick switches, from anywhere in the menu (D252)
 };
 
 struct Input {
@@ -173,6 +174,24 @@ class PageView {
   // (the column's command, with the row's key and "on"). Any other component, or a table without its body, is shown in
   // the browser view. Focus stays on the row it was on.
   void set_topic(std::string_view topic, const protocol::Json& body);
+  // ---- The top bar (G45, D252). After search come Live updates, on a page that says it is live, and Quick switches,
+  // where the space has some: ← → move between them, Enter acts, ↓ goes to the page. Live updates is the view's state
+  // for the session: Live; Every 5 s, which applies the page's topics at most once every five seconds; or Paused, which
+  // applies none until Live comes back, its words counting what came meanwhile ("Paused · 3 new"). A settings value,
+  // a topic's first body and whatever comes in the 3 s after the player sends a command are never held, and leaving the
+  // page applies what it held; the Quick switches menu shows a session switch's newest state, held or not. Quick switches (Enter on it, or Start from anywhere) opens a menu of the space's switches: ↑ ↓
+  // choose, Enter or → flips a switch or steps a choice forward, ← back, Esc or Start closes. A setting's switch sends
+  // settings.set as its row does; a session switch sends its command with {"on": ...} once its state has come, and shows
+  // what the space publishes (invariant 1).
+  enum class LiveMode : std::uint8_t { live, every_5s, paused };
+  LiveMode live_mode() const noexcept { return live_mode_; }
+  void set_live_mode(LiveMode mode);
+  // The time, in milliseconds: the host gives it before each wake's topics; true if it applied held bodies.
+  bool tick(std::int64_t now_ms);
+  // Whether bodies are held (the host keeps a timer while Every 5 s has some), and how many came while held.
+  bool holding() const noexcept { return !pending_.empty(); }
+  std::size_t held_new() const noexcept { return held_new_; }
+  bool quick_open() const noexcept { return quick_open_; }
   // The state topics of the open page's components that the view draws in game (a table, a key-value list, a check
   // list, stat tiles, a computed sentence; D184): what the host watches while the page is open.
   std::vector<std::string> component_topics() const;
@@ -557,6 +576,31 @@ class PageView {
   std::set<std::string, std::less<>> absent_;         // pages of a later increment (set_increment)
   protocol::Json null_;                               // a key the space does not have
   std::vector<protocol::PageSection> no_sections_;    // a page with neither tabs nor sections
+
+  // The top bar's stops and the Quick switches menu (D252): the focused stop's number (kTopSearch, kTopLive or
+  // kTopQuick, also its hit's index; a quick row's hit is kQuickRow and on), the menu's focused row.
+  static constexpr std::size_t kTopSearch = 0;
+  static constexpr std::size_t kTopLive = 1000;
+  static constexpr std::size_t kTopQuick = 1001;
+  static constexpr std::size_t kQuickRow = 2000;
+  std::vector<std::size_t> top_stops() const;
+  bool has_quick() const noexcept { return pages_.quick && !pages_.quick->empty(); }
+  Action quick_input(const Input& in);
+  Action flip_quick(std::size_t index, int step);
+  const protocol::Json* latest(std::string_view topic) const;  // a held body first
+  bool hold(std::string_view topic);
+  void release_held();
+  void note_sent(const Action& action);
+  std::size_t top_focus_ = kTopSearch;
+  bool quick_open_ = false;
+  std::size_t quick_focus_ = 0;
+  LiveMode live_mode_ = LiveMode::live;
+  std::map<std::string, protocol::Json, std::less<>> pending_;  // held bodies, the newest of each topic
+  std::size_t held_new_ = 0;
+  bool releasing_ = false;
+  std::int64_t now_ms_ = 0;
+  std::int64_t applied_ms_ = 0;    // when Every 5 s last applied
+  std::int64_t release_until_ = 0; // the player's command: nothing held until then
 };
 
 }  // namespace grace::view

@@ -15,6 +15,8 @@ text    ink.mute       33, 678   45x17   glyphs 8 "Handbook"
 fill    ground.well   227,   7  233x24   r2
 text    ink.faint     235,  11   34x17   glyphs 6 "Search"
 text    ink.faint    1202,  10   51x17   glyphs 7 "F5  Close"
+fill    ground.well  1084,   7   99x24   r2
+text    ink.body     1094,  11   79x17   glyphs 13 "Quick switches"
 line    rule          200,  37 1080x1   
 text    ink.hi        227,  58   66x30   clip1 glyphs 5 "Lamps"
 text    ink.mute      227,  91  309x17   clip1 glyphs 45 "Every lamp on the harbour wall, and how each one burns."
@@ -93,4 +95,4 @@ stroke  edge          381, 696   28x18   r2 w1
 text    ink.body      386, 697   18x17   glyphs 3 "Esc"
 text    ink.faint     414, 697   22x17   glyphs 4 "Back"
 stroke  gold.hi       232, 226  340x51   r3 w2 clip1
-# 94 items, 2700 vertices, 6312 indices, 4 commands; check_draw_list: passes
+# 96 items, 2776 vertices, 6492 indices, 4 commands; check_draw_list: passes
