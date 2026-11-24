@@ -330,8 +330,25 @@ def lint(space_pages, description, fixtures, known_spaces):
             for block in section["blocks"] + section.get("advanced", []):
                 kind = block["kind"]
                 bwhere = f"{where}, section {section['id']}"
-                if kind not in ("form", "upload") and any(k in block for k in ("command", "fields", "submit")):
+                preview = kind == "component" and block.get("component") == "report_preview"
+                if kind not in ("form", "upload") and any(k in block for k in ("fields", "submit")):
                     failures.append(f"{bwhere}: command, fields and submit belong to a form block (D195)")
+                if kind not in ("form", "upload") and "command" in block and not preview:
+                    failures.append(f"{bwhere}: command, fields and submit belong to a form block (D195), and a "
+                                    "command to a report preview (D251)")
+                if preview and "command" in block and (block["command"] not in commands or
+                                                       block["command"] in space_pages.get("file_commands", [])):
+                    failures.append(f"{bwhere}: a report preview's switches send a command of the space's, not a file "
+                                    "command (D251)")
+                if kind == "document":
+                    # A document (G44, D251): a family's member on a master page, drawn whole, and nothing else.
+                    topic = block.get("topic")
+                    if master is None or topic not in families:
+                        failures.append(f"{bwhere}: a document block draws a family on a page with a master list (D251)")
+                    if any(k in block for k in ("keys", "component", "props", "row_actions", "row_secret", "editor",
+                                                "command", "fields", "submit", "accept", "filter_bar")):
+                        failures.append(f"{bwhere}: a document block has its topic, and nothing else (D251)")
+                    continue
                 if kind != "upload" and "accept" in block:
                     failures.append(f"{bwhere}: accept belongs to an upload block (D226)")
                 if kind == "upload":
@@ -384,8 +401,9 @@ def lint(space_pages, description, fixtures, known_spaces):
                                         "submit label, and nothing else (D195)")
                     unique("form field", [f["id"] for f in fields], bwhere)
                     for f in fields:
-                        if not f.get("label") or not 1 <= f.get("max", 0) <= 200:
-                            failures.append(f"{bwhere}: form field {f['id']} has a label and a max of 1 to 200")
+                        most = 2000 if f.get("prose") else 200  # a prose field takes several lines (D251)
+                        if not f.get("label") or not 1 <= f.get("max", 0) <= most:
+                            failures.append(f"{bwhere}: form field {f['id']} has a label and a max of 1 to {most}")
                     continue
                 if kind in ("settings", "shortcuts"):
                     if not block.get("keys") or "component" in block or "topic" in block:

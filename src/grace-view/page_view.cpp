@@ -547,6 +547,28 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
         }
       }
     }
+    // A document (G44, D251): a family the space declares, on a page with a master list, and nothing else.
+    if (block.kind == protocol::BlockKind::document) {
+      const bool family = block.topic && std::any_of(pages.topics.begin(), pages.topics.end(), [&](const auto& tp) {
+        return tp.id == *block.topic && tp.family.value_or(false);
+      });
+      if (!family || !page.master || block.keys || block.component || block.props || block.row_actions ||
+          block.row_secret || block.editor || block.command || block.fields || block.submit || block.filter_bar) {
+        why = where + "a document block draws a family on a page with a master list, and has nothing else";
+        return false;
+      }
+      return true;
+    }
+    // A report preview's switches send its command (D251): the space's own, not a file command.
+    const bool preview = block.kind == protocol::BlockKind::component &&
+                         block.component == protocol::Component::report_preview;
+    if (preview && block.command) {
+      if (block.fields || block.submit || !usable(*block.command)) {
+        why = where + "a report preview's command is one the space declares, and not a file command";
+        return false;
+      }
+      return true;
+    }
     if (form != (block.command.has_value() || block.fields.has_value() || block.submit.has_value())) {
       why = where + "a form block, and only a form block, has a command, fields and a submit label";
       return false;
@@ -563,9 +585,10 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       }
       std::vector<std::string> names;
       for (const protocol::FormField& field : fields) {
-        if (field.label.empty() || field.max_ < 1 || field.max_ > 200 ||
+        const std::uint32_t most = field.prose.value_or(false) ? 2000 : 200;  // a prose field's several lines (D251)
+        if (field.label.empty() || field.max_ < 1 || field.max_ > most ||
             std::find(names.begin(), names.end(), field.id) != names.end()) {
-          why = where + "form field " + field.id + " has no label, a twin, or a max outside 1 to 200";
+          why = where + "form field " + field.id + " has no label, a twin, or a max outside 1 to " + std::to_string(most);
           return false;
         }
         names.push_back(field.id);
@@ -946,6 +969,7 @@ bool PageView::drawn_in_game(protocol::Component component) {
     case protocol::Component::check_list:
     case protocol::Component::stat_tiles:
     case protocol::Component::computed_sentence:
+    case protocol::Component::report_preview:  // D251
       return true;
     default:
       return false;  // the streams (a live feed, a log tail) and anything newer: the browser view's for now
@@ -1475,6 +1499,112 @@ Action PageView::filter_input(const Focus& f, Key key) {
   return {};
 }
 
+// ---- Documents and report previews (G44, D251).
+
+namespace {
+bool member_key(std::string_view family, std::string_view key) noexcept;  // below, with the master list's
+}  // namespace
+
+bool PageView::listed(const std::string& key) const {
+  // A document the page's list holds, as published, whatever its filter bar shows (invariant 2).
+  const protocol::PageMaster* m = master();
+  if (m == nullptr) {
+    return false;
+  }
+  const auto found = topics_.find(m->topic);
+  if (found == topics_.end() || !found->second.is_object() || !found->second.contains("rows") ||
+      !found->second["rows"].is_array()) {
+    return false;
+  }
+  for (const Json& row : found->second["rows"]) {
+    if (row.is_object() && cell_words(row, m->key) == key && member_key(m->detail, key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void PageView::push_doc_links(const protocol::PageBlock& block) {
+  const std::string topic = topic_of(block);
+  const auto found = topics_.find(topic);
+  if (found == topics_.end()) {
+    return;
+  }
+  const DocumentView doc = parse_document(found->second);
+  std::size_t n = 0;
+  const auto spans = [&](const std::vector<DocSpan>& list) {
+    for (const DocSpan& sp : list) {
+      if (sp.style == DocSpan::Style::link && listed(sp.doc)) {
+        doc_links_.push_back({sp.doc, sp.heading});
+        focus_.push_back({FocusKind::link, topic + "/" + std::to_string(n++), doc_links_.size() - 1, &block});
+      }
+    }
+  };
+  for (const DocBlock& b : doc.blocks) {
+    spans(b.spans);
+    for (const auto& item : b.items) {
+      spans(item);
+    }
+  }
+}
+
+void PageView::push_parts(const protocol::PageBlock& block) {
+  const Json* body = drawn(block).body;
+  if (body == nullptr || !body->contains("parts") || !(*body)["parts"].is_array()) {
+    return;
+  }
+  const Json& parts = (*body)["parts"];
+  for (std::size_t i = 0; i < parts.size(); ++i) {
+    const Json& part = parts[i];
+    if (part.is_object() && part.contains("optional") && part["optional"] == true &&
+        !cell_words(part, "id").empty() && !cell_words(part, "label").empty()) {
+      focus_.push_back({FocusKind::part, *block.topic + "/" + cell_words(part, "id"), i, &block});
+    }
+  }
+}
+
+Action PageView::follow_link(const Focus& f) {
+  if (f.index >= doc_links_.size()) {
+    return {};
+  }
+  const DocLink to = doc_links_[f.index];
+  doc_heading_ = to.heading;  // scrolled to once its document is laid out
+  scroll_ = 0;
+  choose(to.doc);
+  // Focus on the chosen document's row, where the player now is; the page shows what the link asked, the document's
+  // top or its heading, as after the wheel, until a key moves focus again.
+  refocus_name_.clear();
+  if (const protocol::PageMaster* m = master(); m != nullptr && scope_ == Scope::page) {
+    for (std::size_t i = 0; i < focus_.size(); ++i) {
+      if (focus_[i].kind == FocusKind::master_row && focus_[i].id == m->topic + "/" + to.doc) {
+        page_focus_ = i;
+        break;
+      }
+    }
+  }
+  follow_ = false;
+  return {};
+}
+
+Action PageView::flip_part(const Focus& f) const {
+  if (!greyed_words(current().id).empty() || f.block == nullptr || !f.block->command) {
+    return {};  // a greyed page's switches do nothing (D188)
+  }
+  const Json* body = drawn(*f.block).body;
+  if (body == nullptr || !body->contains("parts") || !(*body)["parts"].is_array() ||
+      f.index >= (*body)["parts"].size()) {
+    return {};
+  }
+  const Json& part = (*body)["parts"][f.index];
+  const bool included = !(part.contains("included") && part["included"] == false);
+  Action action;
+  action.kind = Action::Kind::command;
+  action.command.space = pages_.space;
+  action.command.name = *f.block->command;
+  action.command.args = Json::object({{"id", cell_words(part, "id")}, {"on", !included}});
+  return action;  // the space's next body shows it (invariant 1)
+}
+
 Action PageView::toggle_cell(const Focus& f) const {
   if (!greyed_words(current().id).empty()) {
     return {};  // a greyed page's controls are inert (D188)
@@ -1563,6 +1693,7 @@ void PageView::rebuild() {
     rail_.push_back({Kind::foot, f});
   }
   focus_.clear();
+  doc_links_.clear();
   const protocol::Page& page = current();
   for (std::size_t a = 0; page.actions && a < page.actions->size(); ++a) {
     focus_.push_back({FocusKind::action, (*page.actions)[a].id, a});
@@ -1647,6 +1778,15 @@ void PageView::rebuild() {
               stop(EditorPart::keep, "keep/" + field.id, k);
             }
           }
+          continue;
+        }
+        if (block.kind == protocol::BlockKind::document) {
+          push_doc_links(block);  // its links, in reading order (D251)
+          continue;
+        }
+        if (block.kind == protocol::BlockKind::component && block.component == protocol::Component::report_preview &&
+            block.command) {
+          push_parts(block);  // its optional parts' switches (D251)
           continue;
         }
         if (block.kind == protocol::BlockKind::form) {
@@ -1762,7 +1902,7 @@ std::string PageView::name_of(Scope scope, std::size_t index) const {
   }
   static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
                                           "cell", "row", "section-action", "field", "submit", "secret", "item", "editor",
-                                          "filter"};
+                                          "filter", "link", "part"};
   const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -3679,6 +3819,9 @@ Action PageView::input_body(const Input& in) {
         refusals_.erase(f.id);  // a new try: the last refusal's line goes
         return toggle_cell(f);  // a switch turns with ← and →, as a setting's does
       }
+      if (f.kind == FocusKind::part) {
+        return flip_part(f);  // a switch turns with ← and →, as a setting's does
+      }
       if (f.kind == FocusKind::filter && !f.id.ends_with("/search") && !f.id.ends_with("/clear")) {
         return filter_input(f, in.key);  // a filter bar's select or direction (D250)
       }
@@ -3712,6 +3855,10 @@ Action PageView::input_body(const Input& in) {
           return row_action(f);
         case FocusKind::filter:
           return filter_input(f, Key::activate);
+        case FocusKind::link:
+          return follow_link(f);
+        case FocusKind::part:
+          return flip_part(f);
         case FocusKind::section_action:
           return section_action(f);
         case FocusKind::action: {
@@ -3785,6 +3932,7 @@ Action PageView::input_body(const Input& in) {
           }
           const protocol::FormField& field = (*f.block->fields)[f.index];
           start_edit(EditKind::form_field, f.id, form_value(f.id), field.max_, false, f.block);
+          edit_.prose = field.prose.value_or(false);  // several lines, wrapped; ↑ ↓ by line (D251)
           return {};
         }
         case FocusKind::form_submit: {
@@ -4087,6 +4235,67 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     const protocol::Page& page = current();
     const auto page_focus = [&](FocusKind kind, std::string_view id) {
       return scope_ == Scope::page && !focus_.empty() && focus_[page_focus_].kind == kind && focus_[page_focus_].id == id;
+    };
+    // A prose well from (bx, by) (D214, D251): its words wrapped, at least two lines tall; the one being edited shows its
+    // selection and its caret, and keeps each boundary's place for ↑ ↓ and the pointer. The editor's prose fields and a
+    // form's prose field share it. Its height.
+    const auto prose_well = [&](float bx, float by, float bw, const std::string& text, bool editing_it,
+                                const std::string& placeholder, std::uint8_t a, FocusKind kind, const std::string& id) {
+      const float rr = std::round(tokens::radius::control * s);
+      const float edge_w = std::round(tokens::kGrace.size.edge_width * s);
+      const float body_lh = line_height(TypeRole::ui, s);
+      const auto measure_in = [&c](TypeRole role) { return [&c, role](std::string_view run) { return c.width(run, role); }; };
+      const float pad = std::round(10 * s);
+      const float inner = bw - 2 * pad;
+      const TextField shown_text = editing_it ? edit_.field : TextField(text, text.size() + 4);
+      const std::vector<TextField::Line> lines = shown_text.wrap(inner, measure_in(TypeRole::ui));
+      const float h = body_lh * static_cast<float>(std::max<std::size_t>(lines.size(), 2)) + 2 * pad;
+      const Rect box{bx, by, bw, h};
+      c.fill(box, Colour::ground_well, rr, a);
+      c.stroke(box, editing_it ? Colour::gold : Colour::edge, edge_w, rr, a);
+      const std::string& t = shown_text.text();
+      const auto run_w = [&](std::size_t from, std::size_t to) {
+        return c.width(std::string_view(t).substr(from, to - from), TypeRole::ui);
+      };
+      if (t.empty() && !editing_it) {
+        c.text(placeholder, TypeRole::ui, bx + pad, by + pad, inner, Colour::ink_faint, a);
+      }
+      for (std::size_t i = 0; i < lines.size(); ++i) {
+        const TextField::Line& line = lines[i];
+        const float ly = by + pad + body_lh * static_cast<float>(i);
+        if (editing_it) {
+          const std::size_t sa = std::clamp(shown_text.selection_begin(), line.begin, line.end);
+          const std::size_t sb = std::clamp(shown_text.selection_end(), line.begin, line.end);
+          if (sb > sa) {
+            const float xa = bx + pad + run_w(line.begin, sa);
+            c.fill(Rect{xa, ly, bx + pad + run_w(line.begin, sb) - xa, body_lh}, Colour::tint_select);
+          }
+          for (std::size_t at = line.begin; at <= line.end; ++at) {
+            if (at < t.size() && !at_boundary(t, at)) {
+              continue;
+            }
+            if (at == line.end && i + 1 < lines.size()) {
+              break;  // a line's end is the next line's start
+            }
+            prose_stops_.emplace_back(at, bx + pad + run_w(line.begin, at), ly);
+          }
+        }
+        c.text(std::string_view(t).substr(line.begin, line.end - line.begin), TypeRole::ui, bx + pad, ly,
+               inner + 1, Colour::ink_body, a);
+      }
+      if (editing_it) {
+        const std::size_t li = TextField::line_of(lines, shown_text.caret());
+        caret_rect_ = Rect{bx + pad + run_w(lines[li].begin, shown_text.caret()),
+                           by + pad + body_lh * static_cast<float>(li), std::max(1.0f, std::round(2 * s)), body_lh};
+        c.fill(caret_rect_, Colour::gold_hi);
+        edit_box_ = box;
+        prose_line_ = body_lh;
+      }
+      hit(box, Scope::page, focus_index(kind, id), box);
+      if (page_focus(kind, id)) {
+        c.focused(box);
+      }
+      return h;
     };
     // A filter bar (G43, D250): its controls left to right from (x, y) within w, wrapping where they do not fit; then,
     // while a filter or the search holds, "12 of 40 shown", or "Nothing matches these filters." and Clear filters.
@@ -4556,57 +4765,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             // and its caret, and keeps each boundary's place for ↑ ↓ and the pointer. Its height.
             const auto prose_box = [&](float bx, float bw, const std::string& text, bool editing_it,
                                        const std::string& placeholder, std::uint8_t a, const std::string& id) {
-              const float pad = std::round(10 * s);
-              const float inner = bw - 2 * pad;
-              const TextField shown_text = editing_it ? edit_.field : TextField(text, text.size() + 4);
-              const std::vector<TextField::Line> lines = shown_text.wrap(inner, measure_in(TypeRole::ui));
-              const float h = body_lh * static_cast<float>(std::max<std::size_t>(lines.size(), 2)) + 2 * pad;
-              const Rect box{bx, y, bw, h};
-              c.fill(box, Colour::ground_well, rr, a);
-              c.stroke(box, editing_it ? Colour::gold : Colour::edge, edge_w, rr, a);
-              const std::string& t = shown_text.text();
-              const auto run_w = [&](std::size_t from, std::size_t to) {
-                return c.width(std::string_view(t).substr(from, to - from), TypeRole::ui);
-              };
-              if (t.empty() && !editing_it) {
-                c.text(placeholder, TypeRole::ui, bx + pad, y + pad, inner, Colour::ink_faint, a);
-              }
-              for (std::size_t i = 0; i < lines.size(); ++i) {
-                const TextField::Line& line = lines[i];
-                const float ly = y + pad + body_lh * static_cast<float>(i);
-                if (editing_it) {
-                  const std::size_t sa = std::clamp(shown_text.selection_begin(), line.begin, line.end);
-                  const std::size_t sb = std::clamp(shown_text.selection_end(), line.begin, line.end);
-                  if (sb > sa) {
-                    const float xa = bx + pad + run_w(line.begin, sa);
-                    c.fill(Rect{xa, ly, bx + pad + run_w(line.begin, sb) - xa, body_lh}, Colour::tint_select);
-                  }
-                  for (std::size_t at = line.begin; at <= line.end; ++at) {
-                    if (at < t.size() && !at_boundary(t, at)) {
-                      continue;
-                    }
-                    if (at == line.end && i + 1 < lines.size()) {
-                      break;  // a line's end is the next line's start
-                    }
-                    prose_stops_.emplace_back(at, bx + pad + run_w(line.begin, at), ly);
-                  }
-                }
-                c.text(std::string_view(t).substr(line.begin, line.end - line.begin), TypeRole::ui, bx + pad, ly,
-                       inner + 1, Colour::ink_body, a);
-              }
-              if (editing_it) {
-                const std::size_t li = TextField::line_of(lines, shown_text.caret());
-                caret_rect_ = Rect{bx + pad + run_w(lines[li].begin, shown_text.caret()),
-                                   y + pad + body_lh * static_cast<float>(li), std::max(1.0f, std::round(2 * s)), body_lh};
-                c.fill(caret_rect_, Colour::gold_hi);
-                edit_box_ = box;
-                prose_line_ = body_lh;
-              }
-              hit(box, Scope::page, focus_index(FocusKind::editor, id), box);
-              if (page_focus(FocusKind::editor, id)) {
-                c.focused(box);
-              }
-              return h;
+              return prose_well(bx, y, bw, text, editing_it, placeholder, a, FocusKind::editor, id);
             };
             const auto message_lines = [&](const std::string& field, std::optional<std::size_t> item, float x, float w) {
               for (const EditorMessage& m : st.messages) {
@@ -4881,6 +5040,160 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             y += row_h;
             continue;
           }
+          if (block.kind == protocol::BlockKind::document) {
+            // A document (G44, D251): the chosen row's member, as document.h shapes it. Spans flow word by word and
+            // wrap; a link to a document the list holds is a focus stop (Enter follows it), one it does not hold plain
+            // words (invariant 2). Never a URL, never markup.
+            const float bx = x0 + card_pad;
+            const float bw = std::min(content_w - 2 * card_pad, std::round(760 * s));
+            const std::string topic = topic_of(block);
+            const auto found = topics_.find(topic);
+            const DocumentView doc = found != topics_.end() ? parse_document(found->second) : DocumentView{};
+            if (found == topics_.end() || doc.error != DocumentView::Error::none) {
+              c.text(doc.error == DocumentView::Error::too_large ? "This document is too large to show."
+                                                                  : "Nothing to show.",
+                     TypeRole::ui_sm, bx, y + std::round(12 * s), bw, Colour::ink_mute);
+              y += row_h;
+              continue;
+            }
+            std::size_t link_n = 0;
+            // Spans from (x, y) within w; same-line words of a span drawn as one run. Answers the height.
+            const auto flow = [&](const std::vector<DocSpan>& spans, float x, float w, TypeRole base) {
+              const float lh = line_height(base, s);
+              float cx = x;
+              float cy = y;
+              for (const DocSpan& sp : spans) {
+                const bool is_link = sp.style == DocSpan::Style::link && listed(sp.doc);
+                const std::string id = is_link ? topic + "/" + std::to_string(link_n++) : std::string();
+                const TypeRole role = sp.style == DocSpan::Style::code ? TypeRole::num : base;
+                const Colour ink = is_link ? Colour::gold_hi
+                                   : sp.style == DocSpan::Style::strong ? Colour::ink_hi : Colour::ink_body;
+                std::string run;
+                float run_x = cx;
+                bool ringed = false;
+                const auto flush = [&] {
+                  if (run.empty()) {
+                    return;
+                  }
+                  const float rw = c.width(run, role);
+                  c.text(run, role, run_x, cy + std::round((lh - line_height(role, s)) / 2), rw + 1, ink);
+                  if (is_link) {
+                    const Rect r{run_x, cy, rw, lh};
+                    hit(r, Scope::page, focus_index(FocusKind::link, id));
+                    if (!ringed && page_focus(FocusKind::link, id)) {
+                      c.focused(r);
+                      ringed = true;
+                    }
+                  }
+                  run.clear();
+                };
+                std::size_t at = 0;
+                while (at < sp.text.size()) {
+                  std::size_t end = sp.text.find(' ', at);
+                  end = end == std::string::npos ? sp.text.size() : end + 1;
+                  const std::string_view word = std::string_view(sp.text).substr(at, end - at);
+                  const float ww = c.width(word, role);
+                  if (cx > x && cx + c.width(word.substr(0, word.find_last_not_of(' ') + 1), role) > x + w) {
+                    flush();
+                    cx = x;
+                    cy += lh;
+                    run_x = cx;
+                  }
+                  run.append(word);
+                  cx += ww;
+                  at = end;
+                }
+                flush();
+              }
+              return cy + lh - y;
+            };
+            if (!doc.title.empty()) {
+              c.text(doc.title, TypeRole::display_md, bx, y + std::round(8 * s), bw, Colour::ink_hi);
+              y += std::round(8 * s + line_height(TypeRole::display_md, s) + 12 * s);
+            }
+            const float gap = std::round(10 * s);
+            for (const DocBlock& b : doc.blocks) {
+              switch (b.kind) {
+                case DocBlock::Kind::heading: {
+                  const TypeRole role = b.level == 2 ? TypeRole::ui : TypeRole::ui_sm;
+                  y += std::round(8 * s);
+                  if (!doc_heading_.empty() && b.text == doc_heading_) {
+                    // A followed link's heading: brought to the page's top at the next layout (D251).
+                    scroll_ = std::max(0.0f, scroll_ + y - (page_area.y + std::round(24 * s)));
+                    doc_heading_.clear();
+                  }
+                  c.text(b.text, role, bx, y, bw, Colour::gold);
+                  y += line_height(role, s) + std::round(6 * s);
+                  break;
+                }
+                case DocBlock::Kind::paragraph:
+                  y += flow(b.spans, bx, bw, TypeRole::ui) + gap;
+                  break;
+                case DocBlock::Kind::note: {
+                  const float top = y;
+                  y += std::round(6 * s);
+                  const float h = flow(b.spans, bx + std::round(16 * s), bw - std::round(16 * s), TypeRole::ui);
+                  c.fill(Rect{bx, top, std::max(2.0f, std::round(2 * s)), h + std::round(12 * s)}, Colour::gold);
+                  y += h + std::round(6 * s) + gap;
+                  break;
+                }
+                case DocBlock::Kind::list:
+                  for (std::size_t i = 0; i < b.items.size(); ++i) {
+                    const std::string mark = b.ordered ? std::to_string(i + 1) + "." : "•";
+                    c.text(mark, TypeRole::ui, bx, y, std::round(24 * s), Colour::ink_mute);
+                    y += flow(b.items[i], bx + std::round(28 * s), bw - std::round(28 * s), TypeRole::ui) +
+                         std::round(4 * s);
+                  }
+                  y += gap;
+                  break;
+                case DocBlock::Kind::code: {
+                  const float pad = std::round(10 * s);
+                  const float lh = line_height(TypeRole::num, s);
+                  std::vector<std::string_view> lines;
+                  std::string_view rest(b.text);
+                  while (true) {
+                    const std::size_t nl = rest.find('\n');
+                    lines.push_back(rest.substr(0, nl));
+                    if (nl == std::string_view::npos) {
+                      break;
+                    }
+                    rest.remove_prefix(nl + 1);
+                  }
+                  const float h = lh * static_cast<float>(lines.size()) + 2 * pad;
+                  c.fill(Rect{bx, y, bw, h}, Colour::ground_well, std::round(tokens::radius::control * s));
+                  for (std::size_t i = 0; i < lines.size(); ++i) {
+                    c.text(lines[i], TypeRole::num, bx + pad, y + pad + lh * static_cast<float>(i), bw - 2 * pad,
+                           Colour::ink_body);
+                  }
+                  y += h + gap;
+                  break;
+                }
+                case DocBlock::Kind::table: {
+                  const float cw = std::floor(bw / static_cast<float>(b.column_labels.size()));
+                  const float lh = line_height(TypeRole::ui_sm, s) + std::round(10 * s);
+                  for (std::size_t k = 0; k < b.column_labels.size(); ++k) {
+                    c.text(b.column_labels[k], TypeRole::eyebrow, bx + cw * static_cast<float>(k), y + std::round(4 * s),
+                           cw - std::round(8 * s), Colour::ink_faint);
+                  }
+                  y += lh;
+                  for (const auto& row : b.rows) {
+                    c.line(bx, y, bw, Colour::rule);
+                    for (std::size_t k = 0; k < row.size(); ++k) {
+                      c.text(row[k], TypeRole::ui_sm, bx + cw * static_cast<float>(k), y + std::round(5 * s),
+                             cw - std::round(8 * s), Colour::ink_body);
+                    }
+                    y += lh;
+                  }
+                  y += gap;
+                  break;
+                }
+              }
+            }
+            // Drawn: a followed link's heading that this document lacks leaves it at its top, and is not kept for a later
+            // document that has one of that name (invariant 2).
+            doc_heading_.clear();
+            continue;
+          }
           if (block.kind == protocol::BlockKind::form) {
             // A form (D195): a row a field, its label at the left and GraceUI's own field at the right (G38 (a)), then
             // its button at the right; the space's refusal under it.
@@ -4889,6 +5202,19 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             const float field_w = std::round(std::min((content_w - 2 * card_pad) * 0.6f, 560 * s));
             for (const protocol::FormField& field : block.fields.value_or(std::vector<protocol::FormField>{})) {
               const std::string id = form + "/" + field.id;
+              if (field.prose.value_or(false)) {
+                // A prose field (D251): its label above, the editor's prose well under it, several lines wrapped.
+                const float rx = x0 + card_pad;
+                const float rw = content_w - 2 * card_pad;
+                c.line(rx, y, rw, Colour::rule);
+                c.text(field.label, TypeRole::ui, rx, y + std::round(10 * s), rw, Colour::ink_hi, alpha);
+                const float wy = y + std::round(10 * s + line_height(TypeRole::ui, s) + 6 * s);
+                const float h = prose_well(rx, wy, rw, form_value(id),
+                                           edit_.kind == EditKind::form_field && edit_.id == id, "", alpha,
+                                           FocusKind::form_field, id);
+                y = wy + h + std::round(12 * s);
+                continue;
+              }
               const Rect row{x0 + card_pad, y, content_w - 2 * card_pad, row_h};
               if (hovered(row)) {
                 c.fill(row, Colour::tint_hover);
@@ -4962,6 +5288,84 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 return out;
               };
               const auto words = [](const Json& item, const char* field) { return cell_words(item, field); };
+              if (block.component == protocol::Component::report_preview) {
+                // A report's preview (G44, D251): a part a card with its label, an optional one's switch at its right;
+                // each field of a part that is in: its label, then its value, a code field's lines in the mono face.
+                const auto parts = objects("parts");
+                if (parts.empty()) {
+                  one_line(none, Colour::ink_mute);
+                  continue;
+                }
+                const float edge_w = std::round(tokens::kGrace.size.edge_width * s);
+                for (const Json* part : parts) {
+                  const std::string id = words(*part, "id");
+                  const std::string label = words(*part, "label");
+                  if (id.empty() || label.empty()) {
+                    continue;
+                  }
+                  const bool optional = part->contains("optional") && (*part)["optional"] == true;
+                  const bool included = !optional || !(part->contains("included") && (*part)["included"] == false);
+                  const Rect head{inner_x, y, inner_w, row_h};
+                  c.line(head.x, head.y, head.w, Colour::rule);
+                  c.text(label, TypeRole::ui, head.x, y + std::round((row_h - line_height(TypeRole::ui, s)) / 2),
+                         head.w / 2, included ? Colour::ink_hi : Colour::ink_mute);
+                  if (optional && block.command) {
+                    const std::string fid = *block.topic + "/" + id;
+                    const Rect control{head.right() - std::round(40 * s), y + std::round((row_h - 22 * s) / 2),
+                                       std::round(40 * s), std::round(22 * s)};
+                    const std::string state = included ? "Included" : "Left out";
+                    const float word_w = c.width(state, TypeRole::ui_sm);
+                    c.text(state, TypeRole::ui_sm, control.x - std::round(12 * s) - word_w,
+                           y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2), word_w + 1, Colour::ink_body);
+                    if (included) {
+                      c.fill(control, Colour::gold, control.h / 2);
+                    } else {
+                      c.fill(control, Colour::ground_well, control.h / 2);
+                      c.stroke(control, Colour::edge, edge_w, control.h / 2);
+                    }
+                    const float knob = std::round(16 * s);
+                    c.circle(Rect{included ? control.right() - knob - std::round(3 * s) : control.x + std::round(3 * s),
+                                  control.y + std::round((control.h - knob) / 2), knob, knob},
+                             included ? Colour::on_gold : Colour::ink_mute);
+                    hit(head, Scope::page, focus_index(FocusKind::part, fid), control);
+                    if (page_focus(FocusKind::part, fid)) {
+                      c.focused(control);
+                    }
+                  }
+                  y += row_h;
+                  if (!included) {
+                    continue;  // a part left out: its fields hidden
+                  }
+                  const float label_w = std::round(inner_w * 0.3f);
+                  if (part->contains("fields") && (*part)["fields"].is_array()) {
+                    for (const Json& field : (*part)["fields"]) {
+                      if (!field.is_object() || words(field, "label").empty()) {
+                        continue;
+                      }
+                      const bool code = field.contains("code") && field["code"] == true;
+                      const std::string value = words(field, "value");
+                      c.text(words(field, "label"), TypeRole::ui_sm, inner_x, y + std::round(4 * s), label_w,
+                             Colour::ink_mute);
+                      const TypeRole role = code ? TypeRole::num : TypeRole::ui_sm;
+                      const float lh = line_height(role, s);
+                      std::string_view rest(value);
+                      float fy = y + std::round(4 * s);
+                      while (true) {
+                        const std::size_t nl = code ? rest.find('\n') : std::string_view::npos;
+                        c.text(rest.substr(0, nl), role, inner_x + label_w, fy, inner_w - label_w, Colour::ink_body);
+                        fy += lh;
+                        if (nl == std::string_view::npos) {
+                          break;
+                        }
+                        rest.remove_prefix(nl + 1);
+                      }
+                      y = fy + std::round(6 * s);
+                    }
+                  }
+                  y += std::round(6 * s);
+                }
+                continue;
+              }
               if (block.component == protocol::Component::computed_sentence) {
                 const std::string sentence = body != nullptr ? cell_words(*body, "sentence") : std::string();
                 one_line(sentence.empty() ? none : sentence,
@@ -5507,7 +5911,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         if (st.locked) {
           hints = "Locked in this version    Esc  Back";
         }
-      } else if (f.kind == FocusKind::cell) {
+      } else if (f.kind == FocusKind::cell || f.kind == FocusKind::part) {
         hints = "Enter  Toggle    Esc  Back";  // a table's switch, as a setting's but with no default to reset to
       } else if (f.kind == FocusKind::master_row) {
         hints = "↑ ↓  Choose    →  Open    Esc  Back";
@@ -5541,6 +5945,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       // A field's keys (§5.3): every other key types into it.
       hints = edit_.kind == EditKind::search       ? "↑ ↓  Choose    Enter  Open    Esc  Close"
               : edit_.kind == EditKind::filter_search ? "Enter  Done    Esc  Clear    Ctrl+V  Paste"
+              : edit_.kind == EditKind::form_field && edit_.prose ? "↑ ↓  Line    Enter  Next    Esc  Done    Ctrl+V  Paste"
               : edit_.kind == EditKind::form_field ? "Enter  Next    Esc  Done    Ctrl+V  Paste"
               : edit_.kind == EditKind::editor_notes || (edit_.kind == EditKind::editor_text && edit_.prose)
                   ? "↑ ↓  Line    Enter  Done    Esc  Done    Ctrl+V  Paste"

@@ -48,12 +48,23 @@ export function FormBlock({ space, block }: { space: string; block: PageBlock })
           <div class="row form__row" key={f.id}>
             <div class="row__text"><label class="row__label" for={id}>{f.label}</label></div>
             <div class="row__control">
-              <input id={id} type="text" class="field" value={values[f.id] ?? ""} maxLength={f.max} spellcheck={false}
-                     autocomplete="off" disabled={inert}
-                     onInput={(e) => {
-                       const value = (e.currentTarget as HTMLInputElement).value;
-                       setValues((v) => ({ ...v, [f.id]: value }));
-                     }} />
+              {f.prose === true
+                ? (  // several lines (D251), as the editor's prose fields are
+                  <textarea id={id} class="field field--prose" rows={4} value={values[f.id] ?? ""} maxLength={f.max}
+                            spellcheck={false} disabled={inert} data-prose=""
+                            onInput={(e) => {
+                              const value = (e.currentTarget as HTMLTextAreaElement).value;
+                              setValues((v) => ({ ...v, [f.id]: value }));
+                            }} />
+                )
+                : (
+                  <input id={id} type="text" class="field" value={values[f.id] ?? ""} maxLength={f.max}
+                         spellcheck={false} autocomplete="off" disabled={inert}
+                         onInput={(e) => {
+                           const value = (e.currentTarget as HTMLInputElement).value;
+                           setValues((v) => ({ ...v, [f.id]: value }));
+                         }} />
+                )}
             </div>
           </div>
         );

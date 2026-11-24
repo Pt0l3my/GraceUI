@@ -577,9 +577,12 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       const inputs = page.locator(".form input");
       await inputs.nth(0).fill("Wren Halloway");
       await inputs.nth(1).fill("South jetty");
+      // Its prose field (D251): several lines in a textarea, sent with the rest.
+      await page.locator(".form textarea[data-prose]").fill("Knows the tide.\nSteady in wind.");
       await page.locator("[data-form='keepers.hire']").click();
       await settle(hire, 1);
-      assert.deepEqual(hire()[0]?.args, { name: "Wren Halloway", post: "South jetty" });
+      assert.deepEqual(hire()[0]?.args, { name: "Wren Halloway", post: "South jetty",
+                                          notes: "Knows the tide.\nSteady in wind." });
       await page.waitForFunction(() => (document.querySelector<HTMLInputElement>(".form input")?.value ?? "x") === "");
       host.refuse.set("keepers.hire", "invalid_value");
       await inputs.nth(0).fill("Wren Halloway");
@@ -895,6 +898,69 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("a document: its blocks, links to a guide and to a heading, a link to none as text, its list's search (D251)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "records", "demo.handbook");
+      await page.locator("article.doc").waitFor();
+      assert.equal(await page.locator(".doc__title").textContent(), "Lighting the lamp");
+      assert.equal(await page.locator(".doc ol.doc__list li").count(), 3);
+      assert.equal(await page.locator(".doc strong").textContent(), "edge");
+      assert.match((await page.locator(".doc__note").textContent()) ?? "", /Never leave a lit lamp alone/);
+      // A link to another guide chooses its row; a link to a heading of a guide, likewise, to that heading.
+      await page.locator(".doc__link[data-doc='oil']").click();
+      await page.waitForFunction(() => document.querySelector(".doc__title")?.textContent === "Oil");
+      // Focus on the chosen guide's row, where the reader now is, as in game.
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-key")), "oil");
+      assert.equal(await page.locator(".doc table.doc__table tbody tr").count(), 3);
+      assert.match((await page.locator(".doc__code").textContent()) ?? "", /12 jars\n/);
+      await page.locator(".master__row[data-key='storms']").click();
+      await page.waitForFunction(() => document.querySelector(".doc__title")?.textContent === "Keeping a lamp in a storm");
+      // A guide the list does not hold: its link is plain words.
+      assert.equal(await page.locator(".doc__link[data-doc='signals']").count(), 0);
+      assert.match((await page.locator(".doc").textContent()) ?? "", /Signals/);
+      await page.locator(".doc__link[data-doc='lighting'][data-heading='Trimming']").click();
+      await page.waitForFunction(() => document.querySelector(".doc__title")?.textContent === "Lighting the lamp");
+      // At its heading: brought into view.
+      await page.waitForFunction(() => {
+        const h = [...document.querySelectorAll(".doc__h2, .doc__h3")].find((e) => e.textContent === "Trimming");
+        const r = h?.getBoundingClientRect();
+        return r !== undefined && r.top >= 0 && r.top < window.innerHeight;
+      });
+      // The list's own search finds a guide by a heading, never by its body.
+      await page.locator(".master .filter-bar__search").fill("shutter");
+      assert.deepEqual(await page.locator(".master__row .master__name").allTextContents(), ["Keeping a lamp in a storm"]);
+      await page.locator(".master .filter-bar__search").fill("seal");  // in a body only
+      await page.locator(".master .filter-bar__none").waitFor();
+      assert.deepEqual(await violations(page), []);
+    } finally {
+      await close();
+    }
+  });
+
+  test("a report preview: each part's fields, a code field's lines, a left-out part dimmed, a switch sends (D251)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "records", "demo.log");
+      await page.locator(".preview").waitFor();
+      assert.equal(await page.locator(".preview__part").count(), 3);
+      assert.equal(await page.locator(".preview__part[data-part='notes'] .preview__fields").count(), 0);  // left out
+      assert.equal(await page.locator(".preview__part.is-excluded").count(), 1);
+      assert.match((await page.locator(".preview__part[data-part='log'] pre").textContent()) ?? "", /19:44.*\n19:48/s);
+      assert.equal(await page.locator(".preview__part[data-part='summary'] [role=switch]").count(), 0);  // not optional
+      const sent = () => host.received.filter((f) => f.t === "cmd" && f.name === "report.part");
+      await page.locator(".preview__part[data-part='log'] [role=switch]").click();
+      await page.waitForFunction(() => true);
+      for (let i = 0; i < 40 && sent().length === 0; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(sent()[0]?.args, { id: "log", on: false });
+      assert.deepEqual(await violations(page), []);
+    } finally {
+      await close();
+    }
+  });
+
   test("a table's filter bar: its selects, its sort and direction, its search, Clear filters (G43, D250)", async () => {
     const { page, close } = await fresh();
     try {
@@ -974,7 +1040,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.equal(await page.locator(".mark").count(), 3);
       await page.locator("[data-rail='category:records']").click();
       await page.locator(".flyout").waitFor();
-      assert.equal(await page.locator(".flyout .flyout__page").count(), 3);  // Log, Festival and Lamps (D215)
+      assert.equal(await page.locator(".flyout .flyout__page").count(), 4);  // Log, Festival, Lamps, Handbook (D251)
       await page.waitForFunction(() => document.activeElement?.classList.contains("flyout__page") === true);
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => document.querySelector(".flyout") === null);

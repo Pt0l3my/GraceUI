@@ -160,13 +160,13 @@ bool from_string(std::string_view text, Component& out) noexcept {
 }
 
 std::string_view to_string(BlockKind value) noexcept {
-  static constexpr std::array<std::string_view, 6> kNames = {"settings", "shortcuts", "component", "form", "editor", "upload"};
+  static constexpr std::array<std::string_view, 7> kNames = {"settings", "shortcuts", "component", "form", "editor", "upload", "document"};
   const auto index = static_cast<std::size_t>(value);
   return index < kNames.size() ? kNames[index] : std::string_view("");
 }
 
 bool from_string(std::string_view text, BlockKind& out) noexcept {
-  static constexpr std::array<std::string_view, 6> kNames = {"settings", "shortcuts", "component", "form", "editor", "upload"};
+  static constexpr std::array<std::string_view, 7> kNames = {"settings", "shortcuts", "component", "form", "editor", "upload", "document"};
   for (std::size_t i = 0; i < kNames.size(); ++i) {
     if (kNames[i] == text) {
       out = static_cast<BlockKind>(i);
@@ -965,6 +965,15 @@ bool decode(const Json& in, FormField& out, const std::string& path, DecodeError
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "prose", false, path, e)) {
+    const std::string p = path.empty() ? std::string("prose") : path + ".prose";
+    out.prose.emplace();
+    if (!read_bool(*v, *out.prose, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -973,6 +982,9 @@ Json encode(const FormField& in) {
   out["id"] = Json(in.id);
   out["label"] = Json(in.label);
   out["max"] = Json(in.max_);
+  if (in.prose) {
+    out["prose"] = Json(*in.prose);
+  }
   return out;
 }
 

@@ -837,10 +837,13 @@ TEST_CASE("a space's foot: its categories pinned to the rail's bottom under a ru
   view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), open);
   const Item* records_open = text_at(open, "Records");
   const Item* lamps = text_at(open, "Lamps");
+  const Item* handbook = text_at(open, "Handbook");
   REQUIRE(records_open != nullptr);
   REQUIRE(lamps != nullptr);
+  REQUIRE(handbook != nullptr);
   CHECK(records_open->rect.y < records->rect.y);
-  CHECK(lamps->rect.y > 1000);
+  CHECK(lamps->rect.y < handbook->rect.y);
+  CHECK(handbook->rect.y > 1000);  // its last page at the bottom
   // Registration refuses a foot before a category that is not of it.
   auto pages = test::decoded<grace::protocol::SpacePages>(test::space("demo").pages);
   std::reverse(pages.categories.begin(), pages.categories.end());
@@ -1223,7 +1226,8 @@ TEST_CASE("a space's state components in game (D184): a key-value list, a check 
   CHECK(dump.find("\"62 %\"") != std::string::npos);
   CHECK(dump.find("\"The lantern burns steady.\"") != std::string::npos);
   PageView log = loaded("demo", "demo.log");
-  CHECK(log.component_topics().empty());  // a live feed and a log tail: streams, the browser's for now
+  // A live feed and a log tail: streams, the browser's for now; the lamp report's preview is drawn in game (D251).
+  CHECK(log.component_topics() == std::vector<std::string>{"lantern.report"});
   log.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
   CHECK(list.dump().find("Shown in the browser view.") != std::string::npos);
 }
@@ -1594,7 +1598,8 @@ TEST_CASE("a form in game: its fields typed in turn, sent together, kept until t
   Action sent = press(view, Key::activate);
   REQUIRE(sent.kind == Action::Kind::command);
   CHECK(sent.command.name == "keepers.hire");
-  CHECK(sent.command.args == Json::object({{"name", "Orla Venn"}, {"post", "North light"}}));
+  // Every field is sent, an empty one as "" (the browser's form does the same).
+  CHECK(sent.command.args == Json::object({{"name", "Orla Venn"}, {"post", "North light"}, {"notes", ""}}));
   // Refused: the space's words under the form, the text kept; accepted: the fields empty.
   view.refused("hire/0", "A keeper of that name is on the roster.");
   DisplayList refused;
@@ -2552,4 +2557,173 @@ TEST_CASE("a master list's filter bar in game: above its rows, and ↑ from the 
   CHECK(view.focused() == "item:lantern.lamps/old-crane");
   press(view, Key::up);
   CHECK(view.focused() == "filter:master:lantern.lamps/search");
+}
+
+namespace {
+
+const Json kGuides = Json::parse(R"({"columns": [{"id": "title", "label": "Guide"}, {"id": "headings", "label": "Covers"}],
+  "rows": [{"id": "lighting", "title": "Lighting the lamp", "headings": "Before dusk"},
+           {"id": "oil", "title": "Oil", "headings": "Which oil"}]})");
+const Json kLighting = Json::parse(R"({"title": "Lighting the lamp", "blocks": [
+  {"paragraph": [{"text": "Read "}, {"text": "Oil", "doc": "oil", "heading": "Which oil"}, {"text": " first; "},
+                 {"text": "Signals", "doc": "signals"}, {"text": " is not written yet."}]},
+  {"heading": "Before dusk"},
+  {"list": ["Clean the glass.", "Fill the oil."], "ordered": true},
+  {"note": "Never leave a lit lamp alone."},
+  {"code": "dusk  trimmed\nnight lit"},
+  {"table": {"columns": [{"id": "oil", "label": "Oil"}], "rows": [{"oil": "Rapeseed"}]}}]})");
+const Json kReport = Json::parse(R"({"parts": [
+  {"id": "summary", "label": "Summary", "optional": false, "fields": [{"label": "Lamp", "value": "North light"}]},
+  {"id": "log", "label": "Recent log", "optional": true, "included": true,
+   "fields": [{"label": "Lines", "value": "19:44  A moth.\n19:48  The wind rose.", "code": true}]},
+  {"id": "notes", "label": "Your notes", "optional": true, "included": false,
+   "fields": [{"label": "Notes", "value": "The glass wants a new seal."}]}]})");
+
+}  // namespace
+
+TEST_CASE("a document in game: its blocks drawn, a link to a listed guide a stop that chooses it, none to the rest (D251)") {
+  PageView view = loaded("demo", "demo.handbook");
+  view.set_topic("lantern.guides", kGuides);
+  view.set_topic("lantern.guide/lighting", kLighting);
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  const std::string dump = list.dump();
+  for (const char* words : {"\"Lighting the lamp\"", "\"Before dusk\"", "\"1.\"", "\"Clean the glass.\"",
+                            "\"Never leave a lit lamp alone.\"", "\"dusk  trimmed\"", "\"night lit\"", "\"Rapeseed\""}) {
+    CHECK(dump.find(words) != std::string::npos);
+  }
+  CHECK(dump.find("text    gold.hi") != std::string::npos);  // the link to Oil, in gold
+  // One stop: the link to Oil; Signals is not in the list, so its words are plain. → goes into the detail.
+  press(view, Key::right);
+  std::vector<std::string> links;
+  for (int i = 0; i < 30; ++i) {
+    const std::string at = view.focused();
+    if (at.rfind("link:", 0) == 0 && std::find(links.begin(), links.end(), at) == links.end()) {
+      links.push_back(at);
+    }
+    press(view, Key::down);
+    if (view.focused() == at) {
+      break;
+    }
+  }
+  REQUIRE(links == std::vector<std::string>{"link:lantern.guide/lighting/0"});
+  while (view.focused() != links[0]) {
+    press(view, Key::up);
+  }
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);
+  CHECK(view.chosen() == "oil");
+}
+
+TEST_CASE("a link to a heading in game: brought to the top; one the document lacks leaves it at its top, and is not kept (D251)") {
+  // A long guide: its heading far down the page.
+  const auto guide = [](bool with_heading) {
+    Json blocks = Json::array();
+    for (int i = 0; i < 40; ++i) {
+      blocks.push_back(Json::object({{"paragraph", "Pour slowly, and wipe the rim after every fill."}}));
+    }
+    if (with_heading) {
+      blocks.push_back(Json::object({{"heading", "Which oil"}}));
+    }
+    for (int i = 0; i < 40; ++i) {
+      blocks.push_back(Json::object({{"paragraph", "Rapeseed burns clean; tallow smokes."}}));
+    }
+    return Json::object({{"title", "Oil and its keeping"}, {"blocks", blocks}});
+  };
+  const auto follow = [](PageView& view) {
+    view.set_topic("lantern.guides", kGuides);
+    view.set_topic("lantern.guide/lighting", kLighting);
+    DisplayList list;
+    view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+    press(view, Key::right);
+    for (int i = 0; i < 30 && view.focused() != "link:lantern.guide/lighting/0"; ++i) {
+      press(view, Key::down);
+    }
+    REQUIRE(view.focused() == "link:lantern.guide/lighting/0");
+    press(view, Key::activate);
+    REQUIRE(view.chosen() == "oil");
+    CHECK(view.focused() == "item:lantern.guides/oil");  // on its row, where the player now is
+  };
+  const auto y_of = [](PageView& view, const char* words) {
+    DisplayList list;
+    view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+    view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);  // a scroll asked for shows at the next layout
+    for (const Item& item : list.items) {
+      if (item.shape == Shape::text && std::string_view(list.text).substr(item.text_first, item.text_size) == words &&
+          item.rect.x > 300) {
+        return item.rect.y;  // in the detail, right of the rail and the list's rows
+      }
+    }
+    return -1e9f;
+  };
+  PageView found = loaded("demo", "demo.handbook");
+  follow(found);
+  found.set_topic("lantern.guide/oil", guide(true));
+  CHECK(y_of(found, "Which oil") < 200);  // at the page's top, the guide's title above it, scrolled away
+  PageView lacking = loaded("demo", "demo.handbook");
+  follow(lacking);
+  lacking.set_topic("lantern.guide/oil", guide(false));
+  const float top = y_of(lacking, "Oil and its keeping");
+  CHECK(top > 0);
+  CHECK(top < 400);
+  // The guide gains that heading later: the link is long followed, so nothing moves.
+  lacking.set_topic("lantern.guide/oil", guide(true));
+  CHECK(y_of(lacking, "Oil and its keeping") == top);
+  CHECK(y_of(lacking, "Which oil") > 1080);
+}
+
+TEST_CASE("a report preview in game: its parts, a left-out part's fields hidden, an optional part's switch sends (D251)") {
+  PageView view = loaded("demo", "demo.log");
+  view.set_topic("lantern.report", kReport);
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  const std::string dump = list.dump();
+  CHECK(dump.find("\"Summary\"") != std::string::npos);
+  CHECK(dump.find("\"19:48  The wind rose.\"") != std::string::npos);  // a code field's second line
+  CHECK(dump.find("\"Left out\"") != std::string::npos);
+  CHECK(dump.find("The glass wants a new seal.") == std::string::npos);  // the left-out part's field
+  // The switches: Recent log's and Your notes', not Summary's.
+  std::vector<std::string> parts;
+  for (int i = 0; i < 40; ++i) {
+    const std::string at = view.focused();
+    if (at.rfind("part:", 0) == 0 && std::find(parts.begin(), parts.end(), at) == parts.end()) {
+      parts.push_back(at);
+    }
+    press(view, Key::down);
+    if (view.focused() == at) {
+      break;
+    }
+  }
+  CHECK(parts == std::vector<std::string>{"part:lantern.report/log", "part:lantern.report/notes"});
+  while (view.focused() != "part:lantern.report/log") {
+    press(view, Key::up);
+  }
+  Action sent = press(view, Key::activate);
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.name == "report.part");
+  CHECK(sent.command.args == Json::object({{"id", "log"}, {"on", false}}));
+  press(view, Key::down);
+  sent = press(view, Key::right);
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.args == Json::object({{"id", "notes"}, {"on", true}}));
+}
+
+TEST_CASE("a form's prose field in game: the editor's prose well, several lines, sent with the rest (D251)") {
+  PageView view = loaded("demo", "demo.keepers");
+  view.set_topic("lantern.keepers", kKeepers);
+  std::string notes;
+  for (int i = 0; i < 60 && notes.empty(); ++i) {
+    const std::string at = view.focused();
+    if (at.rfind("field:", 0) == 0 && at.ends_with("/notes")) {
+      notes = at;
+      break;
+    }
+    press(view, Key::down);
+  }
+  REQUIRE(!notes.empty());
+  press(view, Key::activate);
+  type(view, "Knows the tide and the wind both");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  CHECK(list.dump().find("\"Knows the tide and the wind both\"") != std::string::npos);
+  CHECK(view.footer().find("Line") != std::string::npos);  // ↑ ↓ move by line in it
 }

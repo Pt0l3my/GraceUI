@@ -365,6 +365,74 @@ function captureTitle(a: RowAction, row: JsonObject, columns: JsonObject[]): str
   return words.length > 0 ? `${a.label}: ${words.join(", ")}` : a.label;
 }
 
+// A report's preview (G44, D251): each part with every field visible, a code field in the mono face with its lines; an
+// optional part's switch sends the block's command with the part and its new state, and the space's next body shows
+// it (invariant 1); an excluded part is dimmed, its fields hidden.
+function ReportPreview({ space, block, body, empty }: { space: string; block: PageBlock; body: JsonObject;
+                                                        empty: JSX.Element }) {
+  const session = useSession();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const greyed = useContext(GreyedContext);
+  const inert = greyed.words(greyed.page) !== null;
+  const parts = objects(body.parts).filter((p) => text(p.id) !== null && text(p.label) !== null);
+  if (parts.length === 0) {
+    return empty;
+  }
+  const flip = async (id: string, on: boolean) => {
+    if (block.command === undefined || busy !== null || inert) {
+      return;
+    }
+    setRefusal(null);
+    setBusy(id);
+    const answer = await session.command(space, block.command, { id, on: !on });
+    setBusy(null);
+    if (!answer.ok) {
+      setRefusal(refusalWords(answer));
+    }
+  };
+  return (
+    <div class="preview">
+      {parts.map((p) => {
+        const id = text(p.id) ?? "";
+        const label = text(p.label) ?? "";
+        const optional = p.optional === true;
+        const included = !optional || p.included !== false;
+        return (
+          <section class={included ? "preview__part" : "preview__part is-excluded"} key={id} data-part={id}>
+            <header class="preview__head">
+              <h3 class="preview__label">{label}</h3>
+              {optional && block.command !== undefined && (
+                <span class="switch-wrap">
+                  <button type="button" role="switch" class="switch" aria-checked={included} aria-label={label}
+                          aria-disabled={busy !== null || inert || undefined} data-control=""
+                          onClick={() => void flip(id, included)}>
+                    <span class="switch__knob" />
+                  </button>
+                  <span class="switch__word" aria-hidden="true">{included ? "Included" : "Left out"}</span>
+                </span>
+              )}
+            </header>
+            {included && (
+              <dl class="kv preview__fields">
+                {objects(p.fields).filter((f) => text(f.label) !== null).map((f, i) => (
+                  <div class="kv__row" key={i}>
+                    <dt class="kv__label">{text(f.label)}</dt>
+                    <dd class="kv__value">
+                      {f.code === true ? <pre class="doc__code"><code>{text(f.value) ?? ""}</code></pre> : text(f.value)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </section>
+        );
+      })}
+      {refusal !== null && <p class="table__notice" role="alert"><Warning /> {refusal}</p>}
+    </div>
+  );
+}
+
 const CHECK_WORDS: { [state: string]: string } = { pass: "Passed", warn: "Warning", fail: "Failed", wait: "Waiting" };
 
 function CheckList({ body, empty }: { body: JsonObject; empty: JSX.Element }) {
@@ -425,6 +493,8 @@ export function ComponentBlock({ space, block }: { space: string; block: PageBlo
       return body ? <Table space={space} block={block} body={body} empty={empty} /> : empty;
     case "check_list":
       return body ? <CheckList body={body} empty={empty} /> : empty;
+    case "report_preview":
+      return body ? <ReportPreview space={space} block={block} body={body} empty={empty} /> : empty;
     default:
       return <p class="empty__line">Not shown in this version of the browser view.</p>;
   }

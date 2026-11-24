@@ -23,6 +23,7 @@ import { FormBlock } from "./form.tsx";
 import { EditorBlockView } from "./editor.tsx";
 import { UploadBlock } from "./upload.tsx";
 import { FilterBar, useFilterBar } from "./filter-bar.tsx";
+import { DocumentBlock } from "./document.tsx";
 import { dropDrafts } from "../model/editor.ts";
 
 // The framework topic a space's greyed pages come on (D188): {"greyed": {page: words}, "inactive": words}.
@@ -70,6 +71,8 @@ function Blocks({ space, blocks }: { space: string; blocks: PageBlock[] }) {
         ? <div class="block block--editor" key={`e${i}`}><EditorBlockView space={space} block={block} /></div>
         : block.kind === "upload"
         ? <div class="block block--upload" key={`u${i}`}><UploadBlock space={space} block={block} /></div>
+        : block.kind === "document"
+        ? <div class="block block--document" key={`d${i}`}><DocumentBlock space={space} block={block} /></div>
         : (
           <div class="block block--rows" key={`r${i}`}>
             {(block.keys ?? []).map((key) => (
@@ -435,6 +438,7 @@ export function PageView() {
       <MasterContext.Provider value={master ? {
         family: master.detail, member: current !== null ? `${master.detail}/${current}` : null, key: current,
         families: (pages?.topics ?? []).filter((t) => t.family === true).map((t) => t.id),
+        page: page.id, keys: masterRows(master, masterData).map((r) => r.key),
       } : null}>
       {(!master || current !== null) && tabs.length > 0 && (
         <div class="tabs" role="tablist" aria-label={page.name}>

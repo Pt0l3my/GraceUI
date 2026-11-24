@@ -20,6 +20,9 @@ export interface MasterDetail {
   member: string | null;
   key: string | null;
   families: readonly string[];
+  /** The page, and its list's keys as published (D251: a document's links go only to these). */
+  page: string;
+  keys: readonly string[];
 }
 export const MasterContext = createContext<MasterDetail | null>(null);
 
