@@ -584,6 +584,11 @@ class PageView {
   static constexpr std::size_t kTopQuick = 1001;
   static constexpr std::size_t kQuickRow = 2000;
   std::vector<std::size_t> top_stops() const;
+  // A page's master list (D215): its name in focus ids (its topic, or for a list read a page at a time its page's id
+  // and ".list"), its topic as watched (none for such a list), and its rows' body, wherever they come from (D254).
+  std::string master_name(const protocol::PageMaster& m) const;
+  std::string master_topic() const;
+  const protocol::Json* master_body() const;
   bool has_quick() const noexcept { return pages_.quick && !pages_.quick->empty(); }
   Action quick_input(const Input& in);
   Action flip_quick(std::size_t index, int step);

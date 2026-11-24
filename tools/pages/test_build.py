@@ -263,7 +263,7 @@ class Seeded(unittest.TestCase):
         self.expect("its master list's detail is a family the space declares", sp, desc, fx)
         sp, desc, fx = demo()
         page(sp, "demo.lamps")["master"]["topic"] = "lantern.lamp"
-        self.expect("its master list's topic is a state topic of the space's own, not a family", sp, desc, fx)
+        self.expect("its master list's topic is a state topic of the space's own; a family only on a scoped page", sp, desc, fx)
         sp, desc, fx = demo()
         page(sp, "demo.lamps")["master"]["key"] = "lamp.id"
         self.expect("its master list has a key column (a name) and a label", sp, desc, fx)
@@ -329,6 +329,67 @@ class Seeded(unittest.TestCase):
         sp, desc, fx = demo()
         page(sp, "demo.behaviour")["live"] = True  # settings rows alone: nothing moves by itself
         self.expect("demo.behaviour: a live page draws a topic of the space's", sp, desc, fx)
+
+    def test_scope_and_pages_read_a_page_at_a_time(self):  # G45, D254
+        def lightings(sp):
+            return page(sp, "demo.lightings")
+        def history(sp):
+            return next(b for sec in page(sp, "demo.log")["sections"] for b in sec["blocks"] if "page" in b)
+        sp, desc, fx = demo()
+        del sp["scope"]
+        self.expect("demo.lightings: a scoped page follows the space's scope, which the space does not declare", sp, desc, fx)
+        for topic in ("lantern.season", "settings", "lantern.log", "lantern.nowhere"):
+            sp, desc, fx = demo()
+            sp["scope"]["topic"] = topic
+            self.expect("its scope is on a state topic of the space's own, not a family", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["scope"]["label"] = ""
+        self.expect("its scope's label is 1 to 32 characters", sp, desc, fx)
+        # A master list: a topic or a page source; a family only on a scoped page.
+        sp, desc, fx = demo()
+        lightings(sp)["master"]["topic"] = "lantern.status"
+        self.expect("its master list reads a topic or a page source, one of the two", sp, desc, fx)
+        sp, desc, fx = demo()
+        del lightings(sp)["master"]["page"]
+        lightings(sp)["master"]["topic"] = "lantern.season"
+        del lightings(sp)["scoped"]
+        self.expect("a family only on a scoped page", sp, desc, fx)
+        for command in ("lightings.steal", "settings.set", "keepers.import", "oil.order"):
+            sp, desc, fx = demo()
+            lightings(sp)["master"]["page"]["command"] = command
+            self.expect("its rows come from a command of the space's own, neither a settings, a file nor a slow", sp, desc, fx)
+        sp, desc, fx = demo()
+        history(sp)["page"]["changes"] = "lantern.log"
+        self.expect("its changes topic is a state topic of the space's own, not a family", sp, desc, fx)
+        # A table: a topic or a page source; a page source on a table alone.
+        sp, desc, fx = demo()
+        history(sp)["topic"] = "lantern.status"
+        self.expect("a table reads a topic or a page source, one of the two", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["sections"][0]["blocks"].append(
+            {"kind": "component", "component": "key_value_list", "page": {"command": "lightings.page"}})
+        self.expect("a page source belongs to a table block", sp, desc, fx)
+        # A filter's own choices: on rows read a page at a time, and only there.
+        sp, desc, fx = demo()
+        del history(sp)["filter_bar"]["filters"][0]["choices_from"]
+        self.expect("a filter on rows read a page at a time names its choices", sp, desc, fx)
+        sp, desc, fx = demo()
+        history(sp)["filter_bar"]["filters"][0]["choices"] = [{"value": "North light", "label": "North light"}]
+        self.expect("a filter on rows read a page at a time names its choices", sp, desc, fx)
+        sp, desc, fx = demo()
+        history(sp)["filter_bar"]["filters"][0]["choices_from"] = {"topic": "lantern.season"}
+        self.expect("a filter's choices_from is a state topic of the space's own, not a family", sp, desc, fx)
+        sp, desc, fx = demo()
+        keepers = next(b for sec in page(sp, "demo.keepers")["sections"] for b in sec["blocks"] if "filter_bar" in b)
+        keepers["filter_bar"]["filters"][0]["choices"] = [{"value": "x", "label": "X"}]
+        self.expect("a filter's own choices are for rows read a page at a time", sp, desc, fx)
+        # A family on a scoped page with no master list is the scope's member.
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["sections"][0]["blocks"].append(
+            {"kind": "component", "component": "key_value_list", "topic": "lantern.season"})
+        self.expect("draws family lantern.season on a page with no master list", sp, desc, fx)
+        page(sp, "demo.overview")["scoped"] = True
+        self.assertFalse(any("lantern.season" in f for f in failures(sp, desc, fx)))
 
     def test_file_commands_and_upload_blocks(self):  # D226
         def roster_block(sp):

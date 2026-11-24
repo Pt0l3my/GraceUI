@@ -350,7 +350,12 @@
       }
     ],
     "sentence": "The north lantern burns steady amber, with oil for about three hours.",
-    "hushed": false
+    "hushed": false,
+    "lamps": [
+      "North light",
+      "Harbour wall",
+      "Store room"
+    ]
   },
   "lantern.log": [
     {
@@ -623,6 +628,72 @@
             "value": "The glass wants a new seal."
           }
         ]
+      }
+    ]
+  },
+  "lantern.seasons": {
+    "choices": [
+      {
+        "id": "winter",
+        "label": "This winter"
+      },
+      {
+        "id": "autumn",
+        "label": "Last autumn",
+        "read_only": true
+      }
+    ],
+    "current": "winter"
+  },
+  "lantern.season/winter": {
+    "items": [
+      {
+        "label": "Lightings",
+        "value": "40"
+      },
+      {
+        "label": "Oil burned",
+        "value": "31 jars"
+      },
+      {
+        "label": "Nights of storm",
+        "value": "6"
+      }
+    ]
+  },
+  "lantern.season/autumn": {
+    "items": [
+      {
+        "label": "Lightings",
+        "value": "20"
+      },
+      {
+        "label": "Oil burned",
+        "value": "14 jars"
+      },
+      {
+        "label": "Nights of storm",
+        "value": "2"
+      }
+    ]
+  },
+  "lantern.lighting/l60": {
+    "items": [
+      {
+        "label": "Lamp",
+        "value": "North light"
+      },
+      {
+        "label": "Keeper",
+        "value": "Orla Venn"
+      },
+      {
+        "label": "Lit",
+        "value": "Night 60, at dusk"
+      },
+      {
+        "label": "Season",
+        "value": "This winter"
       }
     ]
   }

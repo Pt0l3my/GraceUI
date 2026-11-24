@@ -14,7 +14,7 @@ name = "Demo space"
 settings_schema = 1
 commands = ["settings.set", "settings.reset", "lantern.trim", "lantern.clear_log", "keepers.dismiss", "keepers.ward",
             "keepers.hire", "keepers.dismiss_all", "oil.order", "note.check", "note.save", "note.reset", "note.restore",
-            "note.draft", "keepers.import", "report.part", "bell.hush"]
+            "note.draft", "keepers.import", "report.part", "bell.hush", "lightings.page"]
 slow_commands = ["oil.order", "note.draft"]  # the harbour store's oil and a drafted note: within 90 s (D216)
 file_commands = ["keepers.import"]  # a roster file, by the upload route from this PC alone (D226)
 sensitive_commands = ["keepers.import"]
@@ -22,6 +22,8 @@ sensitive_commands = ["keepers.import"]
 # for this session, the space's own switch, never a setting, its state on lantern.status.
 quick = [{ key = "lantern.enabled" }, { key = "lantern.colour" },
          { id = "hush", label = "Hush the bell for this session", command = "bell.hush", state = { topic = "lantern.status", field = "hushed" }, home = "demo.overview" }]
+# The scope its scoped pages follow (D254): the season in view, chosen in the top bar; an earlier one is read only.
+scope = { label = "Season", topic = "lantern.seasons" }
 
 [[topic]]
 id = "settings"
@@ -67,6 +69,20 @@ id = "lantern.report"  # the lamp report's preview (D251)
 shape = "state"
 
 [[topic]]
+id = "lantern.seasons"  # the seasons the top bar's chooser offers, and the current one (D254)
+shape = "state"
+
+[[topic]]
+id = "lantern.season"  # a season's totals, a member per season (D254)
+shape = "state"
+family = true
+
+[[topic]]
+id = "lantern.lighting"  # one lighting, a member per row of the Lightings list (D254)
+shape = "state"
+family = true
+
+[[topic]]
 id = "lantern.log"
 shape = "stream"
 ring = 200
@@ -84,7 +100,7 @@ pages = ["demo.overview", "demo.behaviour", "demo.keepers"]
 [[category]]
 id = "records"
 name = "Records"
-pages = ["demo.log", "demo.festival", "demo.lamps", "demo.handbook"]
+pages = ["demo.log", "demo.festival", "demo.lamps", "demo.lightings", "demo.handbook"]
 foot = true  # at the rail's foot, under a rule (D248)
 
 # ---- Settings: one of every type (§6.9).
@@ -325,6 +341,12 @@ collapsed = true
 blocks = [{ kind = "component", component = "log_tail", topic = "lantern.journal" }]
 
 [[page.sections]]
+id = "history"
+title = "Every lighting"
+description = "All seasons' lightings, newest first, a page at a time."
+blocks = [{ kind = "component", component = "table", props = { empty = "No lamp has been lit yet." }, filter_bar = { filters = [{ column = "lamp", label = "Lamp", choices_from = { topic = "lantern.status", field = "lamps" } }], sort = [{ key = "at_ms", label = "Time", direction = "descending" }], search = { columns = ["keeper"], label = "Find a keeper" } }, page = { command = "lightings.page", args = { view = "table" }, changes = "lantern.status" } }]
+
+[[page.sections]]
 id = "report"
 title = "Lamp report"
 description = "What a report to the harbour master would hold. Leave out the parts you would rather not send."
@@ -405,6 +427,29 @@ sections = [{ id = "notes", title = "Keeper's notes", blocks = [{ kind = "compon
 id = "yours"
 name = "Your notes"
 sections = [{ id = "your_notes", title = "Your notes", blocks = [{ kind = "editor", topic = "lantern.note", editor = { save = "note.save", check = "note.check", reset = "note.reset", restore = "note.restore", draft = "note.draft", notes_label = "Your rough notes", notes_max = 400 } }] }]
+
+[[page]]
+id = "demo.lightings"
+category = "records"
+name = "Lightings"
+description = "Every lamp lit in a season, newest first, read a page at a time."
+increment = "0.2"
+live = true  # new lightings come while it is open (D252)
+scoped = true  # the season in view (D254)
+related = ["demo.lamps", "demo.log"]
+help.purpose = "See when each lamp was lit, and by whom, season by season."
+help.steps = ["Choose a season in the top bar; a past one is read only.", "Choose a lighting in the list to read it.", "Show more for older lightings, or filter the list by lamp."]
+master = { key = "id", detail = "lantern.lighting", label = "Lightings", empty = "No lamp was lit this season.", none = "Choose a lighting to read it.", filter_bar = { filters = [{ column = "lamp", label = "Lamp", choices = [{ value = "North light", label = "North light" }, { value = "Harbour wall", label = "Harbour wall" }, { value = "Store room", label = "Store room" }] }], sort = [{ key = "at_ms", label = "Time", direction = "descending" }, { key = "keeper", label = "Keeper" }] }, page = { command = "lightings.page", args = { view = "list" }, changes = "lantern.status" } }
+
+[[page.sections]]
+id = "lighting"
+title = "Lighting"
+blocks = [{ kind = "component", component = "key_value_list", topic = "lantern.lighting" }]
+
+[[page.sections]]
+id = "season"
+title = "The season"
+blocks = [{ kind = "component", component = "key_value_list", topic = "lantern.season" }]
 
 [[page]]
 id = "demo.handbook"

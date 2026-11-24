@@ -460,11 +460,14 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
     return !n.empty() && n.size() <= 32 &&
            std::all_of(n.begin(), n.end(), [](char ch) { return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_'; });
   };
-  const auto bar_ok = [&](const protocol::FilterBar& bar, const std::string& where) {
+  const auto bar_ok = [&](const protocol::FilterBar& bar, const std::string& where, bool paged) {
     const bool parts = (bar.filters && !bar.filters->empty()) || (bar.sort && !bar.sort->empty()) || bar.search;
     bool names = true;
     for (const protocol::FilterOption& f : bar.filters.value_or(std::vector<protocol::FilterOption>{})) {
       names = names && name_ok(f.column) && !f.label.empty();
+      // Its own choices on rows read a page at a time, one source of them; anywhere else none (D254).
+      const int sources = static_cast<int>(f.choices.has_value()) + static_cast<int>(f.choices_from.has_value());
+      names = names && (paged ? sources == 1 : sources == 0);
     }
     for (const protocol::SortOption& o : bar.sort.value_or(std::vector<protocol::SortOption>{})) {
       names = names && name_ok(o.key) && !o.label.empty();
@@ -474,13 +477,45 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
               std::all_of(bar.search->columns.begin(), bar.search->columns.end(), name_ok);
     }
     if (!parts || !names) {
-      why = where + "a filter bar has a filter, a sort option or a search, each naming its columns";
+      why = where + "a filter bar has a filter, a sort option or a search, each naming its columns, and its filters "
+            "their own choices where its rows come a page at a time, and nowhere else";
       return false;
     }
     return true;
   };
+  // A state topic of the space's own, not a family (the quick switches', the scope's, a page source's changes).
+  const auto own_state = [&](const std::string& id) {
+    return id != "settings" && id != "space.state" &&
+           std::any_of(pages.topics.begin(), pages.topics.end(), [&](const protocol::TopicInfo& t) {
+             return t.id == id && t.shape == protocol::TopicShape::state && !t.family.value_or(false);
+           });
+  };
+  // A space's scope and its scoped pages, and rows read a page at a time (G45, D254), as the page lint checks them.
+  if (pages.scope && (pages.scope->label.empty() || !own_state(pages.scope->topic) ||
+                      (pages.scope->field && !name_ok(*pages.scope->field)))) {
+    why = "the space's scope has a label and is on a state topic of its own, not a family";
+    return false;
+  }
+  const auto source_ok = [&](const protocol::PageSource& src) {
+    return usable(src.command) && src.command != "settings.set" && src.command != "settings.reset" &&
+           std::find(slow.begin(), slow.end(), src.command) == slow.end() && (!src.changes || own_state(*src.changes));
+  };
   for (const protocol::Page& page : pages.pages) {
-    if (page.master && page.master->filter_bar && !bar_ok(*page.master->filter_bar, page.id + ": its master list: ")) {
+    if (page.scoped.value_or(false) && !pages.scope) {
+      why = page.id + " follows the space's scope, which the space does not declare";
+      return false;
+    }
+    if (page.master && page.master->topic.has_value() == page.master->page.has_value()) {
+      why = page.id + ": its master list reads a topic or a page source, one of the two";
+      return false;
+    }
+    if (page.master && page.master->page && !source_ok(*page.master->page)) {
+      why = page.id + ": its master list's rows come from a command of the space's own, neither a settings, a file nor "
+            "a slow command, and its changes topic is a state topic of its own";
+      return false;
+    }
+    if (page.master && page.master->filter_bar &&
+        !bar_ok(*page.master->filter_bar, page.id + ": its master list: ", page.master->page.has_value())) {
       return false;
     }
   }
@@ -498,15 +533,9 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       }
       continue;
     }
-    const auto state_topic = [&](const std::string& id) {
-      return id != "settings" && id != "space.state" &&
-             std::any_of(pages.topics.begin(), pages.topics.end(), [&](const protocol::TopicInfo& t) {
-               return t.id == id && t.shape == protocol::TopicShape::state && !t.family.value_or(false);
-             });
-    };
     const bool session = q.id && q.label && !q.label->empty() && q.command && q.state && q.home &&
                          usable(*q.command) && *q.command != "settings.set" && *q.command != "settings.reset" &&
-                         std::find(slow.begin(), slow.end(), *q.command) == slow.end() && state_topic(q.state->topic) &&
+                         std::find(slow.begin(), slow.end(), *q.command) == slow.end() && own_state(q.state->topic) &&
                          name_ok(q.state->field) &&
                          std::any_of(pages.pages.begin(), pages.pages.end(),
                                      [&](const protocol::Page& p) { return p.id == *q.home; });
@@ -524,7 +553,12 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       why = where + "row actions and a row secret go on a table";
       return false;
     }
-    if (block.filter_bar && (!table || !bar_ok(*block.filter_bar, where))) {
+    if (block.page && (!table || block.topic || !source_ok(*block.page))) {
+      why = where + "a page source belongs to a table with no topic, its rows from a command of the space's own, "
+            "neither a settings, a file nor a slow command, and its changes topic a state topic of its own";
+      return false;
+    }
+    if (block.filter_bar && (!table || !bar_ok(*block.filter_bar, where, block.page.has_value()))) {
       why = table ? why : where + "a filter bar goes on a table, or on a page's master list";
       return false;
     }
@@ -978,7 +1012,7 @@ void PageView::set_topic(std::string_view topic, const Json& body) {
       }
     }
   }
-  if (const protocol::PageMaster* m = master(); m != nullptr && topic == m->topic) {
+  if (const protocol::PageMaster* m = master(); m != nullptr && !master_topic().empty() && topic == master_topic()) {
     // The list changed: a chosen row it no longer has is let go, and the first row chosen if none is (D215).
     const auto rows = master_rows();
     const auto at = chosen_.find(current().id);
@@ -1332,7 +1366,9 @@ std::vector<std::string> PageView::component_topics() const {
     }
   }
   if (const protocol::PageMaster* m = master(); m != nullptr) {
-    out.push_back(m->topic);  // its list (D215); the chosen row's member comes with the blocks that draw it
+    if (const std::string list = master_topic(); !list.empty()) {
+      out.push_back(list);  // its list (D215); the chosen row's member comes with the blocks that draw it
+    }
   }
   const auto add = [&](const std::vector<protocol::PageBlock>& blocks) {
     for (const protocol::PageBlock& block : blocks) {
@@ -1432,14 +1468,14 @@ PageView::Bar PageView::bar_of_master() const {
   if (m == nullptr || !m->filter_bar) {
     return out;
   }
-  const auto found = topics_.find(m->topic);
-  if (found == topics_.end() || !found->second.is_object() || !found->second.contains("rows") ||
-      !found->second["rows"].is_array() || found->second["rows"].empty()) {
-    return out;
+  const Json* body = master_body();
+  if (body == nullptr || !body->is_object() || !body->contains("rows") || !(*body)["rows"].is_array() ||
+      ((*body)["rows"].empty() && !m->page)) {
+    return out;  // (a list read a page at a time keeps its bar with no rows: its filters chose none, D254)
   }
-  out.key = "master:" + m->topic;
+  out.key = "master:" + master_name(*m);
   out.bar = &*m->filter_bar;
-  out.rows = &found->second["rows"];
+  out.rows = &(*body)["rows"];
   return out;
 }
 
@@ -1563,12 +1599,11 @@ bool PageView::listed(const std::string& key) const {
   if (m == nullptr) {
     return false;
   }
-  const auto found = topics_.find(m->topic);
-  if (found == topics_.end() || !found->second.is_object() || !found->second.contains("rows") ||
-      !found->second["rows"].is_array()) {
+  const Json* body = master_body();
+  if (body == nullptr || !body->is_object() || !body->contains("rows") || !(*body)["rows"].is_array()) {
     return false;
   }
-  for (const Json& row : found->second["rows"]) {
+  for (const Json& row : (*body)["rows"]) {
     if (row.is_object() && cell_words(row, m->key) == key && member_key(m->detail, key)) {
       return true;
     }
@@ -1628,7 +1663,7 @@ Action PageView::follow_link(const Focus& f) {
   refocus_name_.clear();
   if (const protocol::PageMaster* m = master(); m != nullptr && scope_ == Scope::page) {
     for (std::size_t i = 0; i < focus_.size(); ++i) {
-      if (focus_[i].kind == FocusKind::master_row && focus_[i].id == m->topic + "/" + to.doc) {
+      if (focus_[i].kind == FocusKind::master_row && focus_[i].id == master_name(*m) + "/" + to.doc) {
         page_focus_ = i;
         break;
       }
@@ -1756,7 +1791,7 @@ void PageView::rebuild() {
     push_bar(bar_of_master(), nullptr);
     const auto rows = master_rows();
     for (std::size_t r = 0; r < rows.size(); ++r) {
-      focus_.push_back({FocusKind::master_row, m->topic + "/" + rows[r].first, r});
+      focus_.push_back({FocusKind::master_row, master_name(*m) + "/" + rows[r].first, r});
     }
   }
   // A master page with no row chosen draws no detail: its tabs and sections are no focus stops then (D215).
@@ -2476,19 +2511,36 @@ const protocol::PageMaster* PageView::master() const {
   return m ? &*m : nullptr;
 }
 
+std::string PageView::master_name(const protocol::PageMaster& m) const {
+  return m.topic ? *m.topic : current().id + ".list";  // a list read a page at a time has no topic: its page names it
+}
+
+std::string PageView::master_topic() const {
+  const protocol::PageMaster* m = master();
+  return m != nullptr && m->topic ? *m->topic : std::string();  // none for a list read a page at a time (D254)
+}
+
+const Json* PageView::master_body() const {
+  const std::string topic = master_topic();
+  if (topic.empty()) {
+    return nullptr;
+  }
+  const auto found = topics_.find(topic);
+  return found != topics_.end() ? &found->second : nullptr;
+}
+
 std::vector<std::pair<std::string, const Json*>> PageView::master_rows() const {
   std::vector<std::pair<std::string, const Json*>> out;
   const protocol::PageMaster* m = master();
   if (m == nullptr) {
     return out;
   }
-  const auto found = topics_.find(m->topic);
-  if (found == topics_.end() || !found->second.is_object() || !found->second.contains("rows") ||
-      !found->second["rows"].is_array()) {
+  const Json* body = master_body();
+  if (body == nullptr || !body->is_object() || !body->contains("rows") || !(*body)["rows"].is_array()) {
     return out;
   }
   // Through its filter bar, if it has one (G43, D250): the rows that show, in the order they show.
-  const Json& rows = found->second["rows"];
+  const Json& rows = (*body)["rows"];
   std::vector<std::size_t> order;
   if (const Bar bar = bar_of_master(); bar) {
     const auto state = filters_.find(bar.key);
@@ -2566,7 +2618,7 @@ void PageView::follow_master() {
     return;
   }
   if (scope_ == Scope::page && page_focus_ < focus_.size() && focus_[page_focus_].kind == FocusKind::master_row) {
-    choose(focus_[page_focus_].id.substr(m->topic.size() + 1));
+    choose(focus_[page_focus_].id.substr(master_name(*m).size() + 1));
     return;
   }
   if (chosen().empty()) {
@@ -2597,7 +2649,7 @@ void PageView::settle_expected() {
   choose(key);
   if (on_row) {
     // Focus on the list goes with the choice, so that the row focused stays the row chosen.
-    const std::string name = "item:" + m->topic + "/" + key;
+    const std::string name = "item:" + master_name(*m) + "/" + key;
     for (std::size_t i = 0; i < focus_.size(); ++i) {
       if (name_of(Scope::page, i) == name) {
         page_focus_ = i;
@@ -2705,7 +2757,7 @@ void PageView::focus_master_on_open() {
   bool any = false;
   for (std::size_t i = 0; i < focus_.size(); ++i) {
     if (focus_[i].kind == FocusKind::master_row) {
-      if (!any || focus_[i].id == m->topic + "/" + key) {
+      if (!any || focus_[i].id == master_name(*m) + "/" + key) {
         page_focus_ = i;  // the row it chose last time, or the first (D215)
       }
       any = true;
@@ -3998,7 +4050,7 @@ Action PageView::input_body(const Input& in) {
       if (focus_[i].kind == FocusKind::master_row) {
         first = std::min(first, i);
         last = i;
-        if (focus_[i].id == m->topic + "/" + chosen()) {
+        if (focus_[i].id == master_name(*m) + "/" + chosen()) {
           chosen_at = i;
         }
       }
@@ -4749,10 +4801,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const auto rows = master_rows();
       std::string first_column;
       std::string second_column;
-      if (const auto body = topics_.find(m->topic); body != topics_.end() && body->second.is_object() &&
-                                                    body->second.contains("columns") &&
-                                                    body->second["columns"].is_array()) {
-        for (const Json& column : body->second["columns"]) {
+      if (const Json* body = master_body(); body != nullptr && body->is_object() && body->contains("columns") &&
+                                            (*body)["columns"].is_array()) {
+        for (const Json& column : (*body)["columns"]) {
           if (column.is_object() && column.contains("id") && column["id"].is_string()) {
             (first_column.empty() ? first_column : second_column) = column["id"].get<std::string>();
             if (!second_column.empty()) {
@@ -4763,7 +4814,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       }
       const float row_hm = std::round(14 * s + line_height(TypeRole::ui, s) + line_height(TypeRole::ui_sm, s));
       for (const auto& [key, row] : rows) {
-        const std::string id = m->topic + "/" + key;
+        const std::string id = master_name(*m) + "/" + key;
         const Rect r{x0 + std::round(8 * s), my, mw - std::round(16 * s), row_hm};
         const bool chosen_row = key == chosen();
         if (chosen_row) {
@@ -4787,7 +4838,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       }
       if (rows.empty() && !master_bar) {
         // Its own words once its topic has spoken (D186), nothing else until then (invariant 2).
-        const bool published = topics_.count(m->topic) != 0;
+        const bool published = master_body() != nullptr;
         c.text(published && m->empty ? *m->empty : std::string("Nothing to show."), TypeRole::ui_sm, x0 + mpad,
                my + std::round(4 * s), mw - 2 * mpad, Colour::ink_mute);
         my += std::round(line_height(TypeRole::ui_sm, s) + 12 * s);

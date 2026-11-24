@@ -1120,7 +1120,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.equal(await page.locator(".mark").count(), 3);
       await page.locator("[data-rail='category:records']").click();
       await page.locator(".flyout").waitFor();
-      assert.equal(await page.locator(".flyout .flyout__page").count(), 4);  // Log, Festival, Lamps, Handbook (D251)
+      assert.equal(await page.locator(".flyout .flyout__page").count(), 5);  // Log, Festival, Lamps, Lightings, Handbook
       await page.waitForFunction(() => document.activeElement?.classList.contains("flyout__page") === true);
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => document.querySelector(".flyout") === null);
