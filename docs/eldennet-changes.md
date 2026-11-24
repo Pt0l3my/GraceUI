@@ -1434,3 +1434,13 @@ Your three points of 2026-11-24.
    reads "GraceUI's own copy is idle: another copy was started first and is in use, <its name>. Remove that copy to use
    GraceUI's own.", naming the copy in use, the one to remove; the log line says the same. Your -second-copy-first case
    reads the new words there; the other order's are unchanged.
+
+## 72. Your preview's three findings in the menu (2026-11-24, D245; GraceUI 0.2.39)
+
+1. **The links back follow your increment.** On GraceUI's own pages, your categories at the rail's head now leave out
+   a category with no page in your space's increment, as your own rail does, and each links to its first page present.
+2. **The rail's ring shows whole**, inside the rail at the display's left edge.
+3. **A related row's words clear its ring**: they start 12 px (at scale) inside the row, centred in its height.
+
+For your goldens: any of your pages with a Related card moves by those rows' words alone (each label, description and
+arrow), in grace-dev's dumps as in GraceUI's own; regenerate them at 0.2.39. Nothing else moves.
