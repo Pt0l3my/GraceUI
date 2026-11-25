@@ -684,6 +684,20 @@ def topics_named(node):
     return out
 
 
+def keys_named(node):
+    """Every setting a part of page data shows: the keys of its settings and shortcut blocks."""
+    out = set()
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "keys" and isinstance(value, list):
+                out |= {k for k in value if isinstance(k, str)}
+            out |= keys_named(value)
+    elif isinstance(node, list):
+        for item in node:
+            out |= keys_named(item)
+    return out
+
+
 def lint_pc_only(space, space_pages, description, failures):
     """This PC alone (D264): a pc_only topic is drawn on pc_only pages alone, never on a page, the scope or a quick
     switch a paired device sees; a setting homed on a pc_only page is sensitive, so that no device changes it."""
@@ -697,6 +711,16 @@ def lint_pc_only(space, space_pages, description, failures):
                             "(D264)")
     for tid in sorted(topics_named({"scope": space_pages.get("scope"), "quick": space_pages.get("quick")}) & pc_topics):
         failures.append(f"{space}: the top bar names {tid}, a topic on this PC alone, which a paired device sees (D264)")
+    pc_keys = {s["key"] for s in description["settings"] if s.get("home") in pc_pages}
+    for p in space_pages["pages"]:
+        if p["id"] not in pc_pages:
+            for key in sorted(keys_named(p) & pc_keys):
+                failures.append(f"{space}: page {p['id']} shows setting {key}, which lives on a pc_only page a paired "
+                                "device never sees (D264)")
+    for q in space_pages.get("quick", []):
+        if q.get("key") in pc_keys or q.get("home") in pc_pages:
+            failures.append(f"{space}: quick switch {q.get('key') or q.get('id')} is a pc_only page's, which a paired "
+                            "device's top bar would show (D264)")
     for s in description["settings"]:
         if s.get("choices_from") in pc_topics and s.get("home") not in pc_pages:
             failures.append(f"{space}: setting {s['key']} takes its choices from {s['choices_from']}, a topic on this PC "

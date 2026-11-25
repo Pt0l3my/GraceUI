@@ -1,6 +1,7 @@
 // space.cpp: SpacePort (space.h), on the space's own thread: its events from the I/O thread, and what it publishes and
 // answers, encoded here once as WebSocket text frames, so that the I/O thread only routes bytes (D55).
 #include <algorithm>
+#include <functional>
 #include <utility>
 
 #include "grace/protocol/frame.h"
@@ -54,6 +55,44 @@ std::shared_ptr<const std::string> ws_text_frame(std::string_view json) {
   }
   frame->append(json);
   return frame;
+}
+
+bool strip_pc_settings(const SpaceDescription& description, std::string_view topic, protocol::Json& body) {
+  if (topic != "settings" || description.pc_settings.empty() || !body.is_object()) {
+    return false;
+  }
+  const auto pc = [&](const std::string& key) {
+    return std::find(description.pc_settings.begin(), description.pc_settings.end(), key) !=
+           description.pc_settings.end();
+  };
+  bool erased = false;
+  if (body.contains("values") && body["values"].is_object()) {
+    for (const std::string& key : description.pc_settings) {
+      erased = body["values"].erase(key) > 0 || erased;
+    }
+  }
+  for (const char* list : {"description", "inherited"}) {
+    if (body.contains(list) && body[list].is_array()) {
+      protocol::Json& items = body[list];
+      const auto before = items.size();
+      items.erase(std::remove_if(items.begin(), items.end(),
+                                 [&](const protocol::Json& item) {
+                                   return item.is_object() && item.contains("key") && item["key"].is_string() &&
+                                          pc(item["key"].get<std::string>());
+                                 }),
+                  items.end());
+      erased = erased || items.size() != before;
+    }
+  }
+  if (body.contains("changed") && body["changed"].is_array()) {
+    protocol::Json& changed = body["changed"];
+    const auto before = changed.size();
+    changed.erase(std::remove_if(changed.begin(), changed.end(),
+                                 [&](const protocol::Json& key) { return key.is_string() && pc(key.get<std::string>()); }),
+                  changed.end());
+    erased = erased || changed.size() != before;
+  }
+  return erased;
 }
 
 bool strip_shared(const SpaceDescription& description, std::string_view topic, protocol::Json& body) {
@@ -201,8 +240,72 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
       pc_pages.push_back(page.id);
     }
   }
+  const auto on_pc = [&](const std::string& page) {
+    return std::find(pc_pages.begin(), pc_pages.end(), page) != pc_pages.end();
+  };
+  if (!pc_pages.empty()) {
+    // The commands a pc_only page alone sends are sensitive (D221): a device's call of one is refused, as its sub of
+    // such a page's topic is. A command named anywhere a device sees stays a device's to send.
+    std::vector<std::string> pc_named;
+    std::vector<std::string> device_named;
+    const std::function<void(const protocol::Json&, std::vector<std::string>&)> named =
+        [&](const protocol::Json& node, std::vector<std::string>& out) {
+          if (node.is_string()) {
+            const std::string& word = node.get_ref<const std::string&>();
+            if (std::find(pages.commands.begin(), pages.commands.end(), word) != pages.commands.end()) {
+              out.push_back(word);
+            }
+          } else if (node.is_object() || node.is_array()) {
+            for (const protocol::Json& part : node) {
+              named(part, out);
+            }
+          }
+        };
+    for (const protocol::Page& page : pages.pages) {
+      named(protocol::encode(page), page.pc_only.value_or(false) ? pc_named : device_named);
+    }
+    for (const protocol::QuickSwitch& q : pages.quick.value_or(std::vector<protocol::QuickSwitch>{})) {
+      named(protocol::encode(q), device_named);
+    }
+    if (pages.scope) {
+      named(protocol::encode(*pages.scope), device_named);
+    }
+    for (const std::string& command : pc_named) {
+      if (std::find(device_named.begin(), device_named.end(), command) == device_named.end()) {
+        add(description.sensitive, command);
+      }
+    }
+    for (const protocol::Setting& setting : settings.settings) {
+      if (on_pc(setting.home)) {
+        description.pc_settings.push_back(setting.key);
+      }
+    }
+  }
   if (!pc_pages.empty() && description.pages.is_object() && description.pages.contains("pages")) {
     description.device_pages = description.pages;
+    // Nor the names of the topics kept to this PC, nor a quick switch whose home is a pc_only page.
+    if (description.device_pages.contains("topics") && description.device_pages["topics"].is_array()) {
+      protocol::Json& topics = description.device_pages["topics"];
+      topics.erase(std::remove_if(topics.begin(), topics.end(),
+                                  [](const protocol::Json& t) {
+                                    return t.is_object() && t.contains("pc_only") && t["pc_only"] == true;
+                                  }),
+                   topics.end());
+    }
+    if (description.device_pages.contains("quick") && description.device_pages["quick"].is_array()) {
+      protocol::Json& quick = description.device_pages["quick"];
+      const std::vector<std::string>& pc_keys = description.pc_settings;
+      quick.erase(std::remove_if(quick.begin(), quick.end(),
+                                 [&](const protocol::Json& q) {
+                                   return q.is_object() &&
+                                          ((q.contains("home") && q["home"].is_string() &&
+                                            on_pc(q["home"].get<std::string>())) ||
+                                           (q.contains("key") && q["key"].is_string() &&
+                                            std::find(pc_keys.begin(), pc_keys.end(), q["key"].get<std::string>()) !=
+                                                pc_keys.end()));
+                                 }),
+                  quick.end());
+    }
     protocol::Json& kept = description.device_pages["pages"];
     const auto pc = [&](const protocol::Json& id) {
       return id.is_string() && std::find(pc_pages.begin(), pc_pages.end(), id.get<std::string>()) != pc_pages.end();
@@ -355,9 +458,12 @@ bool SpacePort::publish(protocol::Message message) noexcept {
     if (out.frame == nullptr) {
       return false;
     }
-    if (auto* state = std::get_if<protocol::State>(&message);
-        state != nullptr && detail::strip_shared(state_->description, state->topic, state->body)) {
-      // A report preview's shared text (D263): a paired device gets the body without it, encoded here once.
+    auto* state = std::get_if<protocol::State>(&message);
+    const bool shared = state != nullptr && detail::strip_shared(state_->description, state->topic, state->body);
+    const bool kept_here = state != nullptr && detail::strip_pc_settings(state_->description, state->topic, state->body);
+    if (shared || kept_here) {
+      // A paired device's copy, encoded here once: a report preview's shared text taken out (D263), and the settings
+      // homed on pages kept to this PC (D264).
       out.device_frame = detail::encode_to_page(message);
       if (out.device_frame == nullptr) {
         return false;

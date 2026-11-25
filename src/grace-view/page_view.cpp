@@ -856,6 +856,45 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       return false;
     }
   }
+  // A setting homed on a pc_only page is shown on no page, and by no quick switch, a paired device sees.
+  std::set<std::string, std::less<>> pc_keys;
+  for (const protocol::Setting& setting : settings) {
+    if (pc_pages.contains(setting.home)) {
+      pc_keys.insert(setting.key);
+    }
+  }
+  const std::function<bool(const Json&)> shows_pc = [&](const Json& node) {
+    if (node.is_object()) {
+      for (const auto& [key, value] : node.items()) {
+        if (key == "keys" && value.is_array() &&
+            std::any_of(value.begin(), value.end(), [&](const Json& k) {
+              return k.is_string() && pc_keys.contains(k.get_ref<const std::string&>());
+            })) {
+          return true;
+        }
+        if (shows_pc(value)) {
+          return true;
+        }
+      }
+    } else if (node.is_array()) {
+      return std::any_of(node.begin(), node.end(), shows_pc);
+    }
+    return false;
+  };
+  if (!pc_keys.empty() || !pc_pages.empty()) {
+    for (const protocol::Page& page : pages.pages) {
+      if (!page.pc_only.value_or(false) && shows_pc(protocol::encode(page))) {
+        why = page.id + " shows a setting that lives on a pc_only page a paired device never sees (D264)";
+        return false;
+      }
+    }
+    for (const protocol::QuickSwitch& q : pages.quick.value_or(std::vector<protocol::QuickSwitch>{})) {
+      if ((q.key && pc_keys.contains(*q.key)) || (q.home && pc_pages.contains(*q.home))) {
+        why = "a quick switch is a pc_only page's, which a paired device's top bar would show (D264)";
+        return false;
+      }
+    }
+  }
   for (const protocol::Setting& setting : settings) {
     const bool pc_home = pc_pages.contains(setting.home);
     if (setting.choices_from && pc_topics.contains(*setting.choices_from) && !pc_home) {

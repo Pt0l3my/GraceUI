@@ -111,16 +111,21 @@ Status Registry::add(std::uint64_t owner, std::string_view mod_id, const Registr
   }
   protocol::SpacePages pages;
   protocol::SettingsDescription settings;
+  {
+    // Page data written for a newer GraceUI (D264): what this one does not read would be drawn without it (an ungated
+    // page, a device shown a page kept to this PC), so it is refused, both minors named. Read before the whole is
+    // decoded, since a newer minor's page data usually holds what this GraceUI cannot decode at all.
+    const protocol::Json raw = protocol::Json::parse(in.pages.begin(), in.pages.end(), nullptr, false);
+    if (raw.is_object() && raw.contains("minor") && raw["minor"].is_number_unsigned() &&
+        raw["minor"].get<std::uint64_t>() > protocol::kProtocolMinor) {
+      why = "page data for protocol 1." + std::to_string(raw["minor"].get<std::uint64_t>()) +
+            "; this GraceUI reads up to 1." + std::to_string(protocol::kProtocolMinor);
+      return Status::too_new;
+    }
+  }
   if (!decode_json(in.pages, pages, why, "its page data") ||
       !decode_json(in.settings, settings, why, "its settings description")) {
     return Status::refused;
-  }
-  if (pages.minor > protocol::kProtocolMinor) {
-    // Page data written for a newer GraceUI (D264): what this one does not read would be drawn without it (an ungated
-    // page, a device shown a page kept to this PC), so it is refused, both minors named.
-    why = "page data for protocol 1." + std::to_string(pages.minor) + "; this GraceUI reads up to 1." +
-          std::to_string(protocol::kProtocolMinor);
-    return Status::too_new;
   }
   if (pages.space != mod_id) {
     why = "its page data names another space than the mod's own id";

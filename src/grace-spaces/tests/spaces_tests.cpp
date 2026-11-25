@@ -109,6 +109,12 @@ TEST_CASE("a registration is checked: views, its own id, decodable page data, on
   CHECK(registry.add(kMod, "demo", demo_registration(newer, settings), why) == Status::too_new);
   CHECK(why == "page data for protocol 1." + std::to_string(grace::protocol::kProtocolMinor + 1) +
                    "; this GraceUI reads up to 1." + std::to_string(grace::protocol::kProtocolMinor));
+  // Newer page data usually holds what this GraceUI cannot decode: still named too new, not refused as broken.
+  std::string undecodable = newer;
+  const std::string component = "\"component\":\"stat_tiles\"";
+  REQUIRE(undecodable.find(component) != std::string::npos);
+  undecodable.replace(undecodable.find(component), component.size(), "\"component\":\"a_later_widget\"");
+  CHECK(registry.add(kMod, "demo", demo_registration(undecodable, settings), why) == Status::too_new);
   // GraceUI's own space's id is not a mod's.
   std::string own = pages;
   own.replace(own.find("\"space\":\"demo\""), 14, "\"space\":\"graceui\"");

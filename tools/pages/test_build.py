@@ -461,6 +461,12 @@ class Seeded(unittest.TestCase):
         self.expect("setting lantern.brightness lives on pc_only page demo.workbench: it is sensitive too", sp, desc, fx)
         setting(desc, "lantern.brightness")["sensitive"] = True
         self.assertFalse(any("it is sensitive too" in f for f in failures(sp, desc, fx)))
+        # And shown on no page, nor by a quick switch, a paired device sees.
+        self.expect("shows setting lantern.brightness, which lives on a pc_only page", sp, desc, fx)
+        sp, desc, fx = demo()
+        setting(desc, "lantern.enabled")["home"] = "demo.workbench"
+        setting(desc, "lantern.enabled")["sensitive"] = True
+        self.expect("quick switch lantern.enabled is a pc_only page's", sp, desc, fx)
 
     def test_a_report_previews_share(self):  # D263
         def report(sp):

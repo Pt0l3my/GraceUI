@@ -62,6 +62,8 @@ struct SpaceDescription {
   // The same page data for a paired device (D264): its pc_only pages left out, and every link to one. Null where the
   // space has none, so a device gets `pages` itself.
   protocol::Json device_pages;
+  // The settings homed on pc_only pages (D264): left out of the settings topic as a paired device gets it.
+  std::vector<std::string> pc_settings;
   // Where a report preview draws its body (D263): its topic (a family's members too) and, where the block names one,
   // the field of the topic's body it draws. The `share` there, the space's text of this PC's report, is left out of
   // what a paired device receives, whether or not the block offers Copy or Save.

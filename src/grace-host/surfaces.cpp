@@ -834,8 +834,9 @@ GraceUiStatus register_pages(GraceUiConsumer consumer, std::uint32_t views, std:
     if (added != grace::spaces::Status::ok) {
       log_line("%s's register_pages refused: %s", mod_id, why.c_str());
       if (added == grace::spaces::Status::too_new) {
-        // Once, in words the player can act on (D264): the mod wants a newer GraceUI than this one.
-        session::own_notice(0, GRACEUI_TONE_WARNING, "%s needs a newer GraceUI for its pages: %s.",
+        // Once a mod, in words the player can act on (D264): the mod wants a newer GraceUI than this one. Keyed by the
+        // mod's number, so that a mod that asks again replaces its notice rather than adding one.
+        session::own_notice(0x4E000000u | owner, GRACEUI_TONE_WARNING, "%s needs a newer GraceUI for its pages: %s.",
                             info.name[0] != '\0' ? info.name : mod_id, why.c_str());
       }
       return status_of(added);

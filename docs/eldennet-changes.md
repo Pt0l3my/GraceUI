@@ -1762,11 +1762,20 @@ gives `pc_only` to an older GraceUI is not refused; the mark is simply not read,
   page is as any other.
 - **`pc_only = true` on a topic** (beside its `shape`) makes the server refuse a device's sub to it, or to a member of a
   family so marked. The refusal is not_now with "Only on the PC the game runs on.". You never hear of the watch.
-- **The lint and registration check two things.** A pc_only topic may be drawn only on pc_only pages: not on a page a
-  device sees, not in the scope, not by a quick switch, and not as a setting's choices homed elsewhere. A setting homed
-  on a pc_only page must be `sensitive` (or a secret), so a device cannot change it.
+- **A pc_only page's own commands** (any command it alone names: an action, a form, an editor's, a page source, a
+  report's Save) are refused from a device as sensitive ones are, so a device cannot ask for the data by a command.
+  A command also named on a page a device sees stays a device's to send.
+- **Settings homed on a pc_only page** are left out of your settings topic as a device gets it: its description,
+  values, changed keys and inherited values. A device's page data names no pc_only topic.
+- **The lint and registration check three things.** A pc_only topic may be drawn only on pc_only pages: not on a page
+  a device sees, not in the scope, not by a quick switch, and not as a setting's choices homed elsewhere. A setting
+  homed on a pc_only page may be shown on no page, and by no quick switch, that a device sees. It must be `sensitive`
+  (or a secret), so a device cannot change it.
 - **For Workshop**: mark the page `pc_only = true`, and mark every topic that only Workshop draws. A topic Workshop
   shares with another page stays readable by a device, as now.
-- **Page data for a newer GraceUI**: register_pages now refuses page data whose minor is above the GraceUI's own. You
-  get GRACEUI_REFUSED. GraceUI's log and one notice of its own name both minors: "EldenNet needs a newer GraceUI for
-  its pages: page data for protocol 1.21; this GraceUI reads up to 1.20.". GraceUIs before 0.2.57 do not check this.
+- **Page data for a newer GraceUI**: register_pages now refuses page data whose minor is above the GraceUI's own, read
+  before the rest is decoded. You get GRACEUI_REFUSED. GraceUI's log and one notice of its own name both minors:
+  "EldenNet needs a newer GraceUI for its pages: page data for protocol 1.21; this GraceUI reads up to 1.20.". If you
+  register again, that notice is replaced rather than repeated. GraceUIs before 0.2.57 do not check this.
+- **So give your page data the minor of your floor**, the oldest GraceUI you support, not the newest GraceUI's.
+  With Workshop's pc_only that is 20 (GraceUI 0.2.57).

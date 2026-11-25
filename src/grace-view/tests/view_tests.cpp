@@ -3743,9 +3743,8 @@ TEST_CASE("this PC alone at registration: a pc_only topic on pc_only pages alone
       }
     }
   };
-  CHECK(refused([&](Json&, Json& s) { homed(s, false); }).find("lantern.brightness lives on a pc_only page") !=
+  CHECK(refused([&](Json&, Json& s) { homed(s, false); }).find("(D264)") != std::string::npos);
+  // Sensitive, but still shown on Behaviour, which a paired device sees: refused too.
+  CHECK(refused([&](Json&, Json& s) { homed(s, true); }).find("shows a setting that lives on a pc_only page") !=
         std::string::npos);
-  const std::string sensitive = refused([&](Json&, Json& s) { homed(s, true); });
-  CAPTURE(sensitive);
-  CHECK(sensitive.find("pc_only page") == std::string::npos);
 }

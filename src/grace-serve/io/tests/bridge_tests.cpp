@@ -9,6 +9,7 @@
 #include <string>
 
 #include "../internal.h"
+#include "grace/pages/builtin.h"
 #include "harness.h"
 
 using namespace grace::serve;
@@ -766,4 +767,53 @@ TEST_CASE("every report preview's topic is recorded for the strip, with or witho
   const SpaceDescription description = builtin_description("demo");
   CHECK(std::find(description.shared.begin(), description.shared.end(),
                   SpaceDescription::SharedBody{"lantern.report", ""}) != description.shared.end());
+}
+
+TEST_CASE("a pc_only page's own commands are refused from a device, and its settings left out of a device's copy "
+          "(D264)") {
+  // The demo's Workbench given a command of its own and a setting homed there.
+  const auto& demo = *std::find_if(grace::pages::builtin_spaces().begin(), grace::pages::builtin_spaces().end(),
+                                   [](const grace::pages::BuiltinSpace& s) { return s.id == "demo"; });
+  Json pages_json = Json::parse(demo.pages);
+  Json settings_json = Json::parse(demo.settings);
+  pages_json["commands"].push_back("readings.refresh");
+  for (Json& p : pages_json["pages"]) {
+    if (p["id"] == "demo.workbench") {
+      p["actions"] = Json::array({{{"id", "refresh"}, {"label", "Read again"}, {"command", "readings.refresh"},
+                                   {"tone", "secondary"}}});
+    }
+  }
+  for (Json& s : settings_json["settings"]) {
+    if (s["key"] == "lantern.brightness") {
+      s["home"] = "demo.workbench";
+      s["sensitive"] = true;
+    }
+  }
+  grace::protocol::SpacePages pages;
+  grace::protocol::SettingsDescription settings;
+  grace::protocol::DecodeError error;
+  REQUIRE(grace::protocol::decode(pages_json, pages, "", error));
+  REQUIRE(grace::protocol::decode(settings_json, settings, "", error));
+  const SpaceDescription description = describe_space(pages, settings, "0.2.0", "0.2");
+  const auto has = [](const std::vector<std::string>& list, std::string_view item) {
+    return std::find(list.begin(), list.end(), item) != list.end();
+  };
+  CHECK(has(description.sensitive, "readings.refresh"));  // named on the Workbench alone
+  CHECK_FALSE(has(description.sensitive, "lantern.trim"));  // named where a device sees it too
+  CHECK(description.pc_settings == std::vector<std::string>{"lantern.brightness"});
+  // A device's page data names no pc_only topic.
+  CHECK(description.device_pages["topics"].dump().find("lantern.readings") == std::string::npos);
+  // The settings topic as a device gets it: the Workbench's setting gone from every part of it.
+  Json body = {{"description", Json::array({{{"key", "lantern.brightness"}}, {{"key", "lantern.enabled"}}})},
+               {"values", {{"lantern.brightness", 0.8}, {"lantern.enabled", true}}},
+               {"changed", Json::array({"lantern.brightness"})},
+               {"inherited", Json::array({{{"key", "lantern.brightness"}}})}};
+  CHECK(grace::serve::detail::strip_pc_settings(description, "settings", body));
+  CHECK(body["description"].size() == 1);
+  CHECK_FALSE(body["values"].contains("lantern.brightness"));
+  CHECK(body["values"].contains("lantern.enabled"));
+  CHECK(body["changed"].empty());
+  CHECK(body["inherited"].empty());
+  Json other = body;
+  CHECK_FALSE(grace::serve::detail::strip_pc_settings(description, "lantern.status", other));
 }
