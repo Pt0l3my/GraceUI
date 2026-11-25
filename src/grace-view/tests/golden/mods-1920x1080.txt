@@ -23,20 +23,20 @@ stroke  rule          340, 201 1540x228  r5 w1 clip1
 text    gold          365, 221  134x20   clip1 glyphs 13 "Connected mods"
 text    ink.faint    1842, 221    8x25   clip1 glyphs 1 "-"
 text    ink.mute      365, 264   25x25   clip1 glyphs 3 "Mod"
-text    ink.mute     1109, 264   59x25   clip1 glyphs 7 "Version"
-text    ink.mute     1183, 264   34x25   clip1 glyphs 4 "Uses"
+text    ink.mute     1080, 264   59x25   clip1 glyphs 7 "Version"
+text    ink.mute     1154, 264   34x25   clip1 glyphs 4 "Uses"
 line    rule          365, 294 1490x1    clip1
 text    ink.hi        365, 310   94x28   clip1 glyphs 9 "Quiet Camp"
-text    ink.body     1125, 312   42x25   clip1 glyphs 5 "2.1.0"
-text    ink.body     1183, 312   59x25   clip1 glyphs 7 "Notices"
+text    ink.body     1096, 312   42x25   clip1 glyphs 5 "2.1.0"
+text    ink.body     1154, 312   59x25   clip1 glyphs 7 "Notices"
 text    ink.body     1748, 312   42x25   clip1 glyphs 5 "Quiet"
 fill    ground.well  1805, 310   50x28   r14 clip1
 stroke  edge         1805, 310   50x28   r14 w1 clip1
 circle  ink.mute     1809, 314   20x20   clip1
 line    rule          365, 354 1490x1    clip1
 text    ink.hi        365, 370   94x28   clip1 glyphs 9 "Demo space"
-text    ink.body     1125, 372   42x25   clip1 glyphs 5 "1.0.0"
-text    ink.body     1183, 372  118x25   clip1 glyphs 13 "Pages, notices"
+text    ink.body     1096, 372   42x25   clip1 glyphs 5 "1.0.0"
+text    ink.body     1154, 372  118x25   clip1 glyphs 13 "Pages, notices"
 text    ink.body     1748, 372   42x25   clip1 glyphs 5 "Shown"
 fill    gold         1805, 370   50x28   r14 clip1
 circle  on.gold      1831, 374   20x20   clip1

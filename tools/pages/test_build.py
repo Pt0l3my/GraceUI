@@ -434,7 +434,11 @@ class Seeded(unittest.TestCase):
         sp, desc, fx = demo()
         keepers = next(b for sec in page(sp, "demo.keepers")["sections"] for b in sec["blocks"] if "filter_bar" in b)
         keepers["filter_bar"]["filters"][0]["choices"] = [{"value": "x", "label": "X"}]
-        self.expect("a filter's own choices are for rows read a page at a time", sp, desc, fx)
+        self.assertEqual(failures(sp, desc, fx), [])  # its own choices word its rows' values (D262)
+        sp, desc, fx = demo()
+        keepers = next(b for sec in page(sp, "demo.keepers")["sections"] for b in sec["blocks"] if "filter_bar" in b)
+        keepers["filter_bar"]["filters"][0]["choices_from"] = {"topic": "lantern.season"}
+        self.expect("a filter takes its choices from a state topic only on rows read a page at a time", sp, desc, fx)
         # A family on a scoped page with no master list is the scope's member.
         sp, desc, fx = demo()
         page(sp, "demo.overview")["sections"][0]["blocks"].append(

@@ -30,8 +30,8 @@ text    on.gold       566,  53   68x15   clip1 glyphs 11 "Trim the wick"
 text    ink.mute      189,  77  291x14   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
 line    rule.strong   189,  99  589x1    clip1
 diamond gold.deep     189,  96    6x6    w1 clip1
-fill    ground.2      189, 113  589x163  r3 clip1
-stroke  rule          189, 113  589x163  r3 w1 clip1
+fill    ground.2      189, 113  589x177  r3 clip1
+stroke  rule          189, 113  589x177  r3 w1 clip1
 text    gold          203, 124   16x11   clip1 glyphs 3 "Now"
 text    ink.faint     757, 124    5x14   clip1 glyphs 1 "-"
 fill    ground.3      203, 148  181x50   r1 clip1
@@ -46,30 +46,38 @@ text    ink.hi        589, 168   48x19   clip1 glyphs 5 "14 min"
 text    ink.body      203, 210  323x14   clip1 glyphs 58 "The north lantern burns steady amber, with oil for about three hours."
 line    rule          203, 235  561x1    clip1
 text    ink.hi        203, 244   52x15   clip1 glyphs 10 "Brightness"
+text    ink.mute      203, 262  375x14   clip1 glyphs 67 "How brightly the lantern burns, from a glimmer to its full flame. Default: 0.80."
 text    gold          469, 245   84x14   clip1 glyphs 16 "Lives in Behaviour"
 text    ink.body      737, 245   19x14   clip1 glyphs 4 "0.80"
 fill    ground.well   578, 250  134x3    r2 clip1
 fill    gold          578, 250  107x3    r2 clip1
 circle  gold.hi       680, 247   10x10   clip1
-fill    ground.2      189, 287  589x98   r3 clip1
-stroke  rule          189, 287  589x98   r3 w1 clip1
-text    gold          203, 298   37x11   clip1 glyphs 7 "Related"
-line    rule          203, 315  561x1    clip1
-text    ink.hi        211, 323   47x15   clip1 glyphs 9 "Behaviour"
-text    ink.mute      390, 324  295x14   clip1 glyphs 52 "How the lantern burns, how often it flickers, and who keeps it."
-text    gold          745, 323    5x15   clip1 glyphs 1 "→"
-line    rule          203, 346  561x1    clip1
-text    ink.hi        211, 354   16x15   clip1 glyphs 3 "Log"
-text    ink.mute      390, 355  291x14   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
-text    gold          745, 354    5x15   clip1 glyphs 1 "→"
+fill    ground.2      189, 301  589x98   r3 clip1
+stroke  rule          189, 301  589x98   r3 w1 clip1
+text    gold          203, 312   37x11   clip1 glyphs 7 "Related"
+line    rule          203, 329  561x1    clip1
+text    ink.hi        211, 337   47x15   clip1 glyphs 9 "Behaviour"
+text    ink.mute      390, 338  295x14   clip1 glyphs 52 "How the lantern burns, how often it flickers, and who keeps it."
+text    gold          745, 337    5x15   clip1 glyphs 1 "→"
+line    rule          203, 360  561x1    clip1
+text    ink.hi        211, 368   16x15   clip1 glyphs 3 "Log"
+text    ink.mute      390, 369  291x14   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
+text    gold          745, 368    5x15   clip1 glyphs 1 "→"
 line    rule          167, 575  633x1   
-fill    ground.well   189, 580   32x15   r1
-stroke  edge          189, 580   32x15   r1 w1
-text    ink.body      193, 581   24x14   glyphs 5 "Enter"
-text    ink.faint     225, 581   19x14   glyphs 4 "Open"
-fill    ground.well   258, 580   23x15   r1
-stroke  edge          258, 580   23x15   r1 w1
-text    ink.body      262, 581   15x14   glyphs 3 "Esc"
-text    ink.faint     285, 581   19x14   glyphs 4 "Back"
-stroke  gold.hi       554,  49   92x24   r3 w1 clip1
-# 73 items, 2580 vertices, 6126 indices, 4 commands; check_draw_list: passes
+fill    ground.well   189, 580   29x15   r1
+stroke  edge          189, 580   29x15   r1 w1
+fill    ink.body      196, 587    5x1   
+tri     ink.body      193, 584    4x7    <
+fill    ink.body      206, 587    5x1   
+tri     ink.body      210, 584    4x7    >
+text    ink.faint     222, 581   28x14   glyphs 6 "Change"
+fill    ground.well   264, 580   32x15   r1
+stroke  edge          264, 580   32x15   r1 w1
+text    ink.body      268, 581   24x14   glyphs 5 "Enter"
+text    ink.faint     300, 581   66x14   glyphs 11 "Go to its page"
+fill    ground.well   380, 580   23x15   r1
+stroke  edge          380, 580   23x15   r1 w1
+text    ink.body      384, 581   15x14   glyphs 3 "Esc"
+text    ink.faint     407, 581   19x14   glyphs 4 "Back"
+stroke  gold.hi       569, 241  196x21   r3 w1 clip1
+# 81 items, 2992 vertices, 6978 indices, 4 commands; check_draw_list: passes

@@ -11,7 +11,7 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 17 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 18 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
@@ -33,6 +33,7 @@ protocol = { major = 1, minor = 17 }  # 1.1 (D172): result.detail; a stream clea
                                      # 1.16: a filter bar on a stream, a live feed or a log tail (D257)
                                      # 1.17: a page in the browser alone, shown with a setting, gated, with a ribbon
                                      # (D258)
+                                     # 1.18: a filter's own choices on any bar, words for its rows' values (D262)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -243,11 +244,11 @@ fields = [
 ]
 
 [types.filter_option]
-doc = "A filter of a filter bar (1.11, G43, D250): one of its table's columns, its choices the values the rows hold; on a table read a page at a time (1.14, D254), its own choices, or a state topic's list of them"
+doc = "A filter of a filter bar (1.11, G43, D250): one of its table's columns, its choices the values the rows hold, or its own choices in their order and words (on any bar since 1.18, D262: a row whose value is not listed shows under All alone); on a table read a page at a time (1.14, D254), its own choices or a state topic's list of them, one of the two"
 fields = [
   { name = "column", type = "id" },
   { name = "label", type = "string", max = 32 },
-  { name = "choices", type = "list.type.choice", max = 32, optional = true },  # 1.14 (D254)
+  { name = "choices", type = "list.type.choice", max = 32, optional = true },  # 1.14 (D254); on any bar 1.18 (D262)
   { name = "choices_from", type = "type.topic_member", optional = true },     # 1.14 (D254)
 ]
 

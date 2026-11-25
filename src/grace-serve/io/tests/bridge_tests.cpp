@@ -44,7 +44,7 @@ TEST_CASE("hello with a ticket: welcome names both spaces, the protocol and an o
   const std::string cookie = fixture.cookie();
   WsClient ws;
   REQUIRE(ws.join(fixture.port, cookie, fixture.ticket(cookie), &welcome));
-  CHECK(welcome["protocol"] == "1.17");
+  CHECK(welcome["protocol"] == "1.18");
   CHECK(welcome["graceui"] == "0.2.0");
   REQUIRE(welcome["spaces"].size() == 2);
   CHECK(welcome["spaces"][0]["id"] == "graceui");

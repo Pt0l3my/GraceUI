@@ -144,3 +144,23 @@ TEST_CASE("the command line: each value checked as GraceUI's own settings take i
   REQUIRE(parse_cli({"--port", "9000", "--help"}, cli, why));
   CHECK(cli.mode == Cli::Mode::help);
 }
+
+TEST_CASE("--dump gives a stream's fixture to the view as the menu's copy: {rows}, its newest 200 alone (D262)") {
+  // The demo's own Log: its rows, drawn as in game.
+  const DumpResult log = dumped("demo", "demo.log", 1920, 1080);
+  CHECK(log.passes);
+  CHECK(test::contains(log.text, "\"The wick was trimmed.\""));
+  // A stream longer than the menu keeps: the oldest past 200 are not drawn, the newest are.
+  SpaceData space = builtin("demo");
+  grace::protocol::Json rows = grace::protocol::Json::array();
+  for (int i = 1; i <= 250; ++i) {
+    rows.push_back({{"seq", i}, {"time", "19:00"}, {"line", "Line " + std::to_string(i) + " of the night."},
+                    {"level", "info"}});
+  }
+  space.fixtures["lantern.log"] = rows;
+  DumpResult out;
+  std::string why;
+  REQUIRE_MESSAGE(dump_page(space, DumpRequest{"demo.log", 1920, 1080, default_ui_scale(), false}, out, why), why);
+  CHECK(test::contains(out.text, "\"Line 250 of the night.\""));  // the newest, first in a live feed
+  CHECK_FALSE(test::contains(out.text, "\"Line 50 of the night.\""));  // past the menu's 200
+}

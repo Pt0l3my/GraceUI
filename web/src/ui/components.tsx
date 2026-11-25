@@ -107,14 +107,14 @@ function Feed({ rows, newestFirst, live, empty, barKey, spec }: {
   const lines = rows.filter((r) => text(r.line) !== null);
   // Its filter bar (D257): filters and a search over the rows it holds, in time's order (no sort).
   const bar = useFilterBar(barKey ?? "", spec, lines);
-  if (lines.length === 0) {
-    return empty;
-  }
   const shown = bar.order.map((i) => lines[i]!);
   const ordered = newestFirst ? [...shown].reverse() : shown;
   const strip = spec
     ? <FilterBar spec={spec} rows={lines} state={bar.state} shown={shown.length} set={bar.set} label="" />
     : null;
+  if (lines.length === 0) {
+    return strip !== null ? <>{strip}{empty}</> : empty;  // the bar with no rows yet too, as in game (D262)
+  }
   if (shown.length === 0) {
     return strip;
   }
@@ -341,7 +341,9 @@ function Table({ space, block, body, empty, paged, own, barKey }: {
         <tbody>
           {bar.order.map((i) => rows[i]!).map((r, n) => {
             const rowKey = typeof r.id === "string" && r.id !== "" && !r.id.includes("/") ? r.id : `#${bar.order[n]}`;
-            const open = drawerColumns.length > 0 && openRow === rowKey;
+            // A row whose drawer columns are all empty has no drawer: its mark's cell stays, empty (D262).
+            const drawn = drawerColumns.some((c) => { const v = text(r[text(c.id) ?? ""]); return v !== null && v !== ""; });
+            const open = drawn && openRow === rowKey;
             const drawerId = domId("drawer", space, block.topic ?? "", rowKey);
             const rowName = first ? text(r[text(first.id) ?? ""]) : null;
             return (
@@ -349,12 +351,14 @@ function Table({ space, block, body, empty, paged, own, barKey }: {
             <tr>
               {drawerColumns.length > 0 && (
                 <td class="table__mark">
-                  <button type="button" class="icon-button table__drawer-toggle" aria-expanded={open}
-                          aria-controls={open ? drawerId : undefined} data-drawer={rowKey}
-                          aria-label={rowName !== null ? `Details: ${rowName}` : "Details"}
-                          onClick={() => setOpenRow(open ? null : rowKey)}>
-                    <Chevron open={open} />
-                  </button>
+                  {drawn && (
+                    <button type="button" class="icon-button table__drawer-toggle" aria-expanded={open}
+                            aria-controls={open ? drawerId : undefined} data-drawer={rowKey}
+                            aria-label={rowName !== null ? `Details: ${rowName}` : "Details"}
+                            onClick={() => setOpenRow(open ? null : rowKey)}>
+                      <Chevron open={open} />
+                    </button>
+                  )}
                 </td>
               )}
               {columns.map((c) => {

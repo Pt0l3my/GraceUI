@@ -15,6 +15,9 @@
 namespace grace::dev {
 namespace {
 
+// A stream's rows the menu keeps (grace-spaces' kGameStreamRows, D257): the dump gives the view as many.
+constexpr std::size_t kStreamRows = 200;
+
 std::string fixed(double value, int digits) {
   char text[32];
   std::snprintf(text, sizeof text, "%.*f", digits, value);
@@ -57,6 +60,16 @@ bool dump_page(const SpaceData& space, const DumpRequest& request, DumpResult& o
       const auto found = space.fixtures.find(topic);
       if (found != space.fixtures.end() && found->is_object()) {
         view.set_topic(topic, *found);
+        more = true;
+      } else if (found != space.fixtures.end() && found->is_array()) {
+        // A stream's rows (D262): the menu's copy of them, {"rows": [...]}, oldest first and its newest
+        // kStreamRows alone, as GraceUI's registry keeps them for the game (D257).
+        protocol::Json rows = protocol::Json::array();
+        const std::size_t from = found->size() > kStreamRows ? found->size() - kStreamRows : 0;
+        for (std::size_t i = from; i < found->size(); ++i) {
+          rows.push_back((*found)[i]);
+        }
+        view.set_topic(topic, protocol::Json::object({{"rows", std::move(rows)}}));
         more = true;
       }
     }

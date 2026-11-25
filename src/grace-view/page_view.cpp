@@ -465,9 +465,10 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
     bool names = true;
     for (const protocol::FilterOption& f : bar.filters.value_or(std::vector<protocol::FilterOption>{})) {
       names = names && name_ok(f.column) && !f.label.empty();
-      // Its own choices on rows read a page at a time, one source of them; anywhere else none (D254).
+      // Its own choices on rows read a page at a time, one source of them (D254); anywhere else its own choices or
+      // none, never a state topic's (D262: the choices word the values the rows hold).
       const int sources = static_cast<int>(f.choices.has_value()) + static_cast<int>(f.choices_from.has_value());
-      names = names && (paged ? sources == 1 : sources == 0);
+      names = names && (paged ? sources == 1 : !f.choices_from.has_value());
     }
     for (const protocol::SortOption& o : bar.sort.value_or(std::vector<protocol::SortOption>{})) {
       names = names && name_ok(o.key) && !o.label.empty();
@@ -478,7 +479,7 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
     }
     if (!parts || !names) {
       why = where + "a filter bar has a filter, a sort option or a search, each naming its columns, and its filters "
-            "their own choices where its rows come a page at a time, and nowhere else";
+            "their own choices where its rows come a page at a time, and a state topic's nowhere else";
       return false;
     }
     return true;
@@ -1614,14 +1615,13 @@ const Json* PageView::table_of(const protocol::PageBlock& block) const {
 PageView::Bar PageView::bar_of_table(const protocol::PageBlock& block) const {
   Bar out;
   if (block.filter_bar && is_stream(block)) {
-    // A stream's bar (D257): over the rows the menu holds of it, once it has some.
+    // A stream's bar (D257): over the rows the menu holds of it; drawn with none yet too (D262), so that a page's
+    // focus does not depend on whether another view already watched the stream.
     const Json* body = drawn(block).body;
-    if (body == nullptr || !body->contains("rows") || !(*body)["rows"].is_array() || (*body)["rows"].empty()) {
-      return out;
-    }
+    static const Json* const no_rows = new Json(Json::array());  // made once, never freed
     out.key = cell_base(block);
     out.bar = &*block.filter_bar;
-    out.rows = &(*body)["rows"];
+    out.rows = body != nullptr && body->contains("rows") && (*body)["rows"].is_array() ? &(*body)["rows"] : no_rows;
     return out;
   }
   const Json* table = block.filter_bar ? table_of(block) : nullptr;
@@ -2119,8 +2119,9 @@ void PageView::rebuild() {
           const bool drawers = has_drawer(*table);
           for (const std::size_t r : shown_rows(block, (*table)["rows"])) {
             const Json& row = (*table)["rows"][r];
-            if (drawers && row.is_object()) {
-              // The row itself first, where its table has drawer columns: Enter opens its drawer (D256).
+            if (drawers && row.is_object() && row_has_drawer(*table, row)) {
+              // The row itself first, where its table has drawer columns and it fills one: Enter opens its drawer
+              // (D256, D262).
               focus_.push_back({FocusKind::drawer, cell_base(block) + "/" + drawer_key(row, r), r, &block});
             }
             if (sw != nullptr) {
@@ -2172,17 +2173,32 @@ void PageView::rebuild() {
 }
 
 void PageView::focus_first_control() {
-  // The page's first control past its section labels and tabs (§5.7); with none above Related, the page's first stop,
-  // at its top (a section's label), rather than the Related card at its foot with the header scrolled away (D256).
+  // The page's first control past its section labels and tabs (§5.7), and past its header's actions, which ↑ reaches,
+  // so that a stray Enter after the menu opens does not act (D262). With none above Related (a page whose controls
+  // come with a topic, or that has none), its first section label or tab, at its top, rather than the Related card at
+  // its foot (D256), and never a header action, where focus would stay once the controls came; a header action only
+  // on a page with no other stop above Related.
   page_focus_ = 0;
+  std::size_t first_action = focus_.size();
+  std::size_t first_label = focus_.size();
   for (std::size_t i = 0; i < focus_.size(); ++i) {
     if (focus_[i].kind == FocusKind::related) {
-      return;
+      break;
+    }
+    if (focus_[i].kind == FocusKind::action) {
+      first_action = std::min(first_action, i);
+      continue;
     }
     if (focus_[i].kind != FocusKind::section && focus_[i].kind != FocusKind::tab) {
       page_focus_ = i;
       return;
     }
+    first_label = std::min(first_label, i);
+  }
+  if (first_label < focus_.size()) {
+    page_focus_ = first_label;
+  } else if (first_action < focus_.size()) {
+    page_focus_ = first_action;
   }
 }
 
@@ -4064,6 +4080,17 @@ bool PageView::has_drawer(const Json& table) {
   }
   return std::any_of(table["columns"].begin(), table["columns"].end(), [](const Json& c) {
     return c.is_object() && c.contains("drawer") && c["drawer"] == true;
+  });
+}
+
+bool PageView::row_has_drawer(const Json& table, const Json& row) {
+  // A row whose drawer columns are all empty has no drawer: no mark, no focus stop (D262).
+  if (!row.is_object() || !has_drawer(table)) {
+    return false;
+  }
+  return std::any_of(table["columns"].begin(), table["columns"].end(), [&](const Json& c) {
+    return c.is_object() && c.contains("drawer") && c["drawer"] == true && c.contains("id") && c["id"].is_string() &&
+           !cell_words(row, c["id"].get<std::string>()).empty();
   });
 }
 
@@ -6697,8 +6724,54 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             const std::size_t slot_count = text_columns.size() > 1 ? text_columns.size() - 1 : 0;
             const float slots_x = table_x + table_w / 3;
             const float slots_w = table_x + table_w - widest_controls - slots_x;
-            const float slot_w = slot_count > 0 ? std::floor(slots_w / static_cast<float>(slot_count)) : 0.0f;
-            const bool slotted = slot_count > 0 && slot_w >= std::round(64 * s);
+            const float even_w = slot_count > 0 ? std::floor(slots_w / static_cast<float>(slot_count)) : 0.0f;
+            const bool slotted = slot_count > 0 && even_w >= std::round(64 * s);
+            // A cell's words in its slot: a row secret's status in words alone, its label in the header (D194, D260).
+            const auto slot_words = [&](const Json& line, std::size_t k) {
+              std::string words = line.is_object() ? cell_words(line, text_columns[k]) : std::string();
+              if (block.row_secret && text_columns[k] == block.row_secret->column) {
+                words = secret_status_words(words);
+              }
+              return words;
+            };
+            // Each slot as wide as its column's widest words, label or cell, where the room allows (D262): a narrow
+            // column takes what it needs, the wider ones share what is left, and room to spare goes to all alike. The
+            // slots follow the rows held, so a live table's may widen as a wider value comes.
+            std::vector<float> slot_xs(slot_count, slots_x);
+            std::vector<float> slot_ws(slot_count, even_w);
+            if (slotted) {
+              std::vector<float> need(slot_count, 0.0f);
+              for (std::size_t k = 1; k < text_columns.size(); ++k) {
+                need[k - 1] = c.width(text_labels[k], TypeRole::ui_sm) + gap12;
+                for (const std::size_t r : shown_lines) {
+                  need[k - 1] = std::max(need[k - 1], c.width(slot_words(rows[r], k), TypeRole::ui_sm) + gap12);
+                }
+              }
+              std::vector<bool> settled(slot_count, false);
+              float room = slots_w;
+              std::size_t open = slot_count;
+              for (bool changed = true; changed && open > 0;) {
+                changed = false;
+                const float share = room / static_cast<float>(open);
+                for (std::size_t k = 0; k < slot_count; ++k) {
+                  if (!settled[k] && need[k] <= share) {
+                    slot_ws[k] = need[k];
+                    room -= need[k];
+                    settled[k] = true;
+                    --open;
+                    changed = true;
+                  }
+                }
+              }
+              const float rest = open > 0 ? room / static_cast<float>(open) : room / static_cast<float>(slot_count);
+              float x = slots_x;
+              for (std::size_t k = 0; k < slot_count; ++k) {
+                slot_ws[k] = std::floor(open > 0 ? (settled[k] ? slot_ws[k] : rest) : slot_ws[k] + rest);
+                slot_xs[k] = x;
+                x += slot_ws[k];
+              }
+            }
+            // Its words in its slot, a numeric column's right-aligned; too long, cut with an ellipsis (place_text's).
             const auto slot_text = [&](const std::string& words, std::size_t k, float sx, float ty, float w, Colour ink) {
               const float tw = c.width(words, TypeRole::ui_sm);
               const float tx = k < text_numeric.size() && text_numeric[k] && tw < w ? sx + w - tw : sx;
@@ -6708,8 +6781,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               const float hy = y + std::round(6 * s);
               c.text(text_labels[0], TypeRole::ui_sm, table_x + lead_w, hy, table_w / 3 - gap12 - lead_w, Colour::ink_mute);
               for (std::size_t k = 1; k < text_columns.size(); ++k) {
-                slot_text(text_labels[k], k, slots_x + slot_w * static_cast<float>(k - 1), hy, slot_w - gap12,
-                          Colour::ink_mute);
+                slot_text(text_labels[k], k, slot_xs[k - 1], hy, slot_ws[k - 1] - gap12, Colour::ink_mute);
               }
               y += std::round(line_height(TypeRole::ui_sm, s) + 10 * s);
             }
@@ -6723,15 +6795,16 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               const auto refusal = sw != nullptr ? refusals_.find(cell_id) : refusals_.end();
               const Rect row{x0 + card_pad, y, content_w - 2 * card_pad, row_h};
               // A row with a drawer (D256): a mark at its start, pointing down while its drawer is open.
-              const std::string drawer_id =
-                  drawer_columns.empty() ? std::string() : cell_base(block) + "/" + drawer_key(line, r);
+              const std::string drawer_id = drawer_columns.empty() || !row_has_drawer(*table, line)
+                                                ? std::string()
+                                                : cell_base(block) + "/" + drawer_key(line, r);
               const auto open_at = drawer_id.empty() ? drawer_open_.end() : drawer_open_.find(cell_base(block));
               const bool drawer_shown = open_at != drawer_open_.end() && cell_base(block) + "/" + open_at->second == drawer_id;
               if ((sw != nullptr || !drawer_id.empty()) && hovered(row)) {
                 c.fill(row, Colour::tint_hover);
               }
               c.line(row.x, row.y, row.w, Colour::rule);
-              const float mark_w = drawer_id.empty() ? 0.0f : std::round(20 * s);
+              const float mark_w = lead_w;  // the mark's room on every row, so that the columns line up (D262)
               if (!drawer_id.empty()) {
                 const float m = std::round(10 * s);
                 c.triangle(Rect{row.x, y + std::round((row_h - m) / 2), m, m}, drawer_shown ? Facing::down : Facing::right,
@@ -6830,8 +6903,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 // Each cell in its column's slot, within this row's own controls; an empty one leaves its slot empty.
                 const float limit = row.right() - actions_w - (sw != nullptr ? control_w : 0.0f) - std::round(12 * s);
                 for (std::size_t k = 1; k < cells.size(); ++k) {
-                  const float sx = slots_x + slot_w * static_cast<float>(k - 1);
-                  const float w = std::min(slot_w - std::round(12 * s), limit - sx);
+                  const float sx = slot_xs[k - 1];
+                  const float w = std::min(slot_ws[k - 1] - std::round(12 * s), limit - sx);
                   if (!cells[k].empty() && w > 0) {
                     slot_text(cells[k], k, sx, cell_y, w, Colour::ink_body);
                   }

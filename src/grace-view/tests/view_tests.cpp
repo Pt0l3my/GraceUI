@@ -33,6 +33,14 @@ PageView loaded(std::string_view id, std::string_view page) {
 
 Action press(PageView& view, Key key, bool shift = false) { return view.input(Input{key, shift}); }
 
+// Up to a header action: a page's first focus is its body's first control, the header's actions above it (D262).
+bool up_to(PageView& view, std::string_view id) {
+  for (int i = 0; i < 8 && view.focused() != id; ++i) {
+    press(view, Key::up);
+  }
+  return view.focused() == id;
+}
+
 void golden(const std::string& name, const std::string& text) {
   const std::string path = std::string(GRACE_VIEW_GOLDEN) + "/" + name;
   if (const char* update = std::getenv("GRACE_UPDATE_GOLDEN"); update != nullptr && update[0] == '1') {
@@ -381,7 +389,8 @@ TEST_CASE("Tab and Shift+Tab: rail, top bar, page; ← at the page's edge back t
 
 TEST_CASE("a destructive action asks for its second press; any other key lets it go") {
   PageView view = loaded("graceui", "graceui.browser");
-  CHECK(view.focused() == "action:disconnect");
+  CHECK(view.focused() != "action:disconnect");  // the body's first control, not the header's action (D262)
+  REQUIRE(up_to(view, "action:disconnect"));
   CHECK(press(view, Key::activate).kind == Action::Kind::none);
   press(view, Key::down);
   press(view, Key::up);
@@ -1182,7 +1191,7 @@ TEST_CASE("a destructive action asks for its second press even without its confi
   REQUIRE(view.load(test::decoded<grace::protocol::SpacePages>(pages),
                     test::decoded<grace::protocol::SettingsDescription>(s.settings), why));
   REQUIRE(view.open("demo.log"));
-  CHECK(view.focused() == "action:clear");
+  REQUIRE(up_to(view, "action:clear"));
   CHECK(press(view, Key::activate).kind == Action::Kind::none);  // asks first
   const Action a = press(view, Key::activate);
   REQUIRE(a.kind == Action::Kind::command);
@@ -1299,6 +1308,7 @@ TEST_CASE("space.state greys pages (D188): their words, inert controls; a page n
   view.set_topic("space.state", Json{{"inactive", "The lantern is out."}});
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
   CHECK(list.dump().find("\"The lantern is out.\"") != std::string::npos);
+  REQUIRE(up_to(view, "action:trim"));
   CHECK(press(view, Key::activate).kind == Action::Kind::none);  // the overview's Trim action, inert
   view.set_topic("space.state", Json::object());
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
@@ -1968,7 +1978,7 @@ TEST_CASE("the Hotkeys page in game (D206): the menu's key, and every hotkey wit
   CHECK(dump.find("Later version") == std::string::npos);  // the menu's key is live since D208
   CHECK(dump.find("Change key") != std::string::npos);
   view.open("graceui.hotkeys");
-  CHECK(view.focused() == "action:reset-all");  // the page's action first
+  CHECK(view.focused() == "setting:hotkeys.menu");  // the body's first control; the page's action above it (D262)
   REQUIRE(focus_on(view, "setting:hotkeys.menu"));
   // The menu's own row (no id) takes no row actions: the first row stop after it is Tide Charts'.
   for (int i = 0; i < 8 && view.focused().rfind("row:", 0) != 0; ++i) {
@@ -3139,7 +3149,7 @@ TEST_CASE("a header switch: Not known yet until its state comes, then Enter send
   PageView view = loaded("demo", "demo.overview");
   CHECK(has(view.component_topics(), "lantern.status"));  // its state is watched with the page
   CHECK(shows(laid_out(view), "Hush the bell  \u00B7  Not known yet"));
-  REQUIRE(move_to(view, "action:hush"));
+  REQUIRE(up_to(view, "action:hush"));
   CHECK(press(view, Key::activate).kind == Action::Kind::none);  // no state: nothing is sent, nothing is claimed
   view.set_topic("lantern.status", Json::object({{"sentence", "Steady."}, {"hushed", false}}));
   CHECK_FALSE(shows(laid_out(view), "Hush the bell  \u00B7  Not known yet"));
@@ -3416,4 +3426,166 @@ TEST_CASE("a statement and a key-value list's value wrap in game (D261; a settin
   const Item* licence = item_with(list, "Licence");
   REQUIRE(licence != nullptr);
   CHECK(licence->rect.y > lines.back()->rect.y);
+}
+
+namespace {
+
+// A built-in space's page, its pages changed first by `change` (a test's own variant of the space's data).
+PageView loaded_changed(std::string_view id, std::string_view page, const std::function<void(Json&)>& change) {
+  const auto& s = test::space(id);
+  Json pages = Json::parse(s.pages);
+  change(pages);
+  PageView view;
+  std::string why;
+  REQUIRE_MESSAGE(view.load(test::decoded<grace::protocol::SpacePages>(pages.dump()),
+                            test::decoded<grace::protocol::SettingsDescription>(s.settings), why),
+                  why);
+  REQUIRE(view.open(page));
+  return view;
+}
+
+Json& page_of(Json& pages, std::string_view id) {
+  for (Json& p : pages["pages"]) {
+    if (p["id"] == id) {
+      return p;
+    }
+  }
+  FAIL("no page " << id);
+  return pages;
+}
+
+std::size_t count_shape(const DisplayList& l, Shape shape) {
+  return static_cast<std::size_t>(
+      std::count_if(l.items.begin(), l.items.end(), [&](const Item& item) { return item.shape == shape; }));
+}
+
+}  // namespace
+
+TEST_CASE("a filter's own choices on a bar its view filters: in their order and words, by value; an unlisted value "
+          "under All alone (D262)") {
+  PageView view = loaded_changed("demo", "demo.log", [](Json& pages) {
+    Json& bar = page_of(pages, "demo.log")["sections"][0]["blocks"][0]["filter_bar"];
+    bar["filters"][0]["choices"] = Json::parse(R"([{"value": "warning", "label": "Warnings"},
+                                                   {"value": "info", "label": "Notes"}])");
+  });
+  view.set_topic("lantern.log", Json::parse(R"({"rows": [
+    {"seq": 1, "time": "19:02", "line": "The lantern was lit.", "level": "info"},
+    {"seq": 2, "time": "19:16", "line": "The glass cracked.", "level": "error"},
+    {"seq": 3, "time": "19:40", "line": "The flame guttered in a draught.", "level": "warning"}]})"));
+  REQUIRE(move_to(view, "filter:lantern.log/f0"));
+  std::string dump = laid_out(view);
+  CHECK(shows(dump, "The glass cracked."));  // All: every row, the unlisted level's too
+  press(view, Key::right);                   // the first of its own choices, in its words
+  dump = laid_out(view);
+  CHECK(shows(dump, "Warnings"));
+  CHECK(shows(dump, "The flame guttered in a draught."));
+  CHECK_FALSE(shows(dump, "The lantern was lit."));
+  CHECK_FALSE(shows(dump, "The glass cracked."));
+  press(view, Key::right);
+  dump = laid_out(view);
+  CHECK(shows(dump, "Notes"));
+  CHECK(shows(dump, "The lantern was lit."));
+  CHECK_FALSE(shows(dump, "The glass cracked."));
+  press(view, Key::right);  // no third choice: "error" is not offered, though a row holds it
+  dump = laid_out(view);
+  CHECK(shows(dump, "Notes"));
+  CHECK_FALSE(shows(dump, "error"));
+  // A state topic's choices stay for rows read a page at a time: refused at load anywhere else.
+  const auto& s = test::space("demo");
+  Json pages = Json::parse(s.pages);
+  page_of(pages, "demo.log")["sections"][0]["blocks"][0]["filter_bar"]["filters"][0]["choices_from"] =
+      Json{{"topic", "lantern.status"}, {"field", "levels"}};
+  PageView refused;
+  std::string why;
+  CHECK_FALSE(refused.load(test::decoded<grace::protocol::SpacePages>(pages.dump()),
+                           test::decoded<grace::protocol::SettingsDescription>(s.settings), why));
+  CHECK(why.find("a state topic's nowhere else") != std::string::npos);
+}
+
+TEST_CASE("a row whose drawer columns are all empty has no mark and no focus stop; its columns still line up (D262)") {
+  PageView view = loaded("demo", "demo.keepers");
+  view.set_topic("lantern.keepers", Json::parse(R"({"columns": [{"id": "name", "label": "Keeper"},
+    {"id": "post", "label": "Post"}, {"id": "notes", "label": "Notes", "drawer": true}],
+    "rows": [{"id": "k1", "name": "Orla Venn", "post": "North light", "notes": "Keeps the north light."},
+             {"id": "k2", "name": "Tamsin Reed", "post": "Harbour wall", "notes": ""},
+             {"id": "k3", "name": "Ada Marsh", "post": "Quay"}]})"));
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  const std::size_t marks = count_shape(list, Shape::triangle);
+  view.set_topic("lantern.keepers", Json::parse(R"({"columns": [{"id": "name", "label": "Keeper"},
+    {"id": "post", "label": "Post"}, {"id": "notes", "label": "Notes", "drawer": true}],
+    "rows": [{"id": "k1", "name": "Orla Venn", "post": "North light", "notes": ""},
+             {"id": "k2", "name": "Tamsin Reed", "post": "Harbour wall", "notes": ""},
+             {"id": "k3", "name": "Ada Marsh", "post": "Quay"}]})"));
+  DisplayList none;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), none);
+  CHECK(count_shape(none, Shape::triangle) + 1 == marks);  // k1's mark alone, where it had notes
+  view.set_topic("lantern.keepers", Json::parse(R"({"columns": [{"id": "name", "label": "Keeper"},
+    {"id": "post", "label": "Post"}, {"id": "notes", "label": "Notes", "drawer": true}],
+    "rows": [{"id": "k1", "name": "Orla Venn", "post": "North light", "notes": "Keeps the north light."},
+             {"id": "k2", "name": "Tamsin Reed", "post": "Harbour wall", "notes": ""},
+             {"id": "k3", "name": "Ada Marsh", "post": "Quay"}]})"));
+  REQUIRE(move_to(view, "drawer:lantern.keepers/k1"));
+  CHECK_FALSE(move_to(view, "drawer:lantern.keepers/k2"));  // nor below it
+  CHECK_FALSE(move_to(view, "drawer:lantern.keepers/k3"));
+  const Item* orla = item_with(list, "Orla Venn");
+  const Item* tamsin = item_with(list, "Tamsin Reed");
+  REQUIRE(orla != nullptr);
+  REQUIRE(tamsin != nullptr);
+  CHECK(orla->rect.x == tamsin->rect.x);  // the mark's room kept on every row
+}
+
+TEST_CASE("a stream's filter bar is drawn before its rows come, and a page's first focus is its body's first control, "
+          "not a header action (D262)") {
+  PageView log = loaded("demo", "demo.log");
+  CHECK(log.focused() == "filter:lantern.log/f0");  // no rows yet: its bar is there all the same
+  CHECK(shows(laid_out(log), "Level"));
+  REQUIRE(up_to(log, "action:clear"));  // the header's action, above the body
+  PageView overview = loaded("demo", "demo.overview");
+  CHECK(overview.focused().rfind("action:", 0) != 0);
+  // A page with no control in its body yet starts on its first section's label, not its header's action, and stays
+  // there when the controls come (D256): a stray Enter folds the section at most.
+  PageView waiting = loaded_changed("demo", "demo.log", [](Json& pages) {
+    page_of(pages, "demo.log")["sections"][0]["blocks"][0].erase("filter_bar");
+  });
+  CHECK(waiting.focused().rfind("section:", 0) == 0);
+  const std::string label = waiting.focused();
+  waiting.set_topic("lantern.log", Json::parse(R"({"rows": [{"seq": 1, "time": "19:02", "line": "Lit.", "level": "info"}]})"));
+  CHECK(waiting.focused() == label);
+  // A page with no stop above Related but its header's actions (no section, no tab) focuses the first.
+  PageView bare = loaded_changed("demo", "demo.log", [](Json& pages) { page_of(pages, "demo.log").erase("sections"); });
+  CHECK(bare.focused() == "action:clear");
+}
+
+TEST_CASE("an in-game table's slots sized by need: a narrow column what it needs, a wide one the rest, uncut where "
+          "the room allows; too long, cut with an ellipsis (D262)") {
+  PageView view = loaded("demo", "demo.keepers");
+  const std::string address = "The north light, at the end of the long harbour wall, past the old customs house";
+  view.set_topic("lantern.keepers", Json{{"columns", Json::parse(R"([{"id": "name", "label": "Keeper"},
+    {"id": "days", "label": "Days", "numeric": true}, {"id": "level", "label": "Rank"}, {"id": "where", "label": "Post"}])")},
+                                        {"rows", Json::array({{{"name", "Ada Marsh"}, {"days", "3"}, {"level", "B"},
+                                                               {"where", address}}})}});
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  const Item* days = item_with(list, "Days");
+  const Item* rank = item_with(list, "Rank");
+  const Item* post = item_with(list, "Post");
+  REQUIRE(days != nullptr);
+  REQUIRE(rank != nullptr);
+  REQUIRE(post != nullptr);
+  // The structure dump keeps a text item's whole words; its glyphs say whether it was cut (spaces have none).
+  const auto glyphs_of = [](std::string_view w) {
+    return static_cast<std::uint32_t>(std::count_if(w.begin(), w.end(), [](char ch) { return ch != ' '; }));
+  };
+  const Item* whole = item_with(list, address);
+  REQUIRE(whole != nullptr);
+  CHECK(whole->glyph_count == glyphs_of(address));  // whole: the narrow columns left it their room
+  CHECK(rank->rect.x > days->rect.x);
+  CHECK(post->rect.x - rank->rect.x < 120.0f);  // Rank's slot is its label's width and a gap, no more
+  // At a narrow menu the same address no longer fits: cut, an ellipsis its last glyph.
+  view.layout(Viewport{1280, 720, 1.5f}, test::fonts(), list);
+  const Item* cut = item_with(list, address);
+  REQUIRE(cut != nullptr);
+  CHECK(cut->glyph_count < glyphs_of(address));
+  CHECK(cut->glyph_count > 4);
 }
