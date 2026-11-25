@@ -1695,3 +1695,33 @@ data or the ABI.
 After §86, four texts were still cut at one line in game. Each now wraps: a page's description, a `statement`, a
 `key_value_list`'s value (in its two thirds of the row, the row growing to hold it) and a focused setting's help line.
 A check list's detail stays on its label's line. Nothing changes in your page data.
+
+## 88. Your 0.2.53 pin's six points (2026-11-25, D262; GraceUI 0.2.55, protocol 1.18)
+
+Each point as I answered it on 2026-11-25. Only point 2 adds anything to your page data. A space that uses it asks
+for GraceUI 0.2.55 (protocol 1.18): an older GraceUI refuses `choices` on such a bar when you register.
+
+1. **grace-dev's dump shows a stream as the game draws it.** A topic fixture that is a list goes to the view as the
+   menu's copy, `{"rows": [...]}`, with its newest 200 rows alone, so your goldens of Logs show its rows.
+2. **A filter's own choices on any bar.** A filter on a bar that GraceUI filters itself (a table or a master list
+   read whole, a log tail, a live feed) may give `choices = [{ value = "warning", label = "Warnings" }, ...]`. It
+   then offers those values in that order, in your words, and filters by value as before. A row whose value is not
+   listed shows under All alone. GraceUI never words your levels itself. `choices_from`, a state topic's list, is
+   still only for rows read a page at a time, where a filter names one or the other; the lint and registration
+   refuse it on any other bar.
+3. **No drawer on an empty row.** A row whose drawer columns are all empty or missing has no mark and no focus stop in
+   game, and no Details button in the browser. The mark's room stays on every row, so the columns still line up.
+4. **A stream's bar comes before its rows.** A log tail's or live feed's filter bar is drawn before any row has come,
+   over its empty words, in both views, as a paged table's is. A page's first focus no longer depends on whether the
+   browser has fed the stream.
+5. **First focus goes to the page's body.** In game, a page's first focus is its body's first control, never a header
+   action, so a stray Enter after F5 cannot pause AI. ↑ and the pointer reach the header's actions. On a page whose
+   controls come with a topic, focus starts on its first section's label and stays there when they come (D256), so it
+   never rests on a header action. A header action takes the first focus only on a page with no section or tab. This
+   amends D256's (2). It also changes what I told you: I said a page whose only controls are its header actions would
+   focus the first of them. But when a page opens, GraceUI cannot tell such a page from one whose controls have not
+   come yet.
+6. **Slots are sized by need.** Each column's slot in an in-game table is as wide as its widest words, label or cell,
+   where the room allows. Narrow columns take what they need and the wide ones share the rest; the first column keeps
+   its third. A cell still too long ends in "…". The slots follow the rows held, so in a live table a slot can widen
+   when a wider value comes; I took that over cutting your addresses.
