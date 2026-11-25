@@ -33,5 +33,9 @@ if(GU_NODE AND EXISTS ${GU_WEB}/node_modules/vite/package.json AND EXISTS ${GU_W
     add_test(NAME web_dom_tests COMMAND ${GU_NODE} --test --test-concurrency=1 tests/dom/dom.test.ts
              WORKING_DIRECTORY ${GU_WEB})
     set_tests_properties(web_dom_tests PROPERTIES FIXTURES_REQUIRED web_dist TIMEOUT 600 RESOURCE_LOCK web_dist)
+    # The space check (D265) over the demo's fixture folder, as a consumer runs it over its own, against its golden.
+    add_test(NAME web_space_check COMMAND ${GU_NODE} tools/check-space.ts ${CMAKE_SOURCE_DIR}/fixtures/demo
+             --golden tests/golden/space-demo.txt WORKING_DIRECTORY ${GU_WEB})
+    set_tests_properties(web_space_check PROPERTIES FIXTURES_REQUIRED web_dist TIMEOUT 600 RESOURCE_LOCK web_dist)
   endif()
 endif()

@@ -29,8 +29,17 @@ Other commands:
 ```sh
 npm run dev                              # the dev page at http://127.0.0.1:5173, playing the fixtures
 npm run screenshots -- <folder>          # the review shots, from dist/ (1920 × 1080 at device scale 2)
+npm run -s check:space -- <space folder> [--golden <file>] [--update]   # a space in the real browser view (D265)
 python3 -I ../tools/web/licences.py --check
 ```
+
+The space check (D265, `tools/check-space.ts`) is for a mod's own space: it takes the folder grace-dev takes
+(`pages.json`, `settings.json`, and optionally `topics.json` and `paged.json`), opens the built browser view over the
+fake host with those fixtures, and prints what the view shows. The dump covers this PC's browser, a paired device, and
+each switch a page is shown with turned the other way. It holds the rail, and each page's text, its gate's words first.
+It fails on a console error, a CSP violation, a request outside the page's origin or a text under 4.5:1, in either
+theme; `--golden` compares the dump with a file of the mod's, and `--update` writes it. It names no path. CTest runs it
+over the demo space (`web_space_check`, its golden `tests/golden/space-demo.txt`).
 
 ## What is where
 

@@ -14,7 +14,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"tests/unit/*.test.ts\"",
     "test:dom": "node --test --test-concurrency=1 \"tests/dom/*.test.ts\"",
-    "screenshots": "node tests/screenshots.ts"
+    "screenshots": "node tests/screenshots.ts",
+    "check:space": "node tools/check-space.ts"
   },
   "dependencies": {
     "@preact/signals": "2.11.4",

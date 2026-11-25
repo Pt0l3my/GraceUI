@@ -1779,3 +1779,25 @@ gives `pc_only` to an older GraceUI is not refused; the mark is simply not read,
   register again, that notice is replaced rather than repeated. GraceUIs before 0.2.57 do not check this.
 - **So give your page data the minor of your floor**, the oldest GraceUI you support, not the newest GraceUI's.
   With Workshop's pc_only that is 20 (GraceUI 0.2.57).
+
+## 91. A check of your pages in the browser view (2026-11-25, D265; GraceUI 0.2.58)
+
+Your G-4. In GraceUI's `web/` folder, with the view built (`npm ci --ignore-scripts`, then `npm run build`), run:
+
+```sh
+npm run -s check:space -- <your space folder> --golden <your golden file>
+```
+
+- **The folder** is the one grace-dev takes: `pages.json` and `settings.json`, and optionally `topics.json` and
+  `paged.json`.
+- **What it does**: it opens GraceUI's real browser view in Chromium (the Playwright your machine has), over GraceUI's
+  fake host with your fixtures and GraceUI's own space beside them.
+- **What it prints** is a text dump for this PC's browser, for a paired device, and for each switch a page is shown
+  with, turned the other way. Workshop's `shown_with` is one such switch. For each of these it lists:
+  - the rail: each category's pages, in order;
+  - each page's text as the view shows it. A gated page shows its gate's words and buttons first, then the page
+    behind it. A page that is absent is named as absent, as Workshop is on a device.
+- **It fails** on a console or page error, a CSP violation, a request outside the page's origin, or a text under 4.5:1
+  in either theme. With `--golden` it also fails when the dump differs from your file; `--update` writes the file.
+- **Exit codes**: 0 passes, 1 fails (each problem is named), 2 means the folder or the build is missing.
+- It names no path, so its output can go in your logs.
