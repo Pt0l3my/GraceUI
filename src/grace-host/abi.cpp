@@ -481,6 +481,11 @@ void test_fill_state(GraceUiTestState& out) noexcept {
   out.world_flags = session::world().combined();
   out.providers = session::world().providers();
   out.present_prologue = hooks::present_prologue();
+  out.present_calls = state::present_calls.load(std::memory_order_relaxed);
+  out.present_drawn = state::present_drawn.load(std::memory_order_relaxed);
+  out.present_refused = state::present_refused.load(std::memory_order_relaxed);
+  out.present_hooks = session::present().count();
+  out.present_suspended = state::present_suspended.load(std::memory_order_relaxed);
 }
 
 void test_reset_counters() noexcept {

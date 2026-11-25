@@ -37,6 +37,7 @@
 #include <functional>
 #include <iterator>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -8801,6 +8802,438 @@ void run_wake(const std::wstring& dll) {
   CloseHandle(handle);  // the mod's own; GraceUI keeps its event
 }
 
+// ---- ABI 1.8 (D259): a panel drawn in each frame by its mod's on_present callback, on the present thread.
+
+enum class PresentMode : int { draw, keep, alternate, too_many, bad_clip, call_slot, slow, throws, linger };
+
+// What a harness mod's callback draws and has seen, read by the harness's own thread between frames.
+struct PresentProbe {
+  const GraceUiApi1* table = nullptr;
+  GraceUiConsumer me = 0;
+  std::uint64_t white = 0;
+  std::atomic<int> mode{static_cast<int>(PresentMode::draw)};
+  std::atomic<std::uint32_t> colour{0};
+  std::atomic<std::uint64_t> calls{0};
+  std::atomic<std::uint64_t> last_frame{0};
+  std::atomic<bool> ordered{true};       // each call's frame number above the one before
+  std::atomic<std::uint32_t> frame_size{0};
+  std::atomic<std::uint64_t> panel{0};
+  std::atomic<float> x{0.0f};
+  std::atomic<float> y{0.0f};
+  std::atomic<float> width{0.0f};
+  std::atomic<float> delta{0.0f};
+  std::atomic<std::int64_t> time_us{0};
+  std::atomic<bool> time_rose{true};
+  std::atomic<std::uint32_t> flags{0};
+  std::atomic<float> spent_us{-1.0f};
+  std::atomic<float> spent_max{0.0f};
+  std::atomic<std::uint32_t> slot_status{0xFFFFFFFFu};
+  std::atomic<bool> inside{false};
+  std::atomic<bool> returned{false};     // disconnect has returned (linger)
+  std::atomic<bool> overlapped{false};   // ... while this callback was still running
+  // The list's arrays: the callback's own, holding until it returns.
+  GraceUiDrawVert vertices[4] = {};
+  std::uint16_t indices[6] = {0, 1, 2, 0, 2, 3};
+  GraceUiDrawCommand command{};
+};
+
+std::uint32_t present_probe(void* user, const GraceUiPresentFrame* frame, GraceUiDrawList* list) {
+  PresentProbe& probe = *static_cast<PresentProbe*>(user);
+  probe.calls.fetch_add(1);
+  if (frame->frame <= probe.last_frame.load()) {
+    probe.ordered.store(false);
+  }
+  probe.last_frame.store(frame->frame);
+  if (frame->time_us < probe.time_us.load()) {
+    probe.time_rose.store(false);
+  }
+  probe.time_us.store(frame->time_us);
+  probe.frame_size.store(frame->size);
+  probe.panel.store(frame->panel);
+  probe.x.store(frame->x);
+  probe.y.store(frame->y);
+  probe.width.store(frame->width);
+  probe.delta.store(frame->delta_seconds);
+  probe.flags.store(frame->flags);
+  probe.spent_us.store(frame->spent_us);
+  if (frame->spent_us > probe.spent_max.load()) {
+    probe.spent_max.store(frame->spent_us);
+  }
+  const PresentMode mode = static_cast<PresentMode>(probe.mode.load());
+  switch (mode) {
+    case PresentMode::keep: return GRACEUI_PRESENT_KEEP;
+    case PresentMode::call_slot:
+      probe.slot_status.store(probe.table->hide_panel(probe.me, frame->panel));  // refused from inside
+      return GRACEUI_PRESENT_KEEP;
+    case PresentMode::slow: {
+      LARGE_INTEGER frequency{};
+      LARGE_INTEGER start{};
+      LARGE_INTEGER now{};
+      QueryPerformanceFrequency(&frequency);
+      QueryPerformanceCounter(&start);
+      do {
+        QueryPerformanceCounter(&now);
+      } while ((now.QuadPart - start.QuadPart) * 1000000 / frequency.QuadPart < 1200);  // over 0.5 ms (EST budget)
+      return GRACEUI_PRESENT_KEEP;
+    }
+    case PresentMode::throws: throw std::runtime_error("a harness callback's exception");
+    case PresentMode::linger:
+      probe.inside.store(true);
+      Sleep(80);
+      if (probe.returned.load()) {
+        probe.overlapped.store(true);
+      }
+      probe.inside.store(false);
+      return GRACEUI_PRESENT_KEEP;
+    default: break;
+  }
+  const float w = frame->width;
+  const float h = frame->height;
+  std::uint32_t c = probe.colour.load();
+  if (mode == PresentMode::alternate) {
+    c = (frame->frame % 2) == 0 ? packed(Colour{200, 40, 40}) : packed(Colour{40, 200, 40});
+  }
+  probe.vertices[0] = {0.0f, 0.0f, 0.5f, 0.5f, c};
+  probe.vertices[1] = {w, 0.0f, 0.5f, 0.5f, c};
+  probe.vertices[2] = {w, h, 0.5f, 0.5f, c};
+  probe.vertices[3] = {0.0f, h, 0.5f, 0.5f, c};
+  probe.command = GraceUiDrawCommand{};
+  probe.command.clip_x1 = mode == PresentMode::bad_clip ? w + 50.0f : w;  // outside the panel: refused
+  probe.command.clip_y1 = h;
+  probe.command.texture = probe.white;
+  probe.command.vertex_count = 4;
+  probe.command.index_count = 6;
+  list->vertex_count = mode == PresentMode::too_many ? 5 : 4;  // over the hook's room of 4: refused
+  list->index_count = 6;
+  list->command_count = 1;
+  list->vertices = probe.vertices;
+  list->indices = probe.indices;
+  list->commands = &probe.command;
+  return GRACEUI_PRESENT_DRAW;
+}
+
+GraceUiPresentHook hook_of(PresentProbe& probe, std::uint32_t vertices = 4, std::uint32_t indices = 6,
+                           std::uint32_t commands = 1) {
+  GraceUiPresentHook hook{};
+  hook.size = sizeof hook;
+  hook.vertex_capacity = vertices;
+  hook.index_capacity = indices;
+  hook.command_capacity = commands;
+  hook.callback = &present_probe;
+  hook.user = &probe;
+  return hook;
+}
+
+GraceUiStatus clear_hook(const GraceUiApi1* table, GraceUiConsumer me, std::uint64_t panel) {
+  GraceUiPresentHook none{};
+  none.size = sizeof none;
+  return table->set_on_present(me, panel, &none);
+}
+
+void run_on_present(const std::wstring& dll) {
+  Game game(false, 1280, 720);
+  const HWND window = game.window();
+  cursor_into(window);
+  pump_messages();
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  const std::uint32_t white_pixels[16] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                          0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                          0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
+  const auto mod_of = [&](const char* id, const char* name, std::uint64_t& panel, float x, float y) {
+    const Connected connected = connect(table, request_for(id, GRACEUI_VERSION_PACK(0, 2, 0), name,
+                                                           "panels textures on-present"));
+    HarnessMod mod{table, connected.answer.consumer, 0};
+    mod.texture(4, 4, white_pixels, mod.white);
+    mod.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_TOP_LEFT, x, y, 100, 60, 0, panel);
+    return mod;
+  };
+  constexpr Colour kSubmitted{40, 60, 200};
+  constexpr Colour kDrawn{220, 120, 30};
+  std::uint64_t panel = 0;
+  HarnessMod mod = mod_of("present-mod", "Present mod", panel, 40, 40);
+  PresentProbe probe;
+  probe.table = table;
+  probe.me = mod.me;
+  probe.white = mod.white;
+  probe.colour.store(packed(kDrawn));
+
+  // 1. The slot and its refusals.
+  const bool covers = GRACEUI_API1_COVERS(table, set_on_present);
+  const bool cap = table->has_cap(GRACEUI_CAP_ON_PRESENT, std::strlen(GRACEUI_CAP_ON_PRESENT)) != 0;
+  const GraceUiStatus null_hook = covers ? table->set_on_present(mod.me, panel, nullptr) : GRACEUI_NOT_YET;
+  GraceUiPresentHook roomless = hook_of(probe, 0);
+  const GraceUiStatus no_room = covers ? table->set_on_present(mod.me, panel, &roomless) : GRACEUI_NOT_YET;
+  GraceUiPresentHook too_big = hook_of(probe, GRACEUI_DRAW_VERTEX_BYTES_MAX / sizeof(GraceUiDrawVert) + 1);
+  const GraceUiStatus over_bounds = covers ? table->set_on_present(mod.me, panel, &too_big) : GRACEUI_NOT_YET;
+  GraceUiPresentHook hook = hook_of(probe);
+  const GraceUiStatus not_mine = covers ? table->set_on_present(mod.me, panel + 256, &hook) : GRACEUI_NOT_YET;
+  const GraceUiStatus no_mod = covers ? table->set_on_present(0, panel, &hook) : GRACEUI_NOT_YET;
+  check(covers && cap && table->abi_minor >= 8u && null_hook == GRACEUI_REFUSED && no_room == GRACEUI_REFUSED &&
+            over_bounds == GRACEUI_REFUSED && not_mine == GRACEUI_REFUSED && no_mod == GRACEUI_NOT_CONNECTED,
+        "on_present: the slot",
+        "covered %s, has_cap(\"%s\") %s, minor %u; a null hook %s, no room %s, over a submission's bounds %s, a panel "
+        "not the mod's %s, no mod %s",
+        covers ? "yes" : "NO", GRACEUI_CAP_ON_PRESENT, cap ? "yes" : "NO", table->abi_minor, status_name(null_hook),
+        status_name(no_room), status_name(over_bounds), status_name(not_mine), status_name(no_mod));
+  if (!covers) {
+    return;
+  }
+  // The submitted list, then the callback; setting one closes the registration window, as a first submit does.
+  const GraceUiStatus submitted = mod.quad(panel, 100, 60, kSubmitted);
+  const GraceUiStatus set = table->set_on_present(mod.me, panel, &hook);
+  std::uint64_t late = 0;
+  const GraceUiStatus late_texture = mod.texture(4, 4, white_pixels, late);
+  table->show_panel(mod.me, panel);
+  start_host(game, grace);
+  until_atlas(game, grace);
+  frames(game, 20);
+
+  // 2. Drawn in each frame from the callback's list, in place of the submitted one.
+  std::string why;
+  const std::uint64_t calls_before = probe.calls.load();
+  const GraceUiTestState before = grace.state();
+  frames(game, 30);
+  const Frame drawn_shot = game.frame_and_read(kInputColour, PresentWith::present);
+  const GraceUiTestState after = grace.state();
+  const std::uint64_t calls = probe.calls.load() - calls_before;
+  const bool drawn_pixel = pixel_is(drawn_shot, 90, 70, kDrawn, "inside the panel", why);
+  const bool outside = !close_to(drawn_shot.at(160, 70), kDrawn, 3);
+  check(submitted == GRACEUI_OK && set == GRACEUI_OK && late_texture == GRACEUI_TOO_LATE && calls >= 31 &&
+            after.present_calls - before.present_calls >= 31 && after.present_drawn - before.present_drawn >= 31 &&
+            after.present_hooks == 1 && drawn_pixel && outside && probe.ordered.load() && probe.time_rose.load() &&
+            probe.frame_size.load() == sizeof(GraceUiPresentFrame) && probe.panel.load() == panel &&
+            probe.x.load() == 40.0f && probe.y.load() == 40.0f && probe.width.load() == 100.0f &&
+            probe.delta.load() > 0.0f,
+        "on_present: drawn in each frame",
+        "set %s after a submit %s (a texture after it %s); %llu calls in 31 frames, %llu lists drawn, %u set; %s; "
+        "frames in order %s, time rising %s; the frame's size %u, its panel %s, its place %.0f,%.0f, width %.0f, "
+        "delta %.4f s",
+        status_name(set), status_name(submitted), status_name(late_texture), static_cast<unsigned long long>(calls),
+        static_cast<unsigned long long>(after.present_drawn - before.present_drawn), after.present_hooks, why.c_str(),
+        probe.ordered.load() ? "yes" : "NO", probe.time_rose.load() ? "yes" : "NO", probe.frame_size.load(),
+        probe.panel.load() == panel ? "its own" : "ANOTHER", probe.x.load(), probe.y.load(), probe.width.load(),
+        probe.delta.load());
+
+  // 3. A list of its own in every frame, with no submit between: two frames running differ.
+  probe.mode.store(static_cast<int>(PresentMode::alternate));
+  const Frame one = game.frame_and_read(kInputColour, PresentWith::present);
+  const Frame two = game.frame_and_read(kInputColour, PresentWith::present);
+  const Colour red{200, 40, 40};
+  const Colour green{40, 200, 40};
+  const bool alternated = (close_to(one.at(90, 70), red, 3) && close_to(two.at(90, 70), green, 3)) ||
+                          (close_to(one.at(90, 70), green, 3) && close_to(two.at(90, 70), red, 3));
+  // KEEP: the submitted list.
+  probe.mode.store(static_cast<int>(PresentMode::keep));
+  why.clear();
+  const Frame kept_shot = game.frame_and_read(kInputColour, PresentWith::present);
+  const bool kept = pixel_is(kept_shot, 90, 70, kSubmitted, "kept", why);
+  // Hidden: not called.
+  table->hide_panel(mod.me, panel);
+  frames(game, 2);
+  const std::uint64_t hidden_from = probe.calls.load();
+  frames(game, 15);
+  const std::uint64_t hidden_calls = probe.calls.load() - hidden_from;
+  table->show_panel(mod.me, panel);
+  frames(game, 2);
+  const std::uint64_t shown_from = probe.calls.load();
+  frames(game, 5);
+  const std::uint64_t shown_calls = probe.calls.load() - shown_from;
+  check(alternated && kept && hidden_calls == 0 && shown_calls >= 5, "on_present: its own list, KEEP, hidden",
+        "two frames running drew %s and %s (alternated %s); KEEP drew the submitted list: %s; hidden, %llu calls in 15 "
+        "frames; shown again, %llu in 5",
+        describe(one.at(90, 70)).c_str(), describe(two.at(90, 70)).c_str(), alternated ? "yes" : "NO", why.c_str(),
+        static_cast<unsigned long long>(hidden_calls), static_cast<unsigned long long>(shown_calls));
+
+  // What it is told of itself: the time its mod's callbacks took in the frame before, as the budget weighs it; and
+  // whether GraceUI's menu is open (D259, for EldenNet's frame cost with the menu open and closed).
+  probe.mode.store(static_cast<int>(PresentMode::draw));
+  frames(game, 3);
+  const float told_spent = probe.spent_us.load();
+  const std::uint32_t closed_flags = probe.flags.load();
+  press(window, VK_F5, kScanF5);
+  const GraceUiTestMenu opened = menu_after(game, grace, 0);
+  frames(game, 3);
+  const std::uint32_t open_flags = probe.flags.load();
+  press(window, VK_F5, kScanF5);
+  for (int i = 0; i < 50 && grace.menu().open != 0; ++i) {
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(10);
+  }
+  frames(game, 3);
+  const std::uint32_t shut_flags = probe.flags.load();
+  check(told_spent >= 0.0f && told_spent < static_cast<float>(GRACEUI_PRESENT_BUDGET_US) && closed_flags == 0 &&
+            opened.open == 1 && open_flags == GRACEUI_PRESENT_MENU_OPEN && shut_flags == 0,
+        "on_present: what it is told",
+        "its mod's callbacks took %.1f us in the frame before; flags with the menu closed %u, open %u (the menu open: "
+        "%s), closed again %u",
+        told_spent, closed_flags, open_flags, opened.open == 1 ? "yes" : "NO", shut_flags);
+
+  // 4. A list that does not fit or fails the check: not drawn (the submitted one is), logged once.
+  const GraceUiTestState refusals_before = grace.state();
+  probe.mode.store(static_cast<int>(PresentMode::too_many));
+  frames(game, 5);
+  probe.mode.store(static_cast<int>(PresentMode::bad_clip));
+  frames(game, 5);
+  why.clear();
+  const Frame refused_shot = game.frame_and_read(kInputColour, PresentWith::present);
+  const bool refused_pixel = pixel_is(refused_shot, 90, 70, kSubmitted, "a refused list's panel", why);
+  const GraceUiTestState refusals_after = grace.state();
+  const int refusal_lines = count_log_lines(grace, "on_present callback was not drawn");
+  // A slot from inside a callback: refused, logged once; the panel stays shown.
+  probe.mode.store(static_cast<int>(PresentMode::call_slot));
+  frames(game, 3);
+  const std::uint32_t inside_status = probe.slot_status.load();
+  const int inside_lines = count_log_lines(grace, "called from inside an on_present callback");
+  const std::uint32_t shown_after = grace.state().panels_shown;
+  check(refused_pixel && refusals_after.present_refused - refusals_before.present_refused >= 11 &&
+            refusal_lines == 1 && inside_status == GRACEUI_REFUSED && inside_lines == 1 && shown_after >= 1,
+        "on_present: refusals",
+        "over its room, then a clip outside the panel: %llu lists not drawn, %d log line(s); %s; hide_panel from "
+        "inside a callback %s, %d log line(s), %u panel(s) still shown",
+        static_cast<unsigned long long>(refusals_after.present_refused - refusals_before.present_refused),
+        refusal_lines, why.c_str(), status_name(inside_status), inside_lines, shown_after);
+
+  // 5. No allocation on the present thread with a callback drawing in each frame.
+  probe.mode.store(static_cast<int>(PresentMode::draw));
+  frames(game, 60);
+  grace.reset_counters();
+  frames(game, 300);
+  const GraceUiTestState counted = grace.state();
+  check(counted.allocations == 0 && counted.frees == 0, "on_present: allocations",
+        "on the present thread over 300 frames drawn by a callback: %llu allocations, %llu frees",
+        static_cast<unsigned long long>(counted.allocations), static_cast<unsigned long long>(counted.frees));
+
+  // 6. Cleared: never called again, and the submitted list drawn.
+  const GraceUiStatus cleared = clear_hook(table, mod.me, panel);
+  const std::uint64_t cleared_at = probe.calls.load();
+  frames(game, 10);
+  why.clear();
+  const Frame cleared_shot = game.frame_and_read(kInputColour, PresentWith::present);
+  const bool cleared_pixel = pixel_is(cleared_shot, 90, 70, kSubmitted, "cleared", why);
+  check(cleared == GRACEUI_OK && probe.calls.load() == cleared_at && cleared_pixel && grace.state().present_hooks == 0,
+        "on_present: cleared", "cleared %s; %llu calls after it in 11 frames; %s", status_name(cleared),
+        static_cast<unsigned long long>(probe.calls.load() - cleared_at), why.c_str());
+
+  // 7. Disconnect while its callback runs: it returns only once the callback has ended.
+  std::uint64_t linger_panel = 0;
+  HarnessMod linger = mod_of("linger-mod", "Linger mod", linger_panel, 300, 40);
+  PresentProbe lingering;
+  lingering.table = table;
+  lingering.me = linger.me;
+  lingering.white = linger.white;
+  lingering.mode.store(static_cast<int>(PresentMode::linger));
+  GraceUiPresentHook linger_hook = hook_of(lingering);
+  const GraceUiStatus linger_set = table->set_on_present(linger.me, linger_panel, &linger_hook);
+  table->show_panel(linger.me, linger_panel);
+  GraceUiStatus left = GRACEUI_FAULT;
+  double waited_ms = 0;
+  std::atomic<bool> gave_up{false};
+  std::thread leaver([&] {
+    for (int waited = 0; !lingering.inside.load(); ++waited) {
+      if (waited > 5000 || gave_up.load()) {
+        return;  // never called: the check below says so
+      }
+      Sleep(1);
+    }
+    const auto start = std::chrono::steady_clock::now();
+    left = table->disconnect(linger.me);
+    waited_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    lingering.returned.store(true);
+  });
+  for (int i = 0; i < 20 && !lingering.returned.load(); ++i) {
+    game.frame(kInputColour, PresentWith::present);
+  }
+  gave_up.store(true);
+  leaver.join();
+  const std::uint64_t linger_calls = lingering.calls.load();
+  frames(game, 5);
+  check(linger_set == GRACEUI_OK && left == GRACEUI_OK && !lingering.overlapped.load() && waited_ms > 20.0 &&
+            lingering.calls.load() == linger_calls,
+        "on_present: disconnect waits",
+        "set %s; disconnect from another thread during the callback %s after %.1f ms; returned while it ran: %s; "
+        "%llu calls after it",
+        status_name(linger_set), status_name(left), waited_ms, lingering.overlapped.load() ? "YES" : "no",
+        static_cast<unsigned long long>(lingering.calls.load() - linger_calls));
+
+  // 8. Over its budget in 120 frames running: suspended, named once, and so for the session.
+  std::uint64_t slow_panel = 0;
+  HarnessMod slow = mod_of("slow-mod", "Slow mod", slow_panel, 40, 200);
+  PresentProbe slowing;
+  slowing.table = table;
+  slowing.me = slow.me;
+  slowing.white = slow.white;
+  slowing.mode.store(static_cast<int>(PresentMode::slow));
+  GraceUiPresentHook slow_hook = hook_of(slowing);
+  const GraceUiStatus slow_set = table->set_on_present(slow.me, slow_panel, &slow_hook);
+  table->show_panel(slow.me, slow_panel);
+  frames(game, 130);
+  for (int i = 0; i < 50 && grace.state().present_suspended == 0; ++i) {
+    Sleep(10);  // GraceUI's own thread names it
+  }
+  const std::uint64_t slow_calls = slowing.calls.load();
+  frames(game, 10);
+  const std::uint64_t slow_after = slowing.calls.load() - slow_calls;
+  bool named_slow = false;
+  for (const GraceUiTestNotice& n : grace.notices()) {
+    named_slow = named_slow || std::strstr(n.text, "Slow mod slowed the game's frames") != nullptr;
+  }
+  const GraceUiStatus again = table->set_on_present(slow.me, slow_panel, &slow_hook);
+  const GraceUiStatus cleared_suspended = clear_hook(table, slow.me, slow_panel);  // clearing one is taken
+  table->disconnect(slow.me);
+  const Connected back = connect(table, request_for("slow-mod", GRACEUI_VERSION_PACK(0, 2, 0), "Slow mod",
+                                                    "panels on-present"));
+  HarnessMod slow_back{table, back.answer.consumer, 0};
+  std::uint64_t back_panel = 0;
+  slow_back.panel(GRACEUI_LAYER_HUD, GRACEUI_ANCHOR_TOP_LEFT, 40, 200, 100, 60, 0, back_panel);
+  const GraceUiStatus reconnected = table->set_on_present(slow_back.me, back_panel, &slow_hook);
+  const float slow_told = slowing.spent_max.load();
+  check(slow_set == GRACEUI_OK && slow_calls >= 120 && slow_calls <= 125 && slow_after == 0 && slow_told >= 1000.0f &&
+            grace.state().present_suspended == 1 && named_slow && again == GRACEUI_REFUSED &&
+            cleared_suspended == GRACEUI_OK && reconnected == GRACEUI_REFUSED && count_log_lines(grace, "slow-mod's on_present callbacks are suspended") == 1,
+        "on_present: the budget",
+        "set %s; 1.2 ms a frame (told %.0f us at most): %llu calls before it was suspended, %llu after; named %s; set "
+        "again %s, cleared %s, and set after connecting again %s",
+        status_name(slow_set), slow_told, static_cast<unsigned long long>(slow_calls),
+        static_cast<unsigned long long>(slow_after),
+        named_slow ? "yes" : "NO", status_name(again), status_name(cleared_suspended), status_name(reconnected));
+  table->disconnect(slow_back.me);
+
+  // 9. An exception out of a callback: suspended at once.
+  std::uint64_t throw_panel = 0;
+  HarnessMod thrower = mod_of("throw-mod", "Throw mod", throw_panel, 300, 200);
+  PresentProbe throwing;
+  throwing.table = table;
+  throwing.me = thrower.me;
+  throwing.white = thrower.white;
+  throwing.mode.store(static_cast<int>(PresentMode::throws));
+  GraceUiPresentHook throw_hook = hook_of(throwing);
+  const GraceUiStatus throw_set = table->set_on_present(thrower.me, throw_panel, &throw_hook);
+  table->show_panel(thrower.me, throw_panel);
+  frames(game, 10);
+  for (int i = 0; i < 50 && grace.state().present_suspended < 2; ++i) {
+    Sleep(10);
+  }
+  bool named_throw = false;
+  for (const GraceUiTestNotice& n : grace.notices()) {
+    named_throw = named_throw || std::strstr(n.text, "Throw mod's drawing in each frame failed") != nullptr;
+  }
+  const GraceUiTestState last = grace.state();
+  check(throw_set == GRACEUI_OK && throwing.calls.load() == 1 && last.present_suspended == 2 && named_throw &&
+            last.host == GRACEUI_TEST_HOST_HOOKED && last.render_off == 0,
+        "on_present: an exception", "set %s; %llu call(s); suspended %u in all; named %s; still drawing %s",
+        status_name(throw_set), static_cast<unsigned long long>(throwing.calls.load()), last.present_suspended,
+        named_throw ? "yes" : "NO", last.render_off == 0 ? "yes" : "NO");
+  table->disconnect(thrower.me);
+  table->disconnect(mod.me);
+}
+
 // ---- EldenNet's S10.3.d (D240): a mod of EldenNet's kind (a panel, a hotkey, an input holder and a world-state
 // provider) on the copy asked first, while the other is asked as a mod carrying a private copy would ask it. Two copies:
 // the game's folder's, and one from beside-copy\ loaded before it. In order, the game's folder's is asked first; reversed,
@@ -9911,6 +10344,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"wake") {
     std::printf("-- scenario: a wait handle for each mod's events through ABI 1.5 (D212)\n");
     run_wake(dll);
+  } else if (scenario == L"on-present") {
+    std::printf("-- scenario: a panel drawn in each frame by its mod's callback through ABI 1.8 (D259)\n");
+    run_on_present(dll);
   } else if (scenario == L"chords") {
     std::printf("-- scenario: pad chords for mods' hotkeys through ABI 1.3 (D204)\n");
     run_chords(dll);
@@ -9945,7 +10381,7 @@ int wmain(int argc, wchar_t** argv) {
             L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
             L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-focus-ring", L"menu-pad", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
-            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake", L"heap-guard", L"heap-guard-off"}) {
+            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake", L"on-present", L"heap-guard", L"heap-guard-off"}) {
         run(child_scenario, dll, this_program());
         if (std::wstring_view(child_scenario) == L"copy-beside-mod-reversed") {
           DeleteFileW((folder_of_this_program() + L"GraceUI\\graceui.dll").c_str());  // its GraceUI\ copy (D244)

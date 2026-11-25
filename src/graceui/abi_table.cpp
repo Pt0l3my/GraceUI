@@ -8,7 +8,8 @@
 // struct names (a texture's pixels, a face's data and ranges, a draw list's vertices, indices and commands), read only
 // for the counts the struct gives, after grace-host has checked them against their bounds, straight into GraceUI's own
 // store; and a struct GraceUI fills, written only as far as the size the mod set in it. Nothing is kept that points
-// into a mod's memory.
+// into a mod's memory, but for an on_present callback and its `user` (set_on_present, D259), kept as they are and
+// never read here: grace-host's draw.cpp calls the one with the other, under its rule (5).
 #include "abi_table.h"
 
 #include <cstdint>
@@ -102,6 +103,9 @@ std::uint32_t has_cap(const char* name, std::uint64_t name_length) noexcept {
 
 GraceUiStatus connect(const GraceUiConnectRequest* request, GraceUiConnectAnswer* answer) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("connect");  // D259: no slot from inside a callback
+    }
     std::uint32_t answer_size = 0;
     if (!can_write(answer, kConnectAnswer10, answer_size)) {
       grace::host::abi1::refused("connect", "an answer that is null or below its first size");
@@ -149,6 +153,9 @@ GraceUiStatus connect(const GraceUiConnectRequest* request, GraceUiConnectAnswer
 
 GraceUiStatus disconnect(GraceUiConsumer consumer) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("disconnect");  // D259: no slot from inside a callback
+    }
     return grace::host::abi1::disconnect(consumer);
   } catch (...) {
     grace::host::abi1::fault("disconnect");
@@ -158,6 +165,9 @@ GraceUiStatus disconnect(GraceUiConsumer consumer) noexcept {
 
 GraceUiStatus notice(GraceUiConsumer consumer, const GraceUiNotice* notice_in) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("notice");  // D259: no slot from inside a callback
+    }
     GraceUiNotice in{};
     char text[GRACEUI_NOTICE_TEXT_MAX];
     std::string_view view;
@@ -202,6 +212,9 @@ constexpr std::uint32_t kWorldState10 = 8;
 GraceUiStatus register_texture(GraceUiConsumer consumer, const GraceUiTextureDesc* texture,
                                std::uint64_t* texture_id) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("register_texture");  // D259: no slot from inside a callback
+    }
     GraceUiTextureDesc in{};
     if (texture_id == nullptr || !read_in(texture, kTexture10, in) || in.format != GRACEUI_TEXTURE_RGBA8 ||
         in.reserved != 0 || in.pixels == nullptr || in.width == 0 || in.height == 0 ||
@@ -235,6 +248,9 @@ GraceUiStatus register_texture(GraceUiConsumer consumer, const GraceUiTextureDes
 
 GraceUiStatus register_face(GraceUiConsumer consumer, const GraceUiFaceDesc* face, std::uint32_t* face_id) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("register_face");  // D259: no slot from inside a callback
+    }
     GraceUiFaceDesc in{};
     if (face_id == nullptr || !read_in(face, kFace10, in) || in.data == nullptr ||
         (in.ranges == nullptr && in.range_count != 0) || (in.flags & ~std::uint32_t{GRACEUI_FACE_SCALED}) != 0) {
@@ -269,6 +285,9 @@ GraceUiStatus register_face(GraceUiConsumer consumer, const GraceUiFaceDesc* fac
 
 GraceUiStatus glyph_table(GraceUiConsumer consumer, std::uint32_t face_id, GraceUiGlyphTable* table) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("glyph_table");  // D259: no slot from inside a callback
+    }
     std::uint32_t table_size = 0;
     if (!can_write(table, kGlyphTable10, table_size)) {
       return refused_argument(consumer, "glyph_table", "an answer that is null or below its first size");
@@ -287,6 +306,9 @@ GraceUiStatus glyph_table(GraceUiConsumer consumer, std::uint32_t face_id, Grace
 
 GraceUiStatus create_panel(GraceUiConsumer consumer, const GraceUiPanelDesc* panel, std::uint64_t* panel_id) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("create_panel");  // D259: no slot from inside a callback
+    }
     GraceUiPanelDesc in{};
     if (panel_id == nullptr || !read_in(panel, kPanel10, in)) {
       return refused_argument(consumer, "create_panel", "a panel that is null or below its first size");
@@ -318,6 +340,9 @@ struct ListSource {
 
 GraceUiStatus submit(GraceUiConsumer consumer, std::uint64_t panel_id, const GraceUiDrawList* list) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("submit");  // D259: no slot from inside a callback
+    }
     ListSource source{};
     if (!read_in(list, kDrawList10, source.list)) {
       return refused_argument(consumer, "submit", "a draw list that is null or below its first size");
@@ -362,6 +387,9 @@ GraceUiStatus submit(GraceUiConsumer consumer, std::uint64_t panel_id, const Gra
 
 GraceUiStatus show_panel(GraceUiConsumer consumer, std::uint64_t panel_id) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("show_panel");  // D259: no slot from inside a callback
+    }
     return grace::host::abi1::show_panel(consumer, panel_id, true);
   } catch (...) {
     grace::host::abi1::fault("show_panel");
@@ -371,6 +399,9 @@ GraceUiStatus show_panel(GraceUiConsumer consumer, std::uint64_t panel_id) noexc
 
 GraceUiStatus hide_panel(GraceUiConsumer consumer, std::uint64_t panel_id) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("hide_panel");  // D259: no slot from inside a callback
+    }
     return grace::host::abi1::show_panel(consumer, panel_id, false);
   } catch (...) {
     grace::host::abi1::fault("hide_panel");
@@ -381,6 +412,9 @@ GraceUiStatus hide_panel(GraceUiConsumer consumer, std::uint64_t panel_id) noexc
 GraceUiStatus request_input(GraceUiConsumer consumer, const GraceUiInputRequest* request,
                             GraceUiInputAnswer* answer) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("request_input");  // D259: no slot from inside a callback
+    }
     GraceUiInputRequest in{};
     std::uint32_t answer_size = 0;
     if (!can_write(answer, kInputAnswer10, answer_size) || !read_in(request, kInputRequest10, in)) {
@@ -402,6 +436,9 @@ GraceUiStatus request_input(GraceUiConsumer consumer, const GraceUiInputRequest*
 
 GraceUiStatus release_input(GraceUiConsumer consumer) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("release_input");  // D259: no slot from inside a callback
+    }
     return grace::host::abi1::release_input(consumer);
   } catch (...) {
     grace::host::abi1::fault("release_input");
@@ -411,6 +448,9 @@ GraceUiStatus release_input(GraceUiConsumer consumer) noexcept {
 
 GraceUiStatus set_world_state(GraceUiConsumer consumer, const GraceUiWorldState* state) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("set_world_state");  // D259: no slot from inside a callback
+    }
     GraceUiWorldState in{};
     if (!read_in(state, kWorldState10, in)) {
       return refused_argument(consumer, "set_world_state", "a state that is null or below its first size");
@@ -439,6 +479,9 @@ static_assert(sizeof(GraceUiEvent) == kEvent16 && sizeof(GraceUiSpaceDesc) == kS
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, const GraceUiHotkeyDesc* hotkey,
                               std::uint32_t* hotkey_id) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("register_hotkey");  // D259: no slot from inside a callback
+    }
     GraceUiHotkeyDesc in{};
     char action[GRACEUI_ID_MAX];
     char name[GRACEUI_NAME_MAX];
@@ -465,6 +508,9 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, const GraceUiHotkeyDesc*
 
 GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent* event) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("poll");  // D259: no slot from inside a callback
+    }
     std::uint32_t event_size = 0;
     if (!can_write(event, kEvent10, event_size)) {
       return refused_argument(consumer, "poll", "an event that is null or below its first size");
@@ -522,6 +568,9 @@ bool frame_text(const char* text, std::uint64_t length, std::uint64_t limit, std
 
 GraceUiStatus register_pages(GraceUiConsumer consumer, const GraceUiSpaceDesc* space) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("register_pages");  // D259: no slot from inside a callback
+    }
     GraceUiSpaceDesc in{};
     std::string_view pages;
     std::string_view settings;
@@ -544,6 +593,9 @@ GraceUiStatus register_pages(GraceUiConsumer consumer, const GraceUiSpaceDesc* s
 
 GraceUiStatus publish(GraceUiConsumer consumer, const char* frame, std::uint64_t frame_length) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("publish");  // D259: no slot from inside a callback
+    }
     std::string_view text;
     if (!frame_text(frame, frame_length, GRACEUI_FRAME_TO_PAGE_MAX, text) || text.empty()) {
       return refused_argument(consumer, "publish", "a frame that is null, empty or too long");
@@ -559,6 +611,9 @@ GraceUiStatus publish(GraceUiConsumer consumer, const char* frame, std::uint64_t
 GraceUiStatus answer(GraceUiConsumer consumer, std::uint64_t reply, const char* frame,
                      std::uint64_t frame_length) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("answer");  // D259: no slot from inside a callback
+    }
     std::string_view text;
     if (!frame_text(frame, frame_length, GRACEUI_FRAME_TO_PAGE_MAX, text) || text.empty()) {
       return refused_argument(consumer, "answer", "a frame that is null, empty or too long");
@@ -571,6 +626,9 @@ GraceUiStatus answer(GraceUiConsumer consumer, std::uint64_t reply, const char* 
   }
 }
 GraceUiStatus log(GraceUiConsumer consumer, std::uint32_t, const char*, std::uint64_t) noexcept {
+  if (grace::host::abi1::in_present_callback()) {
+    return grace::host::abi1::refused_in_callback("log");  // D259: no slot from inside a callback
+  }
   return not_yet(consumer, "log");
 }
 
@@ -578,6 +636,9 @@ GraceUiStatus log(GraceUiConsumer consumer, std::uint32_t, const char*, std::uin
 
 GraceUiStatus set_caret(GraceUiConsumer consumer, const GraceUiCaret* caret) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("set_caret");  // D259: no slot from inside a callback
+    }
     GraceUiCaret in{};
     if (!read_in(caret, kCaret11, in)) {
       return refused_argument(consumer, "set_caret", "a caret that is null or below its first size");
@@ -593,6 +654,9 @@ GraceUiStatus set_caret(GraceUiConsumer consumer, const GraceUiCaret* caret) noe
 
 GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t hotkey_id, GraceUiHotkeyBinding* binding) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("describe_hotkey");  // D259: no slot from inside a callback
+    }
     if (binding == nullptr || binding->size < sizeof(GraceUiHotkeyBinding)) {
       return refused_argument(consumer, "describe_hotkey", "a binding that is null or below 1.4's size");
     }
@@ -614,6 +678,9 @@ GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t hotkey_id,
 
 GraceUiStatus wake_event(GraceUiConsumer consumer, void** event) noexcept {
   try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("wake_event");  // D259: no slot from inside a callback
+    }
     if (event == nullptr) {
       return refused_argument(consumer, "wake_event", "a null place for the handle");
     }
@@ -623,6 +690,35 @@ GraceUiStatus wake_event(GraceUiConsumer consumer, void** event) noexcept {
     return status;
   } catch (...) {
     grace::host::abi1::fault("wake_event");
+    return GRACEUI_FAULT;
+  }
+}
+
+// ---- ABI 1.8's slot (D259).
+
+constexpr std::uint32_t kPresentHook18 = 32;
+static_assert(sizeof(GraceUiPresentHook) >= kPresentHook18);
+
+GraceUiStatus set_on_present(GraceUiConsumer consumer, std::uint64_t panel_id, const GraceUiPresentHook* hook) noexcept {
+  try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("set_on_present");  // D259: no slot from inside a callback
+    }
+    GraceUiPresentHook in{};
+    if (!read_in(hook, kPresentHook18, in)) {
+      return refused_argument(consumer, "set_on_present", "a hook that is null or below 1.8's size");
+    }
+    grace::abi::PresentHookDesc desc;
+    desc.callback = in.callback;  // SAFETY: a pointer kept, never read here: rule (5) of grace-host's draw.cpp calls it
+    desc.user = in.user;
+    if (in.callback != nullptr) {
+      desc.vertex_capacity = in.vertex_capacity;
+      desc.index_capacity = in.index_capacity;
+      desc.command_capacity = in.command_capacity;
+    }
+    return grace::host::abi1::set_on_present(consumer, panel_id, desc);
+  } catch (...) {
+    grace::host::abi1::fault("set_on_present");
     return GRACEUI_FAULT;
   }
 }
@@ -655,6 +751,7 @@ constinit const GraceUiApi1 kTable = {
     &set_caret,
     &describe_hotkey,
     &wake_event,
+    &set_on_present,
 };
 
 }  // namespace

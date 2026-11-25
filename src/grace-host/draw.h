@@ -53,6 +53,13 @@ void turn_off(const char* why) noexcept;
 // GraceUI's own thread, when woken: bakes the shared atlas if warm-up has asked for it (D117, D139 as amended).
 void serve_bake() noexcept;
 
+// GraceUI's own thread, when woken: tells the player, once each, of the mods whose on_present callbacks the present
+// thread suspended (D259), and keeps their ids for the session.
+void serve_present() noexcept;
+
+// Whether this thread is inside a mod's on_present callback now (D259).
+bool in_present_callback() noexcept;
+
 #if defined(GRACEUI_TEST_EXPORTS)
 // The render path turns itself off at the next frame, as a fault would turn it off (the harness's last checks).
 void test_turn_off() noexcept;

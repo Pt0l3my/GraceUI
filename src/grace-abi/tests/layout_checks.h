@@ -230,7 +230,8 @@ GU_AT(GraceUiWorldState, size, 0);
 GU_AT(GraceUiWorldState, flags, 4);
 
 /* The table: its four numbers, then D73's twenty slots in D73's order, 8 bytes each, then ABI 1.1's one (D176). */
-GU_SIZE(GraceUiApi1, 200); /* 184 in ABI 1.1 to 1.3; describe_hotkey in 1.4 (D210); wake_event in 1.5 (D212) */
+GU_SIZE(GraceUiApi1, 208); /* 184 in ABI 1.1 to 1.3; describe_hotkey in 1.4 (D210); wake_event in 1.5 (D212);
+                               set_on_present in 1.8 (D259) */
 GU_AT(GraceUiApi1, size, 0);
 GU_AT(GraceUiApi1, abi_minor, 4);
 GU_AT(GraceUiApi1, graceui_version, 8);
@@ -258,9 +259,35 @@ GU_AT(GraceUiApi1, log, 168);
 GU_AT(GraceUiApi1, set_caret, 176);
 GU_AT(GraceUiApi1, describe_hotkey, 184);
 GU_AT(GraceUiApi1, wake_event, 192);
+GU_AT(GraceUiApi1, set_on_present, 200);
+
+GU_SIZE(GraceUiPresentFrame, 72); /* ABI 1.8 (D259) */
+GU_AT(GraceUiPresentFrame, size, 0);
+GU_AT(GraceUiPresentFrame, reserved, 4);
+GU_AT(GraceUiPresentFrame, panel, 8);
+GU_AT(GraceUiPresentFrame, frame, 16);
+GU_AT(GraceUiPresentFrame, time_us, 24);
+GU_AT(GraceUiPresentFrame, delta_seconds, 32);
+GU_AT(GraceUiPresentFrame, x, 36);
+GU_AT(GraceUiPresentFrame, y, 40);
+GU_AT(GraceUiPresentFrame, width, 44);
+GU_AT(GraceUiPresentFrame, height, 48);
+GU_AT(GraceUiPresentFrame, display_width, 52);
+GU_AT(GraceUiPresentFrame, display_height, 56);
+GU_AT(GraceUiPresentFrame, flags, 60);
+GU_AT(GraceUiPresentFrame, spent_us, 64);
+GU_AT(GraceUiPresentFrame, reserved2, 68);
+
+GU_SIZE(GraceUiPresentHook, 32); /* ABI 1.8 (D259) */
+GU_AT(GraceUiPresentHook, size, 0);
+GU_AT(GraceUiPresentHook, vertex_capacity, 4);
+GU_AT(GraceUiPresentHook, index_capacity, 8);
+GU_AT(GraceUiPresentHook, command_capacity, 12);
+GU_AT(GraceUiPresentHook, callback, 16);
+GU_AT(GraceUiPresentHook, user, 24);
 
 /* The numbers a mod compiles in. */
-GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 7u, "ABI 1.7");
+GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 8u, "ABI 1.8");
 GU_ASSERT(GRACEUI_UPLOAD_MAX == 32u * 1024u * 1024u, "an upload's 32 MiB (D226)");
 GU_SIZE(GraceUiHotkeyBinding, 104); /* ABI 1.4 (D210) */
 GU_AT(GraceUiHotkeyBinding, key_text, 24);

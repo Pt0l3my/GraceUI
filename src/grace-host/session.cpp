@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <string_view>
 
 #include "display.h"
@@ -30,6 +31,7 @@ constexpr std::uint32_t kVersion = GRACEUI_VERSION_PACK(GRACEUI_BUILD_MAJOR, GRA
 // S10.4.c's stores, made once (allocate). A function-local pointer: made at its first use, never destroyed.
 struct Stores {
   grace::abi::Panels panels;
+  grace::abi::PresentHooks present;
   grace::abi::Registry registry;
   grace::abi::World world;
   grace::abi::QuietNotices quiet;
@@ -53,6 +55,44 @@ grace::abi::Notices& notices() noexcept { return g_notices; }
 grace::abi::Panels& panels() noexcept { return stores().panels; }
 grace::abi::Registry& registry() noexcept { return stores().registry; }
 grace::abi::World& world() noexcept { return stores().world; }
+grace::abi::PresentHooks& present() noexcept { return stores().present; }
+
+namespace {
+// The ids of the mods whose on_present callbacks were suspended (D259): GraceUI's own thread writes them, a mod's
+// set_on_present reads them; never the present thread.
+constinit grace::abi::SpinLock g_present_suspended_lock;
+constinit char g_present_suspended[grace::abi::kMaxConsumers][GRACEUI_ID_MAX + 1] = {};
+constinit std::uint32_t g_present_suspended_count = 0;
+}  // namespace
+
+bool suspend_present(std::string_view id) noexcept {
+  if (id.empty() || id.size() > GRACEUI_ID_MAX) {
+    return false;
+  }
+  const grace::abi::SpinGuard guard(g_present_suspended_lock);
+  for (std::uint32_t i = 0; i < g_present_suspended_count; ++i) {
+    if (id == std::string_view(g_present_suspended[i])) {
+      return false;
+    }
+  }
+  if (g_present_suspended_count >= grace::abi::kMaxConsumers) {
+    return false;
+  }
+  std::memcpy(g_present_suspended[g_present_suspended_count], id.data(), id.size());
+  g_present_suspended[g_present_suspended_count][id.size()] = '\0';
+  ++g_present_suspended_count;
+  return true;
+}
+
+bool present_suspended(std::string_view id) noexcept {
+  const grace::abi::SpinGuard guard(g_present_suspended_lock);
+  for (std::uint32_t i = 0; i < g_present_suspended_count; ++i) {
+    if (id == std::string_view(g_present_suspended[i])) {
+      return true;
+    }
+  }
+  return false;
+}
 grace::abi::QuietNotices& quiet() noexcept { return stores().quiet; }
 void allocate() {
   input::make_holder_mail();  // a holder's events for its mod (D176), before any mod has a table
@@ -230,7 +270,7 @@ bool has_cap(std::string_view name) noexcept {
          name == GRACEUI_CAP_FACES || name == GRACEUI_CAP_INPUT || name == GRACEUI_CAP_WORLD_STATE ||
          name == GRACEUI_CAP_HOTKEYS || name == GRACEUI_CAP_PAGES || name == GRACEUI_CAP_HOLDER_EVENTS ||
          name == GRACEUI_CAP_DISPLAY || name == GRACEUI_CAP_PAD_CHORDS || name == GRACEUI_CAP_HOTKEY_BINDINGS ||
-         name == GRACEUI_CAP_WAKE || name == GRACEUI_CAP_HOTKEY_BY;
+         name == GRACEUI_CAP_WAKE || name == GRACEUI_CAP_HOTKEY_BY || name == GRACEUI_CAP_ON_PRESENT;
 }
 
 grace::abi::ConnectResult connect(const grace::abi::ConnectRequest& request) noexcept {

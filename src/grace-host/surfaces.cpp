@@ -12,9 +12,11 @@
 #include <string_view>
 
 #include "display.h"
+#include "draw.h"
 #include "draw_atlas.h"
 #include "grace/abi/drawlist.h"
 #include "grace/abi/panels.h"
+#include "grace/abi/present.h"
 #include "grace/abi/registry.h"
 #include "grace/abi/text.h"
 #include "grace/abi/world.h"
@@ -349,6 +351,82 @@ GraceUiStatus submit(GraceUiConsumer consumer, std::uint64_t panel, const ListSh
   lists.publish();
   state::lists_submitted.fetch_add(1, std::memory_order_relaxed);
   return GRACEUI_OK;
+}
+
+GraceUiStatus set_on_present(GraceUiConsumer consumer, std::uint64_t panel,
+                             const grace::abi::PresentHookDesc& hook) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  const std::uint32_t owner = admitted(consumer, status);
+  if (owner == 0) {
+    return status;
+  }
+  grace::abi::PanelDesc desc;
+  std::uint32_t index = 0;
+  if (session::panels().find(consumer, panel, desc, index) != grace::abi::PanelResult::ok) {
+    refused("set_on_present", "a panel that is not the mod's");
+    return GRACEUI_REFUSED;
+  }
+  std::uint64_t textures[grace::abi::kTexturesPerMod] = {};
+  std::uint32_t texture_count = 0;
+  if (hook.callback != nullptr) {
+    if (!grace::abi::valid_present_hook(hook)) {
+      refused("set_on_present", "capacities outside 1 to a submission's bounds");
+      return GRACEUI_REFUSED;
+    }
+    grace::abi::ConsumerInfo mod;
+    if (session::consumers().info_of(owner, mod) && session::present_suspended(mod.id)) {
+      refused("set_on_present", "the mod's callbacks were suspended this session");
+      return GRACEUI_REFUSED;
+    }
+    // The textures the callback's lists may name: the mod's now. Its registration window closes once the callback is
+    // set (below), as at a first submit (D76).
+    texture_count = session::registry().owned(consumer, textures);
+  }
+  grace::abi::ConsumerInfo info;
+  const std::string_view id = session::consumers().info_of(owner, info) ? std::string_view(info.id) : "a mod";
+  grace::abi::PresentSet set = grace::abi::PresentSet::invalid;
+  try {
+    set = session::present().set(consumer, owner, panel, index, hook, textures, texture_count, id);
+  } catch (...) {
+    fault("set_on_present");  // no room for the hook's lists
+    return GRACEUI_FAULT;
+  }
+  switch (set) {
+    case grace::abi::PresentSet::ok: break;
+    case grace::abi::PresentSet::full:
+      refused("set_on_present", "the mod's callbacks or the session's are as many as GraceUI takes");
+      return GRACEUI_FULL;
+    case grace::abi::PresentSet::suspended:
+      refused("set_on_present", "the mod's callbacks were suspended this session");
+      return GRACEUI_REFUSED;
+    default:
+      refused("set_on_present", "GraceUI's own check of the panel's slot or the mod's number");
+      return GRACEUI_REFUSED;
+  }
+  if (session::consumers().owner_of(consumer) != owner) {
+    // Its mod disconnected on another thread meanwhile, after forget() took its hooks out: this one goes too.
+    session::present().remove_owner(consumer, 0);
+    return GRACEUI_NOT_CONNECTED;
+  }
+  if (hook.callback != nullptr) {
+    grace::abi::Registry& registry = session::registry();
+    registry.close_window(consumer);
+    registry.sweep();
+  }
+  return GRACEUI_OK;
+}
+
+bool in_present_callback() noexcept { return draw::in_present_callback(); }
+
+namespace {
+constinit std::atomic<bool> g_callback_call_logged{false};
+}  // namespace
+
+GraceUiStatus refused_in_callback(const char* slot) noexcept {
+  if (!g_callback_call_logged.exchange(true, std::memory_order_relaxed)) {
+    log_line("%s was called from inside an on_present callback: refused (logged once)", slot);
+  }
+  return GRACEUI_REFUSED;
 }
 
 GraceUiStatus request_input(GraceUiConsumer consumer, std::uint32_t kind, std::uint32_t wants, std::uint64_t panel,
@@ -808,7 +886,16 @@ GraceUiStatus answer(GraceUiConsumer consumer, std::uint64_t reply, std::string_
 }
 
 void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept {
-  // The panels first, under their lock, then the holder: a request_input of the mod's on another thread either sees
+  // Its on_present callbacks first (D259): once this returns none of them is running or will be called again, so the
+  // mod may unload; the wait is for the frame being drawn, if one is, and never the present thread's. Suspended, even
+  // in that frame, it stays so by its id for the session, though GraceUI's own thread has not named it yet.
+  const grace::abi::PresentHooks::Removed removed = session::present().remove_owner(consumer, owner);
+  if (removed.suspended && session::suspend_present(removed.id)) {
+    state::present_suspended.fetch_add(1, std::memory_order_relaxed);
+    log_line("%s's on_present callbacks are suspended for this session (it disconnected before it was named)",
+             removed.id);
+  }
+  // The panels, under their lock, then the holder: a request_input of the mod's on another thread either sees
   // its panel gone after its grant (and ends its own holder) or was granted before this reads the holder.
   session::panels().remove_owner(consumer);
   const grace::input::Holder holder = input::capture().holder();

@@ -1634,3 +1634,44 @@ ribbon = "Spoilers"                 # a band at the page's top while it is open
 The gate stands in for the page once a browser session, and nothing of the page is drawn or watched until it is
 confirmed. No setting and no quick switch may have a browser-only page as its home. Page data with these fields is
 minor 17. The words above are only an example: they are yours to write.
+
+## 85. A panel drawn in each frame: `on_present` (2026-11-24, D259; GraceUI 0.2.52, ABI 1.8)
+
+Your subtitles' fades and world labels can now follow every frame, rather than your T6's ten submits a second (your
+WHY§364 (3)). Opt in per panel, from your own thread, once `has_cap("on-present")` says yes:
+
+```c
+GraceUiPresentHook hook = {sizeof hook};
+hook.vertex_capacity = 4096;  /* the most your per-frame list holds: 1 to a submission's bounds */
+hook.index_capacity = 6144;
+hook.command_capacity = 16;
+hook.callback = &subtitles_on_present;  /* uint32_t (void* user, const GraceUiPresentFrame*, GraceUiDrawList*) */
+hook.user = &subtitles;
+api->set_on_present(me, subtitles_panel, &hook);
+```
+
+- **Each frame the panel is shown**, on the game's present thread, the callback is told the frame's number (it rises
+  by one in each frame a callback can be called in), a steady time in µs, the delta (1/60 at first, at most 0.25 s
+  after a pause; the time is the clock), the panel's place and size, the display's size, `flags`
+  (`GRACEUI_PRESENT_MENU_OPEN` while GraceUI's menu is open), and `spent_us`: what your callbacks took together in the
+  frame before, in microseconds on GraceUI's clock, as your budget weighs them (0 if none ran then). So you need not
+  time yourselves: keep `spent_us` by `flags` for PAGES' frame cost with the menu open and closed, your own
+  callbacks' alone. It answers `GRACEUI_PRESENT_KEEP` (your
+  last submitted list is drawn) or `GRACEUI_PRESENT_DRAW`, having filled `list` with arrays of your own that hold until
+  it returns. GraceUI copies that list into the room it reserved, checks it as `submit` does and draws it in that frame
+  alone. A list that does not fit or fails the check is not drawn (your submitted one is), and is logged once.
+- **What the callback must not do**: wait, lock, allocate per frame after its first frames, or let an exception out.
+  It may not call GraceUI either: every slot but `has_cap` answers `GRACEUI_REFUSED` from inside it. So it reads only
+  what your T6 has already left for it (your newest snapshot, by an atomic pointer), and lays out from glyph tables
+  fetched beforehand.
+- **Budget**: your callbacks together get 0.5 ms a frame (EST). Over that for 120 frames running, or an exception, and
+  all of them are suspended for the session. GraceUI names EldenNet in one notice, your panels draw their submitted
+  lists, and `set_on_present` answers refused for a callback, even after you connect again (clearing one is taken). So keep submitting a sensible list: it is
+  what players see if the callback is ever suspended.
+- **Clearing**: `set_on_present` with a null callback, and `disconnect`, return only once the callback is not running
+  and can never be called again. After that you may free `user`. Each waits for the frame being drawn to end, however
+  long it takes, so never call either from DllMain; GraceUI's present thread never waits for you.
+- **Setting a callback closes your registration window**, as your first `submit` does: register your textures before.
+  Up to 4 callbacks a mod and 8 in all (EST).
+- **Nothing changes for a mod that does not opt in**, and nothing in your page data. A mod built against ABI 1.7 sees
+  the same table, one slot shorter.

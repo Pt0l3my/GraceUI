@@ -12,6 +12,7 @@
 #include "grace/abi/consumers.h"
 #include "grace/abi/notices.h"
 #include "grace/abi/panels.h"
+#include "grace/abi/present.h"
 #include "grace/abi/quiet.h"
 #include "grace/abi/registry.h"
 #include "grace/abi/world.h"
@@ -25,6 +26,12 @@ grace::abi::Notices& notices() noexcept;
 grace::abi::Panels& panels() noexcept;
 grace::abi::Registry& registry() noexcept;
 grace::abi::World& world() noexcept;
+// The panels' on_present callbacks (D259).
+grace::abi::PresentHooks& present() noexcept;
+// The mods whose callbacks were suspended this session, by id (D259): one that connects again stays suspended.
+// suspend_present answers whether the id is newly kept.
+bool suspend_present(std::string_view id) noexcept;
+bool present_suspended(std::string_view id) noexcept;
 // The mods whose notices the player quieted, and what they posted meanwhile (G32, D181).
 grace::abi::QuietNotices& quiet() noexcept;
 void allocate();

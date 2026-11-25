@@ -1436,6 +1436,8 @@ grace::abi::DrawListData* frame(std::uint32_t width, std::uint32_t height) noexc
 
 bool wants_timer() noexcept { return g_timer.load(std::memory_order_acquire); }
 
+bool open_now() noexcept { return ours(input::capture().holder()); }
+
 void serve() noexcept {
   if (g_off.load(std::memory_order_acquire)) {
     drain();

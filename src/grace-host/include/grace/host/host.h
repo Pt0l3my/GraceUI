@@ -9,6 +9,7 @@
 #include "grace/abi/consumers.h"
 #include "grace/abi/drawlist.h"
 #include "grace/abi/panels.h"
+#include "grace/abi/present.h"
 #include "graceui.h"
 
 #if defined(GRACEUI_TEST_EXPORTS)
@@ -86,6 +87,13 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
 GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t id, GraceUiHotkeyBinding& out) noexcept;
 // The mod's wait handle (ABI 1.5, D212): GRACEUI_OK with a handle of its own in `event`, or _FAULT.
 GraceUiStatus wake_event(GraceUiConsumer consumer, void*& event) noexcept;
+// A panel's on_present callback set, replaced or cleared (ABI 1.8, D259): `hook`'s callback null clears it.
+GraceUiStatus set_on_present(GraceUiConsumer consumer, std::uint64_t panel,
+                             const grace::abi::PresentHookDesc& hook) noexcept;
+// Whether this thread is inside an on_present callback now (D259): every slot but has_cap then answers REFUSED, and
+// refused_in_callback() says so in GraceUI's log, once for the session.
+bool in_present_callback() noexcept;
+GraceUiStatus refused_in_callback(const char* slot) noexcept;
 // The mod's next event (D155, D169, D176): with `holder` (the mod's event is ABI 1.1's), its holder's events first;
 // then hotkey presses; then, with `protocol` (the mod's event is large enough), its space's events, written into
 // out.frame (the mod's buffer, out.frame_capacity bytes); `out` is GraceUI's own, zeroed by the caller but for those
