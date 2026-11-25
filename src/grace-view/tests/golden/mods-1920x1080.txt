@@ -18,38 +18,45 @@ text    ink.hi        340,  86  278x45   clip1 glyphs 13 "Installed mods"
 text    ink.mute      340, 136  759x25   clip1 glyphs 76 "Every mod connected to GraceUI this session, what each uses, and whether its notices show."
 line    rule.strong   340, 176 1540x1    clip1
 diamond gold.deep     340, 171   11x11   w1 clip1
-fill    ground.2      340, 201 1540x190  r5 clip1
-stroke  rule          340, 201 1540x190  r5 w1 clip1
+fill    ground.2      340, 201 1540x228  r5 clip1
+stroke  rule          340, 201 1540x228  r5 w1 clip1
 text    gold          365, 221  134x20   clip1 glyphs 13 "Connected mods"
 text    ink.faint    1842, 221    8x25   clip1 glyphs 1 "-"
-line    rule          365, 256 1490x1    clip1
-text    ink.hi        365, 272   94x28   clip1 glyphs 9 "Quiet Camp"
-text    ink.mute      862, 274  143x25   clip1 glyphs 13 "2.1.0  ·  Notices"
-text    ink.body     1748, 274   42x25   clip1 glyphs 5 "Quiet"
-fill    ground.well  1805, 272   50x28   r14 clip1
-stroke  edge         1805, 272   50x28   r14 w1 clip1
-circle  ink.mute     1809, 276   20x20   clip1
-line    rule          365, 316 1490x1    clip1
-text    ink.hi        365, 332   94x28   clip1 glyphs 9 "Demo space"
-text    ink.mute      862, 334  202x25   clip1 glyphs 19 "1.0.0  ·  Pages, notices"
-text    ink.body     1748, 334   42x25   clip1 glyphs 5 "Shown"
-fill    gold         1805, 332   50x28   r14 clip1
-circle  on.gold      1831, 336   20x20   clip1
-fill    ground.2      340, 411 1540x155  r5 clip1
-stroke  rule          340, 411 1540x155  r5 w1 clip1
-text    gold          365, 431  125x20   clip1 glyphs 12 "Quiet notices"
-text    ink.faint    1842, 431    8x25   clip1 glyphs 1 "-"
-text    ink.mute      365, 456  624x25   clip1 glyphs 62 "What the mods with their notices off have said this session, newest first."
-line    rule          365, 491 1490x1    clip1
-text    ink.hi        365, 507   94x28   clip1 glyphs 9 "Quiet Camp"
-text    ink.mute      862, 509  202x25   clip1 glyphs 21 "Firewood is running low."
-fill    ground.2      340, 586 1540x120  r5 clip1
-stroke  rule          340, 586 1540x120  r5 w1 clip1
-text    gold          365, 606   67x20   clip1 glyphs 7 "Related"
-line    rule          365, 636 1490x1    clip1
-text    ink.hi        380, 650   66x28   clip1 glyphs 7 "Hotkeys"
-text    ink.mute      862, 651  515x25   clip1 glyphs 52 "The menu's key, and every mod's hotkeys with their conflicts."
-text    gold         1820, 650    9x28   clip1 glyphs 1 "→"
+text    ink.mute      365, 264   25x25   clip1 glyphs 3 "Mod"
+text    ink.mute     1109, 264   59x25   clip1 glyphs 7 "Version"
+text    ink.mute     1183, 264   34x25   clip1 glyphs 4 "Uses"
+line    rule          365, 294 1490x1    clip1
+text    ink.hi        365, 310   94x28   clip1 glyphs 9 "Quiet Camp"
+text    ink.body     1125, 312   42x25   clip1 glyphs 5 "2.1.0"
+text    ink.body     1183, 312   59x25   clip1 glyphs 7 "Notices"
+text    ink.body     1748, 312   42x25   clip1 glyphs 5 "Quiet"
+fill    ground.well  1805, 310   50x28   r14 clip1
+stroke  edge         1805, 310   50x28   r14 w1 clip1
+circle  ink.mute     1809, 314   20x20   clip1
+line    rule          365, 354 1490x1    clip1
+text    ink.hi        365, 370   94x28   clip1 glyphs 9 "Demo space"
+text    ink.body     1125, 372   42x25   clip1 glyphs 5 "1.0.0"
+text    ink.body     1183, 372  118x25   clip1 glyphs 13 "Pages, notices"
+text    ink.body     1748, 372   42x25   clip1 glyphs 5 "Shown"
+fill    gold         1805, 370   50x28   r14 clip1
+circle  on.gold      1831, 374   20x20   clip1
+fill    ground.2      340, 449 1540x193  r5 clip1
+stroke  rule          340, 449 1540x193  r5 w1 clip1
+text    gold          365, 469  125x20   clip1 glyphs 12 "Quiet notices"
+text    ink.faint    1842, 469    8x25   clip1 glyphs 1 "-"
+text    ink.mute      365, 494  624x25   clip1 glyphs 62 "What the mods with their notices off have said this session, newest first."
+text    ink.mute      365, 537   25x25   clip1 glyphs 3 "Mod"
+text    ink.mute      862, 537   51x25   clip1 glyphs 6 "Notice"
+line    rule          365, 567 1490x1    clip1
+text    ink.hi        365, 583   94x28   clip1 glyphs 9 "Quiet Camp"
+text    ink.body      862, 585  202x25   clip1 glyphs 21 "Firewood is running low."
+fill    ground.2      340, 662 1540x120  r5 clip1
+stroke  rule          340, 662 1540x120  r5 w1 clip1
+text    gold          365, 682   67x20   clip1 glyphs 7 "Related"
+line    rule          365, 712 1490x1    clip1
+text    ink.hi        380, 726   66x28   clip1 glyphs 7 "Hotkeys"
+text    ink.mute      862, 727  515x25   clip1 glyphs 52 "The menu's key, and every mod's hotkeys with their conflicts."
+text    gold         1820, 726    9x28   clip1 glyphs 1 "→"
 line    rule          300,1035 1620x1   
 fill    ground.well   340,1044   60x28   r3
 stroke  edge          340,1044   60x28   r3 w1
@@ -59,4 +66,4 @@ fill    ground.well   466,1044   42x28   r3
 stroke  edge          466,1044   42x28   r3 w1
 text    ink.body      474,1046   26x25   glyphs 3 "Esc"
 text    ink.faint     515,1045   34x25   glyphs 4 "Back"
-stroke  gold.hi       362, 428 1496x26   r5 w3 clip1
+stroke  gold.hi       362, 466 1496x26   r5 w3 clip1

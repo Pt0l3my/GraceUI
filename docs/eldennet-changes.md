@@ -1675,3 +1675,17 @@ api->set_on_present(me, subtitles_panel, &hook);
   Up to 4 callbacks a mod and 8 in all (EST).
 - **Nothing changes for a mod that does not opt in**, and nothing in your page data. A mod built against ABI 1.7 sees
   the same table, one slot shorter.
+
+## 86. Your 0.2.46 build's in-game points: a table's columns, wrapped sentences, a tile's unit (2026-11-25, D260; GraceUI 0.2.53)
+
+Points 1, 2 and 4 of your message of 2026-11-24; point 3 is §85's `spent_us` and `flags`. Nothing changes in your page
+data or the ABI.
+
+- **A table in game** now has one header line of its columns' labels. Each column after the first has a slot of its
+  own, and a `numeric = true` column is right-aligned in it, as in the browser. A row missing a cell leaves that slot
+  empty, so Traces' four times stay under their own labels. With too many columns for slots of a readable width (64 px
+  at the effective scale), there is no header and each value follows its column's label: "First token 0.04 s  ·
+  Reply 0.64 s". A row secret's status in its slot is its words alone; its label is in the header.
+- **A `computed_sentence` and a section's description** wrap to their card, as the report preview's fields do.
+- **A stat tile's `unit`** is drawn after its value in the small face, muted, as the browser's `tile__unit` draws it:
+  "21 of 24" large, "shown" small.

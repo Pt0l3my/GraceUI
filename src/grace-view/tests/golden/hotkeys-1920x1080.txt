@@ -29,42 +29,56 @@ text    ink.hi        365, 272  122x28   clip1 glyphs 11 "Open the menu"
 fill    ground.well  1812, 269   42x35   r3 clip1
 stroke  edge         1812, 269   42x35   r3 w1 clip1
 text    ink.body     1826, 274   18x25   clip1 glyphs 2 "F5"
-fill    ground.2      340, 351 1540x250  r5 clip1
-stroke  rule          340, 351 1540x250  r5 w1 clip1
+fill    ground.2      340, 351 1540x288  r5 clip1
+stroke  rule          340, 351 1540x288  r5 w1 clip1
 text    gold          365, 371  182x20   clip1 glyphs 17 "Every mod's hotkeys"
 text    ink.faint    1842, 371    8x25   clip1 glyphs 1 "-"
-line    rule          365, 406 1490x1    clip1
-text    ink.hi        365, 422   66x28   clip1 glyphs 7 "GraceUI"
-text    ink.mute      862, 424  397x25   clip1 glyphs 31 "Open the menu  ·  F5  ·  No pad chord  ·  Bound"
-line    rule          365, 466 1490x1    clip1
-text    ink.hi        365, 482  103x28   clip1 glyphs 10 "Tide Charts"
-stroke  edge         1783, 479   72x35   r3 w1 clip1
-text    ink.hi       1798, 484   42x25   clip1 glyphs 5 "Reset"
-stroke  edge         1603, 479  165x35   r3 w1 clip1
-text    ink.hi       1618, 484  135x25   clip1 glyphs 14 "Change pad chord"
-stroke  edge         1473, 479  114x35   r3 w1 clip1
-text    ink.hi       1488, 484   84x25   clip1 glyphs 9 "Change key"
-text    ink.mute      862, 484  532x25   clip1 glyphs 45 "Show the tide table  ·  Ctrl+T  ·  D-pad Down, then A  ·  Bound"
-line    rule          365, 526 1490x1    clip1
-text    ink.hi        365, 542   94x28   clip1 glyphs 9 "Quiet Camp"
-stroke  edge         1783, 539   72x35   r3 w1 clip1
-text    ink.hi       1798, 544   42x25   clip1 glyphs 5 "Reset"
-stroke  edge         1603, 539  165x35   r3 w1 clip1
-text    ink.hi       1618, 544  135x25   clip1 glyphs 14 "Change pad chord"
-stroke  edge         1473, 539  114x35   r3 w1 clip1
-text    ink.hi       1488, 544   84x25   clip1 glyphs 9 "Change key"
-text    ink.mute      862, 544  574x25   clip1 glyphs 47 "Pitch the tent  ·  No key  ·  No pad chord  ·  Unbound: no key or pad chord"
-fill    ground.2      340, 621 1540x175  r5 clip1
-stroke  rule          340, 621 1540x175  r5 w1 clip1
-text    gold          365, 641   67x20   clip1 glyphs 7 "Related"
-line    rule          365, 671 1490x1    clip1
-text    ink.hi        380, 685   38x28   clip1 glyphs 4 "Menu"
-text    ink.mute      862, 686  548x25   clip1 glyphs 53 "How the menu looks: its size, its theme, its motion and its type."
-text    gold         1820, 685    9x28   clip1 glyphs 1 "→"
-line    rule          365, 726 1490x1    clip1
-text    ink.hi        380, 740  131x28   clip1 glyphs 13 "Installed mods"
-text    ink.mute      862, 741  759x25   clip1 glyphs 76 "Every mod connected to GraceUI this session, what each uses, and whether its notices show."
-text    gold         1820, 740    9x28   clip1 glyphs 1 "→"
+text    ink.mute      365, 414   25x25   clip1 glyphs 3 "Mod"
+text    ink.mute      862, 414   51x25   clip1 glyphs 6 "Action"
+text    ink.mute     1011, 414   25x25   clip1 glyphs 3 "Key"
+text    ink.mute     1160, 414   76x25   clip1 glyphs 8 "Pad chord"
+text    ink.mute     1309, 414   42x25   clip1 glyphs 5 "State"
+line    rule          365, 444 1490x1    clip1
+text    ink.hi        365, 460   66x28   clip1 glyphs 7 "GraceUI"
+text    ink.body      862, 462  110x25   clip1 glyphs 11 "Open the menu"
+text    ink.body     1011, 462   17x25   clip1 glyphs 2 "F5"
+text    ink.body     1160, 462  101x25   clip1 glyphs 10 "No pad chord"
+text    ink.body     1309, 462   42x25   clip1 glyphs 5 "Bound"
+line    rule          365, 504 1490x1    clip1
+text    ink.hi        365, 520  103x28   clip1 glyphs 10 "Tide Charts"
+stroke  edge         1783, 517   72x35   r3 w1 clip1
+text    ink.hi       1798, 522   42x25   clip1 glyphs 5 "Reset"
+stroke  edge         1603, 517  165x35   r3 w1 clip1
+text    ink.hi       1618, 522  135x25   clip1 glyphs 14 "Change pad chord"
+stroke  edge         1473, 517  114x35   r3 w1 clip1
+text    ink.hi       1488, 522   84x25   clip1 glyphs 9 "Change key"
+text    ink.body      862, 522  127x25   clip1 glyphs 12 "Show the tide table"
+text    ink.body     1011, 522   51x25   clip1 glyphs 6 "Ctrl+T"
+text    ink.body     1160, 522  127x25   clip1 glyphs 13 "D-pad Down, then A"
+text    ink.body     1309, 522   42x25   clip1 glyphs 5 "Bound"
+line    rule          365, 564 1490x1    clip1
+text    ink.hi        365, 580   94x28   clip1 glyphs 9 "Quiet Camp"
+stroke  edge         1783, 577   72x35   r3 w1 clip1
+text    ink.hi       1798, 582   42x25   clip1 glyphs 5 "Reset"
+stroke  edge         1603, 577  165x35   r3 w1 clip1
+text    ink.hi       1618, 582  135x25   clip1 glyphs 14 "Change pad chord"
+stroke  edge         1473, 577  114x35   r3 w1 clip1
+text    ink.hi       1488, 582   84x25   clip1 glyphs 9 "Change key"
+text    ink.body      862, 582  118x25   clip1 glyphs 12 "Pitch the tent"
+text    ink.body     1011, 582   51x25   clip1 glyphs 5 "No key"
+text    ink.body     1160, 582  101x25   clip1 glyphs 10 "No pad chord"
+text    ink.body     1309, 582  127x25   clip1 glyphs 13 "Unbound: no key or pad chord"
+fill    ground.2      340, 659 1540x175  r5 clip1
+stroke  rule          340, 659 1540x175  r5 w1 clip1
+text    gold          365, 679   67x20   clip1 glyphs 7 "Related"
+line    rule          365, 709 1490x1    clip1
+text    ink.hi        380, 723   38x28   clip1 glyphs 4 "Menu"
+text    ink.mute      862, 724  548x25   clip1 glyphs 53 "How the menu looks: its size, its theme, its motion and its type."
+text    gold         1820, 723    9x28   clip1 glyphs 1 "→"
+line    rule          365, 764 1490x1    clip1
+text    ink.hi        380, 778  131x28   clip1 glyphs 13 "Installed mods"
+text    ink.mute      862, 779  759x25   clip1 glyphs 76 "Every mod connected to GraceUI this session, what each uses, and whether its notices show."
+text    gold         1820, 778    9x28   clip1 glyphs 1 "→"
 line    rule          300,1035 1620x1   
 fill    ground.well   340,1044   60x28   r3
 stroke  edge          340,1044   60x28   r3 w1
