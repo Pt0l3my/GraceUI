@@ -1,0 +1,743 @@
+# demo: the browser view, by GraceUI's space check (D265)
+== this PC's browser
+rail: Lanterns: demo.overview, demo.behaviour, demo.keepers
+rail: Records: demo.log, demo.festival, demo.lamps, demo.lightings, demo.handbook, demo.workbench
+page demo.overview:
+  Overview
+  Trim the wick
+  Hush the bell
+  The lantern at a glance: its flame, its oil and its last trim.
+  NOW
+  FLAME
+  Steady
+  OIL
+  62%
+  SINCE THE LAST TRIM
+  14 min
+  The north lantern burns steady amber, with oil for about three hours.
+  Brightness
+  Lives in Behaviour
+  0.80
+  RELATED
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+page demo.behaviour:
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+  LIGHT
+  TIMING
+  KEEPER
+  FLAME
+  Lantern lit
+  On
+  Brightness
+  0.80
+  Flame colour
+  From the next moment
+  Amber
+  White
+  Blue
+  Shutters
+  On
+  Off
+  Auto
+  Wind shield
+  On
+  Off
+  Inherit
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+  Festival
+  Festival lights, in a later version.
+page demo.keepers:
+  Keepers
+  Who keeps the lantern, their ward words, and the oil they burn.
+  ROSTER
+  Dismiss all
+  Post
+  All
+  North light
+  Harbour wall
+  Store room
+  Sort
+  Time kept
+  Name
+  ↓
+  DETAILS
+  KEEPER POST WARD WORD
+  ACTIONS
+  Orla Venn North light
+  Set
+  Save
+  Dismiss
+  Tamsin Reed Harbour wall
+  Missing
+  Save
+  Dismiss
+  Ada Marsh Store room
+  Not needed
+  Dismiss
+  HIRE A KEEPER
+  Name
+  Post
+  Notes
+  Hire
+  OIL
+  store
+  Order oil
+  Low
+  Oil
+  From the next moment
+  Rapeseed oil
+  Olive oil
+  Tallow
+  FROM A ROSTER FILE
+  A harbour roster lists several keepers at once; each keeper it names joins the roster.
+  Drop a .toml or .txt file here, or choose one.
+  Add a roster file
+  RELATED
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+page demo.log:
+  Log
+  Clear the log
+  What the lantern did, as it happens, and the keeper's journal.
+  LOG
+  Level
+  All
+  info
+  warning
+  19:40
+  The flame guttered in a draught, then steadied.
+  19:16
+  The wick was trimmed.
+  19:02
+  The lantern was lit.
+  JOURNAL
+  EVERY LIGHTING
+  All seasons' lightings, newest first, a page at a time.
+  Lamp
+  All
+  North light
+  Harbour wall
+  Store room
+  Sort
+  Time
+  ↓
+  No lamp has been lit yet.
+  LAMP REPORT
+  What a report to the harbour master would hold. Leave out the parts you would rather not send.
+  Summary
+  Lamp
+  North light
+  Burned
+  Eleven hours
+  Recent log
+  Included
+  Lines
+  19:44 A moth circled the glass.
+  19:48 The wind rose; the flame held.
+  Your notes
+  Left out
+  Copy
+  Save
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+page demo.festival:
+  Festival
+  LATER
+  (ARRIVES IN A LATER VERSION)
+  Festival lights, in a later version.
+  FESTIVAL
+  A later version strings small lights about the lantern for the festival. This version keeps the lantern alone.
+  Festival lights
+  Later version
+  RELATED
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+page demo.lamps:
+  Lamps
+  Every lamp on the harbour wall, and how each one burns.
+  LAMPS
+  Sort
+  Along the wall
+  Name
+  ↑
+  Harbour mouth
+  The north end of the wall
+  Fish steps
+  Halfway along, above the steps
+  Old crane
+  The inner end, by the crane
+  LAMP
+  NOTES
+  YOUR NOTES
+  BURNING
+  FLAME
+  Tall
+  OIL
+  80%
+  Glass
+  Green, for the harbour mouth
+  Lit
+  At dusk
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+page demo.lightings:
+  Lightings
+  Every lamp lit in a season, newest first, read a page at a time.
+  LIGHTINGS
+  Lamp
+  All
+  North light
+  Harbour wall
+  Store room
+  Sort
+  Time
+  Keeper
+  ↓
+  No lamp was lit this season.
+  Choose a lighting to read it.
+  RELATED
+  Lamps
+  Every lamp on the harbour wall, and how each one burns.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+page demo.handbook:
+  Handbook
+  The keeper's handbook: how to light, feed and keep the lamps.
+  GUIDES
+  Lighting the lamp
+  Before dusk · The match · Trimming
+  Oil
+  Which oil · Storing it
+  Keeping a lamp in a storm
+  Wind · Rain · When to shutter
+  GUIDE
+  Lighting the lamp
+  A lamp lit well burns all night with one trim. Read Oil first if the lamp is new to you.
+  Before dusk
+  Clean the glass inside and out.
+  Fill the oil to the line, never above it.
+  Check the wick is dry.
+  The match
+  Strike the match away from the glass, and light the wick at its edge, not its middle.
+  Never leave a lit lamp alone in its first quarter hour.
+  Trimming
+  Trim to a flat, even wick; a peaked wick smokes. In wind, see Keeping a lamp in a storm.
+  RELATED
+  Lamps
+  Every lamp on the harbour wall, and how each one burns.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+page demo.workbench: gate: The workbench shows the lantern's raw readings, unworded. Open it for this session? | Open the workbench | Go back
+page demo.workbench:
+  Raw readings
+  Workbench
+  The lantern's raw readings, for those who mend it.
+  READINGS
+  FLAME
+  Steady
+  OIL
+  62%
+  SINCE THE LAST TRIM
+  14 min
+  Wick temperature
+  412 °C
+  Oil level
+  0.62
+  Draught
+  0.8 m/s
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+== a paired device
+rail: Lanterns: demo.overview, demo.behaviour, demo.keepers
+rail: Records: demo.log, demo.festival, demo.lamps, demo.lightings, demo.handbook
+page demo.overview:
+  Overview
+  Trim the wick
+  Hush the bell
+  The lantern at a glance: its flame, its oil and its last trim.
+  NOW
+  FLAME
+  Steady
+  OIL
+  62%
+  SINCE THE LAST TRIM
+  14 min
+  The north lantern burns steady amber, with oil for about three hours.
+  Brightness
+  Lives in Behaviour
+  0.80
+  RELATED
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+page demo.behaviour:
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+  LIGHT
+  TIMING
+  KEEPER
+  FLAME
+  Lantern lit
+  On
+  Brightness
+  0.80
+  Flame colour
+  From the next moment
+  Amber
+  White
+  Blue
+  Shutters
+  On
+  Off
+  Auto
+  Wind shield
+  On
+  Off
+  Inherit
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+  Festival
+  Festival lights, in a later version.
+page demo.keepers:
+  Keepers
+  Who keeps the lantern, their ward words, and the oil they burn.
+  ROSTER
+  Dismiss all
+  Post
+  All
+  North light
+  Harbour wall
+  Store room
+  Sort
+  Time kept
+  Name
+  ↓
+  DETAILS
+  KEEPER POST WARD WORD
+  ACTIONS
+  Orla Venn North light
+  Set
+  Save
+  Dismiss
+  Tamsin Reed Harbour wall
+  Missing
+  Save
+  Dismiss
+  Ada Marsh Store room
+  Not needed
+  Dismiss
+  HIRE A KEEPER
+  Name
+  Post
+  Notes
+  Hire
+  OIL
+  store
+  Order oil
+  Low
+  Oil
+  From the next moment
+  Rapeseed oil
+  Olive oil
+  Tallow
+  FROM A ROSTER FILE
+  A harbour roster lists several keepers at once; each keeper it names joins the roster.
+  Add a roster file: only on the PC the game runs on. Open the browser view there to add a file.
+  RELATED
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+page demo.log:
+  Log
+  Clear the log
+  What the lantern did, as it happens, and the keeper's journal.
+  LOG
+  Level
+  All
+  info
+  warning
+  19:40
+  The flame guttered in a draught, then steadied.
+  19:16
+  The wick was trimmed.
+  19:02
+  The lantern was lit.
+  JOURNAL
+  EVERY LIGHTING
+  All seasons' lightings, newest first, a page at a time.
+  Lamp
+  All
+  North light
+  Harbour wall
+  Store room
+  Sort
+  Time
+  ↓
+  No lamp has been lit yet.
+  LAMP REPORT
+  What a report to the harbour master would hold. Leave out the parts you would rather not send.
+  Summary
+  Lamp
+  North light
+  Burned
+  Eleven hours
+  Recent log
+  Included
+  Lines
+  19:44 A moth circled the glass.
+  19:48 The wind rose; the flame held.
+  Your notes
+  Left out
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+page demo.festival:
+  Festival
+  LATER
+  (ARRIVES IN A LATER VERSION)
+  Festival lights, in a later version.
+  FESTIVAL
+  A later version strings small lights about the lantern for the festival. This version keeps the lantern alone.
+  Festival lights
+  Later version
+  RELATED
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+page demo.lamps:
+  Lamps
+  Every lamp on the harbour wall, and how each one burns.
+  LAMPS
+  Sort
+  Along the wall
+  Name
+  ↑
+  Harbour mouth
+  The north end of the wall
+  Fish steps
+  Halfway along, above the steps
+  Old crane
+  The inner end, by the crane
+  LAMP
+  NOTES
+  YOUR NOTES
+  BURNING
+  FLAME
+  Tall
+  OIL
+  80%
+  Glass
+  Green, for the harbour mouth
+  Lit
+  At dusk
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+page demo.lightings:
+  Lightings
+  Every lamp lit in a season, newest first, read a page at a time.
+  LIGHTINGS
+  Lamp
+  All
+  North light
+  Harbour wall
+  Store room
+  Sort
+  Time
+  Keeper
+  ↓
+  No lamp was lit this season.
+  Choose a lighting to read it.
+  RELATED
+  Lamps
+  Every lamp on the harbour wall, and how each one burns.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+page demo.handbook:
+  Handbook
+  The keeper's handbook: how to light, feed and keep the lamps.
+  GUIDES
+  Lighting the lamp
+  Before dusk · The match · Trimming
+  Oil
+  Which oil · Storing it
+  Keeping a lamp in a storm
+  Wind · Rain · When to shutter
+  GUIDE
+  Lighting the lamp
+  A lamp lit well burns all night with one trim. Read Oil first if the lamp is new to you.
+  Before dusk
+  Clean the glass inside and out.
+  Fill the oil to the line, never above it.
+  Check the wick is dry.
+  The match
+  Strike the match away from the glass, and light the wick at its edge, not its middle.
+  Never leave a lit lamp alone in its first quarter hour.
+  Trimming
+  Trim to a flat, even wick; a peaked wick smokes. In wind, see Keeping a lamp in a storm.
+  RELATED
+  Lamps
+  Every lamp on the harbour wall, and how each one burns.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+page demo.workbench: absent
+== this PC's browser, lantern.enabled off
+rail: Lanterns: demo.overview, demo.behaviour, demo.keepers
+rail: Records: demo.log, demo.festival, demo.lamps, demo.lightings, demo.handbook
+page demo.overview:
+  Overview
+  Trim the wick
+  Hush the bell
+  The lantern at a glance: its flame, its oil and its last trim.
+  NOW
+  FLAME
+  Steady
+  OIL
+  62%
+  SINCE THE LAST TRIM
+  14 min
+  The north lantern burns steady amber, with oil for about three hours.
+  Brightness
+  Lives in Behaviour
+  0.80
+  RELATED
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+page demo.behaviour:
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+  LIGHT
+  TIMING
+  KEEPER
+  FLAME
+  Lantern lit
+  Off
+  Brightness
+  0.80
+  Flame colour
+  From the next moment
+  Amber
+  White
+  Blue
+  Shutters
+  On
+  Off
+  Auto
+  Wind shield
+  On
+  Off
+  Inherit
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+  Festival
+  Festival lights, in a later version.
+page demo.keepers:
+  Keepers
+  Who keeps the lantern, their ward words, and the oil they burn.
+  ROSTER
+  Dismiss all
+  Post
+  All
+  North light
+  Harbour wall
+  Store room
+  Sort
+  Time kept
+  Name
+  ↓
+  DETAILS
+  KEEPER POST WARD WORD
+  ACTIONS
+  Orla Venn North light
+  Set
+  Save
+  Dismiss
+  Tamsin Reed Harbour wall
+  Missing
+  Save
+  Dismiss
+  Ada Marsh Store room
+  Not needed
+  Dismiss
+  HIRE A KEEPER
+  Name
+  Post
+  Notes
+  Hire
+  OIL
+  store
+  Order oil
+  Low
+  Oil
+  From the next moment
+  Rapeseed oil
+  Olive oil
+  Tallow
+  FROM A ROSTER FILE
+  A harbour roster lists several keepers at once; each keeper it names joins the roster.
+  Drop a .toml or .txt file here, or choose one.
+  Add a roster file
+  RELATED
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+page demo.log:
+  Log
+  Clear the log
+  What the lantern did, as it happens, and the keeper's journal.
+  LOG
+  Level
+  All
+  info
+  warning
+  19:40
+  The flame guttered in a draught, then steadied.
+  19:16
+  The wick was trimmed.
+  19:02
+  The lantern was lit.
+  JOURNAL
+  EVERY LIGHTING
+  All seasons' lightings, newest first, a page at a time.
+  Lamp
+  All
+  North light
+  Harbour wall
+  Store room
+  Sort
+  Time
+  ↓
+  No lamp has been lit yet.
+  LAMP REPORT
+  What a report to the harbour master would hold. Leave out the parts you would rather not send.
+  Summary
+  Lamp
+  North light
+  Burned
+  Eleven hours
+  Recent log
+  Included
+  Lines
+  19:44 A moth circled the glass.
+  19:48 The wind rose; the flame held.
+  Your notes
+  Left out
+  Copy
+  Save
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+page demo.festival:
+  Festival
+  LATER
+  (ARRIVES IN A LATER VERSION)
+  Festival lights, in a later version.
+  FESTIVAL
+  A later version strings small lights about the lantern for the festival. This version keeps the lantern alone.
+  Festival lights
+  Later version
+  RELATED
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+page demo.lamps:
+  Lamps
+  Every lamp on the harbour wall, and how each one burns.
+  LAMPS
+  Sort
+  Along the wall
+  Name
+  ↑
+  Harbour mouth
+  The north end of the wall
+  Fish steps
+  Halfway along, above the steps
+  Old crane
+  The inner end, by the crane
+  LAMP
+  NOTES
+  YOUR NOTES
+  BURNING
+  FLAME
+  Tall
+  OIL
+  80%
+  Glass
+  Green, for the harbour mouth
+  Lit
+  At dusk
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+page demo.lightings:
+  Lightings
+  Every lamp lit in a season, newest first, read a page at a time.
+  LIGHTINGS
+  Lamp
+  All
+  North light
+  Harbour wall
+  Store room
+  Sort
+  Time
+  Keeper
+  ↓
+  No lamp was lit this season.
+  Choose a lighting to read it.
+  RELATED
+  Lamps
+  Every lamp on the harbour wall, and how each one burns.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+page demo.handbook:
+  Handbook
+  The keeper's handbook: how to light, feed and keep the lamps.
+  GUIDES
+  Lighting the lamp
+  Before dusk · The match · Trimming
+  Oil
+  Which oil · Storing it
+  Keeping a lamp in a storm
+  Wind · Rain · When to shutter
+  GUIDE
+  Lighting the lamp
+  A lamp lit well burns all night with one trim. Read Oil first if the lamp is new to you.
+  Before dusk
+  Clean the glass inside and out.
+  Fill the oil to the line, never above it.
+  Check the wick is dry.
+  The match
+  Strike the match away from the glass, and light the wick at its edge, not its middle.
+  Never leave a lit lamp alone in its first quarter hour.
+  Trimming
+  Trim to a flat, even wick; a peaked wick smokes. In wind, see Keeping a lamp in a storm.
+  RELATED
+  Lamps
+  Every lamp on the harbour wall, and how each one burns.
+  Log
+  What the lantern did, as it happens, and the keeper's journal.
+page demo.workbench: absent

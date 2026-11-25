@@ -19,6 +19,7 @@ export interface PwLocator {
   first(): PwLocator;
   nth(i: number): PwLocator;
   textContent(): Promise<string | null>;
+  innerText(): Promise<string>;
   getAttribute(name: string): Promise<string | null>;
   isVisible(): Promise<boolean>;
   waitFor(options?: object): Promise<void>;
@@ -108,4 +109,64 @@ export async function unfoldAll(page: PwPage): Promise<void> {
       await page.locator(selector).first().click();
     }
   }
+}
+
+/** Every visible text below 4.5:1 against the grounds composited under it (WCAG 2.x). */
+export async function lowContrast(page: PwPage): Promise<string[]> {
+  return page.evaluate(() => {
+    const parse = (c: string): number[] | null => {
+      const m = /rgba?\(([^)]+)\)/.exec(c);
+      if (!m || m[1] === undefined) {
+        return null;
+      }
+      const p = m[1].split(/[\s,/]+/).filter((x) => x.length > 0).map((x) => (x.endsWith("%") ? parseFloat(x) / 100 : Number(x)));
+      return [p[0] ?? 0, p[1] ?? 0, p[2] ?? 0, p[3] ?? 1];
+    };
+    const lum = (rgb: number[]) => {
+      const ch = (v: number) => {
+        const s = v / 255;
+        return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+      };
+      return 0.2126 * ch(rgb[0] ?? 0) + 0.7152 * ch(rgb[1] ?? 0) + 0.0722 * ch(rgb[2] ?? 0);
+    };
+    const over = (top: number[], under: number[]) => {
+      const a = top[3] ?? 1;
+      return [0, 1, 2].map((i) => (top[i] ?? 0) * a + (under[i] ?? 0) * (1 - a));
+    };
+    const failures: string[] = [];
+    const all = document.querySelectorAll<HTMLElement>("body *");
+    for (const el of all) {
+      const own = [...el.childNodes].some((n) => n.nodeType === 3 && (n.textContent ?? "").trim().length > 0);
+      if (!own || el.closest(".visually-hidden") || el.getClientRects().length === 0) {
+        continue;
+      }
+      const style = getComputedStyle(el);
+      if (style.visibility === "hidden" || style.display === "none") {
+        continue;
+      }
+      const chain: HTMLElement[] = [];
+      for (let at: HTMLElement | null = el; at; at = at.parentElement) {
+        chain.push(at);
+      }
+      let ground = parse(getComputedStyle(document.documentElement).backgroundColor) ?? [0, 0, 0, 1];
+      for (const at of chain.reverse()) {
+        const bg = parse(getComputedStyle(at).backgroundColor);
+        if (bg && (bg[3] ?? 0) > 0) {
+          ground = [...over(bg, ground), 1];
+        }
+      }
+      const ink = parse(style.color);
+      if (!ink) {
+        continue;
+      }
+      const fg = over(ink, ground);
+      const a = lum(fg);
+      const b = lum(ground);
+      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      if (ratio < 4.5) {
+        failures.push(`${ratio.toFixed(2)}:1 "${(el.textContent ?? "").trim().slice(0, 40)}" (${el.className})`);
+      }
+    }
+    return failures;
+  });
 }
