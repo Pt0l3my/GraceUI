@@ -798,7 +798,8 @@ GraceUiStatus status_of(grace::spaces::Status status) noexcept {
     case grace::spaces::Status::ok: return GRACEUI_OK;
     case grace::spaces::Status::duplicate: return GRACEUI_DUPLICATE_ID;
     case grace::spaces::Status::full: return GRACEUI_FULL;
-    case grace::spaces::Status::refused: break;
+    case grace::spaces::Status::refused:
+    case grace::spaces::Status::too_new: break;
   }
   return GRACEUI_REFUSED;
 }
@@ -832,6 +833,12 @@ GraceUiStatus register_pages(GraceUiConsumer consumer, std::uint32_t views, std:
     const grace::spaces::Status added = spaces::registry().add(consumer, mod_id, registration, why);
     if (added != grace::spaces::Status::ok) {
       log_line("%s's register_pages refused: %s", mod_id, why.c_str());
+      if (added == grace::spaces::Status::too_new) {
+        // Once a mod, in words the player can act on (D264): the mod wants a newer GraceUI than this one. Keyed by the
+        // mod's number, so that a mod that asks again replaces its notice rather than adding one.
+        session::own_notice(0x4E000000u | owner, GRACEUI_TONE_WARNING, "%s needs a newer GraceUI for its pages: %s.",
+                            info.name[0] != '\0' ? info.name : mod_id, why.c_str());
+      }
       return status_of(added);
     }
     if (session::consumers().owner_of(consumer) != owner) {

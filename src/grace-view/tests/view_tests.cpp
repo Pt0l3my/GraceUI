@@ -3712,3 +3712,39 @@ TEST_CASE("a click on a report's Copy copies, as Enter does (D263)") {
   REQUIRE(view.take_clipboard(copied));
   CHECK(copied == "Lamp report\n");
 }
+
+TEST_CASE("this PC alone at registration: a pc_only topic on pc_only pages alone; a setting homed there sensitive "
+          "(D264)") {
+  const auto refused = [](const std::function<void(Json&, Json&)>& change) {
+    const auto& s = test::space("demo");
+    Json pages = Json::parse(s.pages);
+    Json settings = Json::parse(s.settings);
+    change(pages, settings);
+    PageView view;
+    std::string why;
+    const bool ok = view.load(test::decoded<grace::protocol::SpacePages>(pages.dump()),
+                              test::decoded<grace::protocol::SettingsDescription>(settings.dump()), why);
+    return ok ? std::string() : why;
+  };
+  CHECK(refused([](Json&, Json&) {}).empty());  // the demo's Workbench and its readings
+  CHECK(refused([](Json& p, Json&) { page_of(p, "demo.workbench").erase("pc_only"); }).find("(D264)") !=
+        std::string::npos);
+  CHECK(refused([](Json& p, Json&) {
+          page_of(p, "demo.overview")["sections"][0]["blocks"].push_back(
+              Json{{"kind", "component"}, {"component", "key_value_list"}, {"topic", "lantern.readings"}});
+        }).find("demo.overview draws a topic on this PC alone") != std::string::npos);
+  const auto homed = [](Json& settings, bool sensitive) {
+    for (Json& st : settings["settings"]) {
+      if (st["key"] == "lantern.brightness") {
+        st["home"] = "demo.workbench";
+        if (sensitive) {
+          st["sensitive"] = true;
+        }
+      }
+    }
+  };
+  CHECK(refused([&](Json&, Json& s) { homed(s, false); }).find("(D264)") != std::string::npos);
+  // Sensitive, but still shown on Behaviour, which a paired device sees: refused too.
+  CHECK(refused([&](Json&, Json& s) { homed(s, true); }).find("shows a setting that lives on a pc_only page") !=
+        std::string::npos);
+}

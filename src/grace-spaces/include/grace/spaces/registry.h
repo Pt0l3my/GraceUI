@@ -40,6 +40,7 @@ enum class Status : std::uint8_t {
   refused,    // the input fails (with `why`, in words that never quote it)
   duplicate,  // a second space for one mod, or an id another holds
   full,       // kMaxSpaces; or, for poll, the mod's buffer is too small (`length` the size needed; the event is kept)
+  too_new,    // page data for a protocol minor above this GraceUI's (D264): refused, `why` naming both
 };
 
 enum class EventKind : std::uint8_t { none = 0, watched = 2, unwatched = 3, command = 4 };  // GRACEUI_EVENT_*

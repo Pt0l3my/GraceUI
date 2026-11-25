@@ -45,6 +45,7 @@
 
 #include "client.h"  // the server suite's test client: the "pages" scenario is a browser too
 #include "grace/pages/builtin.h"
+#include "grace/protocol/messages.h"  // kProtocolMinor: page data for a newer GraceUI (D264)
 #include "grace/serve/codec.h"
 #include "graceui_sys.hpp"
 #include "graceui_test.h"
@@ -4659,6 +4660,29 @@ void run_pages(const std::wstring& dll) {
     desc.increment_length = 3;
     return desc;
   };
+  // Page data written for a newer GraceUI (D264): refused, and GraceUI says so in one notice of its own, both minors
+  // named; the mod's right page data is then taken as ever.
+  std::string newer(space.pages);
+  const std::string minor_now = "\"minor\":" + std::to_string(grace::protocol::kProtocolMinor);
+  const std::size_t minor_at = newer.find(minor_now);
+  if (minor_at != std::string::npos) {
+    newer.replace(minor_at, minor_now.size(), "\"minor\":" + std::to_string(grace::protocol::kProtocolMinor + 1));
+  }
+  const GraceUiSpaceDesc too_new = describe(newer, GRACEUI_VIEW_GAME | GRACEUI_VIEW_BROWSER);
+  const GraceUiStatus newer_refused = table->register_pages(demo.answer.consumer, &too_new);
+  frames(game, 3);
+  std::string said_newer;
+  for (const GraceUiTestNotice& notice : grace.notices()) {
+    if (notice.owner == 0 && std::string_view(notice.text).find("needs a newer GraceUI") != std::string_view::npos) {
+      said_newer = notice.text;
+    }
+  }
+  const std::string want_minors = "page data for protocol 1." + std::to_string(grace::protocol::kProtocolMinor + 1) +
+                                  "; this GraceUI reads up to 1." + std::to_string(grace::protocol::kProtocolMinor);
+  check(minor_at != std::string::npos && newer_refused == GRACEUI_REFUSED &&
+            said_newer.find(want_minors) != std::string::npos,
+        "spaces: page data for a newer GraceUI refused, in a notice (D264)", "register_pages %s; GraceUI's notice: %s",
+        status_name(newer_refused), said_newer.empty() ? "NONE" : said_newer.c_str());
   const GraceUiSpaceDesc both = describe(space.pages, GRACEUI_VIEW_GAME | GRACEUI_VIEW_BROWSER);
   const GraceUiStatus registered = table->register_pages(demo.answer.consumer, &both);
   const GraceUiStatus twice = table->register_pages(demo.answer.consumer, &both);

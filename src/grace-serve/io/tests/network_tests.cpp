@@ -524,3 +524,49 @@ TEST_CASE("a report preview's shared text never reaches a paired device; this PC
   REQUIRE(pc_next.has_value());
   CHECK((*pc_next)["body"]["share"]["blocked"] == "Remove the path in Your notes before sharing.");
 }
+
+TEST_CASE("a page and a topic on this PC alone: a paired device never gets the page, and its sub is refused (D264)") {
+  Fixture f(home_options());
+  REQUIRE(network_on(f));
+  const std::string cookie = pair(f);
+  WsClient device;
+  REQUIRE(device.open_head(kHome, f.port, home_upgrade(f.port, cookie)) == 101);
+  REQUIRE(device.hello(ticket_for(f.port, cookie)));
+  const auto sub_of = [](std::string_view topic, std::uint32_t id) {
+    return Json{{"v", 1}, {"t", "sub"}, {"space", "demo"}, {"id", id}, {"topic", topic}};
+  };
+  const auto names = [](const Json& pages, std::string_view id) {
+    const std::string dump = pages.dump();
+    return dump.find("\"" + std::string(id) + "\"") != std::string::npos;
+  };
+  // Its page data without the Workbench: not as a page, in a category or a Related link.
+  REQUIRE(device.send_json(sub_of("pages", 1)));
+  const std::optional<Json> seen = device.next_of("state");
+  REQUIRE(seen.has_value());
+  CHECK_FALSE(names((*seen)["body"], "demo.workbench"));
+  CHECK(names((*seen)["body"], "demo.log"));
+  // Its readings refused, in the words a sensitive command's refusal has.
+  REQUIRE(device.send_json(sub_of("lantern.readings", 2)));
+  const std::optional<Json> refused = device.next_of("error");
+  REQUIRE(refused.has_value());
+  CHECK((*refused)["code"] == "not_now");
+  CHECK((*refused)["detail"].get<std::string>().find("Only on the PC the game runs on.") != std::string::npos);
+  CHECK_FALSE(f.demo->wait_for([&] {
+    const std::vector<std::string> watched = f.demo->watched();
+    return std::find(watched.begin(), watched.end(), "lantern.readings") != watched.end();
+  }, 300ms));
+  // Another topic as before.
+  REQUIRE(device.send_json(sub_of("lantern.status", 3)));
+  CHECK(device.next_of("state").has_value());
+  // This PC's view: the page, and the readings.
+  const std::unique_ptr<WsClient> pc = f.join();
+  REQUIRE(pc != nullptr);
+  REQUIRE(pc->send_json(sub_of("pages", 4)));
+  const std::optional<Json> here = pc->next_of("state");
+  REQUIRE(here.has_value());
+  CHECK(names((*here)["body"], "demo.workbench"));
+  REQUIRE(pc->send_json(sub_of("lantern.readings", 5)));
+  const std::optional<Json> readings = pc->next_of("state");
+  REQUIRE(readings.has_value());
+  CHECK((*readings)["topic"] == "lantern.readings");
+}

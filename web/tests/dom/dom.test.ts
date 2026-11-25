@@ -1338,6 +1338,31 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("a page on this PC alone: absent from a paired device's view, present on this PC (D264)", async () => {
+    host = await startHost(DIST, builtinSpaces());
+    host.setView("device");
+    const device = await openPage(browser, host);
+    try {
+      await openFromRail(device.page, "records", "demo.log");  // its category open, its pages listed
+      if ((await device.page.locator("[data-rail='page:demo.log']").count()) === 0) {
+        await device.page.locator("[data-rail='category:records']").first().click();
+      }
+      await device.page.locator("[data-rail='page:demo.log']").first().waitFor({ state: "attached" });
+      assert.equal(await device.page.locator("[data-rail='page:demo.workbench']").count(), 0);
+      assert.equal(await device.page.locator(".related a, .related button", { hasText: "Workbench" }).count(), 0);
+    } finally {
+      await device.close();
+      await host.close();
+    }
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "records", "demo.workbench");
+      await page.locator("[data-gate='open']").waitFor();
+    } finally {
+      await close();
+    }
+  });
+
   test("a gated page: its words once a session before anything shows, its ribbon, and present only with its setting (D258)", async () => {
     const { page, close } = await fresh();
     try {

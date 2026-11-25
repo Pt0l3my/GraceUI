@@ -34,6 +34,11 @@ id = "lantern.status"
 shape = "state"
 
 [[topic]]
+id = "lantern.readings"  # the Workbench's raw readings: on this PC alone, never a paired device's (D264)
+shape = "state"
+pc_only = true
+
+[[topic]]
 id = "lantern.keepers"
 shape = "state"
 
@@ -487,9 +492,10 @@ browser_only = true  # in the browser alone (D258), as EldenNet's Workshop
 shown_with = "lantern.enabled"  # present only while the lantern is enabled
 gate = { words = "The workbench shows the lantern's raw readings, unworded. Open it for this session?", confirm = "Open the workbench" }
 ribbon = "Raw readings"
+pc_only = true  # never in a paired device's view (D264), as EldenNet's Workshop
 
 [[page.sections]]
 id = "readings"
 title = "Readings"
-blocks = [{ kind = "component", component = "stat_tiles", topic = "lantern.status" }, { kind = "component", component = "key_value_list", topic = "lantern.status", props = { field = "raw" } }]
+blocks = [{ kind = "component", component = "stat_tiles", topic = "lantern.status" }, { kind = "component", component = "key_value_list", topic = "lantern.readings" }]
 

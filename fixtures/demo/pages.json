@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 19,
+  "minor": 20,
   "categories": [
     {
       "id": "lanterns",
@@ -790,10 +790,7 @@
             {
               "kind": "component",
               "component": "key_value_list",
-              "topic": "lantern.status",
-              "props": {
-                "field": "raw"
-              }
+              "topic": "lantern.readings"
             }
           ]
         }
@@ -804,7 +801,8 @@
         "words": "The workbench shows the lantern's raw readings, unworded. Open it for this session?",
         "confirm": "Open the workbench"
       },
-      "ribbon": "Raw readings"
+      "ribbon": "Raw readings",
+      "pc_only": true
     }
   ],
   "topics": [
@@ -815,6 +813,11 @@
     {
       "id": "lantern.status",
       "shape": "state"
+    },
+    {
+      "id": "lantern.readings",
+      "shape": "state",
+      "pc_only": true
     },
     {
       "id": "lantern.keepers",

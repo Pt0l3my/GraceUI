@@ -101,9 +101,11 @@ export function withinIncrement(pages: SpacePages, increment: string): SpacePage
 }
 
 /** The page data as its settings show it (D258): a page shown with a switch is absent while the switch is off, from
- * its category, from Related links and from search, as a page of a later increment is. */
-export function withShown(pages: SpacePages, values: { [key: string]: Json } | undefined): SpacePages {
-  const absent = new Set(pages.pages.filter((p) => p.shown_with !== undefined && values?.[p.shown_with] !== true)
+ * its category, from Related links and from search, as a page of a later increment is. On a paired device (D264) a page
+ * on this PC alone is absent too; GraceUI's server leaves it out of a device's page data already. */
+export function withShown(pages: SpacePages, values: { [key: string]: Json } | undefined, device = false): SpacePages {
+  const absent = new Set(pages.pages.filter((p) => (p.shown_with !== undefined && values?.[p.shown_with] !== true) ||
+                                                    (device && p.pc_only === true))
     .map((p) => p.id));
   if (absent.size === 0) {
     return pages;

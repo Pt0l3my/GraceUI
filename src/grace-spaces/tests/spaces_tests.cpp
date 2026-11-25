@@ -100,6 +100,21 @@ TEST_CASE("a registration is checked: views, its own id, decodable page data, on
   unconfirmed.erase(unconfirmed.find(confirm), confirm.size());
   CHECK(registry.add(kMod, "demo", demo_registration(unconfirmed, settings), why) == Status::refused);
   CHECK(why == "a destructive action without its confirm text");
+  // Page data written for a newer GraceUI is refused, both minors named (D264): what this one cannot read would be drawn
+  // without it, such as a page kept to this PC shown on a device.
+  std::string newer = pages;
+  const std::string minor = "\"minor\":" + std::to_string(grace::protocol::kProtocolMinor);
+  REQUIRE(newer.find(minor) != std::string::npos);
+  newer.replace(newer.find(minor), minor.size(), "\"minor\":" + std::to_string(grace::protocol::kProtocolMinor + 1));
+  CHECK(registry.add(kMod, "demo", demo_registration(newer, settings), why) == Status::too_new);
+  CHECK(why == "page data for protocol 1." + std::to_string(grace::protocol::kProtocolMinor + 1) +
+                   "; this GraceUI reads up to 1." + std::to_string(grace::protocol::kProtocolMinor));
+  // Newer page data usually holds what this GraceUI cannot decode: still named too new, not refused as broken.
+  std::string undecodable = newer;
+  const std::string component = "\"component\":\"stat_tiles\"";
+  REQUIRE(undecodable.find(component) != std::string::npos);
+  undecodable.replace(undecodable.find(component), component.size(), "\"component\":\"a_later_widget\"");
+  CHECK(registry.add(kMod, "demo", demo_registration(undecodable, settings), why) == Status::too_new);
   // GraceUI's own space's id is not a mod's.
   std::string own = pages;
   own.replace(own.find("\"space\":\"demo\""), 14, "\"space\":\"graceui\"");

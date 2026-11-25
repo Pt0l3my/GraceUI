@@ -156,6 +156,9 @@ std::shared_ptr<const std::string> encode_to_page(const protocol::Message& messa
 // A state's body as a paired device gets it (D263): `share` taken out wherever a report preview draws it (the topic's
 // body, or the field its block names; a family's members too). True if anything was taken out.
 bool strip_shared(const SpaceDescription& description, std::string_view topic, protocol::Json& body);
+// The settings topic's body as a paired device gets it (D264): the settings homed on pc_only pages taken out of its
+// description, values, changed keys and inherited values. True if anything was taken out.
+bool strip_pc_settings(const SpaceDescription& description, std::string_view topic, protocol::Json& body);
 
 // The notice page (§7.2 item 15, §2.9): built in, plain, within the CSP, naming no path.
 std::string_view notice_page() noexcept;

@@ -11,7 +11,7 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 19 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 20 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
@@ -35,6 +35,7 @@ protocol = { major = 1, minor = 19 }  # 1.1 (D172): result.detail; a stream clea
                                      # (D258)
                                      # 1.18: a filter's own choices on any bar, words for its rows' values (D262)
                                      # 1.19: a report preview's Copy and Save, and the text its body shares (D263)
+                                     # 1.20: a page and a topic on this PC alone, never on a paired device (D264)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -183,6 +184,8 @@ fields = [
   { name = "shape", type = "enum.topic_shape" },
   { name = "ring", type = "u32", optional = true },
   { name = "family", type = "bool", optional = true },  # 1.5 (D215): its members are watched and published, never it
+  # 1.20 (D264): on this PC alone: a paired device's watch of it, or of a member of it, is refused
+  { name = "pc_only", type = "bool", optional = true },
 ]
 
 [types.page_action]
@@ -408,6 +411,7 @@ fields = [
   { name = "shown_with", type = "id", optional = true },  # 1.17 (D258): present only while this switch setting is on
   { name = "gate", type = "type.page_gate", optional = true },  # 1.17 (D258): asked once a session before it opens
   { name = "ribbon", type = "string", max = 32, optional = true },  # 1.17 (D258): a band at its top while it is open
+  { name = "pc_only", type = "bool", optional = true },  # 1.20 (D264): never in a paired device's view
 ]
 
 [types.page_gate]
