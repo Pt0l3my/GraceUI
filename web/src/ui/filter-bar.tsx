@@ -42,7 +42,11 @@ export function FilterBar({ spec, rows, state, shown, set, label, own }: {
     <>
       <div class="filter-bar" role="group" aria-label={label !== "" ? `Filter and sort: ${label}` : "Filter and sort"}>
         {(spec.filters ?? []).map((f, i) => {
-          const values = own?.[i] ?? choices(rows, f.column).map((v) => ({ value: v, label: v }));
+          // Its own choices where it names them (on any bar since D262: words for the rows' values), else its rows'.
+          const values = own?.[i] ??
+            (f.choices !== undefined
+              ? f.choices.filter((c) => c.value !== "").map((c) => ({ value: c.value, label: c.label || c.value }))
+              : choices(rows, f.column).map((v) => ({ value: v, label: v })));
           const now = state.chosen[i] ?? null;
           if (now !== null && !values.some((v) => v.value === now)) {
             values.push({ value: now, label: now });  // the player's own choice, kept though no row has it now

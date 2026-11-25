@@ -46,7 +46,7 @@ stroke  edge          639, 223  220x28   r2 w1 clip1
 text    ink.faint     649, 227   88x20   clip1 glyphs 11 "Find a keeper"
 text    ink.mute      292, 265   40x20   clip1 glyphs 6 "Keeper"
 text    ink.mute      812, 265   27x20   clip1 glyphs 4 "Post"
-text    ink.mute     1164, 265   61x20   clip1 glyphs 8 "Ward word"
+text    ink.mute     1171, 265   61x20   clip1 glyphs 8 "Ward word"
 line    rule          292, 289 1560x1    clip1
 text    ink.hi        292, 302   68x22   clip1 glyphs 8 "Orla Venn"
 fill    rot.fill     1781, 299   71x28   r2 clip1
@@ -54,7 +54,7 @@ text    ink.hi       1793, 303   47x20   clip1 glyphs 7 "Dismiss"
 stroke  edge         1724, 299   44x28   r2 w1 clip1
 text    ink.hi       1736, 303   20x20   clip1 glyphs 3 "Set"
 text    ink.body      812, 303   74x20   clip1 glyphs 10 "North light"
-text    ink.body     1164, 303   20x20   clip1 glyphs 3 "Set"
+text    ink.body     1171, 303   20x20   clip1 glyphs 3 "Set"
 line    rule          292, 337 1560x1    clip1
 text    ink.hi        292, 350   82x22   clip1 glyphs 10 "Tamsin Reed"
 fill    rot.fill     1781, 347   71x28   r2 clip1
@@ -62,7 +62,7 @@ text    ink.hi       1793, 351   47x20   clip1 glyphs 7 "Dismiss"
 stroke  edge         1724, 347   44x28   r2 w1 clip1
 text    ink.hi       1736, 351   20x20   clip1 glyphs 3 "Set"
 text    ink.body      812, 351   81x20   clip1 glyphs 11 "Harbour wall"
-text    ink.body     1164, 351   47x20   clip1 glyphs 7 "Missing"
+text    ink.body     1171, 351   47x20   clip1 glyphs 7 "Missing"
 line    rule          292, 385 1560x1    clip1
 text    ink.hi        292, 398   68x22   clip1 glyphs 8 "Ada Marsh"
 fill    rot.fill     1781, 395   71x28   r2 clip1
@@ -70,13 +70,13 @@ text    ink.hi       1793, 399   47x20   clip1 glyphs 7 "Dismiss"
 stroke  edge         1724, 395   44x28   r2 w1 clip1
 text    ink.hi       1736, 399   20x20   clip1 glyphs 3 "Set"
 text    ink.body      812, 399   68x20   clip1 glyphs 9 "Store room"
-text    ink.body     1164, 399   47x20   clip1 glyphs 7 "Refused"
+text    ink.body     1171, 399   47x20   clip1 glyphs 7 "Refused"
 line    rule          292, 433 1560x1    clip1
 text    ink.hi        292, 446   68x22   clip1 glyphs 8 "Bran Teel"
 fill    rot.fill     1781, 443   71x28   r2 clip1
 text    ink.hi       1793, 447   47x20   clip1 glyphs 7 "Dismiss"
 text    ink.body      812, 447   61x20   clip1 glyphs 8 "Lamp loft"
-text    ink.body     1164, 447   68x20   clip1 glyphs 9 "Not needed"
+text    ink.body     1171, 447   68x20   clip1 glyphs 9 "Not needed"
 fill    ground.2      272, 509 1600x318  r4 clip1
 stroke  rule          272, 509 1600x318  r4 w1 clip1
 text    gold          292, 525  100x16   clip1 glyphs 11 "Hire a keeper"

@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 17;
-inline constexpr std::string_view kProtocolVersion = "1.17";
+inline constexpr std::uint32_t kProtocolMinor = 18;
+inline constexpr std::string_view kProtocolVersion = "1.18";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -363,7 +363,7 @@ struct TopicMember {
 bool decode(const Json& in, TopicMember& out, const std::string& path, DecodeError& e);
 Json encode(const TopicMember& in);
 
-// A filter of a filter bar (1.11, G43, D250): one of its table's columns, its choices the values the rows hold; on a table read a page at a time (1.14, D254), its own choices, or a state topic's list of them.
+// A filter of a filter bar (1.11, G43, D250): one of its table's columns, its choices the values the rows hold, or its own choices in their order and words (on any bar since 1.18, D262: a row whose value is not listed shows under All alone); on a table read a page at a time (1.14, D254), its own choices or a state topic's list of them, one of the two.
 struct FilterOption {
   std::string column{};
   std::string label{};

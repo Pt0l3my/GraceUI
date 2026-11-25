@@ -195,9 +195,9 @@ def lint(space_pages, description, fixtures, known_spaces):
             if paged and len(named) != 1:
                 failures.append(f"{where}: a filter on rows read a page at a time names its choices, or a state "
                                 "topic's list of them, one of the two (D254)")
-            if not paged and named:
-                failures.append(f"{where}: a filter's own choices are for rows read a page at a time; others' come "
-                                "from the rows (D254)")
+            if not paged and "choices_from" in f:
+                failures.append(f"{where}: a filter takes its choices from a state topic only on rows read a page at "
+                                "a time; others' come from the rows, or its own choices word them (D254, D262)")
             source = f.get("choices_from")
             if source is not None and (source.get("topic") not in topics or
                                        topics[source["topic"]]["shape"] != "state" or

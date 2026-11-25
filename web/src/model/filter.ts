@@ -7,7 +7,8 @@ import type { Json, JsonObject } from "../protocol.ts";
 
 export type Direction = "ascending" | "descending";
 
-export interface FilterSpec { column: string; label: string }
+/** A filter: its column, its label, and on any bar its own choices, words for the values (D254, D262). */
+export interface FilterSpec { column: string; label: string; choices?: { value: string; label: string }[] }
 export interface SortSpec { key: string; label: string; direction?: Direction }
 export interface SearchSpec { columns: string[]; label: string }
 export interface FilterBarSpec { filters?: FilterSpec[]; sort?: SortSpec[]; search?: SearchSpec }

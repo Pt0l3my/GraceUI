@@ -1233,6 +1233,51 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("a filter's own choices on a stream's bar, in their order and words; no drawer on an empty row; a stream's bar " +
+       "before its rows (D262)", async () => {
+    const demo = space("demo");
+    const pages = JSON.parse(JSON.stringify(demo.pages)) as typeof demo.pages;
+    const tail = pages.pages.find((p) => p.id === "demo.log")?.sections?.[0]?.blocks?.[0];
+    const level = tail?.filter_bar?.filters?.[0];
+    assert.ok(level);
+    level.choices = [{ value: "warning", label: "Warnings" }, { value: "info", label: "Notes" }];
+    const rows = [
+      { seq: 1, time: "19:02", line: "The lantern was lit.", level: "info" },
+      { seq: 2, time: "19:16", line: "The glass cracked.", level: "error" },
+      { seq: 3, time: "19:40", line: "The flame guttered in a draught.", level: "warning" },
+    ];
+    const { page, close } = await fresh([space("graceui"), { ...demo, pages, topics: { ...demo.topics, "lantern.log": rows } }]);
+    try {
+      await openFromRail(page, "records", "demo.log");
+      const log = page.locator("[data-section='log']");
+      await log.locator(".feed__row").first().waitFor();
+      const lines = async () => log.locator(".feed__line").allTextContents();
+      assert.deepEqual(await log.locator("select[data-filter='level'] option").allTextContents(), ["All", "Warnings", "Notes"]);
+      assert.equal((await lines()).length, 3);  // All: the unlisted level's row too
+      await log.locator("select[data-filter='level']").selectOption("info");
+      assert.deepEqual(await lines(), ["The lantern was lit."]);
+      // The keepers: Ada Marsh's notes are empty, so her row has no drawer, its mark's cell kept.
+      await openFromRail(page, "lanterns", "demo.keepers");
+      await page.locator("[data-drawer='k1']").waitFor();
+      assert.equal(await page.locator("[data-drawer='k3']").count(), 0);
+      assert.equal(await page.locator("tbody .table__mark").count(), 3);
+      assert.deepEqual(await violations(page), []);
+    } finally {
+      await close();
+    }
+    // No rows yet: the stream's bar is there all the same, over its empty words.
+    const { page: bare, close: closeBare } = await fresh([space("graceui"), { ...demo, topics: { ...demo.topics, "lantern.log": [] } }]);
+    try {
+      await openFromRail(bare, "records", "demo.log");
+      const log = bare.locator("[data-section='log']");
+      await log.locator("select[data-filter='level']").waitFor();
+      assert.equal(await log.locator(".feed__row").count(), 0);
+      assert.deepEqual(await log.locator("select[data-filter='level'] option").allTextContents(), ["All"]);
+    } finally {
+      await closeBare();
+    }
+  });
+
   test("a gated page: its words once a session before anything shows, its ribbon, and present only with its setting (D258)", async () => {
     const { page, close } = await fresh();
     try {
