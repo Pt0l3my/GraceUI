@@ -4,6 +4,13 @@
 instruction of 2026-11-24 to carry on without asking, once EldenNet answers, and built for GraceUI 0.6's "Bug
 report's copy and save" (DESIGN §10), sooner if EldenNet wants it.**
 
+**Settled and built, 2026-11-25: DESIGN D263, GraceUI 0.2.56, protocol 1.19 (not 1.18, which D262 took).** Option (a),
+with EldenNet's answers to §6: (a) GraceUI copies in both views, and EldenNet drops `report.copy`, with no notice
+after a copy; (b) the text is EldenNet's alone, its line ends LF, and `share` is absent until its first
+`report.build`; (c) the browser downloads alone; (d) the file is `eldennet-report-<YYYY-MM-DD>.txt`; (e) the blocked
+words are one sentence of EldenNet's. To EldenNet's check of §3's last point, the server also leaves `share` out of
+every body it sends a paired device for such a topic (D263). The text below is the proposal as sent.
+
 ## 1. What there is now
 
 - A `report_preview` block (D251, protocol 1.12) shows its topic's `parts` in both views, with a switch on each

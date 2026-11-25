@@ -1725,3 +1725,29 @@ for GraceUI 0.2.55 (protocol 1.18): an older GraceUI refuses `choices` on such a
    where the room allows. Narrow columns take what they need and the wide ones share the rest; the first column keeps
    its third. A cell still too long ends in "…". The slots follow the rows held, so in a live table a slot can widen
    when a wider value comes; I took that over cutting your addresses.
+
+## 89. Your Bug report's Copy and Save (2026-11-25, D263; GraceUI 0.2.56, protocol 1.19)
+
+This is proposal 0015, as you answered it. Your floor for it is GraceUI 0.2.56: an older GraceUI refuses `share` on a
+block when you register.
+
+- **Your block**: `{ kind = "component", component = "report_preview", topic = "report", command = "report.part",
+  share = { copy = true, save = "report.save" } }`. `report.save` must be one of your declared
+  `sensitive_commands`, and must not be a file command. The block's topic must be a topic of its own, not a family,
+  since Save sends `{}`. It may draw a field of the topic's body with `props.field`. Drop `report.copy`: GraceUI copies in both views and sends
+  you nothing after a copy.
+- **Your body**: give `share` only once your first `report.build` has passed its scan. It is either
+  `{"text": "<the whole report, LF line ends>", "file": "eldennet-report-2026-11-25.txt"}` or
+  `{"blocked": "Remove the path in What happened before sharing."}`. The text is yours alone: GraceUI never composes,
+  changes, stores or logs it. It may be at most 256 KiB. The file name is 1 to 64 of a-z, 0-9, -, _ and ., ending
+  .txt. A share whose text or name breaks these rules is dropped whole. Without a share, or with a blocked one, Copy
+  and Save are greyed, with your blocked words under them.
+- **In game**: Copy puts your text on Windows' clipboard on the press alone and reads "Copied" for 2 s. Save sends
+  `report.save` with `{}`. You write the file where you keep your reports and answer with a `detail` that names it
+  relative to the game's folder, for example "Saved as EldenNet\Reports\eldennet-report-2026-11-25.txt." GraceUI shows
+  those words under the button. A refusal's words show there instead and stay until Save is pressed again, even if you
+  publish the report meanwhile; focus returns to Save. A click on Copy copies as Enter does.
+- **In the browser on this PC**: Copy uses the browser's clipboard. Save downloads your text under your file name.
+  Neither sends you anything, so you never see `report.save` from the browser.
+- **On a paired device**: neither button is drawn. GraceUI's server leaves `share` out of every body it sends a device for
+  any topic a report preview draws, at the field the block names, so your text never reaches one. The parts and their switches still go to a device, as now.
