@@ -6926,9 +6926,17 @@ void run_master(const std::wstring& dll) {
   const bool on_copy = down_to(game, grace, window, "share:lantern.report/copy", 40);  // in view, to be clicked
   frames(game, 3);
   const MenuBounds copy_at = menu_bounds(grace, "share:lantern.report/copy");
-  const float cx = copy_at.row[0] + copy_at.row[2] / 2;
-  const float cy = copy_at.row[1] + copy_at.row[3] / 2;
+  // Its bounds are in the back buffer's pixels; the click is in the client area's, which a display smaller than the
+  // window may have cut (Xvfb's 1080 rows less the window's frame): scaled, as the host scales the pointer back.
+  RECT client{};
+  GetClientRect(window, &client);
+  const float to_x = client.right > 0 ? static_cast<float>(client.right) / 1920.0f : 1.0f;
+  const float to_y = client.bottom > 0 ? static_cast<float>(client.bottom) / 1080.0f : 1.0f;
+  const float cx = (copy_at.row[0] + copy_at.row[2] / 2) * to_x;
+  const float cy = (copy_at.row[1] + copy_at.row[3] / 2) * to_y;
   post_mouse(window, WM_MOUSEMOVE, cx, cy);
+  frames(game, 2);
+  const GraceUiTestInput pointed = grace.input();
   post_mouse(window, WM_LBUTTONDOWN, cx, cy, MK_LBUTTON);
   post_mouse(window, WM_LBUTTONUP, cx, cy);
   const bool said_copied = copy_at.found && until_shows(game, grace, "Copied");
@@ -6957,9 +6965,10 @@ void run_master(const std::wstring& dll) {
   check(shared && on_copy && said_copied && on_clipboard && on_save && sent_save && answered_save == GRACEUI_OK &&
             said_saved,
         "master: a report's Copy and Save in game (D263)",
-        "its buttons %s; Copy in view %s, clicked at %.0f,%.0f, Copied %s, the clipboard %s; Save focused %s, sent %s, "
-        "answered %s, its words %s",
-        shared ? "drawn" : "NOT DRAWN", on_copy ? "yes" : "NO", cx, cy, said_copied ? "shown" : "NOT SHOWN",
+        "its buttons %s; Copy in view %s, clicked at %.0f,%.0f (the pointer at %d,%d), Copied %s, the clipboard %s; "
+        "Save focused %s, sent %s, answered %s, its words %s",
+        shared ? "drawn" : "NOT DRAWN", on_copy ? "yes" : "NO", cx, cy, pointed.imgui_mouse_x, pointed.imgui_mouse_y,
+        said_copied ? "shown" : "NOT SHOWN",
         on_clipboard ? "holds the text" : "WITHOUT IT", on_save ? "yes" : "NO",
         saved.frame.empty() ? "NOTHING" : saved.frame.c_str(), answered_save == GRACEUI_OK ? "ok" : "REFUSED",
         said_saved ? "shown" : "NOT SHOWN");

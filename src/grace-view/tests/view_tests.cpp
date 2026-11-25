@@ -3692,3 +3692,23 @@ TEST_CASE("a report preview's share at registration: Copy, Save or both; Save a 
   // On a family's member, its Save would name no member: refused.
   CHECK(refused([&](Json& p) { report(p)["topic"] = "lantern.lamp"; }).find("(D263)") != std::string::npos);
 }
+
+TEST_CASE("a click on a report's Copy copies, as Enter does (D263)") {
+  PageView view = loaded("demo", "demo.log");
+  Json report = kReport;
+  report["share"] = Json{{"text", "Lamp report\n"}, {"file", "lamp-report-2026-11-25.txt"}};
+  view.set_topic("lantern.report", report);
+  REQUIRE(move_to(view, "share:lantern.report/copy"));
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  const PageView::Bounds at = view.bounds_of("share:lantern.report/copy");
+  REQUIRE(at.row.w > 0);
+  const float x = at.row.x + at.row.w / 2;
+  const float y = at.row.y + at.row.h / 2;
+  view.pointer(Pointer{Pointer::Kind::move, x, y});
+  view.pointer(Pointer{Pointer::Kind::press, x, y});
+  view.pointer(Pointer{Pointer::Kind::release, x, y});
+  std::string copied;
+  REQUIRE(view.take_clipboard(copied));
+  CHECK(copied == "Lamp report\n");
+}
