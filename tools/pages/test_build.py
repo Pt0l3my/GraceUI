@@ -469,6 +469,9 @@ class Seeded(unittest.TestCase):
         sp, desc, fx = demo()
         page(sp, "demo.overview")["sections"][0]["blocks"][0]["share"] = {"copy": True}
         self.expect("share belongs to a report preview", sp, desc, fx)
+        sp, desc, fx = demo()
+        report(sp)["topic"] = "lantern.lamp"  # a family: its Save would name no member
+        self.expect("a report preview's share is on a topic of its own, not a family", sp, desc, fx)
 
     def test_file_commands_and_upload_blocks(self):  # D226
         def roster_block(sp):

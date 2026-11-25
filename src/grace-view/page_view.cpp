@@ -690,9 +690,12 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
       const protocol::ReportShare& share = *block.share;
       const bool save_ok = !share.save || (usable(*share.save) && share.save->rfind("settings.", 0) != 0 &&
                                            std::find(sensitive.begin(), sensitive.end(), *share.save) != sensitive.end());
-      if (!preview || (!share.copy.value_or(false) && !share.save) || !save_ok) {
+      const bool family = block.topic && std::any_of(pages.topics.begin(), pages.topics.end(), [&](const protocol::TopicInfo& t) {
+        return t.id == *block.topic && t.family.value_or(false);
+      });
+      if (!preview || (!share.copy.value_or(false) && !share.save) || !save_ok || family) {
         why = where + "a report preview's share offers Copy, Save or both, its Save a sensitive command of the "
-              "space's own and not a file command (D263)";
+              "space's own and not a file command, on a topic of its own and not a family (D263)";
         return false;
       }
     }
@@ -1947,6 +1950,7 @@ Action PageView::press_share(const Focus& f) {
   }
   refusals_.erase(f.id);
   share_said_.erase(f.id);
+  share_refused_.erase(f.id);
   share_busy_.insert(f.id);
   Action action;
   action.kind = Action::Kind::command;
@@ -2717,8 +2721,9 @@ Action PageView::pointer_body(const Pointer& in) {
 void PageView::refused(std::string_view key, std::string_view reason) {
   refusals_[std::string(key)] = std::string(reason);
   if (const auto busy = share_busy_.find(key); busy != share_busy_.end()) {
-    share_busy_.erase(busy);  // a report's Save refused: its words under it (D263)
+    share_busy_.erase(busy);  // a report's Save refused: its words under it until the next press (D263)
     share_said_.erase(std::string(key));
+    share_refused_[std::string(key)] = std::string(reason.size() <= kShareWordsMax ? reason : std::string_view());
   }
   for (std::size_t i = 0; i < focus_.size(); ++i) {
     if ((focus_[i].kind == FocusKind::setting || focus_[i].kind == FocusKind::cell ||
@@ -6688,7 +6693,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                   if (block.share->save) {
                     const std::string id = *block.topic + "/save";
                     share_button(id, share_busy_.contains(id) ? "Saving…" : "Save");
-                    if (const auto refusal = refusals_.find(id); refusal != refusals_.end() && share != nullptr) {
+                    if (const auto refusal = share_refused_.find(id); refusal != share_refused_.end() && share != nullptr) {
                       under = refusal->second;
                       under_ink = Colour::rot;
                     } else if (const auto said = share_said_.find(id); said != share_said_.end() && share != nullptr) {

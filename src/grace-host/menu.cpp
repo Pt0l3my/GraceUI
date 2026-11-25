@@ -883,6 +883,9 @@ void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
   }
   dirty = true;  // a move changes what is hovered
   act(m, action);
+  if (std::string copied; active_view(m).take_clipboard(copied)) {
+    put_on_clipboard(copied);  // a click on a report's Copy (D263), on the click itself, as a key's press is
+  }
 }
 
 void publish(State& m) {

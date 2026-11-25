@@ -548,6 +548,7 @@ class PageView {
   std::map<std::string, std::int64_t, std::less<>> copied_until_;
   std::set<std::string, std::less<>> share_busy_;
   std::map<std::string, std::string, std::less<>> share_said_;
+  std::map<std::string, std::string, std::less<>> share_refused_;  // a Save's refusal, kept across a republish
 
   protocol::SpacePages pages_;
   std::vector<protocol::Setting> settings_;

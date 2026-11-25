@@ -484,6 +484,9 @@ def lint(space_pages, description, fixtures, known_spaces):
                         failures.append(f"{bwhere}: share belongs to a report preview (D263)")
                     elif share.get("copy") is not True and save is None:
                         failures.append(f"{bwhere}: a report preview's share offers Copy, Save or both (D263)")
+                    elif block.get("topic") in families:
+                        failures.append(f"{bwhere}: a report preview's share is on a topic of its own, not a family "
+                                        "(D263: its Save names no member)")
                     if save is not None and (save not in commands or save.startswith("settings.") or
                                              save in space_pages.get("file_commands", []) or
                                              save not in space_pages.get("sensitive_commands", [])):

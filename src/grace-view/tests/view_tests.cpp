@@ -3650,6 +3650,10 @@ TEST_CASE("a report preview's Copy and Save in game: greyed until the space shar
   dump = laid_out(view);
   CHECK(shows(dump, "The reports folder is full."));
   CHECK_FALSE(shows(dump, "Saved as EldenNet\\Reports\\lamp-report-2026-11-25.txt."));
+  view.set_topic("lantern.report", report);  // the space publishes the report again: the refusal stays
+  CHECK(shows(laid_out(view), "The reports folder is full."));
+  REQUIRE(press(view, Key::activate).kind == Action::Kind::command);  // until Save is pressed again
+  CHECK_FALSE(shows(laid_out(view), "The reports folder is full."));
 }
 
 TEST_CASE("a report preview's share at registration: Copy, Save or both; Save a sensitive command of the space's; "
@@ -3685,4 +3689,6 @@ TEST_CASE("a report preview's share at registration: Copy, Save or both; Save a 
   CHECK(refused([](Json& p) {
           page_of(p, "demo.overview")["sections"][0]["blocks"][0]["share"] = Json{{"copy", true}};
         }).find("(D263)") != std::string::npos);
+  // On a family's member, its Save would name no member: refused.
+  CHECK(refused([&](Json& p) { report(p)["topic"] = "lantern.lamp"; }).find("(D263)") != std::string::npos);
 }
