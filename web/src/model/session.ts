@@ -404,7 +404,8 @@ export class Session {
     if (view.raw === undefined) {
       return;
     }
-    const next = withShown(withinIncrement(view.raw, view.info.increment), view.settings.value?.values);
+    const next = withShown(withinIncrement(view.raw, view.info.increment), view.settings.value?.values,
+                           this.welcome.value?.view === "device");
     const before = view.pages.value;
     if (before !== null && JSON.stringify(before) === JSON.stringify(next)) {
       return;  // the same pages: nothing to draw again

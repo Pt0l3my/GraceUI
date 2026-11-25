@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <optional>
 
 namespace grace::view {
@@ -807,6 +808,62 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
     if (setting.type != protocol::SettingType::text || setting.choices || found == pages.topics.end() ||
         found->shape != protocol::TopicShape::state || topic == "settings" || topic == "space.state") {
       why = setting.key + ": choices_from is on a text setting, naming a state topic of the space's own (D193)";
+      return false;
+    }
+  }
+  // This PC alone (D264), as the page lint checks it: a pc_only topic drawn on pc_only pages alone, never on a page,
+  // the scope or a quick switch a paired device sees; a setting homed on a pc_only page sensitive.
+  std::set<std::string, std::less<>> pc_topics;
+  std::set<std::string, std::less<>> pc_pages;
+  for (const protocol::TopicInfo& t : pages.topics) {
+    if (t.pc_only.value_or(false)) {
+      pc_topics.insert(t.id);
+    }
+  }
+  for (const protocol::Page& page : pages.pages) {
+    if (page.pc_only.value_or(false)) {
+      pc_pages.insert(page.id);
+    }
+  }
+  // Whether a part of page data names a pc_only topic: as a "topic" or "changes" id, or a "choices_from" id or topic.
+  const std::function<bool(const Json&)> names_pc = [&](const Json& node) {
+    if (node.is_object()) {
+      for (const auto& [key, value] : node.items()) {
+        if ((key == "topic" || key == "changes" || key == "choices_from") && value.is_string() &&
+            pc_topics.contains(value.get_ref<const std::string&>())) {
+          return true;
+        }
+        if (names_pc(value)) {
+          return true;
+        }
+      }
+    } else if (node.is_array()) {
+      return std::any_of(node.begin(), node.end(), names_pc);
+    }
+    return false;
+  };
+  if (!pc_topics.empty()) {
+    for (const protocol::Page& page : pages.pages) {
+      if (!page.pc_only.value_or(false) && names_pc(protocol::encode(page))) {
+        why = page.id + " draws a topic on this PC alone: such a topic is drawn on pc_only pages alone (D264)";
+        return false;
+      }
+    }
+    if ((pages.scope && names_pc(protocol::encode(*pages.scope))) ||
+        (pages.quick && std::any_of(pages.quick->begin(), pages.quick->end(),
+                                    [&](const protocol::QuickSwitch& q) { return names_pc(protocol::encode(q)); }))) {
+      why = "the top bar names a topic on this PC alone, which a paired device sees (D264)";
+      return false;
+    }
+  }
+  for (const protocol::Setting& setting : settings) {
+    const bool pc_home = pc_pages.contains(setting.home);
+    if (setting.choices_from && pc_topics.contains(*setting.choices_from) && !pc_home) {
+      why = setting.key + " takes its choices from a topic on this PC alone, on a page a paired device sees (D264)";
+      return false;
+    }
+    if (pc_home && !setting.sensitive.value_or(false) && setting.type != protocol::SettingType::secret) {
+      why = setting.key + " lives on a pc_only page: it is sensitive too, so that no paired device changes it (D264)";
       return false;
     }
   }

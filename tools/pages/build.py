@@ -56,7 +56,7 @@ NUMERIC = {"integer", "number", "duration_s"}
 TRI_THIRDS = ("auto", "inherit")
 AVAILABILITY = re.compile(r"live|later|inert|check:[a-z0-9._-]{1,48}|version:\d+\.\d+|requires:[a-z0-9._/-]{1,64}")
 PAGE_FIELDS = ("id", "category", "name", "description", "help", "related", "increment", "tag", "actions", "tabs",
-               "sections", "master", "live", "scoped", "browser_only", "shown_with", "gate", "ribbon")
+               "sections", "master", "live", "scoped", "browser_only", "shown_with", "gate", "ribbon", "pc_only")
 SETTING_FIELDS = ("key", "type", "default", "min", "max", "step", "unit", "choices", "choices_from", "third", "label", "help", "synonyms",
                   "home", "effect", "availability", "locked", "sensitive")
 
@@ -664,7 +664,46 @@ def lint(space_pages, description, fixtures, known_spaces):
         for tid in fixtures:
             if tid not in topics and tid.rpartition("/")[0] not in families:
                 failures.append(f"{space}: fixture {tid} is for no declared topic or family")
+    lint_pc_only(space, space_pages, description, failures)
     return failures
+
+
+def topics_named(node):
+    """Every topic a part of page data names: a "topic" or "changes" id, a "choices_from" id or its topic."""
+    out = set()
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in ("topic", "changes") and isinstance(value, str):
+                out.add(value)
+            elif key == "choices_from" and isinstance(value, str):
+                out.add(value)
+            out |= topics_named(value)
+    elif isinstance(node, list):
+        for item in node:
+            out |= topics_named(item)
+    return out
+
+
+def lint_pc_only(space, space_pages, description, failures):
+    """This PC alone (D264): a pc_only topic is drawn on pc_only pages alone, never on a page, the scope or a quick
+    switch a paired device sees; a setting homed on a pc_only page is sensitive, so that no device changes it."""
+    pc_topics = {t["id"] for t in space_pages["topics"] if t.get("pc_only")}
+    pc_pages = {p["id"] for p in space_pages["pages"] if p.get("pc_only")}
+    for p in space_pages["pages"]:
+        if p["id"] in pc_pages:
+            continue
+        for tid in sorted(topics_named(p) & pc_topics):
+            failures.append(f"{space}: page {p['id']} draws {tid}, a topic on this PC alone: on pc_only pages alone "
+                            "(D264)")
+    for tid in sorted(topics_named({"scope": space_pages.get("scope"), "quick": space_pages.get("quick")}) & pc_topics):
+        failures.append(f"{space}: the top bar names {tid}, a topic on this PC alone, which a paired device sees (D264)")
+    for s in description["settings"]:
+        if s.get("choices_from") in pc_topics and s.get("home") not in pc_pages:
+            failures.append(f"{space}: setting {s['key']} takes its choices from {s['choices_from']}, a topic on this PC "
+                            "alone, but lives on a page a paired device sees (D264)")
+        if s.get("home") in pc_pages and not s.get("sensitive") and s.get("type") != "secret":
+            failures.append(f"{space}: setting {s['key']} lives on pc_only page {s['home']}: it is sensitive too, so that "
+                            "no paired device changes it (D264)")
 
 
 def check(schema, space_pages, description, fixtures, known_spaces):

@@ -741,6 +741,15 @@ bool decode(const Json& in, TopicInfo& out, const std::string& path, DecodeError
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "pc_only", false, path, e)) {
+    const std::string p = path.empty() ? std::string("pc_only") : path + ".pc_only";
+    out.pc_only.emplace();
+    if (!read_bool(*v, *out.pc_only, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -753,6 +762,9 @@ Json encode(const TopicInfo& in) {
   }
   if (in.family) {
     out["family"] = Json(*in.family);
+  }
+  if (in.pc_only) {
+    out["pc_only"] = Json(*in.pc_only);
   }
   return out;
 }
@@ -2228,6 +2240,15 @@ bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e) 
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "pc_only", false, path, e)) {
+    const std::string p = path.empty() ? std::string("pc_only") : path + ".pc_only";
+    out.pc_only.emplace();
+    if (!read_bool(*v, *out.pc_only, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -2274,6 +2295,9 @@ Json encode(const Page& in) {
   }
   if (in.ribbon) {
     out["ribbon"] = Json(*in.ribbon);
+  }
+  if (in.pc_only) {
+    out["pc_only"] = Json(*in.pc_only);
   }
   return out;
 }

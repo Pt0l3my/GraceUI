@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 19;
-inline constexpr std::string_view kProtocolVersion = "1.19";
+inline constexpr std::uint32_t kProtocolMinor = 20;
+inline constexpr std::string_view kProtocolVersion = "1.20";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -278,6 +278,7 @@ struct TopicInfo {
   TopicShape shape{};
   std::optional<std::uint32_t> ring{};
   std::optional<bool> family{};
+  std::optional<bool> pc_only{};
   bool operator==(const TopicInfo&) const = default;
 };
 bool decode(const Json& in, TopicInfo& out, const std::string& path, DecodeError& e);
@@ -555,6 +556,7 @@ struct Page {
   std::optional<std::string> shown_with{};
   std::optional<PageGate> gate{};
   std::optional<std::string> ribbon{};
+  std::optional<bool> pc_only{};
   bool operator==(const Page&) const = default;
 };
 bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e);

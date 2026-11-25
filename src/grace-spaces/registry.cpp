@@ -115,6 +115,13 @@ Status Registry::add(std::uint64_t owner, std::string_view mod_id, const Registr
       !decode_json(in.settings, settings, why, "its settings description")) {
     return Status::refused;
   }
+  if (pages.minor > protocol::kProtocolMinor) {
+    // Page data written for a newer GraceUI (D264): what this one does not read would be drawn without it (an ungated
+    // page, a device shown a page kept to this PC), so it is refused, both minors named.
+    why = "page data for protocol 1." + std::to_string(pages.minor) + "; this GraceUI reads up to 1." +
+          std::to_string(protocol::kProtocolMinor);
+    return Status::too_new;
+  }
   if (pages.space != mod_id) {
     why = "its page data names another space than the mod's own id";
     return Status::refused;

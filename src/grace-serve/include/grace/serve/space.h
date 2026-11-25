@@ -59,6 +59,9 @@ struct SpaceDescription {
   // The space's page data (space_pages), which the framework's own topic "pages" carries to a view that subscribes to
   // it: the server answers that sub itself, from this, and the space never sees it (D166, D169). Null: no such topic.
   protocol::Json pages;
+  // The same page data for a paired device (D264): its pc_only pages left out, and every link to one. Null where the
+  // space has none, so a device gets `pages` itself.
+  protocol::Json device_pages;
   // Where a report preview draws its body (D263): its topic (a family's members too) and, where the block names one,
   // the field of the topic's body it draws. The `share` there, the space's text of this PC's report, is left out of
   // what a paired device receives, whether or not the block offers Copy or Save.

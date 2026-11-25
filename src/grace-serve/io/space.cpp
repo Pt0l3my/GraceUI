@@ -194,6 +194,44 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
     }
   }
   description.pages = protocol::encode(pages);
+  // A paired device's copy (D264): no pc_only page, and no link to one; its topics a device's sub is refused.
+  std::vector<std::string> pc_pages;
+  for (const protocol::Page& page : pages.pages) {
+    if (page.pc_only.value_or(false)) {
+      pc_pages.push_back(page.id);
+    }
+  }
+  if (!pc_pages.empty() && description.pages.is_object() && description.pages.contains("pages")) {
+    description.device_pages = description.pages;
+    protocol::Json& kept = description.device_pages["pages"];
+    const auto pc = [&](const protocol::Json& id) {
+      return id.is_string() && std::find(pc_pages.begin(), pc_pages.end(), id.get<std::string>()) != pc_pages.end();
+    };
+    kept.erase(std::remove_if(kept.begin(), kept.end(), [&](const protocol::Json& p) { return p.is_object() && pc(p["id"]); }),
+               kept.end());
+    for (protocol::Json& p : kept) {
+      if (p.is_object() && p.contains("related") && p["related"].is_array()) {
+        protocol::Json& related = p["related"];
+        related.erase(std::remove_if(related.begin(), related.end(), pc), related.end());
+      }
+    }
+    if (description.device_pages.contains("categories") && description.device_pages["categories"].is_array()) {
+      // Each category without them; a category left with none goes too.
+      protocol::Json& categories = description.device_pages["categories"];
+      for (protocol::Json& category : categories) {
+        if (category.is_object() && category.contains("pages") && category["pages"].is_array()) {
+          protocol::Json& listed = category["pages"];
+          listed.erase(std::remove_if(listed.begin(), listed.end(), pc), listed.end());
+        }
+      }
+      categories.erase(std::remove_if(categories.begin(), categories.end(),
+                                      [](const protocol::Json& c) {
+                                        return c.is_object() && c.contains("pages") && c["pages"].is_array() &&
+                                               c["pages"].empty();
+                                      }),
+                       categories.end());
+    }
+  }
   return description;
 }
 

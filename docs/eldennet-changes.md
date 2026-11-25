@@ -1751,3 +1751,22 @@ block when you register.
   Neither sends you anything, so you never see `report.save` from the browser.
 - **On a paired device**: neither button is drawn. GraceUI's server leaves `share` out of every body it sends a device for
   any topic a report preview draws, at the field the block names, so your text never reaches one. The parts and their switches still go to a device, as now.
+
+## 90. This-PC-only pages and topics, and page data for a newer GraceUI (2026-11-25, D264; GraceUI 0.2.57, protocol 1.20)
+
+Your G-1 and G-6 from the Workshop survey. Workshop needs GraceUI 0.2.57 or later once it uses `pc_only`. A space that
+gives `pc_only` to an older GraceUI is not refused; the mark is simply not read, so give the floor.
+
+- **`pc_only = true` on a page** keeps it out of a paired device's view. GraceUI's server leaves the page out of the
+  page data it sends a device, with every Related link to it and any category it leaves empty. In game, on this PC, the
+  page is as any other.
+- **`pc_only = true` on a topic** (beside its `shape`) makes the server refuse a device's sub to it, or to a member of a
+  family so marked. The refusal is not_now with "Only on the PC the game runs on.". You never hear of the watch.
+- **The lint and registration check two things.** A pc_only topic may be drawn only on pc_only pages: not on a page a
+  device sees, not in the scope, not by a quick switch, and not as a setting's choices homed elsewhere. A setting homed
+  on a pc_only page must be `sensitive` (or a secret), so a device cannot change it.
+- **For Workshop**: mark the page `pc_only = true`, and mark every topic that only Workshop draws. A topic Workshop
+  shares with another page stays readable by a device, as now.
+- **Page data for a newer GraceUI**: register_pages now refuses page data whose minor is above the GraceUI's own. You
+  get GRACEUI_REFUSED. GraceUI's log and one notice of its own name both minors: "EldenNet needs a newer GraceUI for
+  its pages: page data for protocol 1.21; this GraceUI reads up to 1.20.". GraceUIs before 0.2.57 do not check this.

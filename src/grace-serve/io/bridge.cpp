@@ -566,7 +566,9 @@ void Engine::subscribe(Connection& c, const protocol::Sub& sub) {
     state.space = port->description.info.id;
     state.topic = std::string(kPagesTopic);
     state.rev = 1;
-    state.body = port->description.pages;
+    // A paired device's copy leaves out the pages on this PC alone (D264).
+    state.body = c.network && !port->description.device_pages.is_null() ? port->description.device_pages
+                                                                          : port->description.pages;
     send_message(c, state);
     return;
   }
@@ -575,6 +577,19 @@ void Engine::subscribe(Connection& c, const protocol::Sub& sub) {
     send_error(c, port.get(), protocol::ErrorCode::unknown_topic,
                numbered("sub", sub.id, "a family: a view watches one of its members"));
     return;
+  }
+  if (c.network) {
+    // On this PC alone (D264): a paired device's sub to a pc_only topic, or to a member of a pc_only family, refused.
+    const std::string_view named = sub.topic;
+    const std::size_t slash = named.rfind('/');
+    std::size_t declared = topic;
+    if (declared == npos && slash != std::string_view::npos && port->is_member(sub.topic)) {
+      declared = port->topic_index(named.substr(0, slash));
+    }
+    if (declared != npos && declared < port->declared && port->description.topics[declared].pc_only.value_or(false)) {
+      send_error(c, port.get(), protocol::ErrorCode::not_now, numbered("sub", sub.id, "Only on the PC the game runs on."));
+      return;
+    }
   }
   if (topic == npos && port->is_member(sub.topic)) {
     topic = take_member(*port, sub.topic);  // a family's member (D215): its slot
