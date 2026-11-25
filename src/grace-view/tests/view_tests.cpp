@@ -1029,7 +1029,8 @@ TEST_CASE("a table in game (D181): its rows, a switch a row by its key, turned t
   golden("mods-1920x1080.txt", list.dump());
   const std::string dump = list.dump();
   CHECK(dump.find("Quiet Camp") != std::string::npos);
-  CHECK(dump.find("2.1.0  ·  Notices") != std::string::npos);
+  CHECK(dump.find("\"2.1.0\"") != std::string::npos);  // its cells in their columns' slots (D260)
+  CHECK(dump.find("\"Notices\"") != std::string::npos);
   CHECK(dump.find("Firewood is running low.") != std::string::npos);
   CHECK(dump.find("Shown in the browser view.") == std::string::npos);
   // An empty table says so.
@@ -1226,7 +1227,9 @@ TEST_CASE("a space's state components in game (D184): a key-value list, a check 
                           {"sentence", "The lantern burns steady."}});
   overview.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
   dump = list.dump();
-  CHECK(dump.find("\"62 %\"") != std::string::npos);
+  CHECK(dump.find("glyphs 2 \"62\"") != std::string::npos);  // the value in the display face, then its unit small
+  CHECK(dump.find("ink.mute") != std::string::npos);
+  CHECK(dump.find("glyphs 1 \"%\"") != std::string::npos);
   CHECK(dump.find("\"The lantern burns steady.\"") != std::string::npos);
   PageView log = loaded("demo", "demo.log");
   // A live feed and a log tail, drawn in game since D257, and the lamp report's preview (D251). (And lantern.status on
@@ -1375,10 +1378,12 @@ TEST_CASE("a table's row actions: a focus stop each, a destructive one sent afte
   // labels and its button (G38 (a)): nothing is left to the browser view but the roster file's upload, which the game has
   // no picker for (D226).
   const std::string dump = refused.dump();
-  CHECK(dump.find("Ward word: Set") != std::string::npos);
-  CHECK(dump.find("Ward word: Missing") != std::string::npos);
-  CHECK(dump.find("Ward word: Refused") != std::string::npos);  // D197
-  CHECK(dump.find("Ward word: Not needed") != std::string::npos);
+  // In its column's slot, under the header's "Ward word" (D260).
+  CHECK(dump.find("\"Ward word\"") != std::string::npos);
+  CHECK(dump.find("ink.body") != std::string::npos);
+  CHECK(dump.find("\"Missing\"") != std::string::npos);
+  CHECK(dump.find("\"Refused\"") != std::string::npos);  // D197
+  CHECK(dump.find("\"Not needed\"") != std::string::npos);
   const std::size_t upload = dump.find("Add a roster file: in the browser view on this PC.");
   CHECK(upload != std::string::npos);
   CHECK(dump.find("Shown in the browser view") == std::string::npos);
@@ -1464,15 +1469,22 @@ TEST_CASE("a row secret's Set only on a row that takes a key (D200, G38 (a))") {
     view.layout(Viewport{}, test::fonts(), list);
     const std::string dump = list.dump();
     std::size_t n = 0;
-    for (std::size_t at = dump.find("glyphs 3 \"Set\""); at != std::string::npos; at = dump.find("glyphs 3 \"Set\"", at + 1)) {
-      ++n;
+    // The Set buttons, in ink.hi; a status of "Set" in its slot is in ink.body (D260).
+    std::size_t start = 0;
+    while (start < dump.size()) {
+      const std::size_t end = std::min(dump.find('\n', start), dump.size());
+      const std::string_view line(dump.data() + start, end - start);
+      if (line.find("ink.hi") != std::string_view::npos && line.find("glyphs 3 \"Set\"") != std::string_view::npos) {
+        ++n;
+      }
+      start = end + 1;
     }
     return std::make_pair(n, dump);
   };
   view.set_topic("lantern.keepers", Json::parse(R"({"columns": [{"id": "name", "label": "Keeper"},
     {"id": "ward", "label": "Ward word"}], "rows": [{"id": "k3", "name": "Ada Marsh", "ward": "none"}]})"));
   const auto [none, none_dump] = sets();
-  CHECK(none_dump.find("Ward word: Not needed") != std::string::npos);
+  CHECK(none_dump.find("\"Not needed\"") != std::string::npos);
   CHECK(none == 0);
   view.set_topic("lantern.keepers", kKeepers);
   CHECK(sets().first == 3);  // k1, k2 and k3; k4 needs none
@@ -1945,8 +1957,14 @@ TEST_CASE("the Hotkeys page in game (D206): the menu's key, and every hotkey wit
   DisplayList list;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
   const std::string dump = list.dump();
-  CHECK(dump.find("Ctrl+T  ·  D-pad Down, then A  ·  Bound") != std::string::npos);  // a row's cells, in order
-  CHECK(dump.find("F5  ·  No pad chord") != std::string::npos);
+  // A row's cells, each in its column's slot (D260), in order along the row.
+  const std::size_t key_at = dump.find("\"Ctrl+T\"");
+  const std::size_t chord_at = dump.find("\"D-pad Down, then A\"");
+  const std::size_t bound_at = dump.find("\"Bound\"", chord_at);
+  CHECK(key_at != std::string::npos);
+  CHECK(chord_at > key_at);
+  CHECK(bound_at > chord_at);
+  CHECK(dump.find("\"No pad chord\"") != std::string::npos);
   CHECK(dump.find("Later version") == std::string::npos);  // the menu's key is live since D208
   CHECK(dump.find("Change key") != std::string::npos);
   view.open("graceui.hotkeys");
@@ -3220,4 +3238,129 @@ TEST_CASE("a browser-only page is absent in game; a page shown with a setting co
   CHECK(shows(laid_out(shown), "Raw readings"));  // its ribbon
   shown.set_values(Json::object({{"lantern.enabled", false}}));  // turned off while open: the first present page
   CHECK(shown.page() != "demo.workbench");
+}
+
+namespace {
+
+// A text item's words, and the first item with these words.
+std::string_view words_of(const DisplayList& l, const Item& item) {
+  return std::string_view(l.text).substr(item.text_first, item.text_size);
+}
+
+const Item* item_with(const DisplayList& l, std::string_view words) {
+  for (const Item& item : l.items) {
+    if (item.shape == Shape::text && words_of(l, item) == words) {
+      return &item;
+    }
+  }
+  return nullptr;
+}
+
+}  // namespace
+
+TEST_CASE("an in-game table: its columns' labels over a slot each, a numeric one right-aligned, a missing cell leaving "
+          "its slot empty (D260)") {
+  PageView view = loaded("demo", "demo.keepers");
+  view.set_topic("lantern.keepers", Json::parse(R"({"columns": [{"id": "name", "label": "Keeper"},
+    {"id": "station", "label": "Station"}, {"id": "days", "label": "Days kept", "numeric": true}, {"id": "note", "label": "Note"}],
+    "rows": [{"name": "Ada Marsh", "station": "Harbour wall", "days": "12", "note": "Steady"},
+             {"name": "Tamsin Vey", "days": "3", "note": "New"}]})"));
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  const Item* keeper = item_with(list, "Keeper");
+  const Item* post = item_with(list, "Station");
+  const Item* days = item_with(list, "Days kept");
+  const Item* note = item_with(list, "Note");
+  const Item* wall = item_with(list, "Harbour wall");
+  const Item* twelve = item_with(list, "12");
+  const Item* three = item_with(list, "3");
+  const Item* steady = item_with(list, "Steady");
+  const Item* fresh = item_with(list, "New");
+  REQUIRE(keeper != nullptr);
+  REQUIRE(post != nullptr);
+  REQUIRE(days != nullptr);
+  REQUIRE(note != nullptr);
+  REQUIRE(wall != nullptr);
+  REQUIRE(twelve != nullptr);
+  REQUIRE(three != nullptr);
+  REQUIRE(steady != nullptr);
+  REQUIRE(fresh != nullptr);
+  // The header above the rows, its labels where their columns are.
+  CHECK(keeper->rect.y < wall->rect.y);
+  CHECK(post->rect.y == keeper->rect.y);
+  CHECK(post->rect.x == wall->rect.x);
+  CHECK(note->rect.x == steady->rect.x);
+  CHECK(keeper->colour == grace::tokens::Colour::ink_mute);
+  CHECK(wall->colour == grace::tokens::Colour::ink_body);
+  // A numeric column: its label and its cells end at its slot's right.
+  const auto right = [](const Item* item) { return item->rect.x + item->rect.w; };
+  CHECK(std::abs(right(days) - right(twelve)) <= 1.0f);
+  CHECK(std::abs(right(days) - right(three)) <= 1.0f);
+  CHECK(twelve->rect.x > post->rect.x);
+  // The second row has no station: its slot stays empty, and its note is where the first row's is.
+  CHECK(fresh->rect.x == steady->rect.x);
+  CHECK(fresh->rect.y > steady->rect.y);
+  CHECK(list.dump().find("  ·  ") == std::string::npos);  // nothing joined
+}
+
+TEST_CASE("an in-game table with more columns than slots of a readable width: each value after its label, joined "
+          "(D260)") {
+  PageView view = loaded("demo", "demo.keepers");
+  Json columns = Json::array({{{"id", "name"}, {"label", "Keeper"}}});
+  Json row = Json::object({{"name", "Ada Marsh"}});
+  for (int k = 1; k <= 14; ++k) {
+    const std::string id = "c" + std::to_string(k);
+    columns.push_back({{"id", id}, {"label", "Col " + std::to_string(k)}});
+    if (k != 2) {
+      row[id] = std::to_string(k * 10);
+    }
+  }
+  view.set_topic("lantern.keepers", Json{{"columns", columns}, {"rows", Json::array({row})}});
+  DisplayList list;
+  view.layout(Viewport{1280, 720, 1.0f}, test::fonts(), list);
+  const std::string dump = list.dump();
+  CHECK(dump.find("Col 1 10  ·  Col 3 30") != std::string::npos);  // the missing Col 2 is left out, labels kept
+  CHECK(item_with(list, "Col 4") == nullptr);                          // and no header line
+}
+
+TEST_CASE("a computed sentence wraps to its card in game, and a tile's unit is small after its value (D260)") {
+  PageView view = loaded("demo", "demo.overview");
+  const std::string sentence =
+      "The lantern burns steady through the night, its wick trimmed at dusk, its oil topped up from the north store, "
+      "and its glass wiped clean of the harbour's salt by the keeper on watch before the second bell.";
+  view.set_topic("lantern.status", Json{{"tiles", Json::array({{{"label", "Oil"}, {"value", "21 of 24"},
+                                                                {"unit", "shown"}}})},
+                                       {"sentence", sentence}});
+  DisplayList list;
+  view.layout(Viewport{1280, 720, 1.0f}, test::fonts(), list);
+  std::vector<const Item*> lines;
+  for (const Item& item : list.items) {
+    const std::string_view w = words_of(list, item);
+    if (item.shape == Shape::text && !w.empty() && sentence.find(w) != std::string::npos && w.size() > 8) {
+      lines.push_back(&item);
+    }
+  }
+  REQUIRE(lines.size() >= 2);
+  CHECK(item_with(list, sentence) == nullptr);  // never one cut line
+  std::string joined;
+  for (const Item* line : lines) {
+    std::string_view w = words_of(list, *line);
+    while (!w.empty() && w.back() == ' ') {
+      w.remove_suffix(1);  // a wrapped line keeps the space it broke at
+    }
+    joined += (joined.empty() ? "" : " ") + std::string(w);
+    CHECK(line->rect.x == lines.front()->rect.x);
+  }
+  CHECK(joined == sentence);
+  CHECK(lines[1]->rect.y > lines[0]->rect.y);
+  // The tile: its value in the display face, its unit after it, smaller and muted, on the value's foot.
+  const Item* value = item_with(list, "21 of 24");
+  const Item* unit = item_with(list, "shown");
+  REQUIRE(value != nullptr);
+  REQUIRE(unit != nullptr);
+  CHECK(unit->rect.x > value->rect.x + value->rect.w);
+  CHECK(unit->rect.h < value->rect.h);
+  CHECK(unit->colour == grace::tokens::Colour::ink_mute);
+  CHECK(unit->rect.y + unit->rect.h <= value->rect.y + value->rect.h + 1.0f);
+  CHECK(unit->rect.y > value->rect.y);
 }

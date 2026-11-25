@@ -5691,8 +5691,14 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         y += std::round(line_height(TypeRole::ui_sm, s));
       }
       if (section.description) {
-        c.text(*section.description, TypeRole::ui_sm, x0 + card_pad, y, content_w - 2 * card_pad, Colour::ink_mute);
-        y += std::round(line_height(TypeRole::ui_sm, s));
+        // Wrapped to the card (D260), as D251's preview fields are.
+        const TextField wrapped(*section.description, section.description->size() + 4);
+        const auto measure = [&c](std::string_view run) { return c.width(run, TypeRole::ui_sm); };
+        for (const TextField::Line& line : wrapped.wrap(content_w - 2 * card_pad, measure)) {
+          c.text(std::string_view(wrapped.text()).substr(line.begin, line.end - line.begin), TypeRole::ui_sm,
+                 x0 + card_pad, y, content_w - 2 * card_pad + 1, Colour::ink_mute);
+          y += std::round(line_height(TypeRole::ui_sm, s));
+        }
       }
       y += std::round(8 * s);
       const auto draw_blocks = [&](const std::vector<protocol::PageBlock>& blocks, bool advanced) {
@@ -6489,8 +6495,21 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               }
               if (block.component == protocol::Component::computed_sentence) {
                 const std::string sentence = body != nullptr ? cell_words(*body, "sentence") : std::string();
-                one_line(sentence.empty() ? none : sentence,
-                         sentence.empty() ? Colour::ink_mute : Colour::ink_body);
+                if (sentence.empty()) {
+                  one_line(none, Colour::ink_mute);
+                  continue;
+                }
+                // Wrapped to the card (D260), as D251's preview fields are: a row's height for its first line.
+                const TextField wrapped(sentence, sentence.size() + 4);
+                const auto measure = [&c](std::string_view run) { return c.width(run, TypeRole::ui_sm); };
+                const float lh = std::round(line_height(TypeRole::ui_sm, s));
+                float h = 0;
+                for (const TextField::Line& line : wrapped.wrap(inner_w, measure)) {
+                  c.text(std::string_view(wrapped.text()).substr(line.begin, line.end - line.begin), TypeRole::ui_sm,
+                         inner_x, y + std::round(12 * s) + h, inner_w + 1, Colour::ink_body);
+                  h += lh;
+                }
+                y += row_h + std::max(0.0f, h - lh);
                 continue;
               }
               if (block.component == protocol::Component::stat_tiles) {
@@ -6515,12 +6534,18 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                   const float pad = std::round(12 * s);
                   c.text(words(*tiles[i], "label"), TypeRole::ui_sm, tile.x + pad, tile.y + std::round(8 * s),
                          tile.w - 2 * pad, Colour::ink_mute);
-                  std::string value = words(*tiles[i], "value");
+                  const std::string value = words(*tiles[i], "value");
+                  const float value_y = tile.y + std::round(8 * s) + line_height(TypeRole::ui_sm, s);
+                  c.text(value, TypeRole::display_md, tile.x + pad, value_y, tile.w - 2 * pad, Colour::ink_hi);
+                  // Its unit after it in the small face, as the browser's tile__unit (D260), on the value's foot.
                   if (const std::string unit = words(*tiles[i], "unit"); !unit.empty()) {
-                    value += " " + unit;
+                    const float unit_x = tile.x + pad + c.width(value, TypeRole::display_md) + std::round(6 * s);
+                    const float unit_y = value_y + line_height(TypeRole::display_md, s) -
+                                         line_height(TypeRole::ui_sm, s) - std::round(2 * s);
+                    if (unit_x < tile.right() - pad) {
+                      c.text(unit, TypeRole::ui_sm, unit_x, unit_y, tile.right() - pad - unit_x, Colour::ink_mute);
+                    }
                   }
-                  c.text(value, TypeRole::display_md, tile.x + pad,
-                         tile.y + std::round(8 * s) + line_height(TypeRole::ui_sm, s), tile.w - 2 * pad, Colour::ink_hi);
                 }
                 y += tile_h;
                 continue;
@@ -6577,6 +6602,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             // A table in game (D181): a row a row, its first column's words, the others' after them, and a switch
             // column's switch at the right, as a setting's.
             std::vector<std::string> text_columns;
+            std::vector<std::string> text_labels;  // each text column's label, for the header line (D260)
+            std::vector<bool> text_numeric;        // ... and whether it is numeric: right-aligned in its slot
             std::vector<std::pair<std::string, std::string>> drawer_columns;  // shown in an open row's drawer (D256)
             std::string switch_column;
             std::string secret_label;  // a row secret's column (D194): its status in words, edited in the browser
@@ -6592,6 +6619,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 drawer_columns.emplace_back(column["id"].get<std::string>(), cell_words(column, "label"));
               } else {
                 text_columns.push_back(column["id"].get<std::string>());
+                text_labels.push_back(cell_words(column, "label"));
+                text_numeric.push_back(column.contains("numeric") && column["numeric"] == true);
                 if (block.row_secret && column["id"] == block.row_secret->column) {
                   secret_label = cell_words(column, "label");
                 }
@@ -6619,7 +6648,53 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             if (const Bar table_bar = bar_of_table(block); table_bar && paged == nullptr) {
               y = draw_bar(table_bar, x0 + card_pad, y + std::round(4 * s), content_w - 2 * card_pad);  // D250
             }
-            for (const std::size_t r : shown_rows(block, rows)) {
+            // Its columns (D260): the first at the row's left third, as before; each other text column in a slot of its
+            // own between that third and the widest row's controls (a numeric one right-aligned), under one header
+            // line of their labels, so that a missing cell leaves its slot empty and shifts nothing. With slots
+            // narrower than a readable width, each value is shown after its column's label instead, joined as before.
+            const std::vector<std::size_t> shown_lines = shown_rows(block, rows);
+            const float table_x = x0 + card_pad;
+            const float table_w = content_w - 2 * card_pad;
+            const float gap12 = std::round(12 * s);
+            const float lead_w = drawer_columns.empty() ? 0.0f : std::round(20 * s);
+            // A row's controls at its right, by their own words (a pressed button's "Working…" may narrow its cells).
+            const auto controls_of = [&](const Json& line) {
+              float w = 0;
+              for (const protocol::RowAction& act : row_actions) {
+                if (line.is_object() && !cell_words(line, act.key).empty()) {
+                  w += c.width(act.label, TypeRole::ui_sm) + std::round(24 * s) + gap12;
+                }
+              }
+              if (block.row_secret && line.is_object() && cell_words(line, block.row_secret->column) != "none" &&
+                  !cell_words(line, block.row_secret->key).empty()) {
+                w += std::max(c.width("Set", TypeRole::ui_sm) + std::round(24 * s), std::round(240 * s)) + gap12;
+              }
+              return w + (sw != nullptr ? control_w : 0.0f);
+            };
+            float widest_controls = 0;
+            for (const std::size_t r : shown_lines) {
+              widest_controls = std::max(widest_controls, controls_of(rows[r]));
+            }
+            const std::size_t slot_count = text_columns.size() > 1 ? text_columns.size() - 1 : 0;
+            const float slots_x = table_x + table_w / 3;
+            const float slots_w = table_x + table_w - widest_controls - slots_x;
+            const float slot_w = slot_count > 0 ? std::floor(slots_w / static_cast<float>(slot_count)) : 0.0f;
+            const bool slotted = slot_count > 0 && slot_w >= std::round(64 * s);
+            const auto slot_text = [&](const std::string& words, std::size_t k, float sx, float ty, float w, Colour ink) {
+              const float tw = c.width(words, TypeRole::ui_sm);
+              const float tx = k < text_numeric.size() && text_numeric[k] && tw < w ? sx + w - tw : sx;
+              c.text(words, TypeRole::ui_sm, tx, ty, w, ink);
+            };
+            if (slotted && std::any_of(text_labels.begin(), text_labels.end(), [](const std::string& l) { return !l.empty(); })) {
+              const float hy = y + std::round(6 * s);
+              c.text(text_labels[0], TypeRole::ui_sm, table_x + lead_w, hy, table_w / 3 - gap12 - lead_w, Colour::ink_mute);
+              for (std::size_t k = 1; k < text_columns.size(); ++k) {
+                slot_text(text_labels[k], k, slots_x + slot_w * static_cast<float>(k - 1), hy, slot_w - gap12,
+                          Colour::ink_mute);
+              }
+              y += std::round(line_height(TypeRole::ui_sm, s) + 10 * s);
+            }
+            for (const std::size_t r : shown_lines) {
               const Json& line = rows[r];
               if (!line.is_object()) {
                 continue;
@@ -6648,15 +6723,19 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 }
               }
               const std::string label = text_columns.empty() ? std::string() : cell_words(line, text_columns[0]);
-              std::string rest;
+              std::vector<std::string> cells(text_columns.size());
+              std::string rest;  // without slots: each value after its column's label, joined (D260)
               for (std::size_t k = 1; k < text_columns.size(); ++k) {
                 std::string words = cell_words(line, text_columns[k]);
                 if (block.row_secret && text_columns[k] == block.row_secret->column) {
-                  words = (secret_label.empty() ? "" : secret_label + ": ") + secret_status_words(words);
+                  words = (secret_label.empty() || slotted ? "" : secret_label + ": ") + secret_status_words(words);
+                } else if (!slotted && !words.empty() && !text_labels[k].empty()) {
+                  words = text_labels[k] + " " + words;
                 }
                 if (!words.empty()) {
                   rest += (rest.empty() ? "" : "  ·  ") + words;
                 }
+                cells[k] = std::move(words);
               }
               const float label_y = y + std::round((row_h - line_height(TypeRole::ui, s)) / 2);
               c.text(label, TypeRole::ui, row.x + mark_w, label_y, row.w / 3 - std::round(12 * s) - mark_w, Colour::ink_hi);
@@ -6727,8 +6806,20 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               }
               const float actions_w = row.right() - right;
               const float rest_w = (sw != nullptr ? row.w - control_w : row.w) - actions_w - row.w / 3 - std::round(12 * s);
-              c.text(rest, TypeRole::ui_sm, row.x + row.w / 3,
-                     y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2), rest_w, Colour::ink_mute);
+              const float cell_y = y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2);
+              if (slotted) {
+                // Each cell in its column's slot, within this row's own controls; an empty one leaves its slot empty.
+                const float limit = row.right() - actions_w - (sw != nullptr ? control_w : 0.0f) - std::round(12 * s);
+                for (std::size_t k = 1; k < cells.size(); ++k) {
+                  const float sx = slots_x + slot_w * static_cast<float>(k - 1);
+                  const float w = std::min(slot_w - std::round(12 * s), limit - sx);
+                  if (!cells[k].empty() && w > 0) {
+                    slot_text(cells[k], k, sx, cell_y, w, Colour::ink_body);
+                  }
+                }
+              } else {
+                c.text(rest, TypeRole::ui_sm, row.x + row.w / 3, cell_y, rest_w, Colour::ink_mute);
+              }
               if (sw != nullptr) {
                 const std::string words = cell_words(line, switch_column);
                 const bool on = words == (*sw)["on"].get<std::string>();
