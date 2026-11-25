@@ -19,48 +19,49 @@ text    ink.hi        408, 103   95x54   clip1 glyphs 4 "Menu"
 text    ink.mute      408, 163  658x30   clip1 glyphs 53 "How the menu looks: its size, its theme, its motion and its type."
 line    rule.strong   408, 211  824x1    clip1
 diamond gold.deep     408, 205   14x14   w2 clip1
-fill    ground.2      408, 241  824x258  r6 clip1
-stroke  rule          408, 241  824x258  r6 w2 clip1
+fill    ground.2      408, 241  824x288  r6 clip1
+stroke  rule          408, 241  824x288  r6 w2 clip1
 text    gold          438, 265   46x24   clip1 glyphs 4 "Look"
 text    ink.faint    1187, 265   10x30   clip1 glyphs 1 "-"
 line    rule          438, 307  764x1    clip1
 text    ink.hi        438, 327  101x33   clip1 glyphs 8 "Menu size"
-text    ink.mute      438, 367  759x30   clip1 glyphs 60 "How large the menu and its text are drawn, in game and in the browser. Default: 1.25×."
+text    ink.mute      438, 367  719x30   clip1 glyphs 56 "How large the menu and its text are drawn, in game and in the browser. "
+text    ink.mute      438, 397  152x30   clip1 glyphs 14 "Default: 1.25×."
 text    ink.body     1132, 328   52x30   clip1 glyphs 5 "1.25×"
 fill    ground.well   800, 340  288x6    r3 clip1
 fill    gold          800, 340  192x6    r3 clip1
 circle  gold.hi       982, 333   21x21   clip1
-line    rule          438, 409  764x1    clip1
-text    ink.hi        438, 429   56x33   clip1 glyphs 5 "Theme"
-stroke  edge          782, 423  420x45   r3 w2 clip1
-fill    ground.3      784, 425  206x41   r3 clip1
-text    gold.hi       862, 431   51x30   clip1 glyphs 5 "Grace"
-text    ink.mute      998, 431  192x30   clip1 glyphs 16 "Grace Clear (high contrast)"
-fill    ground.2      408, 523  824x228  r6 clip1
-stroke  rule          408, 523  824x228  r6 w2 clip1
-text    gold          438, 547   81x24   clip1 glyphs 7 "Comfort"
-text    ink.faint    1187, 547   10x30   clip1 glyphs 1 "-"
-line    rule          438, 589  764x1    clip1
-text    ink.hi        438, 609  146x33   clip1 glyphs 12 "Reduce motion"
-fill    ground.well  1142, 609   60x33   r16 clip1
-stroke  edge         1142, 609   60x33   r16 w2 clip1
-circle  ink.mute     1147, 614   24x24   clip1
-line    rule          438, 661  764x1    clip1
-text    ink.hi        438, 681  112x33   clip1 glyphs 9 "Plain text"
-fill    ground.well  1142, 681   60x33   r16 clip1
-stroke  edge         1142, 681   60x33   r16 w2 clip1
-circle  ink.mute     1147, 686   24x24   clip1
-fill    ground.2      408, 775  824x210  r6 clip1
-stroke  rule          408, 775  824x210  r6 w2 clip1
-text    gold          438, 799   81x24   clip1 glyphs 7 "Related"
-line    rule          438, 835  764x1    clip1
-text    ink.hi        456, 852   79x33   clip1 glyphs 7 "Hotkeys"
-text    ink.mute      693, 853  446x30   clip1 glyphs 37 "The menu's key, and every mod's hotkeys with their conflicts."
-text    gold         1160, 852   11x33   clip1 glyphs 1 "→"
-line    rule          438, 901  764x1    clip1
-text    ink.hi        456, 918  135x33   clip1 glyphs 11 "Browser view"
-text    ink.mute      693, 919  446x30   clip1 glyphs 34 "The menu in a browser on this PC and on devices at home: its address, the browsers connected and the devices paired."
-text    gold         1160, 918   11x33   clip1 glyphs 1 "→"
+line    rule          438, 439  764x1    clip1
+text    ink.hi        438, 459   56x33   clip1 glyphs 5 "Theme"
+stroke  edge          782, 453  420x45   r3 w2 clip1
+fill    ground.3      784, 455  206x41   r3 clip1
+text    gold.hi       862, 461   51x30   clip1 glyphs 5 "Grace"
+text    ink.mute      998, 461  192x30   clip1 glyphs 16 "Grace Clear (high contrast)"
+fill    ground.2      408, 553  824x228  r6 clip1
+stroke  rule          408, 553  824x228  r6 w2 clip1
+text    gold          438, 577   81x24   clip1 glyphs 7 "Comfort"
+text    ink.faint    1187, 577   10x30   clip1 glyphs 1 "-"
+line    rule          438, 619  764x1    clip1
+text    ink.hi        438, 639  146x33   clip1 glyphs 12 "Reduce motion"
+fill    ground.well  1142, 639   60x33   r16 clip1
+stroke  edge         1142, 639   60x33   r16 w2 clip1
+circle  ink.mute     1147, 644   24x24   clip1
+line    rule          438, 691  764x1    clip1
+text    ink.hi        438, 711  112x33   clip1 glyphs 9 "Plain text"
+fill    ground.well  1142, 711   60x33   r16 clip1
+stroke  edge         1142, 711   60x33   r16 w2 clip1
+circle  ink.mute     1147, 716   24x24   clip1
+fill    ground.2      408, 805  824x210  r6 clip1
+stroke  rule          408, 805  824x210  r6 w2 clip1
+text    gold          438, 829   81x24   clip1 glyphs 7 "Related"
+line    rule          438, 865  764x1    clip1
+text    ink.hi        456, 882   79x33   clip1 glyphs 7 "Hotkeys"
+text    ink.mute      693, 883  446x30   clip1 glyphs 37 "The menu's key, and every mod's hotkeys with their conflicts."
+text    gold         1160, 882   11x33   clip1 glyphs 1 "→"
+line    rule          438, 931  764x1    clip1
+text    ink.hi        456, 948  135x33   clip1 glyphs 11 "Browser view"
+text    ink.mute      693, 949  446x30   clip1 glyphs 34 "The menu in a browser on this PC and on devices at home: its address, the browsers connected and the devices paired."
+text    gold         1160, 948   11x33   clip1 glyphs 1 "→"
 line    rule          360, 746  920x1   
 fill    ground.well   408, 757   64x33   r3
 stroke  edge          408, 757   64x33   r3 w2
