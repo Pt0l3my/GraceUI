@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 18,
+  "minor": 19,
   "categories": [
     {
       "id": "lanterns",
@@ -299,7 +299,11 @@
               "kind": "component",
               "component": "report_preview",
               "topic": "lantern.report",
-              "command": "report.part"
+              "command": "report.part",
+              "share": {
+                "copy": true,
+                "save": "report.save"
+              }
             }
           ]
         }
@@ -889,6 +893,7 @@
     "note.draft",
     "keepers.import",
     "report.part",
+    "report.save",
     "bell.hush",
     "lightings.page"
   ],
@@ -897,7 +902,8 @@
     "note.draft"
   ],
   "sensitive_commands": [
-    "keepers.import"
+    "keepers.import",
+    "report.save"
   ],
   "file_commands": [
     "keepers.import"

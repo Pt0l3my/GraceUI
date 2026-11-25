@@ -31,6 +31,8 @@ struct TopicCache {
   bool has_state = false;
   std::uint64_t rev = 0;
   std::shared_ptr<const std::string> frame;
+  // The same state for a paired device, where it differs: a report preview's body without its share (D263).
+  std::shared_ptr<const std::string> device_frame;
   // A stream's rows, oldest first, consecutive from `first_seq`, at most the topic's ring.
   std::deque<protocol::Json> rows;
   std::uint64_t first_seq = 0;
@@ -94,6 +96,7 @@ struct Outgoing {
   std::uint64_t dropped = 0;
   CommandRef reply;
   std::shared_ptr<const std::string> frame;
+  std::shared_ptr<const std::string> device_frame;  // a state's for a paired device, where it differs (D263)
 };
 
 // Between the I/O thread and every other: the spaces registered, what they publish, and the host's requests. One mutex;
@@ -150,6 +153,9 @@ std::shared_ptr<const FileTable> load_files(const ServerConfig& config) noexcept
 // null if it is past the frame's limit.
 std::shared_ptr<const std::string> ws_text_frame(std::string_view json);
 std::shared_ptr<const std::string> encode_to_page(const protocol::Message& message);
+// A state's body as a paired device gets it (D263): `share` taken out wherever a report preview draws it (the topic's
+// body, or the field its block names; a family's members too). True if anything was taken out.
+bool strip_shared(const SpaceDescription& description, std::string_view topic, protocol::Json& body);
 
 // The notice page (§7.2 item 15, §2.9): built in, plain, within the CSP, naming no path.
 std::string_view notice_page() noexcept;

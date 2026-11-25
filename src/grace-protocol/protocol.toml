@@ -11,7 +11,7 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 18 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 19 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
@@ -34,6 +34,7 @@ protocol = { major = 1, minor = 18 }  # 1.1 (D172): result.detail; a stream clea
                                      # 1.17: a page in the browser alone, shown with a setting, gated, with a ribbon
                                      # (D258)
                                      # 1.18: a filter's own choices on any bar, words for its rows' values (D262)
+                                     # 1.19: a report preview's Copy and Save, and the text its body shares (D263)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -309,6 +310,14 @@ fields = [
   { name = "accept", type = "string", max = 128, optional = true },
   { name = "filter_bar", type = "type.filter_bar", optional = true },  # 1.11 (D250): a table block's alone
   { name = "page", type = "type.page_source", optional = true },  # 1.14 (D254): a table's rows a page at a time
+  { name = "share", type = "type.report_share", optional = true },  # 1.19 (D263): a report preview's alone
+]
+
+[types.report_share]
+doc = "A report preview's Copy and Save (1.19, D263): Copy puts its body's share.text on the clipboard, GraceUI's own, on the click alone; Save sends the space's command with {} in game, where the space writes the file, and in the browser on this PC downloads share.text as share.file; neither on a paired device. Its body's share is {text, file} (text at most 256 KiB, the space's and scanned by it; file 1 to 64 of a-z, 0-9, -, _ and ., ending .txt) or {blocked} (the space's words: what to change before it can be shared)"
+fields = [
+  { name = "copy", type = "bool", optional = true },
+  { name = "save", type = "id", optional = true },  # a command of the space's, sensitive (D221)
 ]
 
 [types.section_status]

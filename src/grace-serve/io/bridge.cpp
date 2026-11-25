@@ -92,6 +92,7 @@ void Engine::dispatch(Outgoing& item) {
     cache.has_state = true;
     cache.rev = item.rev;
     cache.frame = std::move(item.frame);
+    cache.device_frame = std::move(item.device_frame);
     return;  // sent by send_states, the newest at most each state_interval
   }
   {
@@ -207,7 +208,8 @@ void Engine::send_states(Connection& c, Clock::time_point now) {
     sub.sent = true;
     sub.sent_rev = cache.rev;
     sub.sent_at = now;
-    enqueue(c, cache.frame);
+    // A paired device never gets a report preview's shared text (D263): its own frame, where the state has one.
+    enqueue(c, c.network && cache.device_frame != nullptr ? cache.device_frame : cache.frame);
   }
 }
 

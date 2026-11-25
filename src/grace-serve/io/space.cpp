@@ -56,6 +56,31 @@ std::shared_ptr<const std::string> ws_text_frame(std::string_view json) {
   return frame;
 }
 
+bool strip_shared(const SpaceDescription& description, std::string_view topic, protocol::Json& body) {
+  if (!body.is_object()) {
+    return false;
+  }
+  // A family's member is matched by its family, the id before its last '/', as family_member() reads it.
+  const std::size_t slash = topic.rfind('/');
+  const std::string_view family = slash == std::string_view::npos ? std::string_view() : topic.substr(0, slash);
+  bool erased = false;
+  for (const SpaceDescription::SharedBody& where : description.shared) {
+    if (where.topic != topic && (family.empty() || where.topic != family)) {
+      continue;
+    }
+    protocol::Json* holder = &body;
+    if (!where.field.empty()) {
+      const auto at = body.find(where.field);
+      holder = at != body.end() && at->is_object() ? &*at : nullptr;
+    }
+    if (holder != nullptr && holder->contains("share")) {
+      holder->erase("share");
+      erased = true;
+    }
+  }
+  return erased;
+}
+
 std::shared_ptr<const std::string> encode_to_page(const protocol::Message& message) {
   std::string json;
   if (!protocol::encode_frame(message, protocol::Direction::to_page, json)) {
@@ -123,6 +148,18 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
           }
           if (block.row_secret) {
             add(description.secret, block.row_secret->command);
+          }
+          if (block.topic && block.kind == protocol::BlockKind::component &&
+              block.component == protocol::Component::report_preview) {
+            // Its body's share never sent to a paired device (D263), at the field the block draws if it names one.
+            SpaceDescription::SharedBody where{*block.topic, {}};
+            if (block.props && block.props->is_object() && block.props->contains("field") &&
+                (*block.props)["field"].is_string()) {
+              where.field = (*block.props)["field"].get<std::string>();
+            }
+            if (std::find(description.shared.begin(), description.shared.end(), where) == description.shared.end()) {
+              description.shared.push_back(std::move(where));
+            }
           }
         }
       }
@@ -279,6 +316,14 @@ bool SpacePort::publish(protocol::Message message) noexcept {
     out.frame = detail::encode_to_page(message);
     if (out.frame == nullptr) {
       return false;
+    }
+    if (auto* state = std::get_if<protocol::State>(&message);
+        state != nullptr && detail::strip_shared(state_->description, state->topic, state->body)) {
+      // A report preview's shared text (D263): a paired device gets the body without it, encoded here once.
+      out.device_frame = detail::encode_to_page(message);
+      if (out.device_frame == nullptr) {
+        return false;
+      }
     }
     if (auto* rows = std::get_if<protocol::Rows>(&message)) {
       out.rows = std::move(rows->rows);

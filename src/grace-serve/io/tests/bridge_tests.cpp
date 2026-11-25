@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <string>
 
+#include "../internal.h"
 #include "harness.h"
 
 using namespace grace::serve;
@@ -44,7 +45,7 @@ TEST_CASE("hello with a ticket: welcome names both spaces, the protocol and an o
   const std::string cookie = fixture.cookie();
   WsClient ws;
   REQUIRE(ws.join(fixture.port, cookie, fixture.ticket(cookie), &welcome));
-  CHECK(welcome["protocol"] == "1.18");
+  CHECK(welcome["protocol"] == "1.19");
   CHECK(welcome["graceui"] == "0.2.0");
   REQUIRE(welcome["spaces"].size() == 2);
   CHECK(welcome["spaces"][0]["id"] == "graceui");
@@ -732,4 +733,37 @@ TEST_CASE("a sensitive command, which a paired device may never send (D221)") {
   CHECK(sensitive_command(d, "settings.reset", Json::parse(R"({"scope": "all", "confirm": true})")));
   SpaceDescription plain;
   CHECK_FALSE(sensitive_command(plain, "settings.reset", Json::parse(R"({"scope": "all", "confirm": true})")));
+}
+
+TEST_CASE("a report's share is taken out of a paired device's copy wherever a preview draws it: its topic, its field, "
+          "a family's member (D263)") {
+  SpaceDescription description;
+  description.shared = {{"lantern.report", ""}, {"system", "report"}, {"eldennet/reports", ""}};
+  const Json share = {{"text", "Lamp report\n"}, {"file", "lamp.txt"}};
+  // The topic's body itself.
+  Json body = {{"parts", Json::array()}, {"share", share}};
+  CHECK(grace::serve::detail::strip_shared(description, "lantern.report", body));
+  CHECK_FALSE(body.contains("share"));
+  CHECK(body.contains("parts"));
+  // The field a block names (props.field): the share inside it, the rest of the body as it was.
+  body = {{"report", {{"parts", Json::array()}, {"share", share}}}, {"share", "a field of the space's own"}};
+  CHECK(grace::serve::detail::strip_shared(description, "system", body));
+  CHECK_FALSE(body["report"].contains("share"));
+  CHECK(body["share"] == "a field of the space's own");
+  // A family whose id holds a '/': its member matched by the id before the last '/'.
+  body = {{"share", share}};
+  CHECK(grace::serve::detail::strip_shared(description, "eldennet/reports/today", body));
+  CHECK_FALSE(body.contains("share"));
+  // Another topic, or no share: nothing taken, no second frame.
+  body = {{"share", share}};
+  CHECK_FALSE(grace::serve::detail::strip_shared(description, "lantern.status", body));
+  CHECK(body.contains("share"));
+  body = {{"parts", Json::array()}};
+  CHECK_FALSE(grace::serve::detail::strip_shared(description, "lantern.report", body));
+}
+
+TEST_CASE("every report preview's topic is recorded for the strip, with or without Copy and Save, at its field (D263)") {
+  const SpaceDescription description = builtin_description("demo");
+  CHECK(std::find(description.shared.begin(), description.shared.end(),
+                  SpaceDescription::SharedBody{"lantern.report", ""}) != description.shared.end());
 }

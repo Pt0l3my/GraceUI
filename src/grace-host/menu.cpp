@@ -559,7 +559,8 @@ bool take_from_spaces(State& m) {
     } else {
       for (auto& view : m.spaces) {
         if (view->id == it->second.first && !it->second.second.empty()) {
-          view->view.accepted(it->second.second);  // a form the space took: its fields empty (D195)
+          // A form the space took: its fields empty (D195); a report's Save: the space's words under it (D263).
+          view->view.accepted(it->second.second, result.result.detail.value_or(std::string()));
         }
       }
     }
@@ -695,6 +696,7 @@ void run(State& m, const grace::protocol::Cmd& command) {
                               : focused.rfind("submit:", 0) == 0         ? focused.substr(7)  // a form's (D195)
                               : focused.rfind("secret:", 0) == 0         ? focused.substr(7)  // a row secret's (D194)
                               : focused.rfind("editor:", 0) == 0         ? focused  // an editor's, whole (D217)
+                              : focused.rfind("share:", 0) == 0          ? focused.substr(6)  // a report's Save (D263)
                                                                          : key_of(command);
     std::uint64_t ticket = 0;
     const bool capture = space.view.capture_open();
@@ -881,6 +883,9 @@ void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
   }
   dirty = true;  // a move changes what is hovered
   act(m, action);
+  if (std::string copied; active_view(m).take_clipboard(copied)) {
+    put_on_clipboard(copied);  // a click on a report's Copy (D263), on the click itself, as a key's press is
+  }
 }
 
 void publish(State& m) {
@@ -1087,8 +1092,9 @@ void serve_menu() {
   g_awaiting_key.store(m.open && active_view(m).awaiting_key(), std::memory_order_release);
   g_editing.store(m.open && active_view(m).editing(), std::memory_order_release);
   // Every 5 s holding bodies: GraceUI's thread wakes once a second to apply them on time (D252).
-  g_timer.store(m.open && active_view(m).holding() &&
-                    active_view(m).live_mode() == grace::view::PageView::LiveMode::every_5s,
+  g_timer.store(m.open && ((active_view(m).holding() &&
+                             active_view(m).live_mode() == grace::view::PageView::LiveMode::every_5s) ||
+                            active_view(m).timed()),  // a report's "Copied", ended on time (D263)
                 std::memory_order_release);
   if (dirty && m.open) {
     publish(m);

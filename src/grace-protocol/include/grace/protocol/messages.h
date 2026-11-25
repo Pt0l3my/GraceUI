@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 18;
-inline constexpr std::string_view kProtocolVersion = "1.18";
+inline constexpr std::uint32_t kProtocolMinor = 19;
+inline constexpr std::string_view kProtocolVersion = "1.19";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -423,6 +423,15 @@ struct FilterBar {
 bool decode(const Json& in, FilterBar& out, const std::string& path, DecodeError& e);
 Json encode(const FilterBar& in);
 
+// A report preview's Copy and Save (1.19, D263): Copy puts its body's share.text on the clipboard, GraceUI's own, on the click alone; Save sends the space's command with {} in game, where the space writes the file, and in the browser on this PC downloads share.text as share.file; neither on a paired device. Its body's share is {text, file} (text at most 256 KiB, the space's and scanned by it; file 1 to 64 of a-z, 0-9, -, _ and ., ending .txt) or {blocked} (the space's words: what to change before it can be shared).
+struct ReportShare {
+  std::optional<bool> copy{};
+  std::optional<std::string> save{};
+  bool operator==(const ReportShare&) const = default;
+};
+bool decode(const Json& in, ReportShare& out, const std::string& path, DecodeError& e);
+Json encode(const ReportShare& in);
+
 // A block of a section: the rows of settings homed on this page, shortcut rows to settings homed elsewhere, a component bound to a topic (a table with its row actions and row secret), or a small form.
 struct PageBlock {
   BlockKind kind{};
@@ -439,6 +448,7 @@ struct PageBlock {
   std::optional<std::string> accept{};
   std::optional<FilterBar> filter_bar{};
   std::optional<PageSource> page{};
+  std::optional<ReportShare> share{};
   bool operator==(const PageBlock&) const = default;
 };
 bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError& e);

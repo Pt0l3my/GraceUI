@@ -59,6 +59,15 @@ struct SpaceDescription {
   // The space's page data (space_pages), which the framework's own topic "pages" carries to a view that subscribes to
   // it: the server answers that sub itself, from this, and the space never sees it (D166, D169). Null: no such topic.
   protocol::Json pages;
+  // Where a report preview draws its body (D263): its topic (a family's members too) and, where the block names one,
+  // the field of the topic's body it draws. The `share` there, the space's text of this PC's report, is left out of
+  // what a paired device receives, whether or not the block offers Copy or Save.
+  struct SharedBody {
+    std::string topic;
+    std::string field;  // empty: the topic's body itself
+    bool operator==(const SharedBody&) const = default;
+  };
+  std::vector<SharedBody> shared;
 };
 
 // The framework's topic that carries a space's page data to a view (D166): every space has it, answered by the server.

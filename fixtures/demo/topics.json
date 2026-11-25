@@ -656,7 +656,11 @@
           }
         ]
       }
-    ]
+    ],
+    "share": {
+      "text": "Lamp report\n\nSummary\nLamp: North light\nBurned: Eleven hours\n\nRecent log\n19:44  A moth circled the glass.\n19:48  The wind rose; the flame held.\n",
+      "file": "lamp-report-2026-11-25.txt"
+    }
   },
   "lantern.seasons": {
     "choices": [

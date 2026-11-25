@@ -21,6 +21,7 @@ import type { Paged } from "./paged.tsx";
 import { PagingFoot, PagingTop, pagedKey, pagedWords, useOwnChoices, usePaged } from "./paged.tsx";
 import { domId, filters } from "./view-state.ts";
 import { FRESH } from "../model/filter.ts";
+import { shareOf } from "../model/share.ts";
 
 function text(value: Json | undefined): string | null {
   return typeof value === "string" ? value : typeof value === "number" ? String(value) : null;
@@ -478,7 +479,9 @@ function captureTitle(a: RowAction, row: JsonObject, columns: JsonObject[]): str
 
 // A report's preview (G44, D251): each part with every field visible, a code field in the mono face with its lines; an
 // optional part's switch sends the block's command with the part and its new state, and the space's next body shows
-// it (invariant 1); an excluded part is dimmed, its fields hidden.
+// it (invariant 1); an excluded part is dimmed, its fields hidden. Under it, its Copy and Save (D263), on this PC alone:
+// greyed with the space's words until it shares a text; Copy puts that text on the clipboard on the click alone (PV7),
+// Save downloads it as the space's file, with no request to the server.
 function ReportPreview({ space, block, body, empty }: { space: string; block: PageBlock; body: JsonObject;
                                                         empty: JSX.Element }) {
   const session = useSession();
@@ -486,10 +489,53 @@ function ReportPreview({ space, block, body, empty }: { space: string; block: Pa
   const [refusal, setRefusal] = useState<string | null>(null);
   const greyed = useContext(GreyedContext);
   const inert = greyed.words(greyed.page) !== null;
+  const [copied, setCopied] = useState(false);
+  const [shareWords, setShareWords] = useState<string | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (copiedTimer.current !== null) {
+      clearTimeout(copiedTimer.current);
+    }
+  }, []);
   const parts = objects(body.parts).filter((p) => text(p.id) !== null && text(p.label) !== null);
   if (parts.length === 0) {
     return empty;
   }
+  // Never on a paired device (D263): the text is this PC's, and its server leaves it out of what a device gets.
+  const device = session.welcome.value?.view === "device" || globalThis.isSecureContext === false;
+  const share = shareOf(body);
+  const ready = "text" in share && !inert;
+  const copy = async () => {
+    if (!("text" in share) || inert) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(share.text);  // the space's text as it gave it; GraceUI keeps no copy
+      setShareWords(null);
+      setCopied(true);
+      if (copiedTimer.current !== null) {
+        clearTimeout(copiedTimer.current);
+      }
+      copiedTimer.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setShareWords("The browser did not allow the copy. Select the text in the preview instead.");
+    }
+  };
+  const save = () => {
+    if (!("text" in share) || inert) {
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([share.text], { type: "text/plain;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = share.file;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setShareWords(null);
+  };
+  const under = "blocked" in share ? share.blocked : shareWords;
   const flip = async (id: string, on: boolean) => {
     if (block.command === undefined || busy !== null || inert) {
       return;
@@ -540,6 +586,19 @@ function ReportPreview({ space, block, body, empty }: { space: string; block: Pa
         );
       })}
       {refusal !== null && <p class="table__notice" role="alert"><Warning /> {refusal}</p>}
+      {block.share !== undefined && !device && (
+        <div class="preview__share" data-share="">
+          {block.share.copy === true && (
+            <button type="button" class="button button--secondary" data-share-part="copy" disabled={!ready}
+                    onClick={() => void copy()}>{copied ? "Copied" : "Copy"}</button>
+          )}
+          {block.share.save !== undefined && (
+            <button type="button" class="button button--secondary" data-share-part="save" disabled={!ready}
+                    onClick={save}>Save</button>
+          )}
+          {under !== null && <p class="preview__share-words" role="status">{under}</p>}
+        </div>
+      )}
     </div>
   );
 }

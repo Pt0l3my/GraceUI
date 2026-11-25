@@ -1733,6 +1733,29 @@ ul, ol {
   color: var(--ink-hi);
 }
 
+/* A report's Copy and Save (D263): greyed by colour, which keeps 4.5:1, until the space shares a text. */
+.preview__share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12);
+  margin-top: var(--space-8);
+}
+
+.preview__share .button:disabled {
+  border-color: var(--rule);
+  color: var(--ink-mute);
+  cursor: default;
+}
+
+.preview__share-words {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+  color: var(--ink-mute);
+}
+
 /* A table's or a master list's filter bar (G43, D250; §3.8): a ground.2 strip of compact selects, the sort's direction
    and a search field, 40 px tall. */
 .filter-bar {

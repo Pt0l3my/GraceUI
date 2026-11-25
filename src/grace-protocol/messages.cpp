@@ -1417,6 +1417,42 @@ Json encode(const FilterBar& in) {
   return out;
 }
 
+bool decode(const Json& in, ReportShare& out, const std::string& path, DecodeError& e) {
+  if (!in.is_object()) {
+    return fail(e, path, "not an object");
+  }
+  if (const Json* v = field(in, "copy", false, path, e)) {
+    const std::string p = path.empty() ? std::string("copy") : path + ".copy";
+    out.copy.emplace();
+    if (!read_bool(*v, *out.copy, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  if (const Json* v = field(in, "save", false, path, e)) {
+    const std::string p = path.empty() ? std::string("save") : path + ".save";
+    out.save.emplace();
+    if (!read_id(*v, *out.save, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
+  return true;
+}
+
+Json encode(const ReportShare& in) {
+  Json out = Json::object();
+  if (in.copy) {
+    out["copy"] = Json(*in.copy);
+  }
+  if (in.save) {
+    out["save"] = Json(*in.save);
+  }
+  return out;
+}
+
 bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError& e) {
   if (!in.is_object()) {
     return fail(e, path, "not an object");
@@ -1546,6 +1582,15 @@ bool decode(const Json& in, PageBlock& out, const std::string& path, DecodeError
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "share", false, path, e)) {
+    const std::string p = path.empty() ? std::string("share") : path + ".share";
+    out.share.emplace();
+    if (!decode(*v, *out.share, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -1590,6 +1635,9 @@ Json encode(const PageBlock& in) {
   }
   if (in.page) {
     out["page"] = encode(*in.page);
+  }
+  if (in.share) {
+    out["share"] = encode(*in.share);
   }
   return out;
 }

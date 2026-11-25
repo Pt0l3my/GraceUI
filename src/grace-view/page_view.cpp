@@ -684,6 +684,21 @@ bool check_parts(const protocol::SpacePages& pages, const std::vector<protocol::
     // A report preview's switches send its command (D251): the space's own, not a file command.
     const bool preview = block.kind == protocol::BlockKind::component &&
                          block.component == protocol::Component::report_preview;
+    if (block.share) {
+      // A report preview's Copy and Save (D263): one or both; its Save the space's own command, sensitive (never from a
+      // paired device, D221) and not a file command.
+      const protocol::ReportShare& share = *block.share;
+      const bool save_ok = !share.save || (usable(*share.save) && share.save->rfind("settings.", 0) != 0 &&
+                                           std::find(sensitive.begin(), sensitive.end(), *share.save) != sensitive.end());
+      const bool family = block.topic && std::any_of(pages.topics.begin(), pages.topics.end(), [&](const protocol::TopicInfo& t) {
+        return t.id == *block.topic && t.family.value_or(false);
+      });
+      if (!preview || (!share.copy.value_or(false) && !share.save) || !save_ok || family) {
+        why = where + "a report preview's share offers Copy, Save or both, its Save a sensitive command of the "
+              "space's own and not a file command, on a topic of its own and not a family (D263)";
+        return false;
+      }
+    }
     if (preview && block.command) {
       if (block.fields || block.submit || !usable(*block.command)) {
         why = where + "a report preview's command is one the space declares, and not a file command";
@@ -1878,6 +1893,73 @@ Action PageView::follow_link(const Focus& f) {
   return {};
 }
 
+namespace {
+
+// A file name a report's share may give (D263): 1 to 64 of a-z, 0-9, -, _ and ., ending .txt, so no path.
+bool share_file_ok(std::string_view name) {
+  if (name.size() < 5 || name.size() > 64 || !name.ends_with(".txt")) {
+    return false;
+  }
+  return std::all_of(name.begin(), name.end(), [](char ch) {
+    return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.';
+  });
+}
+
+constexpr std::size_t kShareTextMax = 262144;  // a share's text: at most 256 KiB, a frame's bound (D263)
+constexpr std::size_t kShareWordsMax = 400;    // the space's blocked words, or its answer to a Save
+
+}  // namespace
+
+const Json* PageView::shared(const protocol::PageBlock& block, std::string& blocked) const {
+  blocked.clear();
+  const Json* body = drawn(block).body;
+  if (body == nullptr || !body->is_object() || !body->contains("share") || !(*body)["share"].is_object()) {
+    return nullptr;  // nothing to share yet: Copy and Save greyed (invariant 2)
+  }
+  const Json& share = (*body)["share"];
+  if (share.contains("blocked")) {
+    const std::string words = cell_words(share, "blocked");
+    blocked = words.size() <= kShareWordsMax ? words : std::string();
+    return nullptr;
+  }
+  if (!share.contains("text") || !share["text"].is_string() || share["text"].get_ref<const std::string&>().empty() ||
+      share["text"].get_ref<const std::string&>().size() > kShareTextMax || !share_file_ok(cell_words(share, "file"))) {
+    return nullptr;  // a share GraceUI does not take is dropped
+  }
+  return &share;
+}
+
+Action PageView::press_share(const Focus& f) {
+  if (!greyed_words(current().id).empty() || f.block == nullptr || !f.block->share) {
+    return {};  // a greyed page's controls are inert (D188)
+  }
+  std::string blocked;
+  const Json* share = shared(*f.block, blocked);
+  if (share == nullptr) {
+    return {};
+  }
+  if (f.index == 0) {
+    // Copy: the space's text on the clipboard, as it gave it, on this press alone (PV7); GraceUI keeps no copy.
+    clipboard_ = (*share)["text"].get<std::string>();
+    has_clipboard_ = true;
+    copied_until_[f.id] = now_ms_ + 2000;
+    return {};
+  }
+  if (share_busy_.contains(f.id)) {
+    return {};  // its answer is awaited
+  }
+  refusals_.erase(f.id);
+  share_said_.erase(f.id);
+  share_refused_.erase(f.id);
+  share_busy_.insert(f.id);
+  Action action;
+  action.kind = Action::Kind::command;
+  action.command.space = pages_.space;
+  action.command.name = *f.block->share->save;
+  action.command.args = Json::object();  // the space writes the file where it keeps its own (D263)
+  return action;
+}
+
 Action PageView::flip_part(const Focus& f) const {
   if (!greyed_words(current().id).empty() || f.block == nullptr || !f.block->command) {
     return {};  // a greyed page's switches do nothing (D188)
@@ -2084,8 +2166,20 @@ void PageView::rebuild() {
           continue;
         }
         if (block.kind == protocol::BlockKind::component && block.component == protocol::Component::report_preview &&
-            block.command) {
-          push_parts(block);  // its optional parts' switches (D251)
+            (block.command || block.share)) {
+          if (block.command) {
+            push_parts(block);  // its optional parts' switches (D251)
+          }
+          std::string blocked;
+          if (block.share && block.topic && shared(block, blocked) != nullptr) {
+            // Its Copy and Save (D263), once the space has published a text to share; greyed and no stop before.
+            if (block.share->copy.value_or(false)) {
+              focus_.push_back({FocusKind::share, *block.topic + "/copy", 0, &block});
+            }
+            if (block.share->save) {
+              focus_.push_back({FocusKind::share, *block.topic + "/save", 1, &block});
+            }
+          }
           continue;
         }
         if (block.kind == protocol::BlockKind::form) {
@@ -2241,7 +2335,7 @@ std::string PageView::name_of(Scope scope, std::size_t index) const {
   }
   static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
                                           "cell", "row", "section-action", "field", "submit", "secret", "item", "editor",
-                                          "filter", "link", "part", "paging", "drawer"};
+                                          "filter", "link", "part", "paging", "drawer", "share"};
   const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -2626,10 +2720,16 @@ Action PageView::pointer_body(const Pointer& in) {
 
 void PageView::refused(std::string_view key, std::string_view reason) {
   refusals_[std::string(key)] = std::string(reason);
+  if (const auto busy = share_busy_.find(key); busy != share_busy_.end()) {
+    share_busy_.erase(busy);  // a report's Save refused: its words under it until the next press (D263)
+    share_said_.erase(std::string(key));
+    share_refused_[std::string(key)] = std::string(reason.size() <= kShareWordsMax ? reason : std::string_view());
+  }
   for (std::size_t i = 0; i < focus_.size(); ++i) {
     if ((focus_[i].kind == FocusKind::setting || focus_[i].kind == FocusKind::cell ||
          focus_[i].kind == FocusKind::row_action || focus_[i].kind == FocusKind::section_action ||
-         focus_[i].kind == FocusKind::form_submit || focus_[i].kind == FocusKind::row_secret) &&
+         focus_[i].kind == FocusKind::form_submit || focus_[i].kind == FocusKind::row_secret ||
+         focus_[i].kind == FocusKind::share) &&
         focus_[i].id == key) {
       scope_ = Scope::page;
       page_focus_ = i;
@@ -3949,7 +4049,11 @@ bool PageView::take_clipboard(std::string& out) {
   return true;
 }
 
-void PageView::accepted(std::string_view where) {
+void PageView::accepted(std::string_view where, std::string_view words) {
+  if (const auto busy = share_busy_.find(where); busy != share_busy_.end()) {
+    share_busy_.erase(busy);
+    share_said_[std::string(where)] = std::string(words.size() <= kShareWordsMax ? words : std::string_view());
+  }
   const std::string prefix = std::string(where) + "/";
   for (auto at = form_values_.lower_bound(prefix); at != form_values_.end() && at->first.rfind(prefix, 0) == 0;) {
     at = form_values_.erase(at);  // the form the space took: its fields empty again (D195)
@@ -4004,6 +4108,18 @@ void PageView::set_live_mode(LiveMode mode) {
 
 bool PageView::tick(std::int64_t now_ms) {
   now_ms_ = now_ms;
+  bool ended = false;
+  for (auto at = copied_until_.begin(); at != copied_until_.end();) {
+    if (now_ms_ >= at->second) {
+      at = copied_until_.erase(at);  // "Copied" back to "Copy" (D263)
+      ended = true;
+    } else {
+      ++at;
+    }
+  }
+  if (ended) {
+    return true;
+  }
   if (live_mode_ == LiveMode::every_5s && !pending_.empty() && now_ms_ - applied_ms_ >= 5000) {
     release_held();
     return true;
@@ -4734,6 +4850,8 @@ Action PageView::input_body(const Input& in) {
           return follow_link(f);
         case FocusKind::part:
           return flip_part(f);
+        case FocusKind::share:
+          return press_share(f);
         case FocusKind::drawer: {
           // A row's drawer (D256): opened under it, one a table; Enter again closes it.
           const std::size_t slash = f.id.rfind('/');
@@ -6541,6 +6659,52 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                   }
                   y += std::round(6 * s);
                 }
+                if (block.share && block.topic) {
+                  // Its Copy and Save (D263): greyed, with the space's blocked words under them if any, until it has
+                  // published a text to share; then the space's words after a Save, or its refusal's.
+                  std::string blocked;
+                  const Json* share = shared(block, blocked);
+                  const bool inert = share == nullptr || !greyed_words(current().id).empty();
+                  const float bh = std::round(28 * s);
+                  const float rr = std::round(tokens::radius::control * s);
+                  float bx = inner_x;
+                  const auto share_button = [&](const std::string& id, const std::string& label) {
+                    const float w = c.width(label, TypeRole::ui_sm) + std::round(24 * s);
+                    const Rect button{bx, y, w, bh};
+                    c.stroke(button, inert ? Colour::rule : Colour::edge, edge_w, rr);
+                    c.text(label, TypeRole::ui_sm, button.x + std::round(12 * s),
+                           button.y + std::round((bh - line_height(TypeRole::ui_sm, s)) / 2), w,
+                           inert ? Colour::ink_mute : Colour::ink_hi);
+                    if (!inert) {
+                      hit(button, Scope::page, focus_index(FocusKind::share, id));
+                      if (page_focus(FocusKind::share, id)) {
+                        c.focused(button);
+                      }
+                    }
+                    bx += w + std::round(12 * s);
+                  };
+                  std::string under = blocked;
+                  Colour under_ink = Colour::ink_mute;
+                  if (block.share->copy.value_or(false)) {
+                    const std::string id = *block.topic + "/copy";
+                    const auto until = copied_until_.find(id);
+                    share_button(id, until != copied_until_.end() && now_ms_ < until->second ? "Copied" : "Copy");
+                  }
+                  if (block.share->save) {
+                    const std::string id = *block.topic + "/save";
+                    share_button(id, share_busy_.contains(id) ? "Saving…" : "Save");
+                    if (const auto refusal = share_refused_.find(id); refusal != share_refused_.end() && share != nullptr) {
+                      under = refusal->second;
+                      under_ink = Colour::rot;
+                    } else if (const auto said = share_said_.find(id); said != share_said_.end() && share != nullptr) {
+                      under = said->second;
+                    }
+                  }
+                  y += bh + std::round(8 * s);
+                  if (!under.empty()) {
+                    y += draw_wrapped(under, TypeRole::ui_sm, inner_x, y, inner_w, under_ink) + std::round(6 * s);
+                  }
+                }
                 continue;
               }
               if (block.component == protocol::Component::computed_sentence) {
@@ -7317,6 +7481,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         hints = "Enter  Set    Esc  Back";
       } else if (f.kind == FocusKind::section_action) {
         hints = confirming_ == "section:" + f.id ? "Enter  Confirm    Esc  Back" : "Enter  Press    Esc  Back";
+      } else if (f.kind == FocusKind::share) {
+        hints = f.index == 0 ? "Enter  Copy    Esc  Back" : "Enter  Save    Esc  Back";
       } else if (f.kind == FocusKind::row_action) {
         hints = confirming_ == "row:" + f.id ? "Enter  Confirm    Esc  Back" : "Enter  Press    Esc  Back";
       } else if (f.kind == FocusKind::filter) {

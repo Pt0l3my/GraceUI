@@ -191,6 +191,8 @@ class PageView {
   bool tick(std::int64_t now_ms);
   // Whether bodies are held (the host keeps a timer while Every 5 s has some), and how many came while held.
   bool holding() const noexcept { return !pending_.empty(); }
+  // Something drawn for a while that tick() ends (a report's "Copied", D263): the host wakes once a second for it.
+  bool timed() const noexcept { return !copied_until_.empty(); }
   std::size_t held_new() const noexcept { return held_new_; }
   bool quick_open() const noexcept { return quick_open_; }
   // ---- A space's scope, and rows read a page at a time (G45, D254). A scoped page follows the scope in view (the
@@ -262,7 +264,8 @@ class PageView {
   // The edited field's caret as the last layout drew it (the IME's place, §5.6); empty while nothing is edited.
   Rect caret() const noexcept { return caret_rect_; }
   // A command the space accepted, by where its refusal's words would have gone: a form's fields clear (D195).
-  void accepted(std::string_view where);
+  // A command the space took: a form's fields empty (D195); a report's Save, the space's words under it (D263).
+  void accepted(std::string_view where, std::string_view words = {});
   // A form field's text as the view holds it (tests).
   std::string form_value(std::string_view field) const;
 
@@ -337,7 +340,8 @@ class PageView {
                                         link,    // a document's link (G44, D251)
                                         part,    // a report preview's optional part's switch (D251)
                                         paging,  // Show more, or "New rows · Show", of rows read a page at a time (D254)
-                                        drawer };  // a table's row, its drawer opened with Enter (D256)
+                                        drawer,    // a table's row, its drawer opened with Enter (D256)
+                                        share };   // a report preview's Copy or Save (D263)
   struct Focus {
     FocusKind kind;
     std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
@@ -392,6 +396,10 @@ class PageView {
   void push_parts(const protocol::PageBlock& block);
   Action follow_link(const Focus& focus);
   Action flip_part(const Focus& focus) const;
+  // A report preview's shareable text (D263): its body's share while it holds a text of at most 256 KiB and a file
+  // name GraceUI takes, else null, with the space's blocked words if it gave some.
+  const protocol::Json* shared(const protocol::PageBlock& block, std::string& blocked) const;
+  Action press_share(const Focus& focus);
   static bool drawn_in_game(protocol::Component component);
   // A component's body (D185: its topic's body, or the member props.field names), and whether its topic has
   // published anything yet (D186: the block's own empty words only then).
@@ -535,6 +543,12 @@ class PageView {
   std::vector<std::pair<std::size_t, float>> edit_stops_;   // its drawn boundaries: a byte offset and its x
   std::string clipboard_;
   bool has_clipboard_ = false;
+  // A report preview's Copy and Save (D263): "Copied" until its time, a Save awaiting its answer, and the words the
+  // space answered a Save with, by "<topic>/copy" or "<topic>/save".
+  std::map<std::string, std::int64_t, std::less<>> copied_until_;
+  std::set<std::string, std::less<>> share_busy_;
+  std::map<std::string, std::string, std::less<>> share_said_;
+  std::map<std::string, std::string, std::less<>> share_refused_;  // a Save's refusal, kept across a republish
 
   protocol::SpacePages pages_;
   std::vector<protocol::Setting> settings_;
