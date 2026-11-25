@@ -1689,3 +1689,9 @@ data or the ABI.
 - **A `computed_sentence` and a section's description** wrap to their card, as the report preview's fields do.
 - **A stat tile's `unit`** is drawn after its value in the small face, muted, as the browser's `tile__unit` draws it:
   "21 of 24" large, "shown" small.
+
+## 87. The rest of the in-game texts wrap (2026-11-25, D261; GraceUI 0.2.54)
+
+After §86, four texts were still cut at one line in game. Each now wraps: a page's description, a `statement`, a
+`key_value_list`'s value (in its two thirds of the row, the row growing to hold it) and a focused setting's help line.
+A check list's detail stays on its label's line. Nothing changes in your page data.

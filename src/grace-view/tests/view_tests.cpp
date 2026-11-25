@@ -3364,3 +3364,56 @@ TEST_CASE("a computed sentence wraps to its card in game, and a tile's unit is s
   CHECK(unit->rect.y + unit->rect.h <= value->rect.y + value->rect.h + 1.0f);
   CHECK(unit->rect.y > value->rect.y);
 }
+
+TEST_CASE("a statement and a key-value list's value wrap in game (D261; a setting's help in the 1280x800 menu golden)") {
+  // Each line's words, trailing spaces dropped, joined again: the whole text, never one cut line.
+  const auto lines_of = [](const DisplayList& l, const std::string& whole) {
+    std::vector<const Item*> found;
+    for (const Item& item : l.items) {
+      std::string_view w = words_of(l, item);
+      while (!w.empty() && w.back() == ' ') {
+        w.remove_suffix(1);
+      }
+      if (item.shape == Shape::text && w.size() > 6 && whole.find(w) != std::string::npos && w != whole) {
+        found.push_back(&item);
+      }
+    }
+    return found;
+  };
+  const auto joined = [](const DisplayList& l, const std::vector<const Item*>& lines) {
+    std::string out;
+    for (const Item* line : lines) {
+      std::string_view w = words_of(l, *line);
+      while (!w.empty() && w.back() == ' ') {
+        w.remove_suffix(1);
+      }
+      out += (out.empty() ? "" : " ") + std::string(w);
+    }
+    return out;
+  };
+  // A statement of the page data's, on a narrow menu at a large scale.
+  PageView festival = loaded("demo", "demo.festival");
+  DisplayList list;
+  festival.layout(Viewport{1280, 800, 1.5f}, test::fonts(), list);
+  const std::string statement =
+      "A later version strings small lights about the lantern for the festival. This version keeps the lantern alone.";
+  std::vector<const Item*> lines = lines_of(list, statement);
+  REQUIRE(lines.size() >= 2);
+  CHECK(joined(list, lines) == statement);
+  CHECK(lines[1]->rect.y > lines[0]->rect.y);
+  CHECK(item_with(list, statement) == nullptr);
+  // A key-value list's long value, in its two thirds; the next row below it.
+  PageView about = loaded("graceui", "graceui.about");
+  const std::string built =
+      "Dear ImGui and MinHook in game, a small server of its own for the browser view, and a pure core of page data, "
+      "settings and focus that both views share, with its tests run on two toolchains.";
+  about.set_topic("graceui.about", Json{{"items", Json::array({{{"label", "Built on"}, {"value", built}},
+                                                               {{"label", "Licence"}, {"value", "MIT"}}})}});
+  about.layout(Viewport{1280, 800, 1.5f}, test::fonts(), list);
+  lines = lines_of(list, built);
+  REQUIRE(lines.size() >= 2);
+  CHECK(joined(list, lines) == built);
+  const Item* licence = item_with(list, "Licence");
+  REQUIRE(licence != nullptr);
+  CHECK(licence->rect.y > lines.back()->rect.y);
+}

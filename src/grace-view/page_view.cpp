@@ -4883,6 +4883,31 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     const float s = viewport.scale;
     scale_ = s;
     Cursor c{out, fonts, s};
+    // Words wrapped to `w`, drawn from (x, y) a line under another; the height they took (D260, D261). A wrapped
+    // line keeps the space it broke at; an empty text takes none.
+    const auto draw_wrapped = [&c, s](std::string_view words, TypeRole role, float x, float y, float w, Colour ink,
+                                      std::uint8_t alpha = 255) {
+      const TextField wrapped(words, words.size() + 4);
+      const float lh = std::round(line_height(role, s));
+      float h = 0;
+      for (const TextField::Line& line :
+           wrapped.wrap(w, [&c, role](std::string_view run) { return c.width(run, role); })) {
+        if (line.end > line.begin) {
+          c.text(std::string_view(wrapped.text()).substr(line.begin, line.end - line.begin), role, x, y + h, w + 1, ink,
+                 alpha);
+        }
+        h += lh;
+      }
+      return words.empty() ? 0.0f : h;
+    };
+    // ... and how many lines they take, measured alone.
+    const auto wrapped_lines = [&c](std::string_view words, TypeRole role, float w) {
+      if (words.empty()) {
+        return std::size_t{0};
+      }
+      const TextField wrapped(words, words.size() + 4);
+      return wrapped.wrap(w, [&c, role](std::string_view run) { return c.width(run, role); }).size();
+    };
     const float W = viewport.width;
     const float H = viewport.height;
     out.clips.push_back(Rect{0, 0, W, H});
@@ -5460,8 +5485,10 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       action_x = button.x - std::round(12 * s);
     }
     y += std::round(line_height(TypeRole::display_lg, s) + 4 * s);
-    c.text(page.description, TypeRole::ui_sm, x0, y, content_w, Colour::ink_mute);
-    y += std::round(line_height(TypeRole::ui_sm, s) + 12 * s);
+    // Its description, wrapped to the page's width (D261).
+    y += std::max(draw_wrapped(page.description, TypeRole::ui_sm, x0, y, content_w, Colour::ink_mute),
+                  std::round(line_height(TypeRole::ui_sm, s)));
+    y += std::round(12 * s);
     c.line(x0, y, content_w, Colour::rule_strong);
     c.diamond(Rect{x0, y - std::round(4 * s), std::round(9 * s), std::round(9 * s)}, Colour::gold_deep);
     y += std::round(20 * s);
@@ -5692,13 +5719,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       }
       if (section.description) {
         // Wrapped to the card (D260), as D251's preview fields are.
-        const TextField wrapped(*section.description, section.description->size() + 4);
-        const auto measure = [&c](std::string_view run) { return c.width(run, TypeRole::ui_sm); };
-        for (const TextField::Line& line : wrapped.wrap(content_w - 2 * card_pad, measure)) {
-          c.text(std::string_view(wrapped.text()).substr(line.begin, line.end - line.begin), TypeRole::ui_sm,
-                 x0 + card_pad, y, content_w - 2 * card_pad + 1, Colour::ink_mute);
-          y += std::round(line_height(TypeRole::ui_sm, s));
-        }
+        y += draw_wrapped(*section.description, TypeRole::ui_sm, x0 + card_pad, y, content_w - 2 * card_pad,
+                          Colour::ink_mute);
       }
       y += std::round(8 * s);
       const auto draw_blocks = [&](const std::vector<protocol::PageBlock>& blocks, bool advanced) {
@@ -6303,9 +6325,10 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               // A statement: its own words, from the page data (§2.5).
               const Json* props = block.props ? &*block.props : nullptr;
               if (props != nullptr && props->is_object() && props->contains("text") && (*props)["text"].is_string()) {
-                c.text((*props)["text"].get<std::string>(), TypeRole::ui, inner_x, y + std::round(10 * s), inner_w,
-                       Colour::ink_body);
-                y += row_h;
+                // Wrapped to the card (D261): a row's height for its first line, a line's for each after it.
+                const float h = draw_wrapped((*props)["text"].get<std::string>(), TypeRole::ui, inner_x,
+                                             y + std::round(10 * s), inner_w, Colour::ink_body);
+                y += row_h + std::max(0.0f, h - std::round(line_height(TypeRole::ui, s)));
               }
               continue;
             }
@@ -6500,15 +6523,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                   continue;
                 }
                 // Wrapped to the card (D260), as D251's preview fields are: a row's height for its first line.
-                const TextField wrapped(sentence, sentence.size() + 4);
-                const auto measure = [&c](std::string_view run) { return c.width(run, TypeRole::ui_sm); };
                 const float lh = std::round(line_height(TypeRole::ui_sm, s));
-                float h = 0;
-                for (const TextField::Line& line : wrapped.wrap(inner_w, measure)) {
-                  c.text(std::string_view(wrapped.text()).substr(line.begin, line.end - line.begin), TypeRole::ui_sm,
-                         inner_x, y + std::round(12 * s) + h, inner_w + 1, Colour::ink_body);
-                  h += lh;
-                }
+                const float h = draw_wrapped(sentence, TypeRole::ui_sm, inner_x, y + std::round(12 * s), inner_w,
+                                             Colour::ink_body);
                 y += row_h + std::max(0.0f, h - lh);
                 continue;
               }
@@ -6584,8 +6601,10 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                   // A key and its value: the label at the left, the value after the first third.
                   c.text(words(*item, "label"), TypeRole::ui, inner_x, text_y, inner_w / 3 - std::round(12 * s),
                          Colour::ink_hi);
-                  c.text(words(*item, "value"), TypeRole::ui_sm, inner_x + inner_w / 3, small_y, inner_w * 2 / 3,
-                         Colour::ink_body);
+                  // Its value wrapped to its two thirds (D261), the row growing by a line for each after the first.
+                  const float h = draw_wrapped(words(*item, "value"), TypeRole::ui_sm, inner_x + inner_w / 3, small_y,
+                                               inner_w * 2 / 3, Colour::ink_body);
+                  y += std::max(0.0f, h - std::round(line_height(TypeRole::ui_sm, s)));
                 }
                 y += row_h;
               }
@@ -6905,7 +6924,16 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             }
             const bool focused_row = page_focus(shortcut ? FocusKind::shortcut : FocusKind::setting, key);
             const auto refusal = refusals_.find(key);
-            const float extra = (focused_row ? line_height(TypeRole::ui_sm, s) : 0) +
+            // The help line opens on focus and ends with the default (§4.7), unless it formats to nothing: then the
+            // space's help says it, if it must (D198). Wrapped to the row (D261), which grows to hold it.
+            std::string help;
+            if (focused_row) {
+              const std::string fallback = format(key, st.default_);
+              help = fallback.empty() ? st.help : st.help + " Default: " + fallback + ".";
+            }
+            const std::size_t help_lines =
+                focused_row ? std::max<std::size_t>(1, wrapped_lines(help, TypeRole::ui_sm, content_w - 2 * card_pad)) : 0;
+            const float extra = line_height(TypeRole::ui_sm, s) * static_cast<float>(help_lines) +
                                 (refusal != refusals_.end() ? line_height(TypeRole::ui_sm, s) : 0);
             const Rect row{x0 + card_pad, y, content_w - 2 * card_pad, row_h + std::round(extra)};
             if (hovered(row)) {
@@ -6950,12 +6978,9 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                      row.w - control_w - label_w - std::round(48 * s), Colour::ink_faint);
             }
             float line_y = y + row_h - std::round(8 * s);
-            if (focused_row) {  // the help line opens on focus, and ends with the default (§4.7)
-              // Its default, unless it formats to nothing: then the space's help says it, if it must (D198).
-              const std::string fallback = format(key, st.default_);
-              const std::string help = fallback.empty() ? st.help : st.help + " Default: " + fallback + ".";
-              c.text(help, TypeRole::ui_sm, row.x, line_y, row.w, Colour::ink_mute);
-              line_y += line_height(TypeRole::ui_sm, s);
+            if (focused_row) {
+              draw_wrapped(help, TypeRole::ui_sm, row.x, line_y, row.w, Colour::ink_mute);
+              line_y += line_height(TypeRole::ui_sm, s) * static_cast<float>(help_lines);
             }
             if (refusal != refusals_.end()) {
               c.text(refusal->second, TypeRole::ui_sm, row.x, line_y, row.w, Colour::rot);
