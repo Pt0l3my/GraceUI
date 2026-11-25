@@ -433,6 +433,7 @@ class PageView {
     Scope scope = Scope::page;
     std::size_t index = 0;     // into rail_ or focus_ (top: 0)
     std::size_t segments = 0;  // a choice's
+    Rect value;                // a slider's value: a press there types one (D266)
   };
   const Hit* hit_at(float x, float y) const;
   std::string name_of(Scope scope, std::size_t index) const;

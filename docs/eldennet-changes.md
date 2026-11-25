@@ -1801,3 +1801,20 @@ npm run -s check:space -- <your space folder> --golden <your golden file>
   in either theme. With `--golden` it also fails when the dump differs from your file; `--update` writes the file.
 - **Exit codes**: 0 passes, 1 fails (each problem is named), 2 means the folder or the build is missing.
 - It names no path, so its output can go in your logs.
+
+## 92. A slider's typed entry (2026-11-25, D266; GraceUI 0.2.59)
+
+Nothing to change on your side: every integer, number and duration setting on your pages gains it.
+
+- **In game**: Enter on a focused slider, from the keyboard, or a press on its value, opens GraceUI's own field with
+  the value at its step's decimals and no unit, all of it chosen. Enter sets what is typed, Escape drops it, and a
+  press elsewhere keeps it. A pad's A opens nothing; Steam's floating keyboard is not built yet.
+- **In the browser**: Enter on the track or a click on the value opens a text field in its place, and leaving it keeps
+  what was typed.
+- **What a text becomes**: spaces and the unit at the end are ignored ("×" also as x). A full stop or a comma is the
+  decimal point, so "1,024" is 1.024. The value is snapped to the nearest step from your minimum (or 0), within your
+  bounds. A text that is no number, or one outside your bounds, sends nothing: the bounds show under the row in words,
+  as your refusals do: "Type a number from 0.75× to 1.50×." Both views follow `fixtures/typed-cases.json`.
+- **Your goldens**: a grace-dev dump with a slider focused gains "Enter  Type" in its footer, before "R  Reset". In the
+  browser the value is now a button, `[data-value='<key>']`, and its field is `[data-entry='<key>']`; the value's text
+  is as before.

@@ -4323,6 +4323,52 @@ void run_menu(const std::wstring& dll) {
         "→ on Theme: %s, %d pixels redrawn in Grace Clear; R reset it to %s and, on Menu size, ui.scale to %s",
         clear.c_str(), changed_pixels, grace.setting("ui.menu.theme").c_str(), grace.setting("ui.scale").c_str());
 
+  // 3b. A slider's typed entry (D266): Enter on Menu size opens GraceUI's field with its value, all of it chosen, so
+  // "1.4" and Enter set it (keys and characters reach the menu in order, on one ring); "9" and Enter are refused in the
+  // view, with the bounds on the row, and never reach the store; R puts it back for what follows.
+  const std::uint32_t refusals_before = menu.refusals;
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string field_hints = menu.footer;
+  for (const char c : std::string("1.4")) {
+    PostMessageW(window, WM_CHAR, static_cast<WPARAM>(c), 1);
+  }
+  press(window, VK_RETURN, 0x1C);
+  for (int i = 0; i < 150 && grace.setting("ui.scale") != "1.4"; ++i) {
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+  }
+  menu = menu_after(game, grace, grace.menu().lists);
+  const std::string typed_scale = grace.setting("ui.scale");
+  const float typed_layout = menu.scale;
+  press(window, VK_RETURN, 0x1C);
+  PostMessageW(window, WM_CHAR, '9', 1);
+  press(window, VK_RETURN, 0x1C);
+  bool bounds_shown = false;
+  for (int i = 0; i < 150 && !bounds_shown; ++i) {
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+    bounds_shown = grace.menu_shows("Type a number from 0.75× to 1.50×.") != 0;
+  }
+  menu = menu_after(game, grace, grace.menu().lists);
+  const std::string kept_scale = grace.setting("ui.scale");
+  const std::uint32_t refusals_after = menu.refusals;
+  press(window, 'R', 0x13);
+  for (int i = 0; i < 150 && grace.setting("ui.scale") != "1.25"; ++i) {
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(20);
+  }
+  menu = menu_after(game, grace, grace.menu().lists);
+  check(field_hints == "Enter  Set    Esc  Cancel" && typed_scale == "1.4" && std::fabs(typed_layout - 1.4f) < 0.001f &&
+            bounds_shown && kept_scale == "1.4" && refusals_after == refusals_before &&
+            grace.setting("ui.scale") == "1.25" && std::strcmp(menu.focused, "setting:ui.scale") == 0,
+        "menu: a slider's typed entry",
+        "Enter on Menu size: \"%s\"; \"1.4\" set ui.scale %s, laid out at %.2f; \"9\" %s, ui.scale kept %s, the store's "
+        "refusals %u then %u; R reset it to %s",
+        field_hints.c_str(), typed_scale.c_str(), typed_layout, bounds_shown ? "refused with the bounds on its row"
+                                                                              : "NOT REFUSED IN WORDS",
+        kept_scale.c_str(), refusals_before, refusals_after, grace.setting("ui.scale").c_str());
+
   // 4. Its frames cost the present thread little and allocate nothing (invariant 10): the list is lent, never copied.
   // At 1920 by 1080 Mesa's software renderer fills the screen on the machine's own cores, which the present thread
   // shares, so the budget is held at the other scenarios' 640 by 360; the full size is measured and printed.

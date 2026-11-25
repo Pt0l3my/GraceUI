@@ -128,7 +128,7 @@ TEST_CASE("pad mode: the key hints as the pad's buttons after the pad, the keybo
   };
   const std::string keyboard = laid();
   CHECK_FALSE(view.pad_mode());  // a view starts as a keyboard player sees it (grace-dev's dumps)
-  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back");
+  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    Enter  Type    R  Reset    Esc  Back");
   const std::string focus = view.focused();
   // The pad: the same hints with its buttons (the D-pad's cross, X, B), Shift's ten steps left out, focus where it was.
   view.input(Input{Key::down, false, true});
@@ -150,13 +150,13 @@ TEST_CASE("pad mode: the key hints as the pad's buttons after the pad, the keybo
   view.input(Input{Key::up});
   laid();
   CHECK_FALSE(view.pad_mode());
-  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back");
+  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    Enter  Type    R  Reset    Esc  Back");
   view.input(Input{Key::down, false, true});
   view.input(Input{Key::up, false, true});
   view.pointer(Pointer{Pointer::Kind::move, 5, 5});
   laid();
   CHECK_FALSE(view.pad_mode());
-  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back");
+  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    Enter  Type    R  Reset    Esc  Back");
   view.set_pad_mode(true);
   laid();
   CHECK(view.footer() == "D-pad ← →  Change    X  Reset    B  Back");
@@ -267,12 +267,12 @@ TEST_CASE("the keyboard's hints as key caps: each key in a cap on ground.well, i
   DisplayList list;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
   const std::string dump = list.dump();
-  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back");
-  // Four caps, each a fill on ground.well under an edge border, with its keys in the mono face; arrows drawn (D247).
-  for (const char* keys : {"\"Shift+\"", "\"R\"", "\"Esc\""}) {
+  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    Enter  Type    R  Reset    Esc  Back");
+  // Five caps, each a fill on ground.well under an edge border, with its keys in the mono face; arrows drawn (D247).
+  for (const char* keys : {"\"Shift+\"", "\"Enter\"", "\"R\"", "\"Esc\""}) {
     CHECK(dump.find(keys) != std::string::npos);
   }
-  for (const char* label : {"\"Change\"", "\"By ten\"", "\"Reset\"", "\"Back\""}) {
+  for (const char* label : {"\"Change\"", "\"By ten\"", "\"Type\"", "\"Reset\"", "\"Back\""}) {
     CHECK(dump.find(label) != std::string::npos);
   }
   const DumpRect cap = dump_rect(dump, "fill    ground.well", "");
@@ -1520,6 +1520,98 @@ using EditKey = PageView::EditKey;
 using EditInput = PageView::EditInput;
 
 }  // namespace
+
+TEST_CASE("a slider's typed entry in game: Enter from the keyboard, Enter sets, the bounds in words (§3.8, D266)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  REQUIRE(move_to(view, "setting:ui.scale"));
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(view.footer() == "← →  Change    Shift+← →  By ten    Enter  Type    R  Reset    Esc  Back");
+  // A pad's A opens no field (a pad has its arrows; Steam's keyboard is not built yet), and its footer says nothing of it.
+  CHECK(view.input(Input{Key::activate, false, true}).kind == Action::Kind::none);
+  CHECK_FALSE(view.editing());
+  view.set_pad_mode(true);
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(view.footer().find("Type") == std::string::npos);
+  view.set_pad_mode(false);
+  // From the keyboard: the field with its value at its step's decimals, all of it chosen, so typing replaces it.
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);
+  REQUIRE(view.editing());
+  DisplayList open;
+  view.layout(Viewport{}, test::fonts(), open);
+  CHECK(view.footer() == "Enter  Set    Esc  Cancel");
+  CHECK(open.dump().find("\"1.25\"") != std::string::npos);
+  CHECK(open.dump().find("\"1.25×\"") == std::string::npos);  // the field holds the number, not the shown value
+  CHECK(view.caret().w > 0);
+  type(view, "1.4");
+  Action set = view.edit(EditInput{EditKey::enter});
+  REQUIRE(set.kind == Action::Kind::command);
+  CHECK(set.command.name == "settings.set");
+  CHECK(set.command.args == Json::object({{"key", "ui.scale"}, {"value", 1.4}}));
+  CHECK_FALSE(view.editing());
+  CHECK(view.focused() == "setting:ui.scale");
+  // Snapped to its step, from its minimum.
+  press(view, Key::activate);
+  type(view, "1.33x");
+  set = view.edit(EditInput{EditKey::enter});
+  REQUIRE(set.kind == Action::Kind::command);
+  CHECK(set.command.args["value"] == Json(1.35));
+  // Outside its bounds: nothing sent, and the bounds on its row in words.
+  press(view, Key::activate);
+  type(view, "3");
+  CHECK(view.edit(EditInput{EditKey::enter}).kind == Action::Kind::none);
+  CHECK_FALSE(view.editing());
+  DisplayList refused;
+  view.layout(Viewport{}, test::fonts(), refused);
+  CHECK(refused.dump().find("Type a number from 0.75× to 1.50×.") != std::string::npos);
+  CHECK(view.value("ui.scale") == Json(1.35));
+  // A new try clears the words; Escape drops what was typed, and the value as it was sends nothing.
+  press(view, Key::activate);
+  DisplayList again;
+  view.layout(Viewport{}, test::fonts(), again);
+  CHECK(again.dump().find("Type a number from") == std::string::npos);
+  type(view, "1.1");
+  CHECK(view.edit(EditInput{EditKey::escape}).kind == Action::Kind::none);
+  CHECK_FALSE(view.editing());
+  press(view, Key::activate);
+  CHECK(view.edit(EditInput{EditKey::enter}).kind == Action::Kind::none);  // "1.35" as it opened
+  // An integer's is a whole number.
+  PageView port = loaded("graceui", "graceui.browser");
+  REQUIRE(move_to(port, "setting:dashboard.port"));
+  press(port, Key::activate);
+  type(port, "8080.6");
+  set = port.edit(EditInput{EditKey::enter});
+  REQUIRE(set.kind == Action::Kind::command);
+  CHECK(set.command.args["value"].is_number_integer());
+  CHECK(set.command.args["value"] == Json(8081));
+}
+
+TEST_CASE("a press on a slider's value types one; a press on its track still slides (§5.5, D266)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  const PageView::Bounds b = view.bounds_of("setting:ui.scale");
+  REQUIRE(b.control.w > 0);
+  const float y = b.control.y + b.control.h / 2;
+  // Its track: the value under the pointer, as before.
+  const Action slid = view.pointer(Pointer{Pointer::Kind::press, b.control.x + 20, y});
+  view.pointer(Pointer{Pointer::Kind::release, b.control.x + 20, y});
+  CHECK(slid.kind == Action::Kind::command);
+  CHECK_FALSE(view.editing());
+  // Its value, at the column's right: its field, focused there.
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(view.pointer(Pointer{Pointer::Kind::press, b.control.right() - 20, y}).kind == Action::Kind::none);
+  view.pointer(Pointer{Pointer::Kind::release, b.control.right() - 20, y});
+  CHECK(view.editing());
+  CHECK(view.focused() == "setting:ui.scale");
+  // A press elsewhere keeps what was typed, as Enter would.
+  view.layout(Viewport{}, test::fonts(), list);
+  type(view, "1");
+  const Action kept = view.pointer(Pointer{Pointer::Kind::press, 5, 5});
+  REQUIRE(kept.kind == Action::Kind::command);
+  CHECK(kept.command.args == Json::object({{"key", "ui.scale"}, {"value", 1.0}}));
+  CHECK_FALSE(view.editing());
+}
 
 TEST_CASE("a text setting in GraceUI's own field: Enter edits, Enter sends, Escape drops (G38 (a), D57)") {
   PageView view = loaded("demo", "demo.behaviour");

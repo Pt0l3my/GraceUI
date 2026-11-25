@@ -1,0 +1,427 @@
+{
+ "_": "A slider's typed entry (D266): grace-view's typed_value and the browser view's typedValue read each text so.",
+ "settings": [
+  {
+   "key": "scale",
+   "type": "number",
+   "default": 1.25,
+   "label": "Scale",
+   "help": "A case's setting.",
+   "synonyms": [],
+   "home": "cases.page",
+   "effect": "now",
+   "availability": "live",
+   "locked": false,
+   "min": 0.75,
+   "max": 1.5,
+   "step": 0.05,
+   "unit": "×"
+  },
+  {
+   "key": "port",
+   "type": "integer",
+   "default": 8642,
+   "label": "Port",
+   "help": "A case's setting.",
+   "synonyms": [],
+   "home": "cases.page",
+   "effect": "now",
+   "availability": "live",
+   "locked": false,
+   "min": 1024,
+   "max": 65535,
+   "step": 1
+  },
+  {
+   "key": "gap",
+   "type": "duration_s",
+   "default": 2.5,
+   "label": "Gap",
+   "help": "A case's setting.",
+   "synonyms": [],
+   "home": "cases.page",
+   "effect": "now",
+   "availability": "live",
+   "locked": false,
+   "min": 0.5,
+   "max": 10.0,
+   "step": 0.5,
+   "unit": "s"
+  },
+  {
+   "key": "wicks",
+   "type": "integer",
+   "default": 3,
+   "label": "Wicks",
+   "help": "A case's setting.",
+   "synonyms": [],
+   "home": "cases.page",
+   "effect": "now",
+   "availability": "live",
+   "locked": false,
+   "min": 1,
+   "max": 8,
+   "step": 1
+  },
+  {
+   "key": "level",
+   "type": "number",
+   "default": 0.4,
+   "label": "Level",
+   "help": "A case's setting.",
+   "synonyms": [],
+   "home": "cases.page",
+   "effect": "now",
+   "availability": "live",
+   "locked": false,
+   "min": 0.0,
+   "max": 1.0,
+   "step": 0.4
+  },
+  {
+   "key": "offset",
+   "type": "number",
+   "default": 0.0,
+   "label": "Offset",
+   "help": "A case's setting.",
+   "synonyms": [],
+   "home": "cases.page",
+   "effect": "now",
+   "availability": "live",
+   "locked": false,
+   "step": 0.25,
+   "unit": "px"
+  },
+  {
+   "key": "above",
+   "type": "integer",
+   "default": 0,
+   "label": "Above",
+   "help": "A case's setting.",
+   "synonyms": [],
+   "home": "cases.page",
+   "effect": "now",
+   "availability": "live",
+   "locked": false,
+   "min": 0,
+   "step": 2
+  },
+  {
+   "key": "below",
+   "type": "number",
+   "default": 0.0,
+   "label": "Below",
+   "help": "A case's setting.",
+   "synonyms": [],
+   "home": "cases.page",
+   "effect": "now",
+   "availability": "live",
+   "locked": false,
+   "max": 10.0
+  },
+  {
+   "key": "free",
+   "type": "number",
+   "default": 0.0,
+   "label": "Free",
+   "help": "A case's setting.",
+   "synonyms": [],
+   "home": "cases.page",
+   "effect": "now",
+   "availability": "live",
+   "locked": false
+  }
+ ],
+ "cases": [
+  {
+   "setting": "scale",
+   "text": "1.3",
+   "value": 1.3
+  },
+  {
+   "setting": "scale",
+   "text": "1.33",
+   "value": 1.35
+  },
+  {
+   "setting": "scale",
+   "text": " 1,2 ",
+   "value": 1.2
+  },
+  {
+   "setting": "scale",
+   "text": "1.3x",
+   "value": 1.3
+  },
+  {
+   "setting": "scale",
+   "text": "1.3 ×",
+   "value": 1.3
+  },
+  {
+   "setting": "scale",
+   "text": "1.3X",
+   "value": 1.3
+  },
+  {
+   "setting": "scale",
+   "text": ".8",
+   "value": 0.8
+  },
+  {
+   "setting": "scale",
+   "text": "1.",
+   "value": 1.0
+  },
+  {
+   "setting": "scale",
+   "text": "+1.5",
+   "value": 1.5
+  },
+  {
+   "setting": "scale",
+   "text": "1.4999",
+   "value": 1.5
+  },
+  {
+   "setting": "scale",
+   "text": "0.75",
+   "value": 0.75
+  },
+  {
+   "setting": "scale",
+   "text": "2",
+   "words": "Type a number from 0.75× to 1.50×."
+  },
+  {
+   "setting": "scale",
+   "text": "0.7",
+   "words": "Type a number from 0.75× to 1.50×."
+  },
+  {
+   "setting": "scale",
+   "text": "1.5000000001",
+   "words": "Type a number from 0.75× to 1.50×."
+  },
+  {
+   "setting": "scale",
+   "text": "abc",
+   "words": "Type a number from 0.75× to 1.50×."
+  },
+  {
+   "setting": "scale",
+   "text": "1.2.3",
+   "words": "Type a number from 0.75× to 1.50×."
+  },
+  {
+   "setting": "scale",
+   "text": "1e0",
+   "words": "Type a number from 0.75× to 1.50×."
+  },
+  {
+   "setting": "scale",
+   "text": "-",
+   "words": "Type a number from 0.75× to 1.50×."
+  },
+  {
+   "setting": "scale",
+   "text": "1 2",
+   "words": "Type a number from 0.75× to 1.50×."
+  },
+  {
+   "setting": "scale",
+   "text": "0x1",
+   "words": "Type a number from 0.75× to 1.50×."
+  },
+  {
+   "setting": "scale",
+   "text": "",
+   "nothing": true
+  },
+  {
+   "setting": "scale",
+   "text": "   ",
+   "nothing": true
+  },
+  {
+   "setting": "scale",
+   "text": "×",
+   "nothing": true
+  },
+  {
+   "setting": "port",
+   "text": "8080",
+   "value": 8080
+  },
+  {
+   "setting": "port",
+   "text": "8080.6",
+   "value": 8081
+  },
+  {
+   "setting": "port",
+   "text": "65535",
+   "value": 65535
+  },
+  {
+   "setting": "port",
+   "text": "80",
+   "words": "Type a number from 1024 to 65535."
+  },
+  {
+   "setting": "port",
+   "text": "65536",
+   "words": "Type a number from 1024 to 65535."
+  },
+  {
+   "setting": "port",
+   "text": "1,024",
+   "words": "Type a number from 1024 to 65535."
+  },
+  {
+   "setting": "gap",
+   "text": "3 s",
+   "value": 3.0
+  },
+  {
+   "setting": "gap",
+   "text": "3s",
+   "value": 3.0
+  },
+  {
+   "setting": "gap",
+   "text": "2.7",
+   "value": 2.5
+  },
+  {
+   "setting": "gap",
+   "text": "2.75",
+   "value": 3.0
+  },
+  {
+   "setting": "gap",
+   "text": "10",
+   "value": 10.0
+  },
+  {
+   "setting": "gap",
+   "text": "0.4",
+   "words": "Type a number from 0.5 s to 10.0 s."
+  },
+  {
+   "setting": "gap",
+   "text": "2 m",
+   "words": "Type a number from 0.5 s to 10.0 s."
+  },
+  {
+   "setting": "wicks",
+   "text": "4",
+   "value": 4
+  },
+  {
+   "setting": "wicks",
+   "text": "1.5",
+   "value": 2
+  },
+  {
+   "setting": "wicks",
+   "text": "9",
+   "words": "Type a number from 1 to 8."
+  },
+  {
+   "setting": "wicks",
+   "text": "-0",
+   "words": "Type a number from 1 to 8."
+  },
+  {
+   "setting": "level",
+   "text": "1",
+   "value": 0.8
+  },
+  {
+   "setting": "level",
+   "text": "0.5",
+   "value": 0.4
+  },
+  {
+   "setting": "level",
+   "text": "-0",
+   "value": 0.0
+  },
+  {
+   "setting": "level",
+   "text": "0.61",
+   "value": 0.8
+  },
+  {
+   "setting": "offset",
+   "text": "-1.1",
+   "value": -1.0
+  },
+  {
+   "setting": "offset",
+   "text": "-1.125",
+   "value": -1.25
+  },
+  {
+   "setting": "offset",
+   "text": "3 px",
+   "value": 3.0
+  },
+  {
+   "setting": "offset",
+   "text": "3px",
+   "value": 3.0
+  },
+  {
+   "setting": "offset",
+   "text": "x",
+   "words": "Type a number."
+  },
+  {
+   "setting": "above",
+   "text": "5",
+   "value": 6
+  },
+  {
+   "setting": "above",
+   "text": "3",
+   "value": 4
+  },
+  {
+   "setting": "above",
+   "text": "-1",
+   "words": "Type a number of 0 or more."
+  },
+  {
+   "setting": "below",
+   "text": "2.37",
+   "value": 2.37
+  },
+  {
+   "setting": "below",
+   "text": "-3",
+   "value": -3.0
+  },
+  {
+   "setting": "below",
+   "text": "11",
+   "words": "Type a number of 10 or less."
+  },
+  {
+   "setting": "free",
+   "text": "0.1",
+   "value": 0.1
+  },
+  {
+   "setting": "free",
+   "text": "-0",
+   "value": 0.0
+  },
+  {
+   "setting": "free",
+   "text": "123456789012345678901234567890123",
+   "words": "Type a number."
+  }
+ ]
+}

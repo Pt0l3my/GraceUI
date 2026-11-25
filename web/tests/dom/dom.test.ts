@@ -828,6 +828,63 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("a slider's typed entry: Enter or its value opens a field; Enter sets, the bounds in words, Escape drops (D266)",
+       async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "lanterns", "demo.behaviour");
+      const cmds = () => host.received.filter((f) => f.t === "cmd").map((f) => f.args);
+      const row = "[data-row='setting:lantern.brightness']";
+      const track = `${row} [role=slider]`;
+      const entry = `${row} [data-entry='lantern.brightness']`;
+      const valued = (text: string) => page.waitForFunction(([sel, want]) =>
+        document.querySelector(sel!)?.getAttribute("aria-valuetext") === want, [track, text]);
+      // Enter on the track: the field with the value at its step's decimals, all of it chosen, focused.
+      await page.locator(track).focus();
+      await page.keyboard.press("Enter");
+      await page.locator(entry).waitFor();
+      assert.equal(await page.locator(entry).inputValue(), "0.80");
+      assert.equal(await page.evaluate((sel) => {
+        const el = document.querySelector(sel) as HTMLInputElement;
+        return document.activeElement === el && el.selectionStart === 0 && el.selectionEnd === el.value.length;
+      }, entry), true);
+      // What is typed replaces it, snapped to its step; focus goes back to the track.
+      await page.keyboard.type("0.333");
+      await page.keyboard.press("Enter");
+      await valued("0.35");
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("role")), "slider");
+      // A click on the value opens it too. Outside the bounds: nothing sent, the bounds under the row in words.
+      await page.locator(`${row} [data-value='lantern.brightness']`).click();
+      await page.locator(entry).waitFor();
+      await page.keyboard.type("2");
+      await page.keyboard.press("Enter");
+      await page.locator(`${row} .row__refusal`).waitFor();
+      assert.match(await page.locator(`${row} .row__refusal`).innerText(), /Type a number from 0\.00 to 1\.00\./);
+      // A new try clears the words; Escape drops what was typed.
+      await page.keyboard.press("Enter");
+      await page.locator(entry).waitFor();
+      assert.equal(await page.locator(`${row} .row__refusal`).count(), 0);
+      await page.keyboard.type("0.5");
+      await page.keyboard.press("Escape");
+      await page.locator(entry).waitFor({ state: "detached" });
+      // Leaving the field keeps what was typed, as a click elsewhere does in game.
+      await page.keyboard.press("Enter");
+      await page.locator(entry).waitFor();
+      await page.keyboard.type("0.6");
+      await page.locator("[data-row='setting:lantern.enabled'] .row__label").click();
+      await valued("0.60");
+      for (let i = 0; i < 20 && cmds().length < 2; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(cmds(), [
+        { key: "lantern.brightness", value: 0.35 },
+        { key: "lantern.brightness", value: 0.6 },
+      ]);
+    } finally {
+      await close();
+    }
+  });
+
   test("a page of a later increment is absent from the rail (§4.2.2, D173)", async () => {
     const { page, close } = await fresh();
     try {

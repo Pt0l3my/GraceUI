@@ -1343,12 +1343,33 @@ ul, ol {
 
 .slider__value {
   min-width: 64px;
+  padding: 0;
   text-align: right;
   font-family: var(--stack-mono);
   font-size: var(--type-num-size);
   line-height: var(--type-num-line);
   font-variant-numeric: tabular-nums;
   color: var(--ink-body);
+  cursor: text;
+}
+
+.slider__value:hover:not([aria-disabled="true"]) {
+  color: var(--ink-hi);
+}
+
+.slider__value[aria-disabled="true"] {
+  cursor: default;
+}
+
+/* A slider's typed entry (D266): GraceUI's field in the value's place, wider, the track shorter for it. */
+.slider__entry {
+  flex: none;
+  width: 96px;
+  text-align: right;
+  font-family: var(--stack-mono);
+  font-size: var(--type-num-size);
+  font-variant-numeric: tabular-nums;
+  border-color: var(--gold);
 }
 
 /* Segmented choice and tri-state (§3.8): the chosen part ground.3 with gold.hi text. */
