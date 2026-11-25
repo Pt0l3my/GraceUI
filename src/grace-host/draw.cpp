@@ -22,7 +22,12 @@
 // the reader's buffer of its triple buffer (drawlist.h), which no writer touches until this thread's next read of that
 // panel: this thread moves its vertices in place to where the panel lies, and lends its vertex and index arrays to an
 // ImDrawList of its own for the one RenderDrawData call that copies them, taking them back before it returns; the
-// vertices have Dear ImGui's ImDrawVert layout (the static_asserts below) and the indices its ImDrawIdx.
+// vertices have Dear ImGui's ImDrawVert layout (the static_asserts below) and the indices its ImDrawIdx. (5) A mod's
+// on_present callback (D259) is called through the pointer its mod set, held between the present store's begin_frame
+// and end_frame, which a mod's thread that took the hook out waits for before it frees it (present.h); the list it
+// gives names arrays of the mod's that hold until it returns, read here once, for the counts it gives and only after
+// they are checked against the hook's room, into that room, which was reserved for them (no allocation), and the copy
+// is checked and drawn as rule (4) draws a panel's list, lent and taken back within the frame.
 #include "draw.h"
 
 #include <algorithm>
@@ -38,6 +43,7 @@
 #include "draw_alloc.h"
 #include "draw_atlas.h"
 #include "grace/abi/panels.h"
+#include "grace/abi/present.h"
 #include "grace/abi/registry.h"
 #include "grace/draw/pointer.h"
 #include "grace/tokens.h"
@@ -852,8 +858,9 @@ bool panels_showing() noexcept {
   grace::abi::Panels& panels = session::panels();
   for (std::uint32_t i = 0; i < grace::abi::kMaxPanels; ++i) {
     grace::abi::PanelView view;
-    if (panels.view(i, view) && view.visible && panels.lists(i).published() != 0) {
-      return true;
+    if (panels.view(i, view) && view.visible &&
+        (panels.lists(i).published() != 0 || session::present().wants_frame(i, view.id))) {
+      return true;  // a list to draw, or a callback that may give one (D259)
     }
   }
   return false;
@@ -1057,6 +1064,173 @@ bool lend(ImDrawList* list, grace::abi::DrawListData& data, float x0, float y0, 
   return true;
 }
 
+// ---- On_present callbacks (D259): a panel drawn in each frame by its mod's callback, on this thread.
+
+constinit thread_local bool t_in_callback = false;
+constinit bool g_present_open = false;  // this thread's: the present store's frame begun and not yet ended
+// The mods the present thread suspended, for GraceUI's own thread to name (serve_present).
+constinit std::atomic<std::uint32_t> g_present_newly{0};
+// A list that is not drawn is logged once for each connection of a mod (this thread's own).
+constinit GraceUiConsumer g_present_refusal_logged[grace::abi::kMaxConsumers] = {};
+// The callbacks' own clock (this thread's): the time of the last frame they were offered, and this frame's delta.
+constinit std::int64_t g_present_last_qpc = 0;
+constinit float g_present_delta = 1.0f / 60.0f;
+constinit bool g_present_menu_open = false;  // GraceUI's menu, as this frame finds it
+constexpr float kPresentDeltaMax = 0.25f;  // after a pause, at most this: time_us gives the wall clock
+// The thread that draws frames, for a mod's thread that waits for one to end (present.h's `alive`): a handle of its own,
+// made when a thread first draws, and never closed (a game that changes its present thread does so rarely).
+constinit std::atomic<HANDLE> g_present_thread{nullptr};
+constinit DWORD g_present_thread_id = 0;  // this thread's
+
+bool present_thread_alive() noexcept {
+  const HANDLE thread = g_present_thread.load(std::memory_order_acquire);
+  return thread == nullptr || WaitForSingleObject(thread, 0) == WAIT_TIMEOUT;
+}
+
+// Once a frame, before the present store's frame begins: the thread noted, and the callbacks' delta.
+void present_frame_starts() noexcept {
+  const DWORD me = GetCurrentThreadId();
+  if (me != g_present_thread_id) {
+    g_present_thread_id = me;
+    HANDLE thread = nullptr;
+    // SAFETY: rule (1)'s kind, for a kernel handle: made once for each thread that draws, kept for the session.
+    if (DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &thread, SYNCHRONIZE, FALSE,
+                        0) != 0) {
+      g_present_thread.store(thread, std::memory_order_release);
+    }
+    session::present().set_alive(&present_thread_alive);
+  }
+  const std::int64_t now = qpc_now();
+  if (g_present_last_qpc == 0) {
+    g_present_delta = 1.0f / 60.0f;
+  } else {
+    const double seconds = static_cast<double>(now - g_present_last_qpc) /
+                           static_cast<double>(g.qpc_frequency > 0 ? g.qpc_frequency : 1);
+    g_present_delta = seconds < 0.0 ? 0.0f : seconds > kPresentDeltaMax ? kPresentDeltaMax : static_cast<float>(seconds);
+  }
+  g_present_last_qpc = now;
+  g_present_menu_open = menu::open_now();
+}
+
+std::int64_t qpc_us(std::int64_t ticks) noexcept {
+  const std::int64_t frequency = g.qpc_frequency > 0 ? g.qpc_frequency : 1;
+  return ticks / frequency * 1000000 + ticks % frequency * 1000000 / frequency;
+}
+
+std::int64_t qpc_ns(std::int64_t ticks) noexcept {
+  const std::int64_t frequency = g.qpc_frequency > 0 ? g.qpc_frequency : 1;
+  return ticks / frequency * 1000000000 + ticks % frequency * 1000000000 / frequency;
+}
+
+void present_refused(const grace::abi::PresentHook& hook, const char* why) noexcept {
+  state::present_refused.fetch_add(1, std::memory_order_relaxed);
+  GraceUiConsumer& logged = g_present_refusal_logged[(hook.mod - 1) % grace::abi::kMaxConsumers];
+  if (logged != hook.owner) {
+    logged = hook.owner;
+    log_line("a list from %s's on_present callback was not drawn: %s (logged once for this mod)", hook.id, why);
+  }
+}
+
+// Calls `hook` for its panel, timed against its mod's budget. True if it answered DRAW with a list that fits its room
+// and passes D76's check: the list is then in hook.list, moved to where the panel lies, for this frame.
+bool run_hook(grace::abi::PresentHook& hook, const grace::abi::PanelView& view, const grace::abi::Rect& rect) noexcept {
+  grace::abi::PresentHooks& hooks = session::present();
+  GraceUiPresentFrame frame{};
+  frame.size = sizeof frame;
+  frame.panel = view.id;
+  frame.frame = hooks.frames();
+  frame.delta_seconds = g_present_delta;
+  frame.x = rect.x0;
+  frame.y = rect.y0;
+  frame.width = view.desc.width;
+  frame.height = view.desc.height;
+  frame.display_width = g.width;
+  frame.display_height = g.height;
+  frame.flags = g_present_menu_open ? GRACEUI_PRESENT_MENU_OPEN : 0u;
+  frame.spent_us = static_cast<float>(hooks.spent_before(hook.mod)) / 1000.0f;
+  GraceUiDrawList list{};
+  list.size = sizeof list;
+  list.command_size = sizeof(GraceUiDrawCommand);
+  std::uint32_t answer = GRACEUI_PRESENT_KEEP;
+  bool threw = false;
+  const std::int64_t start = qpc_now();
+  frame.time_us = qpc_us(start);
+  t_in_callback = true;
+  try {
+    answer = hook.callback(hook.user, &frame, &list);  // SAFETY: rule (5)
+  } catch (...) {
+    threw = true;  // it must not unwind across the boundary (D110): its mod's callbacks are suspended
+  }
+  t_in_callback = false;
+  hooks.spent(hook, qpc_ns(qpc_now() - start));
+  state::present_calls.fetch_add(1, std::memory_order_relaxed);
+  if (threw) {
+    hooks.faulted(hook);
+    return false;
+  }
+  if (answer != GRACEUI_PRESENT_DRAW) {
+    return false;
+  }
+  if (!grace::abi::present_list_fits(hook, list.vertex_count, list.index_count, list.command_count,
+                                     list.command_size)) {
+    present_refused(hook, "more than its hook's room, or a stride GraceUI does not read");
+    return false;
+  }
+  if ((list.vertex_count != 0 && list.vertices == nullptr) || (list.index_count != 0 && list.indices == nullptr) ||
+      (list.command_count != 0 && list.commands == nullptr)) {
+    present_refused(hook, "a null array for a count that is not 0");
+    return false;
+  }
+  grace::abi::DrawListData& data = hook.list;
+  // SAFETY: rule (5): the counts were checked against the room reserved for them, so each copy stays within it and
+  // allocates nothing; each array holds as many as its count, until the callback's return, which is behind us.
+  data.vertices.assign(list.vertices, list.vertices + list.vertex_count);
+  data.indices.assign(list.indices, list.indices + list.index_count);
+  data.commands.resize(list.command_count);
+  const auto* commands = static_cast<const unsigned char*>(static_cast<const void*>(list.commands));
+  const std::size_t read = list.command_size < sizeof(GraceUiDrawCommand) ? list.command_size
+                                                                          : sizeof(GraceUiDrawCommand);
+  for (std::size_t i = 0; i < data.commands.size(); ++i) {
+    data.commands[i] = GraceUiDrawCommand{};
+    std::memcpy(&data.commands[i], commands + i * list.command_size, read);  // SAFETY: rule (5), as above
+  }
+  data.atlas_generation = list.atlas_generation;
+  grace::abi::DrawContext checks;
+  checks.width = view.desc.width;
+  checks.height = view.desc.height;
+  checks.textures = hook.textures;
+  checks.texture_count = hook.texture_count;
+  checks.atlas = grace::abi::kAtlasTexture;
+  checks.atlas_generation = atlas::generation();
+  const grace::abi::Refusal refusal = grace::abi::check_draw_list(data, checks);
+  if (refusal != grace::abi::Refusal::none) {
+    present_refused(hook, grace::abi::refusal_name(refusal));
+    return false;
+  }
+  for (GraceUiDrawVert& vertex : data.vertices) {
+    vertex.x += rect.x0;
+    vertex.y += rect.y0;
+  }
+  data.placed_x = rect.x0;
+  data.placed_y = rect.y0;
+  state::present_drawn.fetch_add(1, std::memory_order_relaxed);
+  return true;
+}
+
+// The present store's frame ended, once, after the frame's lists were taken back: every hook held is let go, and the
+// mods suspended in it are passed to GraceUI's own thread.
+void end_present_frame() noexcept {
+  if (!g_present_open) {
+    return;
+  }
+  g_present_open = false;
+  const std::uint32_t newly = session::present().end_frame();
+  if (newly != 0) {
+    g_present_newly.fetch_or(newly, std::memory_order_acq_rel);
+    hooks::wake();
+  }
+}
+
 void gather_panels(PanelLayers& layers) noexcept {
   layers.counts[0] = layers.counts[1] = layers.counts[2] = 0;
   if (session::notice_only() || g_panel_lists[0] == nullptr) {
@@ -1065,28 +1239,40 @@ void gather_panels(PanelLayers& layers) noexcept {
   const float display_width = static_cast<float>(g.width);
   const float display_height = static_cast<float>(g.height);
   grace::abi::Panels& panels = session::panels();
+  grace::abi::PresentHooks& present = session::present();
+  present_frame_starts();
+  present.begin_frame();
+  g_present_open = true;
   for (std::uint32_t i = 0; i < grace::abi::kMaxPanels; ++i) {
     grace::abi::PanelView view;
     if (!panels.view(i, view) || !view.visible) {
       continue;
     }
-    grace::abi::DrawListData& data = panels.lists(i).read();
-    if (data.serial == 0 || data.panel_generation != static_cast<std::uint32_t>(view.id >> 8) ||
-        data.commands.empty()) {
-      continue;  // nothing published yet, or a list of the slot's earlier panel
-    }
     const grace::abi::Rect rect = grace::abi::place(view.desc, display_width, display_height);
-    if (data.placed_x != rect.x0 || data.placed_y != rect.y0) {
-      // Moved where the panel lies, once: the list stays this thread's until a newer one comes.
-      const float dx = rect.x0 - data.placed_x;
-      const float dy = rect.y0 - data.placed_y;
-      for (GraceUiDrawVert& vertex : data.vertices) {
-        vertex.x += dx;
-        vertex.y += dy;
+    grace::abi::PresentHook* hook = present.hook(i, view.id);
+    grace::abi::DrawListData* drawn = nullptr;
+    if (hook != nullptr && run_hook(*hook, view, rect)) {
+      drawn = &hook->list;  // this frame's list, the callback's
+    } else {
+      grace::abi::DrawListData& data = panels.lists(i).read();
+      if (data.serial == 0 || data.panel_generation != static_cast<std::uint32_t>(view.id >> 8) ||
+          data.commands.empty()) {
+        continue;  // nothing published yet, or a list of the slot's earlier panel
       }
-      data.placed_x = rect.x0;
-      data.placed_y = rect.y0;
+      if (data.placed_x != rect.x0 || data.placed_y != rect.y0) {
+        // Moved where the panel lies, once: the list stays this thread's until a newer one comes.
+        const float dx = rect.x0 - data.placed_x;
+        const float dy = rect.y0 - data.placed_y;
+        for (GraceUiDrawVert& vertex : data.vertices) {
+          vertex.x += dx;
+          vertex.y += dy;
+        }
+        data.placed_x = rect.x0;
+        data.placed_y = rect.y0;
+      }
+      drawn = &data;
     }
+    grace::abi::DrawListData& data = *drawn;
     ImDrawList* list = g_panel_lists[i];
     if (!lend(list, data, rect.x0, rect.y0,
               ImVec4(std::max(rect.x0, 0.0f), std::max(rect.y0, 0.0f), std::min(rect.x1, display_width),
@@ -1482,12 +1668,22 @@ void render() {
   if (buffer == nullptr) {
     return;
   }
+  // Whatever happens below, an exception included: no list of GraceUI's keeps an array lent to it, and the present
+  // store's frame ends, so that no mod's thread waits for it (D259).
+  struct FrameEnd {
+    FrameEnd() = default;
+    FrameEnd(const FrameEnd&) = delete;
+    FrameEnd& operator=(const FrameEnd&) = delete;
+    ~FrameEnd() {
+      take_back_panels();
+      end_present_frame();
+    }
+  } const frame_end;
   ImDrawData* data = build_frame(notices, now_ms);
   if (data != nullptr && data->TotalVtxCount != 0 && data->DisplaySize.x > 0.0f && data->DisplaySize.y > 0.0f) {
     data->Textures = nullptr;  // D117: the backend's texture path never runs; the atlas is already on the GPU
     record_and_submit(slot, *buffer, data);
   }
-  take_back_panels();
   if (!g.off) {
     input::rendered();  // drawn: the input half's watchdog hears it (2 s without one ends a holder)
   }
@@ -1520,6 +1716,41 @@ void serve_bake() noexcept {
   }
   g_bake.store(baked ? Bake::done : Bake::failed, std::memory_order_release);
 }
+
+void serve_present() noexcept {
+  std::uint32_t newly = g_present_newly.exchange(0, std::memory_order_acq_rel);
+  for (std::uint32_t m = 0; newly != 0 && m < grace::abi::kMaxConsumers; ++m) {
+    if ((newly & (1u << m)) == 0) {
+      continue;
+    }
+    newly &= ~(1u << m);
+    const std::uint32_t mod = m + 1;
+    grace::abi::PresentHooks& present = session::present();
+    const GraceUiConsumer owner = present.suspended_owner(mod);
+    char id[GRACEUI_ID_MAX + 1] = {};
+    grace::abi::ConsumerInfo info;
+    if (owner == 0 || !present.suspended_id(mod, id) || session::consumers().owner_of(owner) != mod ||
+        !session::consumers().info_of(mod, info)) {
+      continue;  // it has gone since: its disconnect kept its id (abi1::forget)
+    }
+    if (session::suspend_present(id)) {
+      state::present_suspended.fetch_add(1, std::memory_order_relaxed);
+    }
+    const bool by_fault = present.suspended_by_fault(mod);
+    log_line("%s's on_present callbacks are suspended for this session: %s", id,
+             by_fault ? "an exception left one" : "over 0.5 ms a frame together for 120 frames running");
+    if (by_fault) {
+      session::own_notice(0, GRACEUI_TONE_WARNING, "%s's drawing in each frame failed, so it is off for this session.",
+                          info.name);
+    } else {
+      session::own_notice(0, GRACEUI_TONE_WARNING,
+                          "%s slowed the game's frames, so what it draws in each frame is off for this session.",
+                          info.name);
+    }
+  }
+}
+
+bool in_present_callback() noexcept { return t_in_callback; }
 
 #if defined(GRACEUI_TEST_EXPORTS)
 void test_turn_off() noexcept { g_test_turn_off.store(true, std::memory_order_release); }

@@ -930,6 +930,7 @@ void move_filter() noexcept {
 #endif
     log_drain();
     draw::serve_bake();
+    draw::serve_present();  // the mods whose on_present callbacks the present thread suspended (D259)
     move_filter();
     spaces::serve();  // the spaces and the browser view's server (D169), before the menu reads GraceUI's settings
     menu::serve();    // the menu's layout and commands (D167)

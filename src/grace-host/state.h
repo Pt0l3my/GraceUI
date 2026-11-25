@@ -75,6 +75,11 @@ inline constinit std::atomic<bool> test_panel{false};
 inline constinit std::atomic<std::uint64_t> lists_submitted{0};  // published
 inline constinit std::atomic<std::uint64_t> lists_refused{0};
 inline constinit std::atomic<std::uint64_t> panel_frames{0};     // frames that drew at least one panel's list
+// The on_present callbacks (D259): calls, lists drawn and refused, and mods suspended.
+inline constinit std::atomic<std::uint64_t> present_calls{0};
+inline constinit std::atomic<std::uint64_t> present_drawn{0};
+inline constinit std::atomic<std::uint64_t> present_refused{0};
+inline constinit std::atomic<std::uint32_t> present_suspended{0};
 inline constinit std::atomic<std::uint32_t> texture_uploads{0};  // copies queued on the GPU (the upload counter)
 inline constinit std::atomic<std::uint32_t> textures_uploaded{0};
 
