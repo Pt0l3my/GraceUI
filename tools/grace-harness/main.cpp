@@ -6915,6 +6915,39 @@ void run_master(const std::wstring& dll) {
   check(on_log && log_watched && published == GRACEUI_OK && stream_drawn, "master: a stream's rows drawn in game (D257)",
         "on Log %s; lantern.log watched %s; its rows published %s; drawn %s", on_log ? "yes" : "NO",
         log_watched ? "yes" : "NO", published == GRACEUI_OK ? "ok" : "REFUSED", stream_drawn ? "yes" : "NO");
+
+  // 6. A report's Copy and Save in game (D263): the mod's text on Windows' clipboard on the press alone; Save the mod's
+  // command with {}, its answer's words under it.
+  publish_state(table, mod, "lantern.report", 2,
+                R"({"parts":[{"id":"summary","label":"Summary","optional":false,"fields":[{"label":"Lamp","value":"North light"}]}],)"
+                R"("share":{"text":"Lamp report\nLamp: North light\n","file":"lamp-report-2026-11-25.txt"}})");
+  const bool shared = until_shows(game, grace, "Copy");
+  set_clipboard(window, L"before");
+  const bool on_copy = down_to(game, grace, window, "share:lantern.report/copy", 40);
+  press(window, VK_RETURN, 0x1C);
+  const bool said_copied = until_shows(game, grace, "Copied");
+  std::wstring copied = clipboard_text(window);
+  std::erase(copied, L'\r');  // the text's line ends as the mod gave them, whatever the clipboard makes of them
+  const bool on_clipboard = copied == L"Lamp report\nLamp: North light\n";
+  const bool on_save = down_to(game, grace, window, "share:lantern.report/save", 4);
+  press(window, VK_RETURN, 0x1C);
+  const SpaceEvent saved = wait_kind(game, table, mod, GRACEUI_EVENT_COMMAND);
+  const Json save = Json::parse(saved.frame, nullptr, false);
+  const bool sent_save = save.is_object() && save.value("name", "") == "report.save" && save["args"] == Json::object();
+  const std::string done =
+      R"({"v":1,"t":"result","space":"demo","id":0,"ok":true,"detail":"Saved as Reports\\lamp-report-2026-11-25.txt."})";
+  const GraceUiStatus answered_save = saved.kind == GRACEUI_EVENT_COMMAND
+                                          ? table->answer(mod, saved.reply, done.data(), done.size())
+                                          : GRACEUI_REFUSED;
+  const bool said_saved = until_shows(game, grace, "Saved as Reports\\lamp-report-2026-11-25.txt.");
+  check(shared && on_copy && said_copied && on_clipboard && on_save && sent_save && answered_save == GRACEUI_OK &&
+            said_saved,
+        "master: a report's Copy and Save in game (D263)",
+        "its buttons %s; Copy focused %s, Copied %s, the clipboard %s; Save focused %s, sent %s, answered %s, its words %s",
+        shared ? "drawn" : "NOT DRAWN", on_copy ? "yes" : "NO", said_copied ? "shown" : "NOT SHOWN",
+        on_clipboard ? "holds the text" : "WITHOUT IT", on_save ? "yes" : "NO",
+        saved.frame.empty() ? "NOTHING" : saved.frame.c_str(), answered_save == GRACEUI_OK ? "ok" : "REFUSED",
+        said_saved ? "shown" : "NOT SHOWN");
   press(window, VK_F5, kScanF5);
   frames(game, 5);
 }

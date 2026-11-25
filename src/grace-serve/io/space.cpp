@@ -124,6 +124,10 @@ SpaceDescription describe_space(const protocol::SpacePages& pages, const protoco
           if (block.row_secret) {
             add(description.secret, block.row_secret->command);
           }
+          if (block.share && block.topic && block.kind == protocol::BlockKind::component &&
+              block.component == protocol::Component::report_preview) {
+            add(description.shared, *block.topic);  // its share never sent to a paired device (D263)
+          }
         }
       }
     }
@@ -279,6 +283,21 @@ bool SpacePort::publish(protocol::Message message) noexcept {
     out.frame = detail::encode_to_page(message);
     if (out.frame == nullptr) {
       return false;
+    }
+    if (auto* state = std::get_if<protocol::State>(&message); state != nullptr && state->body.is_object() &&
+                                                              state->body.contains("share")) {
+      // A report preview's shared text (D263): a paired device gets the body without it, encoded here once.
+      const std::vector<std::string>& shared = state_->description.shared;
+      const std::string_view topic = state->topic;
+      const std::string_view family = topic.substr(0, topic.find('/'));
+      if (std::find(shared.begin(), shared.end(), topic) != shared.end() ||
+          (family.size() < topic.size() && std::find(shared.begin(), shared.end(), family) != shared.end())) {
+        state->body.erase("share");
+        out.device_frame = detail::encode_to_page(message);
+        if (out.device_frame == nullptr) {
+          return false;
+        }
+      }
     }
     if (auto* rows = std::get_if<protocol::Rows>(&message)) {
       out.rows = std::move(rows->rows);

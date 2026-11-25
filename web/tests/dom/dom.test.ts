@@ -9,7 +9,7 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { FakeHost } from "../support/fake-host.ts";
 import { startHost } from "../support/fake-host.ts";
@@ -1275,6 +1275,66 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.deepEqual(await log.locator("select[data-filter='level'] option").allTextContents(), ["All"]);
     } finally {
       await closeBare();
+    }
+  });
+
+  test("a report's Copy and Save: the space's text on the clipboard, a download of it, nothing sent; greyed while " +
+       "blocked; neither on a paired device (D263)", async () => {
+    const demo = space("demo");
+    const share = (demo.topics ?? {})["lantern.report"] as { share: { text: string; file: string } };
+    const { page, requests, close } = await fresh();
+    try {
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      await openFromRail(page, "records", "demo.log");
+      const bar = page.locator("[data-section='report'] [data-share]");
+      await bar.waitFor();
+      const copy = bar.locator("[data-share-part='copy']");
+      const save = bar.locator("[data-share-part='save']");
+      assert.equal(await copy.isDisabled(), false);
+      await copy.click();
+      await page.waitForFunction(() =>
+        document.querySelector("[data-share-part='copy']")?.textContent === "Copied");
+      assert.equal(await page.evaluate(() => navigator.clipboard.readText()), share.share.text);
+      const before = requests.length;
+      const [download] = await Promise.all([page.waitForEvent("download"), save.click()]);
+      assert.equal(download.suggestedFilename(), share.share.file);
+      const path = await download.path();
+      assert.equal(readFileSync(path, "utf8"), share.share.text);
+      assert.equal(host.received.filter((f) => f.t === "cmd" && f.name === "report.save").length, 0);  // no request
+      assert.deepEqual(requests.slice(before).filter((u) => !u.startsWith("blob:")), []);
+      assert.deepEqual(await violations(page), []);
+      await page.waitForFunction(() =>
+        document.querySelector("[data-share-part='copy']")?.textContent === "Copy");  // its two seconds over
+    } finally {
+      await close();
+    }
+    // Blocked: greyed, with the space's words.
+    const blocked = { ...demo, topics: { ...demo.topics,
+      "lantern.report": { ...(demo.topics ?? {})["lantern.report"] as object,
+                          share: { blocked: "Remove the path in Your notes before sharing." } } } };
+    const { page: greyedPage, close: closeGreyed } = await fresh([space("graceui"), blocked]);
+    try {
+      await openFromRail(greyedPage, "records", "demo.log");
+      const bar = greyedPage.locator("[data-section='report'] [data-share]");
+      await bar.waitFor();
+      assert.equal(await bar.locator("[data-share-part='copy']").isDisabled(), true);
+      assert.equal(await bar.locator("[data-share-part='save']").isDisabled(), true);
+      assert.equal(await bar.locator(".preview__share-words").textContent(), "Remove the path in Your notes before sharing.");
+      assert.deepEqual(await lowContrast(greyedPage), []);
+    } finally {
+      await closeGreyed();
+    }
+    // A paired device: the preview's parts, and neither button.
+    host = await startHost(DIST, builtinSpaces());
+    host.setView("device");
+    const device = await openPage(browser, host);
+    try {
+      await openFromRail(device.page, "records", "demo.log");
+      await device.page.locator("[data-section='report'] [data-part='summary']").waitFor();
+      assert.equal(await device.page.locator("[data-share]").count(), 0);
+    } finally {
+      await device.close();
+      await host.close();
     }
   });
 

@@ -14,10 +14,10 @@ name = "Demo space"
 settings_schema = 1
 commands = ["settings.set", "settings.reset", "lantern.trim", "lantern.clear_log", "keepers.dismiss", "keepers.ward",
             "keepers.hire", "keepers.dismiss_all", "oil.order", "note.check", "note.save", "note.reset", "note.restore",
-            "note.draft", "keepers.import", "report.part", "bell.hush", "lightings.page"]
+            "note.draft", "keepers.import", "report.part", "report.save", "bell.hush", "lightings.page"]
 slow_commands = ["oil.order", "note.draft"]  # the harbour store's oil and a drafted note: within 90 s (D216)
 file_commands = ["keepers.import"]  # a roster file, by the upload route from this PC alone (D226)
-sensitive_commands = ["keepers.import"]
+sensitive_commands = ["keepers.import", "report.save"]  # report.save: the lamp report written to a file (D263)
 # The top bar's Quick switches (D252): the lantern on and its colour, as shortcuts to their homes; and the bell hushed
 # for this session, the space's own switch, never a setting, its state on lantern.status.
 quick = [{ key = "lantern.enabled" }, { key = "lantern.colour" },
@@ -357,7 +357,7 @@ blocks = [{ kind = "component", component = "table", props = { empty = "No lamp 
 id = "report"
 title = "Lamp report"
 description = "What a report to the harbour master would hold. Leave out the parts you would rather not send."
-blocks = [{ kind = "component", component = "report_preview", topic = "lantern.report", command = "report.part" }]
+blocks = [{ kind = "component", component = "report_preview", topic = "lantern.report", command = "report.part", share = { copy = true, save = "report.save" } }]
 
 [[page]]
 id = "demo.festival"

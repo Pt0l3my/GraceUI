@@ -3589,3 +3589,100 @@ TEST_CASE("an in-game table's slots sized by need: a narrow column what it needs
   CHECK(cut->glyph_count < glyphs_of(address));
   CHECK(cut->glyph_count > 4);
 }
+
+TEST_CASE("a report preview's Copy and Save in game: greyed until the space shares a text; Copy puts it on the "
+          "clipboard, Save sends its command, the answer under it (D263)") {
+  PageView view = loaded("demo", "demo.log");
+  Json report = kReport;
+  view.set_topic("lantern.report", report);
+  CHECK(shows(laid_out(view), "Copy"));  // drawn, greyed: nothing to share yet
+  CHECK(shows(laid_out(view), "Save"));
+  CHECK_FALSE(move_to(view, "share:lantern.report/copy"));
+  // Blocked: the space's words under the greyed buttons.
+  report["share"] = Json{{"blocked", "Remove the path in What happened before sharing."}};
+  view.set_topic("lantern.report", report);
+  CHECK(shows(laid_out(view), "Remove the path in What happened before sharing."));
+  CHECK_FALSE(move_to(view, "share:lantern.report/copy"));
+  // A file name GraceUI does not take: the share is dropped.
+  report["share"] = Json{{"text", "Lamp report\n"}, {"file", "../lamp.txt"}};
+  view.set_topic("lantern.report", report);
+  CHECK_FALSE(move_to(view, "share:lantern.report/copy"));
+  // Shared: Copy puts the text on the clipboard on this press alone, and says Copied for two seconds.
+  const std::string text = "Lamp report\n\nSummary\nLamp: North light\n";
+  report["share"] = Json{{"text", text}, {"file", "lamp-report-2026-11-25.txt"}};
+  view.set_topic("lantern.report", report);
+  view.tick(10'000);
+  std::string copied;
+  CHECK_FALSE(view.take_clipboard(copied));
+  REQUIRE(view.open("demo.log"));  // focus at the page's top again, after the walks above
+  REQUIRE(move_to(view, "share:lantern.report/copy"));
+  laid_out(view);
+  CHECK(view.footer().find("Enter  Copy") != std::string::npos);
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // nothing sent to the space
+  REQUIRE(view.take_clipboard(copied));
+  CHECK(copied == text);
+  CHECK(view.timed());
+  CHECK(shows(laid_out(view), "Copied"));
+  CHECK_FALSE(view.tick(11'000));
+  CHECK(view.tick(12'000));  // its two seconds over
+  CHECK_FALSE(view.timed());
+  CHECK_FALSE(shows(laid_out(view), "Copied"));
+  // Save: its command, with {}; Saving… until the answer; then the space's words.
+  press(view, Key::down);
+  REQUIRE(view.focused() == "share:lantern.report/save");
+  const Action save = press(view, Key::activate);
+  REQUIRE(save.kind == Action::Kind::command);
+  CHECK(save.command.name == "report.save");
+  CHECK(save.command.args == Json::object());
+  CHECK(shows(laid_out(view), "Saving…"));
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // not again while it is awaited
+  view.accepted("lantern.report/save", "Saved as EldenNet\\Reports\\lamp-report-2026-11-25.txt.");
+  std::string dump = laid_out(view);
+  CHECK(shows(dump, "Saved as EldenNet\\Reports\\lamp-report-2026-11-25.txt."));
+  CHECK_FALSE(shows(dump, "Saving…"));
+  // Refused: its words under it, focus back on it.
+  press(view, Key::up);
+  REQUIRE(press(view, Key::down).kind == Action::Kind::none);
+  REQUIRE(press(view, Key::activate).kind == Action::Kind::command);
+  press(view, Key::up);
+  view.refused("lantern.report/save", "The reports folder is full.");
+  CHECK(view.focused() == "share:lantern.report/save");
+  dump = laid_out(view);
+  CHECK(shows(dump, "The reports folder is full."));
+  CHECK_FALSE(shows(dump, "Saved as EldenNet\\Reports\\lamp-report-2026-11-25.txt."));
+}
+
+TEST_CASE("a report preview's share at registration: Copy, Save or both; Save a sensitive command of the space's; "
+          "on a report preview alone (D263)") {
+  const auto refused = [](const std::function<void(Json&)>& change) {
+    const auto& s = test::space("demo");
+    Json pages = Json::parse(s.pages);
+    change(pages);
+    PageView view;
+    std::string why;
+    const bool ok = view.load(test::decoded<grace::protocol::SpacePages>(pages.dump()),
+                              test::decoded<grace::protocol::SettingsDescription>(s.settings), why);
+    return ok ? std::string() : why;
+  };
+  const auto report = [](Json& pages) -> Json& {
+    for (Json& section : page_of(pages, "demo.log")["sections"]) {
+      for (Json& block : section["blocks"]) {
+        if (block.value("component", "") == "report_preview") {
+          return block;
+        }
+      }
+    }
+    FAIL("no report preview");
+    return pages;
+  };
+  CHECK(refused([](Json&) {}).empty());
+  CHECK(refused([&](Json& p) { report(p)["share"] = Json{{"copy", true}}; }).empty());
+  CHECK(refused([&](Json& p) { report(p)["share"] = Json{{"copy", false}}; }).find("(D263)") != std::string::npos);
+  CHECK(refused([](Json& p) {
+          auto& sensitive = p["sensitive_commands"];
+          sensitive.erase(std::remove(sensitive.begin(), sensitive.end(), Json("report.save")), sensitive.end());
+        }).find("(D263)") != std::string::npos);
+  CHECK(refused([](Json& p) {
+          page_of(p, "demo.overview")["sections"][0]["blocks"][0]["share"] = Json{{"copy", true}};
+        }).find("(D263)") != std::string::npos);
+}

@@ -447,6 +447,29 @@ class Seeded(unittest.TestCase):
         page(sp, "demo.overview")["scoped"] = True
         self.assertFalse(any("lantern.season" in f for f in failures(sp, desc, fx)))
 
+    def test_a_report_previews_share(self):  # D263
+        def report(sp):
+            return next(b for sec in page(sp, "demo.log")["sections"] for b in sec["blocks"]
+                        if b.get("component") == "report_preview")
+        sp, desc, fx = demo()
+        self.assertEqual(failures(sp, desc, fx), [])  # the demo's Copy and Save
+        report(sp)["share"] = {"copy": True}
+        self.assertEqual(failures(sp, desc, fx), [])  # Copy alone
+        report(sp)["share"] = {"copy": False}
+        self.expect("a report preview's share offers Copy, Save or both", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["sensitive_commands"].remove("report.save")
+        self.expect("a report preview's Save sends a command of the space's, sensitive", sp, desc, fx)
+        sp, desc, fx = demo()
+        report(sp)["share"]["save"] = "report.nowhere"
+        self.expect("a report preview's Save sends a command of the space's, sensitive", sp, desc, fx)
+        sp, desc, fx = demo()
+        report(sp)["share"]["save"] = "keepers.import"  # sensitive, but a file command
+        self.expect("a report preview's Save sends a command of the space's, sensitive", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["sections"][0]["blocks"][0]["share"] = {"copy": True}
+        self.expect("share belongs to a report preview", sp, desc, fx)
+
     def test_file_commands_and_upload_blocks(self):  # D226
         def roster_block(sp):
             section = next(s for s in page(sp, "demo.keepers")["sections"] if s["id"] == "roster_file")

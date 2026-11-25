@@ -475,6 +475,20 @@ def lint(space_pages, description, fixtures, known_spaces):
                                                        block["command"] in space_pages.get("file_commands", [])):
                     failures.append(f"{bwhere}: a report preview's switches send a command of the space's, not a file "
                                     "command (D251)")
+                if "share" in block:
+                    # A report preview's Copy and Save (D263): one or both; Save the space's own command, sensitive
+                    # (never from a paired device, D221) and not a file command.
+                    share = block["share"]
+                    save = share.get("save")
+                    if not preview:
+                        failures.append(f"{bwhere}: share belongs to a report preview (D263)")
+                    elif share.get("copy") is not True and save is None:
+                        failures.append(f"{bwhere}: a report preview's share offers Copy, Save or both (D263)")
+                    if save is not None and (save not in commands or save.startswith("settings.") or
+                                             save in space_pages.get("file_commands", []) or
+                                             save not in space_pages.get("sensitive_commands", [])):
+                        failures.append(f"{bwhere}: a report preview's Save sends a command of the space's, sensitive "
+                                        "and not a file command (D221, D263)")
                 if kind == "document":
                     # A document (G44, D251): a family's member on a master page, drawn whole, and nothing else.
                     topic = block.get("topic")

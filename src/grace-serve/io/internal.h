@@ -31,6 +31,8 @@ struct TopicCache {
   bool has_state = false;
   std::uint64_t rev = 0;
   std::shared_ptr<const std::string> frame;
+  // The same state for a paired device, where it differs: a report preview's body without its share (D263).
+  std::shared_ptr<const std::string> device_frame;
   // A stream's rows, oldest first, consecutive from `first_seq`, at most the topic's ring.
   std::deque<protocol::Json> rows;
   std::uint64_t first_seq = 0;
@@ -94,6 +96,7 @@ struct Outgoing {
   std::uint64_t dropped = 0;
   CommandRef reply;
   std::shared_ptr<const std::string> frame;
+  std::shared_ptr<const std::string> device_frame;  // a state's for a paired device, where it differs (D263)
 };
 
 // Between the I/O thread and every other: the spaces registered, what they publish, and the host's requests. One mutex;

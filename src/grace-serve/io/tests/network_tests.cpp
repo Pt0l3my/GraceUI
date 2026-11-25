@@ -489,3 +489,38 @@ TEST_CASE("the PC's own IPv4 addresses are listed, within the room given (G9)") 
   CHECK(io::local_ipv4_addresses(one) <= 1);
   CHECK(io::local_ipv4_addresses(std::span<std::array<std::uint8_t, 4>>()) == 0);
 }
+
+TEST_CASE("a report preview's shared text never reaches a paired device; this PC's view gets it (D263)") {
+  Fixture f(home_options());
+  REQUIRE(network_on(f));
+  const std::string cookie = pair(f);
+  WsClient device;
+  REQUIRE(device.open_head(kHome, f.port, home_upgrade(f.port, cookie)) == 101);
+  REQUIRE(device.hello(ticket_for(f.port, cookie)));
+  const Json watch = {{"v", 1}, {"t", "sub"}, {"space", "demo"}, {"id", 1}, {"topic", "lantern.report"}};
+  REQUIRE(device.send_json(watch));
+  const std::optional<Json> seen = device.next_of("state");
+  REQUIRE(seen.has_value());
+  CHECK((*seen)["body"].contains("parts"));  // the preview's parts, as before
+  CHECK_FALSE((*seen)["body"].contains("share"));
+  const std::unique_ptr<WsClient> pc = f.join();
+  REQUIRE(pc != nullptr);
+  REQUIRE(pc->send_json(watch));
+  const std::optional<Json> here = pc->next_of("state");
+  REQUIRE(here.has_value());
+  CHECK((*here)["body"]["share"] == demo_fixtures()["lantern.report"]["share"]);
+  // A newer revision: the same again, each its own way.
+  grace::protocol::State newer;
+  newer.topic = "lantern.report";
+  newer.rev = 7;
+  newer.body = demo_fixtures()["lantern.report"];
+  newer.body["share"] = Json{{"blocked", "Remove the path in Your notes before sharing."}};
+  REQUIRE(f.demo->port->publish(grace::protocol::Message{newer}));
+  const std::optional<Json> device_next = device.next_of("state");
+  REQUIRE(device_next.has_value());
+  CHECK((*device_next)["rev"] == 7);
+  CHECK_FALSE((*device_next)["body"].contains("share"));
+  const std::optional<Json> pc_next = pc->next_of("state");
+  REQUIRE(pc_next.has_value());
+  CHECK((*pc_next)["body"]["share"]["blocked"] == "Remove the path in Your notes before sharing.");
+}
