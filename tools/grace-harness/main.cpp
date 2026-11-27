@@ -4372,12 +4372,17 @@ void run_menu(const std::wstring& dll) {
                                                                               : "NOT REFUSED IN WORDS",
         kept_scale.c_str(), refusals_before, refusals_after, grace.setting("ui.scale").c_str());
 
-  // 3c. A held key's characters (D270). `/` held: its press opens search (its character, from the game's
-  // TranslateMessage), and its repeats (bit 30, the key already down) type nothing into the field it opened. A letter
-  // pressed in the field and held types its repeats, as in any field. Esc leaves search, ↓ goes back to the page.
-  post_key(window, VK_OEM_2, 0x35, true, false);
-  post_key(window, VK_OEM_2, 0x35, true, true);
-  post_key(window, VK_OEM_2, 0x35, true, true);
+  // 3c. A held key's characters (D270). `/` held: its press opens search (its character), and its repeats (bit 30,
+  // the key already down, on the key and on its character as TranslateMessage would post them) type nothing into the
+  // field it opened. A letter pressed in the field and held types its repeats, as in any field. Esc leaves search, ↓
+  // goes back to the page (only if search opened, so that what follows starts where it expects).
+  const auto key_and_character = [&](UINT vk, UINT scan, wchar_t character, bool repeat) {
+    post_key(window, vk, scan, true, repeat);
+    PostMessageW(window, WM_CHAR, static_cast<WPARAM>(character), key_lparam(scan, repeat, false));
+  };
+  key_and_character(VK_OEM_2, 0x35, L'/', false);
+  key_and_character(VK_OEM_2, 0x35, L'/', true);
+  key_and_character(VK_OEM_2, 0x35, L'/', true);
   post_key(window, VK_OEM_2, 0x35, false, false);
   for (int i = 0; i < 100 && std::string_view(grace.menu().focused) != "search"; ++i) {
     frames(game, 1);
@@ -4387,21 +4392,25 @@ void run_menu(const std::wstring& dll) {
   menu = menu_after(game, grace, 0);
   const std::string slash_focus(menu.focused);
   const bool slashes_typed = grace.menu_shows("//") != 0;
-  post_key(window, 'K', 0x25, true, false);
-  post_key(window, 'K', 0x25, true, true);
-  post_key(window, 'K', 0x25, true, true);
-  post_key(window, 'K', 0x25, false, false);
   bool letters_typed = false;
-  for (int i = 0; i < 100 && !letters_typed; ++i) {
-    frames(game, 1);
-    Sleep(20);
-    letters_typed = grace.menu_shows("kkk") != 0;
-  }
-  press(window, VK_ESCAPE, kScanEscape);
-  press(window, VK_DOWN, 0x50);
-  for (int i = 0; i < 100 && std::string_view(grace.menu().focused) != "setting:ui.scale"; ++i) {
-    frames(game, 1);
-    Sleep(20);
+  if (slash_focus == "search") {
+    key_and_character('K', 0x25, L'k', false);
+    key_and_character('K', 0x25, L'k', true);
+    key_and_character('K', 0x25, L'k', true);
+    post_key(window, 'K', 0x25, false, false);
+    for (int i = 0; i < 100 && !letters_typed; ++i) {
+      frames(game, 1);
+      Sleep(20);
+      letters_typed = grace.menu_shows("kkk") != 0;
+    }
+    const std::uint64_t typed_lists = grace.menu().lists;
+    press(window, VK_ESCAPE, kScanEscape);
+    menu = menu_after(game, grace, typed_lists);  // the field closed on GraceUI's thread, so that ↓ is no field's
+    press(window, VK_DOWN, 0x50);
+    for (int i = 0; i < 100 && std::string_view(grace.menu().focused) != "setting:ui.scale"; ++i) {
+      frames(game, 1);
+      Sleep(20);
+    }
   }
   menu = menu_after(game, grace, 0);
   check(slash_focus == "search" && !slashes_typed && letters_typed && std::strcmp(menu.focused, "setting:ui.scale") == 0,
