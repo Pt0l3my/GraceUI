@@ -379,6 +379,11 @@ void test_fill_menu(GraceUiTestMenu& out) noexcept {
     out.plain_text = view.plain_text;
     out.plain_baked = view.plain_baked;
   }
+  if (out.size >= offsetof(GraceUiTestMenu, alpha_milli) + sizeof out.alpha_milli) {  // D271's
+    out.fade_in_frames = view.fade_in_frames;
+    out.fade_out_frames = view.fade_out_frames;
+    out.alpha_milli = view.alpha_milli;
+  }
 }
 
 void test_fill_server(GraceUiTestServer& out) noexcept {

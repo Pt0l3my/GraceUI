@@ -4228,7 +4228,26 @@ GraceUiTestMenu menu_after(Game& game, const GraceUi& grace, std::uint64_t lists
     menu = grace.menu();
   }
   frames(game, 2);
-  return grace.menu();
+  // An open's fade in (D271, 120 ms): drawn whole before a check reads its pixels.
+  menu = grace.menu();
+  for (int i = 0; i < 50 && menu.open != 0 && menu.alpha_milli < 1000; ++i) {
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(10);
+    menu = grace.menu();
+  }
+  return menu;
+}
+
+// After a close: frames until the menu is drawn no longer, its fade out over (D271), before a check reads pixels.
+void faded_out(Game& game, const GraceUi& grace) {
+  for (int i = 0; i < 80; ++i) {
+    const GraceUiTestMenu menu = grace.menu();
+    if (menu.open == 0 && menu.alpha_milli == 0) {
+      break;
+    }
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(10);
+  }
 }
 
 void press(HWND window, UINT vk, UINT scan) {
@@ -4441,25 +4460,48 @@ void run_menu(const std::wstring& dll) {
 
   // 5. Every way out ends it through the one close routine: Esc to the rail and Esc again (released); F5 (the menu
   // key); a provider's danger (invariant 9), after which F5 opens nothing and says why. It reopens where it was.
+  // The fades (§3.10, D271) are counted as it goes: frames drawn fading out after each close, fading in after each open.
+  const auto fade_for = [&](DWORD ms) {  // frames presented for `ms`, for a fade to run its course
+    const DWORD start = GetTickCount();
+    while (GetTickCount() - start < ms) {
+      game.frame(kInputColour, PresentWith::present);
+      Sleep(10);
+    }
+  };
+  const GraceUiTestMenu before_esc = grace.menu();
+  const GraceUiTestState alloc_before = grace.state();
   press(window, VK_ESCAPE, kScanEscape);
   press(window, VK_ESCAPE, kScanEscape);
-  frames(game, 4);
-  for (int i = 0; i < 50 && grace.menu().open != 0; ++i) {
-    frames(game, 1);
-    Sleep(20);
+  for (int i = 0; i < 100 && grace.menu().open != 0; ++i) {
+    frames(game, 1);  // one at a time, so that what is drawn after input went back is seen
+    Sleep(5);
   }
   const GraceUiTestInput escaped = grace.input();
+  const GraceUiTestMenu esc_released = grace.menu();
+  fade_for(400);
+  const GraceUiTestMenu esc_faded = grace.menu();
+  fade_for(200);
+  const GraceUiTestMenu esc_after = grace.menu();
   press(window, VK_F5, kScanF5);
   menu = menu_after(game, grace, grace.menu().lists);
   const std::string reopened_on = menu.page;
+  fade_for(300);
+  const GraceUiTestMenu reopened = grace.menu();
+  const GraceUiTestState alloc_after = grace.state();
   press(window, VK_F5, kScanF5);
   frames(game, 3);
   const GraceUiTestInput by_key = grace.input();
+  fade_for(400);
+  const GraceUiTestMenu key_faded = grace.menu();
   press(window, VK_F5, kScanF5);
   menu = menu_after(game, grace, grace.menu().lists);
+  fade_for(300);
+  const GraceUiTestMenu before_danger = grace.menu();
   grace.set_world(GRACEUI_TEST_WORLD_DANGER);
   frames(game, 3);
   const GraceUiTestInput by_danger = grace.input();
+  fade_for(400);
+  const GraceUiTestMenu danger_faded = grace.menu();
   const std::uint32_t notices_before = static_cast<std::uint32_t>(grace.notices().size());
   press(window, VK_F5, kScanF5);
   frames(game, 3);
@@ -4484,6 +4526,81 @@ void run_menu(const std::wstring& dll) {
         reason_name(escaped.last_close_reason), reopened_on.c_str(), reason_name(by_key.last_close_reason),
         reason_name(by_danger.last_close_reason), why_not.c_str(), notices_before,
         g_seen.key_down[VK_F5] + g_seen.key_up[VK_F5] + g_seen.key_down[VK_ESCAPE] + g_seen.key_up[VK_ESCAPE]);
+
+  // The fades: Esc's close drawn fading out after input went back, and then not at all; F5's open fading in to whole;
+  // F5's close fading out; danger's close at once. Then Reduce motion on (Enter on its row): Esc's close and F5's open
+  // at once, with no fading frame; off again for what follows.
+  const std::uint32_t esc_out = esc_faded.fade_out_frames - before_esc.fade_out_frames;
+  const std::uint32_t esc_out_after_release = esc_faded.fade_out_frames - esc_released.fade_out_frames;
+  const std::uint32_t open_in = reopened.fade_in_frames - esc_after.fade_in_frames;
+  const std::uint32_t key_out = key_faded.fade_out_frames - reopened.fade_out_frames;
+  const std::uint32_t danger_out = danger_faded.fade_out_frames - before_danger.fade_out_frames;
+  press(window, VK_F5, kScanF5);
+  menu = menu_after(game, grace, grace.menu().lists);
+  if (std::string_view(menu.focused).starts_with("rail:")) {
+    press(window, VK_RIGHT, 0x4D);  // it reopens where it was left, on the rail: → into the page
+    menu = menu_after(game, grace, menu.lists);
+  }
+  for (int i = 0; i < 10 && std::strcmp(menu.focused, "setting:ui.menu.reduce_motion") != 0; ++i) {
+    press(window, VK_DOWN, 0x50);
+    menu = menu_after(game, grace, menu.lists);
+  }
+  const bool on_motion = std::strcmp(menu.focused, "setting:ui.menu.reduce_motion") == 0;
+  press(window, VK_RETURN, 0x1C);
+  for (int i = 0; i < 150 && grace.setting("ui.menu.reduce_motion") != "true"; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  fade_for(200);
+  const GraceUiTestMenu still_before = grace.menu();
+  press(window, VK_ESCAPE, kScanEscape);
+  press(window, VK_ESCAPE, kScanEscape);
+  for (int i = 0; i < 50 && grace.menu().open != 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  fade_for(400);
+  press(window, VK_F5, kScanF5);
+  menu = menu_after(game, grace, grace.menu().lists);
+  fade_for(300);
+  const GraceUiTestMenu still_after = grace.menu();
+  const std::string still_setting = grace.setting("ui.menu.reduce_motion");
+  if (std::string_view(menu.focused).starts_with("rail:")) {
+    press(window, VK_RIGHT, 0x4D);  // from the rail, → back to its row, where the page's focus was kept
+    menu = menu_after(game, grace, menu.lists);
+  }
+  const std::string back_on(menu.focused);
+  press(window, VK_RETURN, 0x1C);  // Reduce motion off again
+  for (int i = 0; i < 150 && grace.setting("ui.menu.reduce_motion") != "false"; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  press(window, VK_ESCAPE, kScanEscape);
+  press(window, VK_ESCAPE, kScanEscape);
+  for (int i = 0; i < 50 && grace.menu().open != 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  fade_for(400);
+  const std::uint64_t fade_allocations = (alloc_after.allocations + alloc_after.frees) -
+                                         (alloc_before.allocations + alloc_before.frees);
+  const std::uint32_t still_out = still_after.fade_out_frames - still_before.fade_out_frames;
+  const std::uint32_t still_in = still_after.fade_in_frames - still_before.fade_in_frames;
+  check(esc_out >= 2 && esc_out_after_release >= 1 && esc_after.fade_out_frames == esc_faded.fade_out_frames &&
+            open_in >= 2 && reopened.alpha_milli == 1000 && key_out >= 2 && danger_out == 0 && on_motion &&
+            still_setting == "true" && back_on == "setting:ui.menu.reduce_motion" && still_out == 0 && still_in == 0 &&
+            still_after.alpha_milli == 1000 &&
+            grace.setting("ui.menu.reduce_motion") == "false" && grace.menu().open == 0 && fade_allocations == 0,
+        "menu: it fades in and out",
+        "Esc's close: %u frame(s) fading out, %u after input went back, %u more later; F5's open: %u fading in, then "
+        "at %u/1000; F5's close: %u fading out; danger's: %u; with Reduce motion (%s, %s): %u fading out and %u in, "
+        "at %u/1000; Reduce motion %s again; allocations and frees on the present thread across Esc's fade out and "
+        "F5's fade in: %llu",
+        esc_out, esc_out_after_release, esc_after.fade_out_frames - esc_faded.fade_out_frames, open_in,
+        reopened.alpha_milli, key_out, danger_out, on_motion ? "its row found" : "ITS ROW NOT FOUND",
+        still_setting.c_str(), still_out, still_in, still_after.alpha_milli,
+        grace.setting("ui.menu.reduce_motion").c_str(), static_cast<unsigned long long>(fade_allocations));
+  DeleteFileW(settings_file_of(dll).c_str());  // nothing kept for the next scenario (D179)
   check(grace.menu().off == 0 && grace.state().render_off == 0, "menu: still on", "no fault in the menu or the render "
         "path after every check");
   grace.print_log();
@@ -9388,6 +9505,7 @@ void run_on_present(const std::wstring& dll) {
     game.frame(kInputColour, PresentWith::present);
     Sleep(10);
   }
+  faded_out(game, grace);  // the menu's fade out (D271) over the panel, before its pixels are read below
   frames(game, 3);
   const std::uint32_t shut_flags = probe.flags.load();
   check(told_spent >= 0.0f && told_spent < static_cast<float>(GRACEUI_PRESENT_BUDGET_US) && closed_flags == 0 &&

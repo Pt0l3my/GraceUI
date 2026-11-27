@@ -621,6 +621,8 @@ bool release(std::uint16_t owner) noexcept {
 
 void world_changed() noexcept { closed(g_capture.settle(&read_conditions, nullptr, now_ms())); }  // invariant 9
 
+bool danger_or_loading() noexcept { return (world_flags() & (GRACEUI_WORLD_DANGER | GRACEUI_WORLD_LOADING)) != 0; }
+
 bool close_holder(grace::input::Closed why, std::uint32_t generation) noexcept {
   const Holder ended = g_capture.close(why, now_ms(), generation);
   closed(ended);

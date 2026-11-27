@@ -27,7 +27,9 @@
 // and end_frame, which a mod's thread that took the hook out waits for before it frees it (present.h); the list it
 // gives names arrays of the mod's that hold until it returns, read here once, for the counts it gives and only after
 // they are checked against the hook's room, into that room, which was reserved for them (no allocation), and the copy
-// is checked and drawn as rule (4) draws a panel's list, lent and taken back within the frame.
+// is checked and drawn as rule (4) draws a panel's list, lent and taken back within the frame. (6) While the menu fades
+// (D271), its list's vertices are copied with their alpha scaled into this thread's own fade room, which is lent in
+// their place for the same RenderDrawData call; the menu's list itself is never written.
 #include "draw.h"
 
 #include <algorithm>
@@ -211,6 +213,25 @@ constinit Renderer g{};
 constinit ImDrawList* g_panel_lists[grace::abi::kMaxPanels] = {};
 constinit ImDrawList* g_menu_list = nullptr;  // the menu's (D167), lent its list as a panel's is
 constinit ImDrawData* g_frame = nullptr;
+// The menu's fade room (D271, rule 6): its vertices with their alpha scaled while it fades in or out, this thread's own,
+// in the image rather than the heap. A list larger than it is not faded: shown whole as it opens, gone at once as it
+// closes. Room for a mod's largest submission (GRACEUI_DRAW_VERTEX_BYTES_MAX's 13,107) and more.
+constexpr std::size_t kFadeVertices = 16384;
+constinit ImDrawVert g_fade_vertices[kFadeVertices] = {};
+
+// The menu's vertices into the fade room, each one's alpha times `alpha`.
+void fade_into(const grace::abi::DrawListData& data, float alpha) noexcept {
+  const std::size_t count = data.vertices.size();  // within the room: build_frame checks it first
+  // SAFETY: GraceUiDrawVert has ImDrawVert's layout (the static_asserts above); the list is read, never written.
+  const auto* from = reinterpret_cast<const ImDrawVert*>(data.vertices.data());
+  for (std::size_t i = 0; i < count; ++i) {
+    ImDrawVert vertex = from[i];
+    const auto a = static_cast<float>((vertex.col & IM_COL32_A_MASK) >> IM_COL32_A_SHIFT);
+    const auto scaled = static_cast<ImU32>(a * alpha + 0.5f);
+    vertex.col = (vertex.col & ~IM_COL32_A_MASK) | (std::min<ImU32>(scaled, 255u) << IM_COL32_A_SHIFT);
+    g_fade_vertices[i] = vertex;
+  }
+}
 
 // Set by the resize detours, from any thread, before ResizeBuffers replaces the bound swap chain's buffers; the render
 // path takes it before it draws (mark_buffers_stale).
@@ -878,7 +899,9 @@ bool panels_showing() noexcept {
 }
 
 bool wants_to_draw(const grace::abi::NoticeList& notices, std::int64_t now_ms) noexcept {
-  return test_panel_on() || input::wants_frames() || notice_showing(notices, now_ms) || panels_showing();
+  // menu::drawing(): the menu's list was drawn last frame, so this one sees its close, and fades it out (D271).
+  return test_panel_on() || input::wants_frames() || notice_showing(notices, now_ms) || panels_showing() ||
+         menu::drawing();
 }
 
 // ---- Notices (D134, §3.8).
@@ -1401,11 +1424,20 @@ ImDrawData* build_frame(const grace::abi::NoticeList& notices, std::int64_t now_
       add_list(list);
     }
   }
-  // GraceUI's menu, in GraceUI's own layer (D167): its newest list for the holder now, when the menu holds input.
-  if (grace::abi::DrawListData* menu_list = menu::frame(g.width, g.height);
-      menu_list != nullptr && g_menu_list != nullptr &&
-      lend(g_menu_list, *menu_list, 0.0f, 0.0f, ImVec4(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y))) {
-    add_list(g_menu_list);
+  // GraceUI's menu, in GraceUI's own layer (D167): its newest list for the holder now, when the menu holds input, or
+  // its last while it fades out after the player closed it, at its fade's alpha (D271).
+  if (const menu::Frame menu_frame = menu::frame(g.width, g.height);
+      menu_frame.list != nullptr && g_menu_list != nullptr) {
+    const bool fading = menu_frame.alpha < 1.0f;
+    const bool room = menu_frame.list->vertices.size() <= kFadeVertices;
+    if ((!fading || room || !menu_frame.closing) &&
+        lend(g_menu_list, *menu_frame.list, 0.0f, 0.0f, ImVec4(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y))) {
+      if (fading && room) {
+        fade_into(*menu_frame.list, menu_frame.alpha);
+        g_menu_list->VtxBuffer.Data = g_fade_vertices;  // SAFETY: rule (6): this thread's own, for this frame's call
+      }
+      add_list(g_menu_list);
+    }
   }
   for (int i = 0; i < layers.counts[2]; ++i) {
     add_list(layers.lists[2][i]);

@@ -302,7 +302,11 @@ scenario's new characters check on both builds, which posted its keys without th
 TranslateMessage makes none) and so upset the close check after it, its frame cost passing on both; fixed, the menu
 scenario alone passed both on both builds, its frame cost failing in six runs of eight on MinGW and one of three on
 clang-cl with the new check in place, and in one of two on MinGW with it compiled out, so the flake is the
-machine's, not the check's) at a load average
+machine's, not the check's; at 0.2.64 (D271's fades, and a 314th check: the menu fades in and out) the three Linux trees
+passed all 35 suites twice; the first full run failed on both builds the on_present scenario's refused-list pixel, read
+through the menu fading out after its F5, and on clang-cl the menu's frame cost; after its review's fixes (that
+scenario waits for the fade) the second passed all 314 whole on clang-cl and all but the menu's frame cost on MinGW,
+whose menu scenario then passed whole alone in one run of two) at a load average
 of 1.3 to 10.5 on four cores, a frame-cost check taking a second window in 6 of the 80 checks run, a third in none.
 Wine 9.0's wineserver (Ubuntu's 9.0~repack-4build3) aborts as it starts, with "free(): invalid pointer", whenever
 `TMPDIR` is set, even to `/tmp`: it frees the variable's own string (a backtrace, 2026-11-20). Every Wine command
