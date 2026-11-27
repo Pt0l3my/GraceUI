@@ -203,8 +203,8 @@ class PageView {
   bool tick(std::int64_t now_ms);
   // Whether bodies are held (the host keeps a timer while Every 5 s has some), and how many came while held.
   bool holding() const noexcept { return !pending_.empty(); }
-  // Something drawn for a while that tick() ends (a report's "Copied", D263): the host wakes once a second for it.
-  // And a confirmation that waits before its second press counts (D274), drawn live once it does.
+  // Something drawn for a while that tick() ends (a report's "Copied", D263), or a confirmation that waits before its
+  // second press counts (D274), drawn live once it does: the host wakes at next_due() for it.
   bool timed() const noexcept { return !copied_until_.empty() || (!confirming_.empty() && confirm_waiting_); }
   // When the first of them ends, on tick()'s clock: so that the host wakes then (D274); 0 with none.
   std::int64_t next_due() const noexcept;

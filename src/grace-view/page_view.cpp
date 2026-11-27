@@ -4274,14 +4274,12 @@ bool PageView::tick(std::int64_t now_ms) {
       ++at;
     }
   }
-  if (ended) {
-    return true;
-  }
+  // Every 5 s releases its held bodies on time even in a wake that also ended something above.
   if (live_mode_ == LiveMode::every_5s && !pending_.empty() && now_ms_ - applied_ms_ >= 5000) {
     release_held();
     return true;
   }
-  return false;
+  return ended;
 }
 
 bool PageView::hold(std::string_view topic) {
