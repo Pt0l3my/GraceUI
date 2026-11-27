@@ -64,6 +64,8 @@ struct DrawListData {
   // change of page or space, so that the present thread fades the body in. 0 for a panel's list.
   std::uint32_t body_first = 0;
   std::uint32_t body_end = 0;
+  std::uint32_t ring_first = 0;  // and the focus ring's, while it is on the page: it fades with the body
+  std::uint32_t ring_end = 0;
   std::uint64_t page_serial = 0;
   // The reader's own: where its vertices now are, in the display's pixels (it moves them where the panel is placed).
   float placed_x = 0.0f;

@@ -365,10 +365,11 @@ typedef struct GraceUiTestMenu {
   /* Appended for the menu's fades (D271): */
   uint32_t fade_in_frames;  /* frames the menu gave the present thread to draw fading in, since the first warm-up */
   uint32_t fade_out_frames; /* and fading out after a close by the player, holding no input (0 alpha_milli after) */
-  uint32_t alpha_milli;     /* the alpha of the last frame that drew it, in thousandths (1000: whole); with a page's
-                               body fading in (D272), the body's times the menu's */
+  uint32_t alpha_milli;     /* the alpha of the last frame that drew it, in thousandths (1000: whole; at least 1
+                               while drawn, 0 once nothing is); with a page's body fading in (D272), the body's times
+                               the menu's */
   /* Appended for the page body's fade (D272): */
-  uint32_t body_fade_frames; /* frames the menu gave the present thread to draw with a new page's body fading in */
+  uint32_t body_fade_frames; /* frames the present thread drew with a new page's body fading in */
 } GraceUiTestMenu;
 
 /* Fills *out as far as out->size reaches (a caller built against an older header gets the fields it knows); answers 1,

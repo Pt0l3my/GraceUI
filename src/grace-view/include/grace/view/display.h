@@ -67,6 +67,10 @@ struct DisplayList {
   // the top bar and the key hints staying still. Empty (both 0) for a list with no page.
   std::uint32_t body_first = 0;
   std::uint32_t body_end = 0;
+  // The focus ring while it is in the page, items[ring_first, ring_end): drawn after the key hints, it fades with the
+  // body. Empty when the ring is on the rail or the top bar, or not drawn.
+  std::uint32_t ring_first = 0;
+  std::uint32_t ring_end = 0;
 
   void clear() noexcept {
     items.clear();
@@ -75,6 +79,8 @@ struct DisplayList {
     text.clear();
     body_first = 0;
     body_end = 0;
+    ring_first = 0;
+    ring_end = 0;
   }
   // One line per item, with its colour's role and the text it draws: the structure dumps of §9.3's parity tests.
   std::string dump() const;

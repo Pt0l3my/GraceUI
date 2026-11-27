@@ -209,15 +209,25 @@ Stats tessellate(const view::DisplayList& list, const tokens::Palette& palette, 
   Stats stats;
   out.body_first = 0;
   out.body_end = 0;
+  out.ring_first = 0;
+  out.ring_end = 0;
   const bool body = list.body_end > list.body_first;
+  const bool ring = list.ring_end > list.ring_first;
   std::uint32_t index = 0;
   for (const Item& item : list.items) {
-    // The page body's first and end vertices, as its items begin and end (D272).
+    // The page body's and the focus ring's first and end vertices, as their items begin and end (D272).
+    const auto at = static_cast<std::uint32_t>(out.vertices.size());
     if (body && index == list.body_first) {
-      out.body_first = static_cast<std::uint32_t>(out.vertices.size());
+      out.body_first = at;
     }
     if (body && index == list.body_end) {
-      out.body_end = static_cast<std::uint32_t>(out.vertices.size());
+      out.body_end = at;
+    }
+    if (ring && index == list.ring_first) {
+      out.ring_first = at;
+    }
+    if (ring && index == list.ring_end) {
+      out.ring_end = at;
     }
     ++index;
     const Rect& clip = item.clip < list.clips.size() ? list.clips[item.clip] : kNoClip;
@@ -320,6 +330,9 @@ Stats tessellate(const view::DisplayList& list, const tokens::Palette& palette, 
   }
   if (body && list.body_end >= list.items.size()) {
     out.body_end = static_cast<std::uint32_t>(out.vertices.size());  // the body ran to the list's end
+  }
+  if (ring && list.ring_end >= list.items.size()) {
+    out.ring_end = static_cast<std::uint32_t>(out.vertices.size());
   }
   stats.vertices = static_cast<std::uint32_t>(out.vertices.size());
   stats.indices = static_cast<std::uint32_t>(out.indices.size());

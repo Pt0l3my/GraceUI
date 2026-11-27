@@ -224,12 +224,15 @@ void fade_into(const grace::abi::DrawListData& data, float alpha, float body) no
   const std::size_t count = data.vertices.size();  // within the room: build_frame checks it first
   const std::size_t body_first = std::min<std::size_t>(data.body_first, count);
   const std::size_t body_end = std::min<std::size_t>(std::max(data.body_end, data.body_first), count);
+  const std::size_t ring_first = std::min<std::size_t>(data.ring_first, count);  // the ring on the page, with it
+  const std::size_t ring_end = std::min<std::size_t>(std::max(data.ring_end, data.ring_first), count);
   // SAFETY: GraceUiDrawVert has ImDrawVert's layout (the static_asserts above); the list is read, never written.
   const auto* from = reinterpret_cast<const ImDrawVert*>(data.vertices.data());
   for (std::size_t i = 0; i < count; ++i) {
     ImDrawVert vertex = from[i];
     const auto a = static_cast<float>((vertex.col & IM_COL32_A_MASK) >> IM_COL32_A_SHIFT);
-    const float times = i >= body_first && i < body_end ? alpha * body : alpha;
+    const bool in_body = (i >= body_first && i < body_end) || (i >= ring_first && i < ring_end);
+    const float times = in_body ? alpha * body : alpha;
     const auto scaled = static_cast<ImU32>(a * times + 0.5f);
     vertex.col = (vertex.col & ~IM_COL32_A_MASK) | (std::min<ImU32>(scaled, 255u) << IM_COL32_A_SHIFT);
     g_fade_vertices[i] = vertex;
@@ -1437,6 +1440,9 @@ ImDrawData* build_frame(const grace::abi::NoticeList& notices, std::int64_t now_
         lend(g_menu_list, *menu_frame.list, 0.0f, 0.0f, ImVec4(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y))) {
       if (fading && room) {
         fade_into(*menu_frame.list, menu_frame.alpha, menu_frame.body_alpha);
+        if (menu_frame.body_alpha < 1.0f && menu_frame.list->body_end > menu_frame.list->body_first) {
+          menu::body_faded();  // for the test build: a frame drawn with a page's body fading in (D272)
+        }
         g_menu_list->VtxBuffer.Data = g_fade_vertices;  // SAFETY: rule (6): this thread's own, for this frame's call
       }
       add_list(g_menu_list);

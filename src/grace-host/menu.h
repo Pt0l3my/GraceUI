@@ -57,6 +57,8 @@ Frame frame(std::uint32_t width, std::uint32_t height) noexcept;
 // The present thread: whether the menu's list was drawn in its last frame, open or fading out (D271), so that the next
 // frame is built and sees the menu close, and draws its fade out.
 bool drawing() noexcept;
+// The present thread, for the test build: a frame was drawn with a page's body fading in (D272).
+void body_faded() noexcept;
 
 // GraceUI's own thread, when woken.
 void serve() noexcept;

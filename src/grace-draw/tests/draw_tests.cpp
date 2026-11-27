@@ -102,6 +102,15 @@ TEST_CASE("the page's body: its items' vertices, between the rail and top bar's 
   CHECK(draw::tessellate(none, tokens::kGrace.colour, kAtlas, out).vertices > 0);
   CHECK(out.body_first == 0);  // a list with no page, as a panel's: no body
   CHECK(out.body_end == 0);
+  // The focus ring on the page, drawn after the key hints, is its own run, which fades with the body.
+  REQUIRE(list.ring_end > list.ring_first);
+  CHECK(list.ring_first >= list.body_end);
+  CHECK(list.items[list.ring_first].shape == Shape::stroke);
+  CHECK(list.items[list.ring_first].colour == tokens::Colour::gold_hi);
+  abi::DrawListData again;
+  draw::tessellate(list, tokens::kGrace.colour, kAtlas, again);
+  CHECK(again.ring_first >= again.body_end);
+  CHECK(again.ring_end > again.ring_first);
 }
 
 TEST_CASE("Grace Clear changes colours and nothing else") {

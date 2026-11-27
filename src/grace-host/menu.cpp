@@ -1569,6 +1569,26 @@ float alpha_of(const Fade& fade, std::int64_t now) noexcept {
   return fade.from + (fade.to - fade.from) * std::clamp(t, 0.0f, 1.0f);
 }
 
+// The page body's alpha now (D272): below 1 for 120 ms after a change of page, else 1.
+float body_alpha(std::int64_t now) noexcept {
+  if (!g_body.running) {
+    return 1.0f;
+  }
+  const std::int64_t since = now - g_body.start_us;
+  if (since >= kBodyFadeUs) {
+    g_body.running = false;
+    return 1.0f;
+  }
+  return static_cast<float>(std::max<std::int64_t>(since, 0)) / static_cast<float>(kBodyFadeUs);
+}
+
+// The last drawn frame's alpha for the test build, in thousandths: at least 1 while anything is drawn, 0 only once
+// nothing is.
+void store_alpha(float alpha) noexcept {
+  g_alpha_milli.store(std::max<std::uint32_t>(static_cast<std::uint32_t>(alpha * 1000.0f), 1u),
+                      std::memory_order_relaxed);
+}
+
 // The list of the holder g_fade is for, at the fade's alpha now; nothing, and the fade over, once it has faded out or
 // its list is gone. `out`: drawn fading out, counted as such.
 Frame faded(grace::abi::DrawListBuffers* lists, std::int64_t now, bool out) noexcept {
@@ -1579,8 +1599,10 @@ Frame faded(grace::abi::DrawListBuffers* lists, std::int64_t now, bool out) noex
       if (out) {
         g_fade_out_frames.fetch_add(1, std::memory_order_relaxed);
       }
-      g_alpha_milli.store(static_cast<std::uint32_t>(alpha * 1000.0f), std::memory_order_relaxed);
-      return {&data, alpha, true};
+      // A page's body still fading in goes on from where it is (D272), under the close's fade.
+      const float body = g_body.generation == g_fade.generation ? body_alpha(now) : 1.0f;
+      store_alpha(alpha * body);
+      return {&data, alpha, true, body};
     }
   }
   g_fade.drawn = false;
@@ -1659,25 +1681,18 @@ Frame frame(std::uint32_t width, std::uint32_t height) noexcept {
     g_body.start_us = now;
     g_body.running = !g_reduce_motion.load(std::memory_order_relaxed);
   }
-  float body = 1.0f;
-  if (g_body.running) {
-    const std::int64_t since = now - g_body.start_us;
-    if (since >= kBodyFadeUs) {
-      g_body.running = false;
-    } else {
-      body = static_cast<float>(std::max<std::int64_t>(since, 0)) / static_cast<float>(kBodyFadeUs);
-      g_body_fade_frames.fetch_add(1, std::memory_order_relaxed);
-    }
-  }
+  const float body = body_alpha(now);
   g_frames.fetch_add(1, std::memory_order_relaxed);
   if (alpha < 1.0f) {
     g_fade_in_frames.fetch_add(1, std::memory_order_relaxed);
   }
-  g_alpha_milli.store(static_cast<std::uint32_t>(alpha * body * 1000.0f), std::memory_order_relaxed);
+  store_alpha(alpha * body);
   return {&data, alpha, false, body};
 }
 
 bool drawing() noexcept { return g_fade.drawn; }
+
+void body_faded() noexcept { g_body_fade_frames.fetch_add(1, std::memory_order_relaxed); }
 
 bool wants_timer() noexcept { return g_timer.load(std::memory_order_acquire); }
 
