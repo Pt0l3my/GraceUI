@@ -1521,7 +1521,7 @@ ul, ol {
   color: var(--on-gold);
 }
 
-.button--primary:hover {
+.button--primary:hover:not(:disabled) {
   background: var(--gold-hi);
 }
 
@@ -1531,7 +1531,7 @@ ul, ol {
   color: var(--ink-hi);
 }
 
-.button--secondary:hover {
+.button--secondary:hover:not(:disabled) {
   background: var(--ground-4);
 }
 
@@ -1539,7 +1539,7 @@ ul, ol {
   color: var(--gold);
 }
 
-.button--quiet:hover {
+.button--quiet:hover:not(:disabled) {
   color: var(--gold-hi);
 }
 
@@ -1548,9 +1548,15 @@ ul, ol {
   color: var(--rot);
 }
 
-.button--danger:hover {
+.button--danger:hover:not(:disabled) {
   background: var(--rot-fill);
   color: var(--ink-hi);
+}
+
+/* A confirmation's action while it waits (D274): greyed as the game draws it, at half its alpha, its words there. */
+.modal__actions .button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .badge--later {

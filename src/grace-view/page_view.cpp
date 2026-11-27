@@ -1476,8 +1476,11 @@ Action PageView::row_action(const Focus& f) {
   }
   const std::string asking = "row:" + f.id;
   if ((a.confirm || a.tone == protocol::ActionTone::destructive) && confirming_ != asking) {
-    confirming_ = asking;  // its second press, as a header action's (§7.3, D173, D192)
+    ask(asking, a.confirm_after_ms);  // its second press, as a header action's (§7.3, D173, D192)
     return {};
+  }
+  if (confirming_ == asking && !armed()) {
+    return {};  // its confirmation waits (D274): a press before it counts does nothing, and lets nothing go
   }
   confirming_.clear();
   refusals_.erase(f.id);
@@ -1530,8 +1533,11 @@ Action PageView::section_action(const Focus& f) {
   const protocol::PageAction& a = (*list[f.index].actions)[f.sub];
   const std::string asking = "section:" + f.id;
   if ((a.confirm || a.tone == protocol::ActionTone::destructive) && confirming_ != asking) {
-    confirming_ = asking;  // its second press, as a header action's (§7.3, D173, D202)
+    ask(asking, a.confirm_after_ms);  // its second press, as a header action's (§7.3, D173, D202)
     return {};
+  }
+  if (confirming_ == asking && !armed()) {
+    return {};  // its confirmation waits (D274)
   }
   confirming_.clear();
   refusals_.erase(f.id);
@@ -3460,7 +3466,7 @@ Action PageView::editor_command(EditorAt& at, EditorPart part, const std::string
       break;
     case EditorPart::reset:
       if (confirming_ != sender) {
-        confirming_ = sender;  // every field back to the space's own: asks first (§7.3)
+        ask(sender, std::nullopt);  // every field back to the space's own: asks first (§7.3)
         return {};
       }
       confirming_.clear();
@@ -3480,7 +3486,7 @@ Action PageView::editor_command(EditorAt& at, EditorPart part, const std::string
       break;
     case EditorPart::reload:
       if (st.dirty() && confirming_ != sender) {
-        confirming_ = sender;  // the player's unsaved edits go: asks first
+        ask(sender, std::nullopt);  // the player's unsaved edits go: asks first
         return {};
       }
       confirming_.clear();
@@ -4237,9 +4243,29 @@ void PageView::set_live_mode(LiveMode mode) {
   }
 }
 
+std::int64_t PageView::next_due() const noexcept {
+  std::int64_t due = !confirming_.empty() && confirm_waiting_ ? confirm_armed_at_ : 0;
+  for (const auto& [name, until] : copied_until_) {
+    due = due == 0 ? until : std::min(due, until);
+  }
+  return due;
+}
+
+void PageView::ask(std::string name, std::optional<std::uint32_t> after_ms) {
+  confirming_ = std::move(name);
+  const std::int64_t wait =
+      after_ms ? std::min<std::int64_t>(*after_ms, static_cast<std::int64_t>(protocol::kConfirmAfterMaxMs)) : 0;
+  confirm_armed_at_ = wait > 0 ? now_ms_ + wait : 0;
+  confirm_waiting_ = wait > 0;
+}
+
 bool PageView::tick(std::int64_t now_ms) {
   now_ms_ = now_ms;
   bool ended = false;
+  if (confirm_waiting_ && now_ms_ >= confirm_armed_at_) {
+    confirm_waiting_ = false;  // a confirmation that waited counts its second press now: drawn live (D274)
+    ended = !confirming_.empty();
+  }
   for (auto at = copied_until_.begin(); at != copied_until_.end();) {
     if (now_ms_ >= at->second) {
       at = copied_until_.erase(at);  // "Copied" back to "Copy" (D263)
@@ -4248,14 +4274,12 @@ bool PageView::tick(std::int64_t now_ms) {
       ++at;
     }
   }
-  if (ended) {
-    return true;
-  }
+  // Every 5 s releases its held bodies on time even in a wake that also ended something above.
   if (live_mode_ == LiveMode::every_5s && !pending_.empty() && now_ms_ - applied_ms_ >= 5000) {
     release_held();
     return true;
   }
-  return false;
+  return ended;
 }
 
 bool PageView::hold(std::string_view topic) {
@@ -5104,8 +5128,11 @@ Action PageView::input_body(const Input& in) {
             return action;
           }
           if ((a.confirm || a.tone == protocol::ActionTone::destructive) && confirming_ != a.id) {
-            confirming_ = a.id;  // the button asks for its second press; a destructive one always (§7.3, D173)
+            ask(a.id, a.confirm_after_ms);  // the button asks for its second press; a destructive one always (§7.3)
             return {};
+          }
+          if (confirming_ == a.id && !armed()) {
+            return {};  // its confirmation waits (D274): a press before it counts does nothing
           }
           confirming_.clear();
           Action action;
@@ -5821,24 +5848,26 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       }
       const bool asking = confirming_ == act.id;
       const std::string label = running("action:" + act.id) ? "Working…" : asking ? "Press again to confirm" : act.label;
+      // Greyed as an off button while its confirmation waits (D274); its words are there at once.
+      const std::uint8_t alpha = asking && !armed() ? 128 : 255;
       const float w = c.width(label, TypeRole::ui) + std::round(32 * s);
       const Rect button{action_x - w, y + std::round(2 * s), w, std::round(32 * s)};
       const float r = std::round(tokens::radius::control * s);
       hit(button, Scope::page, focus_index(FocusKind::action, act.id));
       Colour ink = Colour::ink_hi;
       if (act.tone == protocol::ActionTone::primary) {
-        c.fill(button, Colour::gold, r);
+        c.fill(button, Colour::gold, r, alpha);
         ink = Colour::on_gold;
       } else if (act.tone == protocol::ActionTone::destructive) {
-        c.fill(button, Colour::rot_fill, r);
+        c.fill(button, Colour::rot_fill, r, alpha);
       } else {
-        if (hovered(button)) {
+        if (hovered(button) && alpha == 255) {
           c.fill(button, Colour::tint_hover, r);
         }
-        c.stroke(button, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), r);
+        c.stroke(button, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), r, alpha);
       }
       c.text(label, TypeRole::ui, button.x + std::round(16 * s),
-             button.y + std::round((button.h - line_height(TypeRole::ui, s)) / 2), w, ink);
+             button.y + std::round((button.h - line_height(TypeRole::ui, s)) / 2), w, ink, alpha);
       if (page_focus(FocusKind::action, act.id)) {
         c.focused(button);
       }
@@ -6049,20 +6078,21 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         const std::string words = running("section-action:" + id) ? "Working…"
                                   : asking                        ? "Press again to confirm"
                                                                   : act.label;
+        const std::uint8_t alpha = asking && !armed() ? 128 : 255;  // its confirmation waits (D274)
         const float w = c.width(words, TypeRole::ui_sm) + std::round(24 * s);
         const Rect button{right - w, y + std::round((head_h - 28 * s) / 2), w, std::round(28 * s)};
         const float rr = std::round(tokens::radius::control * s);
         Colour ink = Colour::ink_hi;
         if (act.tone == protocol::ActionTone::primary) {
-          c.fill(button, Colour::gold, rr);
+          c.fill(button, Colour::gold, rr, alpha);
           ink = Colour::on_gold;
         } else if (act.tone == protocol::ActionTone::destructive) {
-          c.fill(button, Colour::rot_fill, rr);
+          c.fill(button, Colour::rot_fill, rr, alpha);
         } else {
-          c.stroke(button, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), rr);
+          c.stroke(button, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), rr, alpha);
         }
         c.text(words, TypeRole::ui_sm, button.x + std::round(12 * s),
-               button.y + std::round((button.h - line_height(TypeRole::ui_sm, s)) / 2), w, ink);
+               button.y + std::round((button.h - line_height(TypeRole::ui_sm, s)) / 2), w, ink, alpha);
         hit(button, Scope::page, focus_index(FocusKind::section_action, id));
         if (page_focus(FocusKind::section_action, id)) {
           c.focused(button);
@@ -7221,20 +7251,21 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 const std::string id = row_action_id(block, line, r, act);
                 const bool asking = confirming_ == "row:" + id;
                 const std::string words = running("row:" + id) ? "Working…" : asking ? "Press again to confirm" : act.label;
+                const std::uint8_t alpha = asking && !armed() ? 128 : 255;  // its confirmation waits (D274)
                 const float w = c.width(words, TypeRole::ui_sm) + std::round(24 * s);
                 const Rect button{right - w, y + std::round((row_h - 28 * s) / 2), w, std::round(28 * s)};
                 const float rr = std::round(tokens::radius::control * s);
                 Colour ink = Colour::ink_hi;
                 if (act.tone == protocol::ActionTone::primary) {
-                  c.fill(button, Colour::gold, rr);
+                  c.fill(button, Colour::gold, rr, alpha);
                   ink = Colour::on_gold;
                 } else if (act.tone == protocol::ActionTone::destructive) {
-                  c.fill(button, Colour::rot_fill, rr);
+                  c.fill(button, Colour::rot_fill, rr, alpha);
                 } else {
-                  c.stroke(button, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), rr);
+                  c.stroke(button, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), rr, alpha);
                 }
                 c.text(words, TypeRole::ui_sm, button.x + std::round(12 * s),
-                       button.y + std::round((button.h - line_height(TypeRole::ui_sm, s)) / 2), w, ink);
+                       button.y + std::round((button.h - line_height(TypeRole::ui_sm, s)) / 2), w, ink, alpha);
                 hit(button, Scope::page, focus_index(FocusKind::row_action, id));
                 if (page_focus(FocusKind::row_action, id)) {
                   c.focused(button);

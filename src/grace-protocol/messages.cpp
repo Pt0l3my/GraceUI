@@ -750,6 +750,15 @@ bool decode(const Json& in, TopicInfo& out, const std::string& path, DecodeError
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "private", false, path, e)) {
+    const std::string p = path.empty() ? std::string("private") : path + ".private";
+    out.private_.emplace();
+    if (!read_bool(*v, *out.private_, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -765,6 +774,9 @@ Json encode(const TopicInfo& in) {
   }
   if (in.pc_only) {
     out["pc_only"] = Json(*in.pc_only);
+  }
+  if (in.private_) {
+    out["private"] = Json(*in.private_);
   }
   return out;
 }
@@ -853,6 +865,15 @@ bool decode(const Json& in, PageAction& out, const std::string& path, DecodeErro
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "confirm_after_ms", false, path, e)) {
+    const std::string p = path.empty() ? std::string("confirm_after_ms") : path + ".confirm_after_ms";
+    out.confirm_after_ms.emplace();
+    if (!read_u32(*v, *out.confirm_after_ms, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -867,6 +888,9 @@ Json encode(const PageAction& in) {
   }
   if (in.state) {
     out["state"] = encode(*in.state);
+  }
+  if (in.confirm_after_ms) {
+    out["confirm_after_ms"] = Json(*in.confirm_after_ms);
   }
   return out;
 }
@@ -933,6 +957,15 @@ bool decode(const Json& in, RowAction& out, const std::string& path, DecodeError
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "confirm_after_ms", false, path, e)) {
+    const std::string p = path.empty() ? std::string("confirm_after_ms") : path + ".confirm_after_ms";
+    out.confirm_after_ms.emplace();
+    if (!read_u32(*v, *out.confirm_after_ms, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -948,6 +981,9 @@ Json encode(const RowAction& in) {
   }
   if (in.capture) {
     out["capture"] = Json(to_string(*in.capture));
+  }
+  if (in.confirm_after_ms) {
+    out["confirm_after_ms"] = Json(*in.confirm_after_ms);
   }
   return out;
 }

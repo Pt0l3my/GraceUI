@@ -96,6 +96,7 @@ ring = 200
 id = "lantern.journal"
 shape = "stream"
 ring = 500
+private = true  # the keeper's own words: drawn in the journal's block alone (D274)
 
 [[category]]
 id = "lanterns"
@@ -393,7 +394,7 @@ help.steps = ["Read the roster: each keeper's post, and whether their ward word 
 id = "roster"
 title = "Roster"
 blocks = [{ kind = "component", component = "table", topic = "lantern.keepers", props = { empty = "No keeper yet: hire one below." }, row_actions = [{ id = "dismiss", label = "Dismiss", command = "keepers.dismiss", key = "id", tone = "destructive", confirm = "The keeper leaves the roster, with their ward word." }], row_secret = { column = "ward", command = "keepers.ward", key = "id" }, filter_bar = { filters = [{ column = "post", label = "Post" }], sort = [{ key = "kept_days", label = "Time kept", direction = "descending" }, { key = "name", label = "Name" }], search = { columns = ["name"], label = "Find a keeper" } } }]
-actions = [{ id = "dismiss_all", label = "Dismiss all", command = "keepers.dismiss_all", tone = "destructive", confirm = "Every keeper leaves the roster, with their ward words." }]
+actions = [{ id = "dismiss_all", label = "Dismiss all", command = "keepers.dismiss_all", tone = "destructive", confirm = "Every keeper leaves the roster, with their ward words.", confirm_after_ms = 1000 }]
 
 [[page.sections]]
 id = "hire"

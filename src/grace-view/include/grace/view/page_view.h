@@ -203,8 +203,11 @@ class PageView {
   bool tick(std::int64_t now_ms);
   // Whether bodies are held (the host keeps a timer while Every 5 s has some), and how many came while held.
   bool holding() const noexcept { return !pending_.empty(); }
-  // Something drawn for a while that tick() ends (a report's "Copied", D263): the host wakes once a second for it.
-  bool timed() const noexcept { return !copied_until_.empty(); }
+  // Something drawn for a while that tick() ends (a report's "Copied", D263), or a confirmation that waits before its
+  // second press counts (D274), drawn live once it does: the host wakes at next_due() for it.
+  bool timed() const noexcept { return !copied_until_.empty() || (!confirming_.empty() && confirm_waiting_); }
+  // When the first of them ends, on tick()'s clock: so that the host wakes then (D274); 0 with none.
+  std::int64_t next_due() const noexcept;
   std::size_t held_new() const noexcept { return held_new_; }
   bool quick_open() const noexcept { return quick_open_; }
   // ---- A space's scope, and rows read a page at a time (G45, D254). A scoped page follows the scope in view (the
@@ -585,6 +588,13 @@ class PageView {
   std::size_t rail_focus_ = 0;
   std::size_t page_focus_ = 0;
   std::string confirming_;  // a destructive action's id, waiting for its second press
+  // Its second press counts from then (D274: confirm_after_ms, up to 3000): 0, at once.
+  std::int64_t confirm_armed_at_ = 0;
+  bool confirm_waiting_ = false;  // armed later than now as last ticked: tick() redraws it once it is
+  // Asks for `name`'s second press, counting only after `after_ms` (D274).
+  void ask(std::string name, std::optional<std::uint32_t> after_ms);
+  // Whether the confirmation asked for counts a press now.
+  bool armed() const noexcept { return confirm_armed_at_ == 0 || now_ms_ >= confirm_armed_at_; }
 
   enum class CaptureKind : std::uint8_t { none, key, chord };
   enum class CaptureStage : std::uint8_t { waiting, sent, asking };

@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 20;
-inline constexpr std::string_view kProtocolVersion = "1.20";
+inline constexpr std::uint32_t kProtocolMinor = 21;
+inline constexpr std::string_view kProtocolVersion = "1.21";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -27,6 +27,7 @@ inline constexpr std::size_t kSubscriptions = 32;
 inline constexpr std::size_t kRowsPerBatch = 100;
 inline constexpr std::size_t kCommandQueue = 32;
 inline constexpr std::size_t kUploadMax = 33554432;
+inline constexpr std::size_t kConfirmAfterMaxMs = 3000;
 inline constexpr std::size_t kUploadTicketSeconds = 60;
 inline constexpr std::size_t kPingSeconds = 15;
 inline constexpr std::size_t kBadMessagesBeforeClose = 3;
@@ -279,6 +280,7 @@ struct TopicInfo {
   std::optional<std::uint32_t> ring{};
   std::optional<bool> family{};
   std::optional<bool> pc_only{};
+  std::optional<bool> private_{};
   bool operator==(const TopicInfo&) const = default;
 };
 bool decode(const Json& in, TopicInfo& out, const std::string& path, DecodeError& e);
@@ -301,6 +303,7 @@ struct PageAction {
   ActionTone tone{};
   std::optional<std::string> confirm{};
   std::optional<QuickState> state{};
+  std::optional<std::uint32_t> confirm_after_ms{};
   bool operator==(const PageAction&) const = default;
 };
 bool decode(const Json& in, PageAction& out, const std::string& path, DecodeError& e);
@@ -315,6 +318,7 @@ struct RowAction {
   ActionTone tone{};
   std::optional<std::string> confirm{};
   std::optional<RowCapture> capture{};
+  std::optional<std::uint32_t> confirm_after_ms{};
   bool operator==(const RowAction&) const = default;
 };
 bool decode(const Json& in, RowAction& out, const std::string& path, DecodeError& e);

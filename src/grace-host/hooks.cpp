@@ -921,7 +921,9 @@ void move_filter() noexcept {
 #else
       const DWORD idle = INFINITE;
 #endif
-      WaitForSingleObject(g_wake, spaces::wants_timer() || menu::wants_timer() ? 1000 : idle);
+      // While the menu waits on a deadline of the open page's (D274), until then.
+      const DWORD timer = menu::wants_timer() ? menu::timer_wait_ms() : 1000;
+      WaitForSingleObject(g_wake, spaces::wants_timer() || menu::wants_timer() ? timer : idle);
     } else {
       Sleep(50);
     }

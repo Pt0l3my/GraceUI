@@ -64,6 +64,9 @@ void body_faded() noexcept;
 void serve() noexcept;
 // Whether the menu wants GraceUI's thread to wake once a second by itself: Live updates' Every 5 s holds bodies (D252).
 bool wants_timer() noexcept;
+// How long GraceUI's thread may then sleep, in ms: until the open page's next deadline (a confirmation's wait, D274;
+// a report's "Copied", D263), 1 to 1000; 1000 with none.
+std::uint32_t timer_wait_ms() noexcept;
 // Whether GraceUI's menu holds input now (any thread; lock-free): what an on_present callback is told (D259).
 bool open_now() noexcept;
 

@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 20,
+  "minor": 21,
   "categories": [
     {
       "id": "lanterns",
@@ -428,7 +428,8 @@
               "label": "Dismiss all",
               "command": "keepers.dismiss_all",
               "tone": "destructive",
-              "confirm": "Every keeper leaves the roster, with their ward words."
+              "confirm": "Every keeper leaves the roster, with their ward words.",
+              "confirm_after_ms": 1000
             }
           ]
         },
@@ -876,7 +877,8 @@
     {
       "id": "lantern.journal",
       "shape": "stream",
-      "ring": 500
+      "ring": 500,
+      "private": true
     }
   ],
   "commands": [

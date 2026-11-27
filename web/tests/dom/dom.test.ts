@@ -656,8 +656,23 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       await page.locator("dialog[open] .button--secondary").click();
       await page.waitForTimeout(100);
       assert.equal(all().length, 0);
+      // Its button waits 1 s before it counts (D274): greyed at first, its words there at once.
       await roster.locator("[data-section-action='dismiss_all']").click();
-      await page.locator("dialog[open] [data-confirm='dismiss_all']").click();
+      const confirm = page.locator("dialog[open] [data-confirm='dismiss_all']");
+      await confirm.waitFor();
+      assert.equal(await confirm.isDisabled(), true);
+      assert.equal((await confirm.textContent())?.trim(), "Dismiss all");
+      const opacity = () => confirm.evaluate((el) => getComputedStyle(el).opacity);
+      assert.equal(await opacity(), "0.5");  // greyed, as in game
+      await confirm.click({ force: true, timeout: 200 }).catch(() => undefined);  // too soon: nothing sent
+      await page.waitForTimeout(100);
+      assert.equal(all().length, 0);
+      await page.waitForFunction(() => {
+        const button = document.querySelector<HTMLButtonElement>("dialog[open] [data-confirm='dismiss_all']");
+        return button !== null && !button.disabled;
+      }, undefined, { timeout: 3000 });
+      assert.equal(await opacity(), "1");
+      await confirm.click();
       await settle(all, 1);
       assert.deepEqual(all()[0]?.args, { confirm: true });
       assert.deepEqual(await violations(page), []);

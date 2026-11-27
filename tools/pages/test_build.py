@@ -468,6 +468,47 @@ class Seeded(unittest.TestCase):
         setting(desc, "lantern.enabled")["sensitive"] = True
         self.expect("quick switch lantern.enabled is a pc_only page's", sp, desc, fx)
 
+    def test_a_confirmation_that_waits(self):  # D274
+        sp, desc, fx = demo()
+        self.assertEqual(failures(sp, desc, fx), [])  # Dismiss all waits a second before its second press counts
+        self.assertEqual(build.CONFIRM_AFTER_MAX_MS, SCHEMA["limits"]["confirm_after_max_ms"])
+        roster = page(sp, "demo.keepers")["sections"][0]
+        roster["actions"][0]["confirm_after_ms"] = 0
+        self.expect("action dismiss_all: confirm_after_ms is 1 to 3000", sp, desc, fx)
+        roster["actions"][0]["confirm_after_ms"] = 3001
+        self.expect("action dismiss_all: confirm_after_ms is 1 to 3000", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["actions"][0]["confirm_after_ms"] = 1000  # Trim the wick: primary, no confirm words
+        self.expect("action trim: confirm_after_ms waits on a confirmation", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["actions"][1]["confirm_after_ms"] = 1000  # Hush the bell: a header switch
+        self.expect("a switch is neither destructive nor confirmed", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.keepers")["sections"][0]["blocks"][0]["row_actions"][0]["confirm_after_ms"] = 1000
+        self.assertEqual(failures(sp, desc, fx), [])  # a destructive row action may wait too
+        sp, desc = copy.deepcopy(SPACES["graceui"])
+        fx = copy.deepcopy(build.fixtures_of("graceui"))
+        key = next(a for sec in page(sp, "graceui.hotkeys")["sections"] for b in sec["blocks"]
+                   for a in b.get("row_actions", []) if a.get("capture") == "key")
+        key.update(confirm="Use this key?", confirm_after_ms=1000)
+        self.expect("action key: confirm_after_ms on a capture", sp, desc, fx)
+
+    def test_a_private_topic(self):  # D274
+        sp, desc, fx = demo()
+        self.assertEqual(failures(sp, desc, fx), [])  # the journal is private, drawn in its log tail alone
+        section = page(sp, "demo.keepers")["sections"][2]  # Oil: its chip's status
+        section["status"] = {"topic": "lantern.journal", "field": "line"}
+        self.expect("names lantern.journal, a private topic, as a status", sp, desc, fx)
+        sp, desc, fx = demo()
+        setting(desc, "lantern.keeper")["choices_from"] = "lantern.journal"
+        self.expect("setting lantern.keeper takes its choices from lantern.journal, a private topic", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["scope"]["topic"] = "lantern.journal"
+        self.expect("the scope names lantern.journal, a private topic", sp, desc, fx)
+        sp, desc, fx = demo()
+        sp["quick"][2]["state"]["topic"] = "lantern.journal"
+        self.expect("a quick switch's state is on lantern.journal, a private topic", sp, desc, fx)
+
     def test_a_report_previews_share(self):  # D263
         def report(sp):
             return next(b for sec in page(sp, "demo.log")["sections"] for b in sec["blocks"]

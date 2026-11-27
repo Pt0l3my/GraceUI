@@ -77,6 +77,7 @@ constinit std::atomic<bool> g_editing{false};
 bool g_pressed_in_field = false;
 bool g_pressed_space = false;
 constinit std::atomic<bool> g_timer{false};  // Live updates holds bodies Every 5 s (D252): wake once a second
+constinit std::atomic<std::int64_t> g_due{0};  // and the open page's next deadline, sooner (D274): 0, none
 // The clipboard's text for a paste, read on the window procedure's thread at Ctrl+V and taken on GraceUI's.
 constinit grace::abi::SpinLock g_paste_lock;
 constinit std::string* g_paste = nullptr;  // made at the first paste, never freed
@@ -1076,6 +1077,7 @@ void serve_menu() {
       m.away = away;
       g_editing.store(false, std::memory_order_release);  // no key reaches a field while nothing holds input
       g_timer.store(false, std::memory_order_release);    // and nothing is applied on time while it is closed
+      g_due.store(0, std::memory_order_release);
       input::set_caret(0, 0, 0);
       active_view(m).pointer(grace::view::Pointer{grace::view::Pointer::Kind::leave, 0, 0, 0});  // no hover, no drag
       watch(m, false);                       // a mod builds nothing the menu no longer shows
@@ -1163,6 +1165,7 @@ void serve_menu() {
                              active_view(m).live_mode() == grace::view::PageView::LiveMode::every_5s) ||
                             active_view(m).timed()),  // a report's "Copied", ended on time (D263)
                 std::memory_order_release);
+  g_due.store(m.open ? active_view(m).next_due() : 0, std::memory_order_release);  // a confirmation's wait (D274)
   if (dirty && m.open) {
     publish(m);
   }
@@ -1718,6 +1721,14 @@ bool drawing() noexcept { return g_fade.drawn; }
 void body_faded() noexcept { g_body_fade_frames.fetch_add(1, std::memory_order_relaxed); }
 
 bool wants_timer() noexcept { return g_timer.load(std::memory_order_acquire); }
+
+std::uint32_t timer_wait_ms() noexcept {
+  const std::int64_t due = g_due.load(std::memory_order_acquire);
+  if (due == 0) {
+    return 1000;
+  }
+  return static_cast<std::uint32_t>(std::clamp<std::int64_t>(due - input::now_ms(), 1, 1000));
+}
 
 bool open_now() noexcept { return ours(input::capture().holder()); }
 
