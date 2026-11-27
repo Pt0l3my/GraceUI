@@ -103,6 +103,7 @@ constinit std::atomic<bool> g_reduce_motion{false};  // ui.menu.reduce_motion as
 constinit std::atomic<std::uint32_t> g_fade_in_frames{0};
 constinit std::atomic<std::uint32_t> g_fade_out_frames{0};
 constinit std::atomic<std::uint32_t> g_alpha_milli{0};
+constinit std::atomic<std::uint32_t> g_body_fade_frames{0};  // frames drawn while a page's body faded in (D272)
 
 // The test exports' view (and nothing else reads it).
 constinit std::atomic<std::uint64_t> g_published{0};
@@ -160,6 +161,8 @@ struct State {
   std::uint32_t width = 0;
   std::uint32_t height = 0;
   std::uint64_t serial = 0;
+  std::string shown_page;          // the space and page the last list showed ("space\npage")
+  std::uint64_t page_serial = 0;   // counted up at each change of them: the present thread fades the body in (D272)
   double ui_scale = 1.0;
   bool plain = false;  // ui.menu.plain_text: the serif and display roles in Noto Sans (§3.4, D267)
   bool clear = false;  // ui.menu.theme is Grace Clear
@@ -938,6 +941,11 @@ void publish(State& m) {
   const grace::draw::Stats stats = grace::draw::tessellate(m.list, palette, atlas, out);
   out.serial = ++m.serial;
   out.panel_generation = m.generation;  // drawn only for this holder
+  if (std::string page = m.spaces[m.active]->id + "\n" + std::string(active_view(m).page()); page != m.shown_page) {
+    m.shown_page = std::move(page);
+    ++m.page_serial;  // another page, or another space's: its body fades in (§3.10, D272)
+  }
+  out.page_serial = m.page_serial;
   out.atlas_generation = atlas::generation();
   out.placed_x = 0.0f;
   out.placed_y = 0.0f;
@@ -1528,6 +1536,15 @@ struct Fade {
 };
 constinit Fade g_fade{};
 constexpr std::int64_t kFadeInUs = 120'000;   // open (§3.10)
+// The present thread's: the page body's fade in at a change of page (§3.10, D272), for the holder whose list it draws.
+struct BodyFade {
+  std::uint32_t generation = 0;
+  std::uint64_t page_serial = 0;  // the page whose body is drawn
+  std::int64_t start_us = 0;
+  bool running = false;
+};
+constinit BodyFade g_body{};
+constexpr std::int64_t kBodyFadeUs = 120'000;  // the page change's (§3.10)
 constexpr std::int64_t kFadeOutUs = 200'000;  // close by the player: F5, Esc or B on the top level, the close button
 
 constinit std::int64_t g_qpc_frequency = 0;  // the present thread's, read at its first fade (no static's guard)
@@ -1633,12 +1650,31 @@ Frame frame(std::uint32_t width, std::uint32_t height) noexcept {
     g_fade.length_us = still ? 0 : static_cast<std::int64_t>(static_cast<float>(kFadeInUs) * (1.0f - from));
   }
   const float alpha = alpha_of(g_fade, now);
+  // The page's body (D272): another page than the last list's fades in over 120 ms, the rail, the top bar and the key
+  // hints staying still; the open's own fade covers its first page.
+  if (g_body.generation != holder.generation) {
+    g_body = BodyFade{holder.generation, data.page_serial, now, false};
+  } else if (data.page_serial != g_body.page_serial) {
+    g_body.page_serial = data.page_serial;
+    g_body.start_us = now;
+    g_body.running = !g_reduce_motion.load(std::memory_order_relaxed);
+  }
+  float body = 1.0f;
+  if (g_body.running) {
+    const std::int64_t since = now - g_body.start_us;
+    if (since >= kBodyFadeUs) {
+      g_body.running = false;
+    } else {
+      body = static_cast<float>(std::max<std::int64_t>(since, 0)) / static_cast<float>(kBodyFadeUs);
+      g_body_fade_frames.fetch_add(1, std::memory_order_relaxed);
+    }
+  }
   g_frames.fetch_add(1, std::memory_order_relaxed);
   if (alpha < 1.0f) {
     g_fade_in_frames.fetch_add(1, std::memory_order_relaxed);
   }
-  g_alpha_milli.store(static_cast<std::uint32_t>(alpha * 1000.0f), std::memory_order_relaxed);
-  return {&data, alpha, false};
+  g_alpha_milli.store(static_cast<std::uint32_t>(alpha * body * 1000.0f), std::memory_order_relaxed);
+  return {&data, alpha, false, body};
 }
 
 bool drawing() noexcept { return g_fade.drawn; }
@@ -1687,6 +1723,7 @@ void test_view(TestView& out) noexcept {
   out.fade_in_frames = g_fade_in_frames.load(std::memory_order_relaxed);
   out.fade_out_frames = g_fade_out_frames.load(std::memory_order_relaxed);
   out.alpha_milli = g_alpha_milli.load(std::memory_order_relaxed);
+  out.body_fade_frames = g_body_fade_frames.load(std::memory_order_relaxed);
   g_view_lock.lock();
   if (g_state != nullptr) {
     std::snprintf(out.page, sizeof out.page, "%s", g_state->page.c_str());

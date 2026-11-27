@@ -4565,8 +4565,20 @@ void run_menu(const std::wstring& dll) {
   fade_for(300);
   const GraceUiTestMenu still_after = grace.menu();
   const std::string still_setting = grace.setting("ui.menu.reduce_motion");
+  // Page Down and Page Up with Reduce motion on: the page's body comes at once (D272).
+  press(window, VK_NEXT, 0x51);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string still_next_page(menu.page);
+  press(window, VK_PRIOR, 0x49);
+  menu = menu_after(game, grace, menu.lists);
+  fade_for(200);
+  const std::uint32_t still_body = grace.menu().body_fade_frames - still_after.body_fade_frames;
   if (std::string_view(menu.focused).starts_with("rail:")) {
-    press(window, VK_RIGHT, 0x4D);  // from the rail, → back to its row, where the page's focus was kept
+    press(window, VK_RIGHT, 0x4D);  // from the rail, → into the page
+    menu = menu_after(game, grace, menu.lists);
+  }
+  for (int i = 0; i < 10 && std::strcmp(menu.focused, "setting:ui.menu.reduce_motion") != 0; ++i) {
+    press(window, VK_DOWN, 0x50);  // back to its row
     menu = menu_after(game, grace, menu.lists);
   }
   const std::string back_on(menu.focused);
@@ -4584,22 +4596,46 @@ void run_menu(const std::wstring& dll) {
   fade_for(400);
   const std::uint64_t fade_allocations = (alloc_after.allocations + alloc_after.frees) -
                                          (alloc_before.allocations + alloc_before.frees);
+  // A page change with Reduce motion off: the page's body fades in over 120 ms, each way (D272); then closed again.
+  press(window, VK_F5, kScanF5);
+  menu = menu_after(game, grace, grace.menu().lists);
+  const GraceUiTestMenu before_pages = grace.menu();
+  press(window, VK_NEXT, 0x51);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string next_page(menu.page);
+  const std::uint32_t body_next = menu.body_fade_frames - before_pages.body_fade_frames;
+  const std::uint32_t whole_after_next = menu.alpha_milli;
+  press(window, VK_PRIOR, 0x49);
+  menu = menu_after(game, grace, menu.lists);
+  const std::uint32_t body_back = menu.body_fade_frames - before_pages.body_fade_frames - body_next;
+  const std::uint32_t open_body = before_pages.body_fade_frames - still_after.body_fade_frames - still_body;
+  press(window, VK_ESCAPE, kScanEscape);
+  press(window, VK_ESCAPE, kScanEscape);
+  for (int i = 0; i < 50 && grace.menu().open != 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  faded_out(game, grace);
   const std::uint32_t still_out = still_after.fade_out_frames - still_before.fade_out_frames;
   const std::uint32_t still_in = still_after.fade_in_frames - still_before.fade_in_frames;
   check(esc_out >= 2 && esc_out_after_release >= 1 && esc_after.fade_out_frames == esc_faded.fade_out_frames &&
             open_in >= 2 && reopened.alpha_milli == 1000 && key_out >= 2 && danger_out == 0 && on_motion &&
             still_setting == "true" && back_on == "setting:ui.menu.reduce_motion" && still_out == 0 && still_in == 0 &&
             still_after.alpha_milli == 1000 &&
-            grace.setting("ui.menu.reduce_motion") == "false" && grace.menu().open == 0 && fade_allocations == 0,
+            grace.setting("ui.menu.reduce_motion") == "false" && grace.menu().open == 0 && fade_allocations == 0 &&
+            still_next_page != "graceui.menu" && still_body == 0 && next_page != "graceui.menu" && body_next >= 2 &&
+            body_back >= 2 && whole_after_next == 1000 && open_body == 0,
         "menu: it fades in and out",
         "Esc's close: %u frame(s) fading out, %u after input went back, %u more later; F5's open: %u fading in, then "
         "at %u/1000; F5's close: %u fading out; danger's: %u; with Reduce motion (%s, %s): %u fading out and %u in, "
         "at %u/1000; Reduce motion %s again; allocations and frees on the present thread across Esc's fade out and "
-        "F5's fade in: %llu",
+        "F5's fade in: %llu; a page's body: %u frame(s) fading in after Page Down (to %s), %u after Page Up, whole at "
+        "%u/1000, none at an open (%u), none with Reduce motion (%s: %u)",
         esc_out, esc_out_after_release, esc_after.fade_out_frames - esc_faded.fade_out_frames, open_in,
         reopened.alpha_milli, key_out, danger_out, on_motion ? "its row found" : "ITS ROW NOT FOUND",
         still_setting.c_str(), still_out, still_in, still_after.alpha_milli,
-        grace.setting("ui.menu.reduce_motion").c_str(), static_cast<unsigned long long>(fade_allocations));
+        grace.setting("ui.menu.reduce_motion").c_str(), static_cast<unsigned long long>(fade_allocations), body_next,
+        next_page.c_str(), body_back, whole_after_next, open_body, still_next_page.c_str(), still_body);
   DeleteFileW(settings_file_of(dll).c_str());  // nothing kept for the next scenario (D179)
   check(grace.menu().off == 0 && grace.state().render_off == 0, "menu: still on", "no fault in the menu or the render "
         "path after every check");

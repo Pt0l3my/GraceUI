@@ -207,7 +207,19 @@ Stats tessellate(const view::DisplayList& list, const tokens::Palette& palette, 
   static const Rect kNoClip{0, 0, 1e6f, 1e6f};
   std::array<Point, 4 * (kMaxArc + 1)> points{};
   Stats stats;
+  out.body_first = 0;
+  out.body_end = 0;
+  const bool body = list.body_end > list.body_first;
+  std::uint32_t index = 0;
   for (const Item& item : list.items) {
+    // The page body's first and end vertices, as its items begin and end (D272).
+    if (body && index == list.body_first) {
+      out.body_first = static_cast<std::uint32_t>(out.vertices.size());
+    }
+    if (body && index == list.body_end) {
+      out.body_end = static_cast<std::uint32_t>(out.vertices.size());
+    }
+    ++index;
     const Rect& clip = item.clip < list.clips.size() ? list.clips[item.clip] : kNoClip;
     const std::uint32_t colour = pack(tokens::colour(palette, item.colour), item.alpha);
     if ((colour >> 24) == 0 || item.rect.w <= 0 || item.rect.h <= 0) {
@@ -305,6 +317,9 @@ Stats tessellate(const view::DisplayList& list, const tokens::Palette& palette, 
         break;
       }
     }
+  }
+  if (body && list.body_end >= list.items.size()) {
+    out.body_end = static_cast<std::uint32_t>(out.vertices.size());  // the body ran to the list's end
   }
   stats.vertices = static_cast<std::uint32_t>(out.vertices.size());
   stats.indices = static_cast<std::uint32_t>(out.indices.size());

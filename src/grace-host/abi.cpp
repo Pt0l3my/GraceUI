@@ -384,6 +384,9 @@ void test_fill_menu(GraceUiTestMenu& out) noexcept {
     out.fade_out_frames = view.fade_out_frames;
     out.alpha_milli = view.alpha_milli;
   }
+  if (out.size >= offsetof(GraceUiTestMenu, body_fade_frames) + sizeof out.body_fade_frames) {  // D272's
+    out.body_fade_frames = view.body_fade_frames;
+  }
 }
 
 void test_fill_server(GraceUiTestServer& out) noexcept {
