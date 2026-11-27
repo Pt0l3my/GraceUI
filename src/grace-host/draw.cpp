@@ -611,7 +611,8 @@ bool bake_atlas() {
   std::uint32_t mod_faces = session::registry().faces();
   float scale = menu::bake_scale(g.height);  // the menu's faces at the effective scale (§3.13, D167)
   const float content = display::content_scale(g.height);  // the mods' scaled faces' (D180)
-  bool plain = scale > 0.0f && menu::bake_plain();  // Plain text's faces too, when it is on (§3.4, D267)
+  const bool plain_wanted = scale > 0.0f && menu::bake_plain();  // Plain text's faces too, when it is on (§3.4, D267)
+  bool plain = plain_wanted;
   for (;;) {
     try {
       atlas::bake(ImGui::GetIO().Fonts, mod_faces, scale, content, plain);
@@ -635,6 +636,10 @@ bool bake_atlas() {
       }
       mod_faces /= 2;
     }
+  }
+  if (plain_wanted && !plain && scale > 0.0f) {
+    log_line("the menu's Plain text faces were left out, the atlas being full: its serif roles take the nearest Noto "
+             "Sans, scaled");
   }
   ImFontAtlas* fonts = ImGui::GetIO().Fonts;
   const ImTextureData* texture = fonts->TexData;

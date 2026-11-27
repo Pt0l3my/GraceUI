@@ -6031,16 +6031,22 @@ void run_settings_write(const std::wstring& dll) {
   }
   menu = menu_after(game, grace, grace.menu().lists);
   const Frame plain_shot = game.frame_and_read(kInputColour, PresentWith::present);
+  // Only the rail's left part is counted: every word there is in a serif role (the wordmark, the category, the pages),
+  // and nothing else on it changes with the switch, which the page's focused row, its lozenge and toggle would.
   int redrawn = 0;
-  for (std::size_t i = 0; i < plain_shot.pixels.size() && i < serif_shot.pixels.size(); ++i) {
-    redrawn += plain_shot.pixels[i] != serif_shot.pixels[i] ? 1 : 0;
+  if (plain_shot.width == serif_shot.width && plain_shot.height == serif_shot.height) {
+    for (UINT y = 0; y < plain_shot.height; ++y) {
+      for (UINT x = 0; x < 260 && x < plain_shot.width; ++x) {
+        redrawn += plain_shot.at(x, y) != serif_shot.at(x, y) ? 1 : 0;
+      }
+    }
   }
   save_shot(plain_shot, "menu-plain-text-1920x1080.bmp");
   check(on_plain && grace.setting("ui.menu.plain_text") == "true" && menu.plain_text == 1 && menu.plain_baked == 0 &&
-            redrawn > 2000,
+            redrawn > 800,
         "settings: Plain text in game at once",
         "Enter on Plain text (%s): ui.menu.plain_text %s; the menu draws in Noto Sans %s, from the nearest sans bakes "
-        "(its own %s); %d pixels redrawn",
+        "(its own %s); %d pixels of the rail's words redrawn",
         on_plain ? "found" : "NOT FOUND", grace.setting("ui.menu.plain_text").c_str(),
         menu.plain_text == 1 ? "yes" : "NO", menu.plain_baked == 0 ? "not baked, as expected" : "BAKED", redrawn);
   press(window, VK_F5, kScanF5);
