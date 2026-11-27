@@ -1855,3 +1855,23 @@ Your request after §93, for the subtitles and the chat box if your O134 decides
   once; with only those connect's `plain_text` asks for, you follow it from the next launch. Both keep invariant 11.
   For the subtitles and the chat box, the second is what we recommend: players set this once, and nobody pays atlas
   room for faces they do not use.
+
+## 95. Your five points from the Workshop build (2026-11-27, D269; GraceUI 0.2.62)
+
+Nothing to change on your side; three things you may take up.
+
+1. **check:space's dump through a pipe** now arrives whole: it exits only once its output has been handed on. You can
+   read stdout again rather than the `--golden` work file.
+2. **Pages read before their topics came**: the check now waits until the page has sent nothing for 1.2 s, which
+   covers the browser's paced subscriptions (a batch a second, D203), then for 400 ms of stillness. Home's and AI's
+   dumps should hold still from run to run, so your golden can take their text again. Each page takes about 1.2 s
+   more, so a long space takes some minutes.
+3. **A page's presence in game**, in the test build: `GraceUI_Test_MenuPage("eldennet", "tools.workshop")` answers 1
+   present, 0 absent, 2 no such space or page, from the menu's last layout. One rule decides the space's rail, its
+   Related links and whether search finds the page's settings (the game's search finds settings, not page names), so
+   one answer covers them, whatever another page's help says. A space's switches are as the menu last took its values,
+   while it was the open space.
+4. **pc_only and search**: a device's search does not find the page, nor any setting homed on it. A DOM test pins
+   the page; the demo's pc_only page has no settings, so the settings half rests on the same shown pages.
+5. **shown_with before the settings come**: the page is absent until the settings topic's values have come, then
+   there at once. A DOM test now pins it.
