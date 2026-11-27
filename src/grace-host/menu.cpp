@@ -186,6 +186,7 @@ struct State {
   std::string footer;                   // its footer's words
   grace::view::PageView::Sheet sheet;   // as last shown
   std::uint64_t revision = 0;  // GraceUI's own space's, as the menu last took it
+  std::uint64_t followed = ~std::uint64_t{0};  // and as the present thread's settings last followed it (D273)
   std::uint64_t states = 0;    // its other topics', as the menu last took them (D181)
   grace::view::DisplayList list;
   std::string page;  // as the test exports read it, under its lock
@@ -597,6 +598,27 @@ bool take_from_spaces(State& m) {
     changed = true;
   }
   return changed;
+}
+
+// GraceUI's own settings that the present thread and the test build read (the scale, the theme, Plain text, Reduce
+// motion), as the store holds them now, whether the menu is open or not (D273): read at GraceUI's thread's first wake
+// and after every change, a browser's while the menu is closed among them, as the mods hear of them.
+void follow_settings(State& m) {
+  try {
+    const std::uint64_t revision = own_space().revision();
+    if (revision == m.followed) {
+      return;
+    }
+    const grace::pages::SettingsStore& store = own_space().store();
+    const grace::protocol::Json& scale = store.held("ui.scale");
+    g_ui_scale.store(scale.is_number() ? static_cast<float>(scale.get<double>()) : 1.0f, std::memory_order_relaxed);
+    g_clear_theme.store(store.held("ui.menu.theme") == "clear", std::memory_order_relaxed);
+    g_plain_text.store(store.held("ui.menu.plain_text") == true ? 1 : 0, std::memory_order_relaxed);
+    g_reduce_motion.store(store.held("ui.menu.reduce_motion") == true, std::memory_order_relaxed);
+    m.followed = revision;
+  } catch (...) {
+    // GraceUI's own space not loaded yet: followed at a later wake
+  }
 }
 
 // What a changed setting does at once (its effect "now"): the scale, the theme. The rest are kept for their users.
@@ -1042,6 +1064,7 @@ void serve_menu() {
     g_state = new State();
   }
   State& m = *g_state;
+  follow_settings(m);  // open or not: the test build's and the present thread's reads follow a browser's change (D273)
   const grace::input::Holder holder = input::capture().holder();
   if (m.loaded) {
     sync_spaces(m);  // a mod's space came or went, open or not

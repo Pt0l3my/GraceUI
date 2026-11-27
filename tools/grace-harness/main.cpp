@@ -5027,6 +5027,31 @@ void run_pages(const std::wstring& dll) {
   check(set && (*set)["ok"] == true && scale == "1.1", "spaces: one store for both views",
         "settings.set ui.scale 1.1 from the browser: %s; the menu's store holds %s", set ? set->dump().c_str() : "NONE",
         scale.c_str());
+  // 5a. Plain text turned on from the browser while the menu has never opened (D273): the test build's field follows
+  // it at once, as the mods hear of it; then off again.
+  const auto plain_from_browser = [&](int id, bool on) {
+    view.send_json({{"v", 1}, {"t", "cmd"}, {"space", "graceui"}, {"id", id}, {"name", "settings.set"},
+                    {"args", {{"key", "ui.menu.plain_text"}, {"value", on}}}});
+    for (int i = 0; i < 30; ++i) {
+      frames(game, 1);
+      if (view.next_of("result", std::chrono::milliseconds(100))) {
+        break;
+      }
+    }
+    std::uint32_t seen = on ? 0u : 1u;
+    for (int i = 0; i < 50 && seen != (on ? 1u : 0u); ++i) {
+      frames(game, 1);
+      Sleep(20);
+      seen = grace.menu().plain_text;
+    }
+    return seen;
+  };
+  const std::uint32_t never_opened = grace.menu().open;
+  const std::uint32_t plain_on = plain_from_browser(20, true);
+  const std::uint32_t plain_off = plain_from_browser(21, false);
+  check(never_opened == 0 && plain_on == 1 && plain_off == 0, "spaces: GraceUI's settings followed with the menu closed",
+        "the menu %s; Plain text on from the browser: the test build's field %u; off again: %u",
+        never_opened == 0 ? "closed" : "OPEN", plain_on, plain_off);
 
   // 5b. An upload (G28, D226): the view's ticket and POST; the mod's poll with no room for the file is full, naming its
   // size; with room, the frame and the file, once; its answer reaches the view.
@@ -6277,10 +6302,12 @@ void run_settings_read(const std::wstring& dll) {
   // A mod that connects now hears of Plain text as the last session kept it (D268), from GraceUI's load on.
   const Connected reader = connect(table, request_for("kept-reader", GRACEUI_VERSION_PACK(0, 2, 61), "Kept reader",
                                                       "display plain-text"));
+  const GraceUiTestMenu closed = grace.menu();  // the menu not yet opened this session (D273)
   check(reader.status == GRACEUI_OK && reader.answer.plain_text == 1 &&
-            std::fabs(reader.answer.ui_scale - 1.3f) < 0.002f,
-        "settings: Plain text kept, at a mod's connect", "its answer: Plain text %u, ui.scale %.2f",
-        reader.answer.plain_text, reader.answer.ui_scale);
+            std::fabs(reader.answer.ui_scale - 1.3f) < 0.002f && closed.open == 0 && closed.plain_text == 1,
+        "settings: Plain text kept, at a mod's connect", "its answer: Plain text %u, ui.scale %.2f; the test build's "
+        "field before the menu first opens: %u",
+        reader.answer.plain_text, reader.answer.ui_scale, closed.plain_text);
   press(window, VK_F5, kScanF5);
   GraceUiTestMenu menu = menu_after(game, grace, 0);
   const std::string scale = grace.setting("ui.scale");
