@@ -196,7 +196,7 @@ void push_key(Key key, std::uint32_t vk, bool down, bool repeat) noexcept {
     // read only for its own presses.
     if (down) {
       menu::key_down(vk, key, (GetKeyState(VK_SHIFT) & 0x8000) != 0, (GetKeyState(VK_CONTROL) & 0x8000) != 0,
-                     (GetKeyState(VK_MENU) & 0x8000) != 0);
+                     (GetKeyState(VK_MENU) & 0x8000) != 0, repeat);
     }
     return;
   }

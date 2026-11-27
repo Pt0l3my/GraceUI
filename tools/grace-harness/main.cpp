@@ -7646,6 +7646,72 @@ void run_menu_pad(const std::wstring& dll) {
         largest.c_str(), held.c_str(), y_before, inputs_down, y_down, focus_down == held ? "kept" : "MOVED", y_back,
         grace.setting("ui.scale").c_str());
 
+  // A held direction (D270): its press, then, held, its repeats, the first after 400 ms and then one every 80 ms (40
+  // with the left stick past nine tenths of its travel); a repeat moves along or steps a number, and nothing more.
+  const auto hold = [&](std::uint32_t buttons, std::int32_t left_x, DWORD ms) {
+    const std::uint32_t before = grace.menu().inputs;
+    const DWORD start = GetTickCount();
+    while (GetTickCount() - start < ms) {
+      grace.pad_state(0, buttons, 0, 0, left_x, 0, 0, 0);
+      game.frame(kInputColour, PresentWith::present);
+      Sleep(10);
+    }
+    grace.pad_state(0, 0, 0, 0, 0, 0, 0, 0);
+    menu = menu_after(game, grace, grace.menu().lists);
+    frames(game, 6);  // the last step's settings.set into the store
+    return menu.inputs - before;
+  };
+  const auto scale = [&] { return std::stod(grace.setting("ui.scale").empty() ? "0" : grace.setting("ui.scale")); };
+  // ← held for a second on Menu size: a step at the press and some eight after, short of its minimum (0.75); none
+  // once it is let go. The left stick held fully left as long: faster, to its minimum.
+  const std::string slider(menu.focused);
+  const std::uint32_t pad_steps = hold(XINPUT_GAMEPAD_DPAD_LEFT, 0, 1000);
+  const double pad_scale = scale();
+  frames(game, 10);
+  const double after_release = scale();
+  pad_menu(XINPUT_GAMEPAD_X);
+  const std::uint32_t stick_steps = hold(0, -32767, 1000);
+  const double stick_scale = scale();
+  pad_menu(XINPUT_GAMEPAD_X);
+  check(slider == "setting:ui.scale" && pad_scale <= 1.05 + 1e-6 && pad_scale >= 0.8 - 1e-6 &&
+            after_release == pad_scale && std::fabs(stick_scale - 0.75) < 1e-6 && grace.setting("ui.scale") == "1.25",
+        "menu by pad: a held direction steps a slider",
+        "on %s, ← held 1 s: %u input(s), Menu size %.2f (%.2f a moment after its release); the stick held left 1 s: %u "
+        "input(s), %.2f; reset to %s",
+        slider.c_str(), pad_steps, pad_scale, after_release, stick_steps, stick_scale,
+        grace.setting("ui.scale").c_str());
+  // ↓ held: along the page's stops, staying on the page; ↑ held: back up them. B to the rail, then → held: its press
+  // goes into the page, its repeats do not step the slider there. On the theme, → held turns it once.
+  hold(XINPUT_GAMEPAD_DPAD_DOWN, 0, 1500);
+  const std::string bottom(menu.focused);
+  hold(XINPUT_GAMEPAD_DPAD_UP, 0, 1500);
+  const std::string top(menu.focused);
+  for (int i = 0; i < 8 && std::string_view(menu.focused) != "setting:ui.scale"; ++i) {
+    pad_menu(XINPUT_GAMEPAD_DPAD_DOWN);
+  }
+  pad_menu(XINPUT_GAMEPAD_B);
+  const std::string on_rail(menu.focused);
+  hold(XINPUT_GAMEPAD_DPAD_RIGHT, 0, 1000);
+  const std::string entered(menu.focused);
+  const std::string entered_scale = grace.setting("ui.scale");
+  pad_menu(XINPUT_GAMEPAD_DPAD_DOWN);
+  const std::string theme_row(menu.focused);
+  hold(XINPUT_GAMEPAD_DPAD_RIGHT, 0, 1000);
+  const std::string theme = grace.setting("ui.menu.theme");
+  pad_menu(XINPUT_GAMEPAD_X);
+  pad_menu(XINPUT_GAMEPAD_DPAD_UP);
+  const auto on_page = [](const std::string& name) {
+    return !name.empty() && name.rfind("rail:", 0) != 0 && name != "search";
+  };
+  check(on_page(bottom) && bottom != slider && on_page(top) && top != bottom && on_rail.rfind("rail:", 0) == 0 &&
+            entered == "setting:ui.scale" && entered_scale == "1.25" && theme_row == "setting:ui.menu.theme" &&
+            theme == "\"clear\"" && grace.setting("ui.menu.theme") == "\"grace\"",
+        "menu by pad: a held direction moves along, and no further",
+        "↓ held 1.5 s: focus on %s; ↑ held: %s; B: %s, then → held 1 s: %s, Menu size %s; → held on %s: the theme %s "
+        "(reset to %s)",
+        bottom.c_str(), top.c_str(), on_rail.c_str(), entered.c_str(), entered_scale.c_str(), theme_row.c_str(),
+        theme.c_str(), grace.setting("ui.menu.theme").c_str());
+
   // A key: the keyboard's hints again. Then B to the rail and B again closes the menu: neither B reaches the game, nor
   // the second while it is still held after the close; a new press after it does.
   press(window, VK_DOWN, 0x50);

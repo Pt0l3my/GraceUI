@@ -903,6 +903,51 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("a held key: a slider steps on, a switch turns once, a choice moves once, Enter presses once (D270)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "lanterns", "demo.behaviour");
+      const sent = (key: string) =>
+        host.received.filter((f) => f.t === "cmd" && f.args?.key === key).map((f) => f.args.value);
+      const attr = (sel: string, name: string, want: string) => page.waitForFunction(([s, n, w]) =>
+        document.querySelector(s!)?.getAttribute(n!) === w, [sel, name, want]);
+      // A slider: its press, then each repeat (a key pressed again before its release), a step.
+      const track = "[data-row='setting:lantern.brightness'] [role=slider]";
+      await page.locator(track).focus();
+      for (const want of ["0.85", "0.90", "0.95"]) {
+        await page.keyboard.down("ArrowRight");
+        await attr(track, "aria-valuetext", want);
+      }
+      await page.keyboard.up("ArrowRight");
+      // A switch: → turns it, its repeats do not; Enter presses it once however long it is held.
+      const lit = "[data-row='setting:lantern.enabled'] [role=switch]";
+      await page.locator(lit).focus();
+      await page.keyboard.down("ArrowRight");
+      await attr(lit, "aria-checked", "false");
+      await page.keyboard.down("ArrowRight");
+      await page.keyboard.down("ArrowRight");
+      await page.keyboard.up("ArrowRight");
+      await page.keyboard.down("Enter");
+      await attr(lit, "aria-checked", "true");
+      await page.keyboard.down("Enter");
+      await page.keyboard.down("Enter");
+      await page.keyboard.up("Enter");
+      // A choice: → moves it to the next, its repeats do not go round.
+      await page.locator("[data-row='setting:lantern.colour'] [role=radio][aria-checked=true]").focus();
+      await page.keyboard.down("ArrowRight");
+      await page.keyboard.down("ArrowRight");
+      await page.keyboard.down("ArrowRight");
+      await page.keyboard.up("ArrowRight");
+      await page.waitForTimeout(300);
+      assert.equal(await page.locator(lit).getAttribute("aria-checked"), "true");
+      assert.deepEqual(sent("lantern.enabled"), [false, true]);
+      assert.deepEqual(sent("lantern.colour"), ["white"]);
+      assert.deepEqual(sent("lantern.brightness"), [0.85, 0.9, 0.95]);
+    } finally {
+      await close();
+    }
+  });
+
   test("a page of a later increment is absent from the rail (§4.2.2, D173)", async () => {
     const { page, close } = await fresh();
     try {
