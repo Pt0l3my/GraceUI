@@ -62,6 +62,9 @@ MenuFile plain_file_of(const grace::tokens::Type& type) noexcept {
   return type.font == grace::tokens::Font::display || type.weight >= 600 ? noto_semibold : noto_regular;
 }
 
+// The largest atlas that holds Plain text's faces too (§3.16's budget at 4K or 150%, D267).
+constexpr int kPlainAtlasMax = 4096;
+
 MenuFile file_of(const grace::tokens::Type& type) noexcept {
   using grace::tokens::Font;
   switch (type.font) {
@@ -321,9 +324,13 @@ void bake(ImFontAtlas* fonts, std::uint32_t mod_faces, float menu_scale, float c
     }
   }
   // Plain text's faces (§3.4, D267), only when it is on at the bake: the serif and display roles once more, in Noto
-  // Sans at their own sizes, a role that shares another's file and size sharing its bake (prose and rail).
+  // Sans at their own sizes, a role that shares another's file and size sharing its bake (prose and rail). The atlas
+  // that holds them is held to §3.16's largest budget, 4096 by 4096: past it this attempt fails, and the caller's next
+  // leaves them out.
   ImFont* plain_fonts[grace::tokens::kTypeCount] = {};
   if (menu && plain) {
+    fonts->TexMaxWidth = std::min(fonts->TexMaxWidth, kPlainAtlasMax);
+    fonts->TexMaxHeight = std::min(fonts->TexMaxHeight, kPlainAtlasMax);
     for (int role = 0; role < grace::tokens::kTypeCount; ++role) {
       const grace::tokens::Type& type = grace::tokens::kTypes[role];
       if (!serif_role(type)) {

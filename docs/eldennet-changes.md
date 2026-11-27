@@ -1834,4 +1834,5 @@ Nothing to change on your side.
 - **Your own panels** (the subtitles, the chat box, F11) draw with your own faces and are not changed. If you want
   them to follow Plain text, say so: GraceUI can publish it to mods as it publishes `ui.scale` (D180).
 - **The shared atlas** grows while Plain text is on at launch (2048 by 2048 at 1080p and a scale of 1.3 with it;
-  1024 by 2048 at 1.25 without). If it cannot hold everything, Plain text's faces are left out before any of yours.
+  1024 by 2048 at 1.25 without), up to 4096 by 4096. Past that, or if it cannot hold everything, Plain text's faces
+  are left out before any of yours.
