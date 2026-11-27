@@ -1530,16 +1530,18 @@ constinit Fade g_fade{};
 constexpr std::int64_t kFadeInUs = 120'000;   // open (§3.10)
 constexpr std::int64_t kFadeOutUs = 200'000;  // close by the player: F5, Esc or B on the top level, the close button
 
+constinit std::int64_t g_qpc_frequency = 0;  // the present thread's, read at its first fade (no static's guard)
+
 std::int64_t now_us() noexcept {
-  static const std::int64_t frequency = [] {
-    LARGE_INTEGER f;
-    QueryPerformanceFrequency(&f);
-    return static_cast<std::int64_t>(f.QuadPart);
-  }();
+  if (g_qpc_frequency == 0) {
+    LARGE_INTEGER frequency;
+    QueryPerformanceFrequency(&frequency);
+    g_qpc_frequency = frequency.QuadPart > 0 ? static_cast<std::int64_t>(frequency.QuadPart) : 1;
+  }
   LARGE_INTEGER now;
   QueryPerformanceCounter(&now);
   return static_cast<std::int64_t>(static_cast<long double>(now.QuadPart) * 1'000'000.0L /
-                                   static_cast<long double>(frequency));
+                                   static_cast<long double>(g_qpc_frequency));
 }
 
 float alpha_of(const Fade& fade, std::int64_t now) noexcept {
@@ -1548,6 +1550,25 @@ float alpha_of(const Fade& fade, std::int64_t now) noexcept {
   }
   const float t = static_cast<float>(now - fade.start_us) / static_cast<float>(fade.length_us);
   return fade.from + (fade.to - fade.from) * std::clamp(t, 0.0f, 1.0f);
+}
+
+// The list of the holder g_fade is for, at the fade's alpha now; nothing, and the fade over, once it has faded out or
+// its list is gone. `out`: drawn fading out, counted as such.
+Frame faded(grace::abi::DrawListBuffers* lists, std::int64_t now, bool out) noexcept {
+  const float alpha = alpha_of(g_fade, now);
+  if (lists != nullptr && alpha > 0.0f) {
+    grace::abi::DrawListData& data = lists->read();
+    if (data.serial != 0 && data.panel_generation == g_fade.generation && !data.commands.empty()) {
+      if (out) {
+        g_fade_out_frames.fetch_add(1, std::memory_order_relaxed);
+      }
+      g_alpha_milli.store(static_cast<std::uint32_t>(alpha * 1000.0f), std::memory_order_relaxed);
+      return {&data, alpha, true};
+    }
+  }
+  g_fade.drawn = false;
+  g_alpha_milli.store(0, std::memory_order_relaxed);
+  return {};
 }
 
 }  // namespace
@@ -1559,16 +1580,19 @@ Frame frame(std::uint32_t width, std::uint32_t height) noexcept {
     hooks::wake();  // the menu lays itself out again for the new size, if it is open
   }
   const std::int64_t now = now_us();
-  const bool still = g_reduce_motion.load(std::memory_order_relaxed);  // Reduce motion: no fades (§3.10)
   const grace::input::Holder holder = input::capture().holder();
   grace::abi::DrawListBuffers* lists = g_lists.load(std::memory_order_acquire);
   if (!ours(holder)) {
     g_pad_seen.generation = 0;
     if (g_fade.drawn && g_fade.to > 0.0f) {
+      if (holder.phase == grace::input::Phase::closing && holder.generation == g_fade.generation) {
+        return faded(lists, now, false);  // its close is under way, its record not yet written: decided next frame
+      }
       // Just closed. Input went back to the game with the close (invariant 7); what is drawn fades over 200 ms if the
       // player closed it, from where it is, and goes at once on danger, a load, a fault, focus lost or the player's exit.
       const grace::input::LastClose last = input::capture().last_close();
       const float alpha = alpha_of(g_fade, now);
+      const bool still = g_reduce_motion.load(std::memory_order_relaxed);  // Reduce motion: no fades (§3.10)
       if (!still && alpha > 0.0f && last.holder.generation == g_fade.generation &&
           (last.why == grace::input::Closed::released || last.why == grace::input::Closed::menu_key)) {
         g_fade.from = alpha;
@@ -1577,20 +1601,14 @@ Frame frame(std::uint32_t width, std::uint32_t height) noexcept {
         g_fade.length_us = static_cast<std::int64_t>(static_cast<float>(kFadeOutUs) * alpha);
       } else {
         g_fade.drawn = false;
+        g_alpha_milli.store(0, std::memory_order_relaxed);
       }
     }
-    if (!g_fade.drawn || lists == nullptr) {
-      return {};
+    if (g_fade.drawn && input::danger_or_loading()) {
+      g_fade.drawn = false;  // danger or a load cuts a fade out short (invariant 9, §5.1)
+      g_alpha_milli.store(0, std::memory_order_relaxed);
     }
-    const float alpha = alpha_of(g_fade, now);
-    grace::abi::DrawListData& data = lists->read();
-    if (alpha <= 0.0f || data.serial == 0 || data.panel_generation != g_fade.generation || data.commands.empty()) {
-      g_fade.drawn = false;  // faded out, or its list is gone
-      return {};
-    }
-    g_fade_out_frames.fetch_add(1, std::memory_order_relaxed);
-    g_alpha_milli.store(static_cast<std::uint32_t>(alpha * 1000.0f), std::memory_order_relaxed);
-    return {&data, alpha, true};
+    return g_fade.drawn ? faded(lists, now, true) : Frame{};
   }
   pad_inputs(holder.generation);
   if (lists == nullptr) {
@@ -1598,10 +1616,14 @@ Frame frame(std::uint32_t width, std::uint32_t height) noexcept {
   }
   grace::abi::DrawListData& data = lists->read();
   if (data.serial == 0 || data.panel_generation != holder.generation || data.commands.empty()) {
-    return {};  // the first list for this holder is still being laid out
+    // The first list for this holder is still being laid out; a list still fading out goes on meanwhile, so that
+    // reopening it during its fade does not blink.
+    return g_fade.drawn && g_fade.to == 0.0f && g_fade.generation != holder.generation ? faded(lists, now, true)
+                                                                                         : Frame{};
   }
   if (!g_fade.drawn || g_fade.generation != holder.generation || g_fade.to < 1.0f) {
     // Its first list drawn: a fade in over 120 ms, from what still shows of a list fading out, or at once.
+    const bool still = g_reduce_motion.load(std::memory_order_relaxed);  // read after its list: Reduce motion's own
     const float from = g_fade.drawn ? alpha_of(g_fade, now) : 0.0f;
     g_fade.generation = holder.generation;
     g_fade.drawn = true;

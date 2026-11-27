@@ -363,8 +363,8 @@ typedef struct GraceUiTestMenu {
   uint32_t plain_text;  /* 1 while the menu draws its serif and display roles in Noto Sans (ui.menu.plain_text) */
   uint32_t plain_baked; /* 1 if Plain text's own faces were baked at warm-up; 0, the nearest sans bakes serve it */
   /* Appended for the menu's fades (D271): */
-  uint32_t fade_in_frames;  /* frames drawn while the menu faded in, since the first warm-up */
-  uint32_t fade_out_frames; /* frames drawn while it faded out after a close by the player, holding no input */
+  uint32_t fade_in_frames;  /* frames the menu gave the present thread to draw fading in, since the first warm-up */
+  uint32_t fade_out_frames; /* and fading out after a close by the player, holding no input (0 alpha_milli after) */
   uint32_t alpha_milli;     /* the alpha of the last frame that drew it, in thousandths (1000: whole) */
 } GraceUiTestMenu;
 

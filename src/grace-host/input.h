@@ -113,6 +113,8 @@ bool release(std::uint16_t owner) noexcept;
 // The providers' claims changed (D78): the session's World holds them, combined, and was written first. Danger or
 // loading ends the holder (invariant 9); request() reads the claims afresh, before and after its grant.
 void world_changed() noexcept;
+// Whether a provider (or the test build) claims danger or a load now (D78): the menu's fade out ends at once (D271).
+bool danger_or_loading() noexcept;
 // The one close routine for holder `generation` only (a later holder is left alone), with `why`; answers whether it
 // ended one.
 bool close_holder(grace::input::Closed why, std::uint32_t generation) noexcept;

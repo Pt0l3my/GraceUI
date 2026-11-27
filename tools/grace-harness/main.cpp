@@ -4238,6 +4238,18 @@ GraceUiTestMenu menu_after(Game& game, const GraceUi& grace, std::uint64_t lists
   return menu;
 }
 
+// After a close: frames until the menu is drawn no longer, its fade out over (D271), before a check reads pixels.
+void faded_out(Game& game, const GraceUi& grace) {
+  for (int i = 0; i < 80; ++i) {
+    const GraceUiTestMenu menu = grace.menu();
+    if (menu.open == 0 && menu.alpha_milli == 0) {
+      break;
+    }
+    game.frame(kInputColour, PresentWith::present);
+    Sleep(10);
+  }
+}
+
 void press(HWND window, UINT vk, UINT scan) {
   post_key(window, vk, scan, true, false);
   post_key(window, vk, scan, false, false);
@@ -4457,12 +4469,12 @@ void run_menu(const std::wstring& dll) {
     }
   };
   const GraceUiTestMenu before_esc = grace.menu();
+  const GraceUiTestState alloc_before = grace.state();
   press(window, VK_ESCAPE, kScanEscape);
   press(window, VK_ESCAPE, kScanEscape);
-  frames(game, 4);
-  for (int i = 0; i < 50 && grace.menu().open != 0; ++i) {
-    frames(game, 1);
-    Sleep(20);
+  for (int i = 0; i < 100 && grace.menu().open != 0; ++i) {
+    frames(game, 1);  // one at a time, so that what is drawn after input went back is seen
+    Sleep(5);
   }
   const GraceUiTestInput escaped = grace.input();
   const GraceUiTestMenu esc_released = grace.menu();
@@ -4475,6 +4487,7 @@ void run_menu(const std::wstring& dll) {
   const std::string reopened_on = menu.page;
   fade_for(300);
   const GraceUiTestMenu reopened = grace.menu();
+  const GraceUiTestState alloc_after = grace.state();
   press(window, VK_F5, kScanF5);
   frames(game, 3);
   const GraceUiTestInput by_key = grace.input();
@@ -4569,21 +4582,24 @@ void run_menu(const std::wstring& dll) {
     Sleep(20);
   }
   fade_for(400);
+  const std::uint64_t fade_allocations = (alloc_after.allocations + alloc_after.frees) -
+                                         (alloc_before.allocations + alloc_before.frees);
   const std::uint32_t still_out = still_after.fade_out_frames - still_before.fade_out_frames;
   const std::uint32_t still_in = still_after.fade_in_frames - still_before.fade_in_frames;
   check(esc_out >= 2 && esc_out_after_release >= 1 && esc_after.fade_out_frames == esc_faded.fade_out_frames &&
             open_in >= 2 && reopened.alpha_milli == 1000 && key_out >= 2 && danger_out == 0 && on_motion &&
             still_setting == "true" && back_on == "setting:ui.menu.reduce_motion" && still_out == 0 && still_in == 0 &&
             still_after.alpha_milli == 1000 &&
-            grace.setting("ui.menu.reduce_motion") == "false" && grace.menu().open == 0,
+            grace.setting("ui.menu.reduce_motion") == "false" && grace.menu().open == 0 && fade_allocations == 0,
         "menu: it fades in and out",
         "Esc's close: %u frame(s) fading out, %u after input went back, %u more later; F5's open: %u fading in, then "
         "at %u/1000; F5's close: %u fading out; danger's: %u; with Reduce motion (%s, %s): %u fading out and %u in, "
-        "at %u/1000; Reduce motion %s again",
+        "at %u/1000; Reduce motion %s again; allocations and frees on the present thread across Esc's fade out and "
+        "F5's fade in: %llu",
         esc_out, esc_out_after_release, esc_after.fade_out_frames - esc_faded.fade_out_frames, open_in,
         reopened.alpha_milli, key_out, danger_out, on_motion ? "its row found" : "ITS ROW NOT FOUND",
         still_setting.c_str(), still_out, still_in, still_after.alpha_milli,
-        grace.setting("ui.menu.reduce_motion").c_str());
+        grace.setting("ui.menu.reduce_motion").c_str(), static_cast<unsigned long long>(fade_allocations));
   DeleteFileW(settings_file_of(dll).c_str());  // nothing kept for the next scenario (D179)
   check(grace.menu().off == 0 && grace.state().render_off == 0, "menu: still on", "no fault in the menu or the render "
         "path after every check");
@@ -9489,6 +9505,7 @@ void run_on_present(const std::wstring& dll) {
     game.frame(kInputColour, PresentWith::present);
     Sleep(10);
   }
+  faded_out(game, grace);  // the menu's fade out (D271) over the panel, before its pixels are read below
   frames(game, 3);
   const std::uint32_t shut_flags = probe.flags.load();
   check(told_spent >= 0.0f && told_spent < static_cast<float>(GRACEUI_PRESENT_BUDGET_US) && closed_flags == 0 &&
