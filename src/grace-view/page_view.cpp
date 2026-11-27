@@ -3840,6 +3840,7 @@ void PageView::end_edit() {
   edit_ = Edit{};
   caret_rect_ = {};
   edit_box_ = {};
+  edit_prose_ = false;
   edit_stops_.clear();
   prose_stops_.clear();
 }
@@ -5301,6 +5302,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     hits_.clear();
     caret_rect_ = {};
     edit_box_ = {};
+    edit_prose_ = false;
     edit_stops_.clear();
     prose_stops_.clear();
     const auto hit = [&](Rect rect, Scope scope, std::size_t index, Rect control = {}, Rect track = {},
@@ -5626,6 +5628,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                            by + pad + body_lh * static_cast<float>(li), std::max(1.0f, std::round(2 * s)), body_lh};
         c.fill(caret_rect_, Colour::gold_hi);
         edit_box_ = box;
+        edit_prose_ = true;
         prose_line_ = body_lh;
       }
       hit(box, Scope::page, focus_index(kind, id), box);

@@ -39,6 +39,7 @@
 #include "log.h"
 #include "session.h"
 #include "spaces.h"
+#include "steam.h"
 
 namespace grace::host::menu {
 namespace {
@@ -181,6 +182,9 @@ struct State {
   bool focus_shown = false;             // the focus ring drawn: after a key or the pad, until the mouse (G42)
   bool focus_drawn = false;             // the last published layout's, under g_view_lock (the tests')
   bool pad_mode = false;                // the key hints as the pad's: the last device used (D242)
+  bool was_editing = false;             // a field was edited at the last layout (D275)
+  bool keyboard_wanted = false;         // and its edit began from a pad: Steam's floating keyboard, once laid out
+  bool keyboard_asked = false;          // asked for this edit: closed when the field is let go
   bool hints_shown = true;              // the key hints drawn: View on a pad turns them off and on (D242)
   bool pad_drawn = false;               // the last published layout's, under g_view_lock (the tests')
   bool hints_drawn = true;
@@ -943,6 +947,46 @@ void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
   }
 }
 
+// Steam's floating keyboard (§5.6, D275): a field whose edit began from a pad's press opens it once, beside the field's
+// box as this layout drew it (one line, or several for a prose well); the field let go, or the menu closed, closes it.
+// GraceUI's own thread, after the layout: Steam's call may take a while, and the present thread never waits.
+void keyboard_let_go(State& m) {
+  if (m.keyboard_asked) {
+    steam::dismiss_keyboard();
+  }
+  m.was_editing = false;
+  m.keyboard_wanted = false;
+  m.keyboard_asked = false;
+}
+
+void follow_keyboard(State& m) {
+  const grace::view::PageView& view = active_view(m);
+  const bool editing = view.editing();
+  if (!editing) {
+    if (m.was_editing) {
+      keyboard_let_go(m);
+    }
+    return;
+  }
+  if (!m.was_editing) {
+    m.keyboard_wanted = m.pad_mode;  // the press that began the edit was the pad's
+  }
+  m.was_editing = true;
+  const grace::view::Rect box = view.edit_box();
+  if (!m.keyboard_wanted || box.w <= 0 || box.h <= 0) {
+    return;
+  }
+  m.keyboard_wanted = false;
+  m.keyboard_asked = true;
+  auto x = static_cast<std::int32_t>(box.x);
+  auto y = static_cast<std::int32_t>(box.y);
+  auto w = static_cast<std::int32_t>(box.w);
+  auto h = static_cast<std::int32_t>(box.h);
+  input::buffer_to_client(x, y, w, h);
+  steam::show_keyboard(view.edit_prose() ? steam::KeyboardMode::multiple_lines : steam::KeyboardMode::single_line, x,
+                       y, w, h);
+}
+
 void publish(State& m) {
   const grace::view::Fonts* fonts = atlas::menu_fonts(m.plain);  // Plain text's table while it is on (D267)
   grace::abi::DrawListBuffers* lists = g_lists.load(std::memory_order_acquire);
@@ -997,6 +1041,7 @@ void publish(State& m) {
   } else {
     input::set_caret(0, 0, 0);
   }
+  follow_keyboard(m);
   g_view_lock.lock();
   m.page.assign(active_view(m).page());
   m.focused = active_view(m).focused();
@@ -1079,6 +1124,7 @@ void serve_menu() {
       g_timer.store(false, std::memory_order_release);    // and nothing is applied on time while it is closed
       g_due.store(0, std::memory_order_release);
       input::set_caret(0, 0, 0);
+      keyboard_let_go(m);  // Steam's floating keyboard closes with the menu (D275)
       active_view(m).pointer(grace::view::Pointer{grace::view::Pointer::Kind::leave, 0, 0, 0});  // no hover, no drag
       watch(m, false);                       // a mod builds nothing the menu no longer shows
       if (!away) {

@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "anticheat.h"
+#include "steam.h"
 #include "counters.h"
 #include "draw.h"
 #include "draw_alloc.h"
@@ -748,6 +749,8 @@ std::uint32_t test_copy_input_costs(std::uint32_t kind, std::uint32_t* out, std:
 void test_set_anti_cheat_names(const wchar_t* module_prefix, const wchar_t* parent) noexcept {
   anticheat::set_names(module_prefix, parent);
 }
+
+void test_set_steam_module(const wchar_t* name) noexcept { steam::set_module_name(name); }
 
 bool test_copy_notice(std::uint32_t index, GraceUiTestNotice& out) noexcept {
   grace::abi::Notice notice;

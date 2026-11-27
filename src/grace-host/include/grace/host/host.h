@@ -144,6 +144,7 @@ void test_fill_input(GraceUiTestInput& out) noexcept;
 std::uint32_t test_copy_chars(std::uint32_t* out, std::uint32_t capacity) noexcept;
 std::uint32_t test_copy_input_costs(std::uint32_t kind, std::uint32_t* out, std::uint32_t capacity) noexcept;
 void test_set_anti_cheat_names(const wchar_t* module_prefix, const wchar_t* parent) noexcept;
+void test_set_steam_module(const wchar_t* name) noexcept;
 bool test_copy_notice(std::uint32_t index, GraceUiTestNotice& out) noexcept;
 void test_clear_notices() noexcept;
 bool test_copy_consumer(std::uint32_t index, GraceUiTestConsumer& out) noexcept;

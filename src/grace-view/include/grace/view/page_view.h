@@ -278,6 +278,10 @@ class PageView {
   bool take_clipboard(std::string& out);
   // The edited field's caret as the last layout drew it (the IME's place, §5.6); empty while nothing is edited.
   Rect caret() const noexcept { return caret_rect_; }
+  // The edited field's box as the last layout drew it, and whether it takes several lines (a prose well): where Steam's
+  // floating keyboard opens on a pad, and which (§5.6, D275); empty while nothing is edited.
+  Rect edit_box() const noexcept { return edit_box_; }
+  bool edit_prose() const noexcept { return edit_prose_; }
   // A command the space accepted, by where its refusal's words would have gone: a form's fields clear (D195).
   // A command the space took: a form's fields empty (D195); a report's Save, the space's words under it (D263).
   void accepted(std::string_view where, std::string_view words = {});
@@ -556,6 +560,7 @@ class PageView {
   float prose_line_ = 0;                                            // its lines' height
   Rect caret_rect_{};
   Rect edit_box_{};                                         // the edited field, as the last layout drew it
+  bool edit_prose_ = false;                                 // and drawn as a prose well, of several lines (D275)
   std::vector<std::pair<std::size_t, float>> edit_stops_;   // its drawn boundaries: a byte offset and its x
   std::string clipboard_;
   bool has_clipboard_ = false;

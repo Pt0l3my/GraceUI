@@ -14,7 +14,7 @@ target_compile_definitions(grace_harness PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UN
 target_include_directories(grace_harness PRIVATE ${CMAKE_SOURCE_DIR}/examples/hello-panel  # what the examples draw
   ${CMAKE_SOURCE_DIR}/examples/hello-debug-view ${CMAKE_SOURCE_DIR}/tools/grace-spike)
 add_dependencies(grace_harness graceui hello_notice hello_panel hello_debug_view grace_harness_shield grace_spike
-  grace_standin)
+  grace_standin grace_harness_steam)
 gu_own_code(grace_harness)
 if(MINGW)
   target_link_options(grace_harness PRIVATE -municode)  # its entry point is wmain
@@ -25,3 +25,10 @@ add_library(grace_harness_shield SHARED shield.c)
 set_target_properties(grace_harness_shield PROPERTIES PREFIX "" OUTPUT_NAME grace-harness-shield)
 target_compile_definitions(grace_harness_shield PRIVATE WIN32_LEAN_AND_MEAN)
 gu_own_code(grace_harness_shield)
+
+# grace-harness-steam.dll: a DLL of ours with the names of Steam's flat API that a pad's text field opens Steam's
+# floating keyboard by, recording each call (steam.c, D275). Named as nothing of Steam's, and never shipped.
+add_library(grace_harness_steam SHARED steam.c)
+set_target_properties(grace_harness_steam PROPERTIES PREFIX "" OUTPUT_NAME grace-harness-steam)
+target_compile_definitions(grace_harness_steam PRIVATE WIN32_LEAN_AND_MEAN)
+gu_own_code(grace_harness_steam)

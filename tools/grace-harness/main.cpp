@@ -757,6 +757,7 @@ struct GraceUi {
   decltype(&GraceUI_Version) version = nullptr;
   decltype(&GraceUI_RequestApi) request_api = nullptr;
   decltype(&GraceUI_Test_SetAntiCheatNames) set_anti_cheat_names = nullptr;
+  decltype(&GraceUI_Test_SetSteamModule) set_steam_module = nullptr;
   decltype(&GraceUI_Test_GetNotice) get_notice = nullptr;
   decltype(&GraceUI_Test_ClearNotices) clear_notices = nullptr;
   decltype(&GraceUI_Test_GetConsumer) get_consumer = nullptr;
@@ -832,6 +833,7 @@ struct GraceUi {
     get_chars = function_of<decltype(get_chars)>(module, "GraceUI_Test_GetChars");
     input_costs = function_of<decltype(input_costs)>(module, "GraceUI_Test_GetInputCosts");
     set_anti_cheat_names = function_of<decltype(set_anti_cheat_names)>(module, "GraceUI_Test_SetAntiCheatNames");
+    set_steam_module = function_of<decltype(set_steam_module)>(module, "GraceUI_Test_SetSteamModule");
     get_notice = function_of<decltype(get_notice)>(module, "GraceUI_Test_GetNotice");
     clear_notices = function_of<decltype(clear_notices)>(module, "GraceUI_Test_ClearNotices");
     get_consumer = function_of<decltype(get_consumer)>(module, "GraceUI_Test_GetConsumer");
@@ -7746,6 +7748,22 @@ void run_menu_pad(const std::wstring& dll) {
   if (!grace.load(dll)) {
     fatal("graceui.dll did not load, or lacks the test exports");
   }
+  // Steam's library, as the game has it loaded: the harness's stand-in, which records what GraceUI asks of it (D275).
+  const HMODULE steam = LoadLibraryW(L"grace-harness-steam.dll");
+  using SteamCalls = void (*)(LONG*);
+  // SAFETY: the stand-in's own export, of this type (steam.c).
+  const auto steam_calls = steam != nullptr ? reinterpret_cast<SteamCalls>(reinterpret_cast<void*>(
+                                                  GetProcAddress(steam, "GraceHarnessSteam_Calls")))
+                                            : nullptr;
+  if (steam_calls == nullptr) {
+    fatal("grace-harness-steam.dll did not load");
+  }
+  grace.set_steam_module(L"grace-harness-steam.dll");
+  const auto calls = [&] {
+    std::array<LONG, 8> out{};
+    steam_calls(out.data());
+    return out;
+  };
   start_host(game, grace);
   until_atlas(game, grace);
   press(window, VK_F5, kScanF5);
@@ -7820,8 +7838,10 @@ void run_menu_pad(const std::wstring& dll) {
   pad_menu(XINPUT_GAMEPAD_Y);
   const std::string search_focus(menu.focused);
   const std::string search_footer(menu.footer);
+  const std::array<LONG, 8> at_y = calls();
   pad_menu(XINPUT_GAMEPAD_B);
   const std::string after_search_footer(menu.footer);
+  const std::array<LONG, 8> at_b = calls();
   pad_menu(XINPUT_GAMEPAD_BACK);
   const std::uint32_t hidden = menu.hints_shown;
   const std::string hidden_footer(menu.footer);
@@ -7833,6 +7853,25 @@ void run_menu_pad(const std::wstring& dll) {
         "Y: focus on %s, the hints \"%s\"; B: \"%s\"; View: the hints %s (\"%s\"); View again: %s (\"%s\")",
         search_focus.c_str(), search_footer.c_str(), after_search_footer.c_str(), hidden == 0 ? "hidden" : "SHOWN",
         hidden_footer.c_str(), menu.hints_shown != 0 ? "shown" : "HIDDEN", menu.footer);
+
+  // Steam's floating keyboard (§5.6, D275): Y's search field, edited from the pad, opened it once, one line, beside the
+  // field and within the window, on the newest accessor; B let the field go and closed it. Search opened from the
+  // keyboard opens none.
+  press(window, VK_OEM_2, 0x35);
+  menu = menu_after(game, grace, menu.lists);
+  const std::string key_search(menu.focused);
+  press(window, VK_ESCAPE, 0x01);
+  menu = menu_after(game, grace, menu.lists);
+  const std::array<LONG, 8> after_keys = calls();
+  const bool beside = at_y[3] >= 0 && at_y[4] >= 0 && at_y[5] > 0 && at_y[6] > 0 && at_y[3] + at_y[5] <= 900 &&
+                      at_y[4] + at_y[6] <= 1080;
+  check(at_y[0] == 1 && at_y[1] == 0 && at_y[2] == 0 && beside && at_y[7] == 1 && at_b[0] == 1 && at_b[1] == 1 &&
+            key_search == "search" && after_keys[0] == 1 && after_keys[1] == 1,
+        "menu by pad: Steam's floating keyboard",
+        "Y: shown %ld, closed %ld, mode %ld, at %ld,%ld %ldx%ld (%s), on the newest accessor: %s; B: shown %ld, closed "
+        "%ld; search by the keyboard (focus on %s), then Esc: shown %ld, closed %ld",
+        at_y[0], at_y[1], at_y[2], at_y[3], at_y[4], at_y[5], at_y[6], beside ? "in the window" : "OUTSIDE IT",
+        at_y[7] != 0 ? "yes" : "NO", at_b[0], at_b[1], key_search.c_str(), after_keys[0], after_keys[1]);
 
   // The right stick, held down for half a second, then up for longer: the page moves under the focus, which stays,
   // and comes back to where it was. Menu size at its largest first (1.5), so that the page runs past its display.

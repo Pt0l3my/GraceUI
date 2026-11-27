@@ -368,6 +368,13 @@ GRACEUI_API void GraceUI_Test_SetAntiCheatNames(const wchar_t* module_prefix, co
   }
 }
 
+GRACEUI_API void GraceUI_Test_SetSteamModule(const wchar_t* module_name) {
+  try {
+    grace::host::test_set_steam_module(module_name);
+  } catch (...) {
+  }
+}
+
 GRACEUI_API uint32_t GraceUI_Test_GetNotice(uint32_t index, GraceUiTestNotice* out) {
   try {
     if (out == nullptr || out->size < sizeof(GraceUiTestNotice)) {

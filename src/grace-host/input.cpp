@@ -587,6 +587,21 @@ bool caret_in_client(std::int32_t& x, std::int32_t& y, std::int32_t& height) noe
   return true;
 }
 
+void buffer_to_client(std::int32_t& x, std::int32_t& y, std::int32_t& w, std::int32_t& h) noexcept {
+  const auto to_client = [](std::int32_t value, std::uint32_t buffer, std::int32_t client) {
+    return buffer > 0 && client > 0 ? static_cast<std::int32_t>(static_cast<std::int64_t>(value) * client / buffer)
+                                     : value;
+  };
+  const std::uint32_t buffer_width = g_buffer_width.load(std::memory_order_relaxed);
+  const std::uint32_t buffer_height = g_buffer_height.load(std::memory_order_relaxed);
+  const std::int32_t client_width = g_client_width.load(std::memory_order_relaxed);
+  const std::int32_t client_height = g_client_height.load(std::memory_order_relaxed);
+  x = to_client(x, buffer_width, client_width);
+  w = to_client(w, buffer_width, client_width);
+  y = to_client(y, buffer_height, client_height);
+  h = to_client(h, buffer_height, client_height);
+}
+
 grace::input::Request request(std::uint16_t owner, Kind kind, std::uint8_t wants) noexcept {
   const grace::input::Request answer = g_capture.request(owner, kind, wants, &read_conditions, nullptr, now_ms());
   if (answer.answer == grace::input::Answer::not_now) {
