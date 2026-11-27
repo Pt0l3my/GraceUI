@@ -173,6 +173,8 @@ struct State {
 #if defined(GRACEUI_TEST_EXPORTS)
   std::vector<std::pair<std::string, grace::view::PageView::Bounds>> bounds;  // the last layout's, under the same lock
   std::string shown;  // the last layout's words, one text after another, under the same lock
+  // Each space's pages at the last layout, "<space>\n<page>", as present (true) or absent (D269), under the same lock.
+  std::map<std::string, bool, std::less<>> pages_present;
 #endif
 };
 constinit State* g_state = nullptr;
@@ -927,6 +929,12 @@ void publish(State& m) {
 #if defined(GRACEUI_TEST_EXPORTS)
   std::vector<std::pair<std::string, grace::view::PageView::Bounds>> bounds = active_view(m).all_bounds();
   std::string shown = m.list.text;
+  std::map<std::string, bool, std::less<>> pages_present;
+  for (const auto& space : m.spaces) {
+    for (const std::string& id : space->view.page_ids()) {
+      pages_present[space->id + "\n" + id] = space->view.present(id);
+    }
+  }
 #endif
   // The IME's composition window at the edited field's caret, in the back buffer's pixels (§5.6, D57); none otherwise.
   if (const grace::view::Rect caret = active_view(m).caret(); caret.w > 0) {
@@ -945,6 +953,7 @@ void publish(State& m) {
 #if defined(GRACEUI_TEST_EXPORTS)
   m.bounds.swap(bounds);
   m.shown.swap(shown);
+  m.pages_present.swap(pages_present);
 #endif
   g_view_lock.unlock();
 }
@@ -1517,6 +1526,26 @@ bool test_shows(const char* text) noexcept {
   const bool found = g_state != nullptr && g_state->shown.find(text) != std::string::npos;
   g_view_lock.unlock();
   return found;
+}
+
+std::uint32_t test_page_present(const char* space, const char* page) noexcept {
+  if (space == nullptr || page == nullptr) {
+    return 2;
+  }
+  try {
+    const std::string key = std::string(space) + "\n" + page;
+    g_view_lock.lock();
+    std::uint32_t out = 2;
+    if (g_state != nullptr) {
+      if (const auto found = g_state->pages_present.find(key); found != g_state->pages_present.end()) {
+        out = found->second ? 1u : 0u;
+      }
+    }
+    g_view_lock.unlock();
+    return out;
+  } catch (...) {
+    return 2;
+  }
 }
 
 bool test_bounds(const char* name, float (&out)[8]) noexcept {

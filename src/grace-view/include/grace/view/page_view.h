@@ -121,8 +121,12 @@ class PageView {
   // default: every page is present.
   void set_increment(std::string_view increment);
   void leave_absent_page();  // the open page gone (a later increment, its setting off): the first present one
-  // Whether a page is present in the space's increment.
+  // Whether a page is present: in the space's increment, not the browser's alone, and its shown_with switch on (D173,
+  // D258). The rail, Page Up and Page Down, search, Related and shortcuts all ask this one rule.
   bool present(std::string_view page_id) const;
+  // Whether the space's page data has a page of that id, present or not; and every page's id, in its order.
+  bool has_page(std::string_view page_id) const;
+  std::vector<std::string> page_ids() const;
   // Opens a page (its first tab), focus on its first control; false for no such page, or one absent.
   bool open(std::string_view page_id);
 

@@ -54,6 +54,9 @@ export interface FakeHost {
   setView(view: "browser" | "device"): void;
   /** A state topic's new body, as the space publishes it by itself, to every connection that watches it (D252). */
   push(space: string, topic: string, body: JsonObject): void;
+  /** Holds a topic's first answers until release (a space slow to answer: what a view shows before a topic comes). */
+  hold(space: string, topic: string): void;
+  release(space: string, topic: string): void;
   close(): Promise<void>;
 }
 
@@ -138,6 +141,7 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
   const sockets = new Set<Socket>();
   const watchers = new Set<{ subs: Map<number, { space: string; topic: string }>; send: (frame: object) => void }>();
   let pushRev = 1000;
+  const held = new Map<string, (() => void)[]>();  // "<space>\n<topic>": the subs' first answers held back
   let origin = "";
   let host = "";
   let view: "browser" | "device" = "browser";
@@ -294,11 +298,20 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
           send({ v: 1, t: "pong" });
         } else if (frame.t === "sub" && space && typeof frame.id === "number" && typeof frame.topic === "string") {
           subs.set(frame.id, { space: space.id, topic: frame.topic });
-          const first = space.subscribe(frame.topic, typeof frame.since === "number" ? frame.since : undefined);
-          if (first && "error" in first) {
-            send({ v: 1, t: "error", space: space.id, code: first.error, detail: "no such topic" });
-          } else if (first) {
-            send(first);
+          const answer = (topic: string, since: number | undefined) => () => {
+            const first = space.subscribe(topic, since);
+            if (first && "error" in first) {
+              send({ v: 1, t: "error", space: space.id, code: first.error, detail: "no such topic" });
+            } else if (first) {
+              send(first);
+            }
+          };
+          const now = answer(frame.topic, typeof frame.since === "number" ? frame.since : undefined);
+          const waiting = held.get(`${space.id}\n${frame.topic}`);
+          if (waiting) {
+            waiting.push(now);
+          } else {
+            now();
           }
         } else if (frame.t === "unsub" && typeof frame.id === "number") {
           subs.delete(frame.id);
@@ -350,6 +363,16 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
         if ([...w.subs.values()].some((sub) => sub.space === space && sub.topic === topic)) {
           w.send({ v: 1, t: "state", space, topic, rev: pushRev, body });
         }
+      }
+    },
+    hold: (space, topic) => {
+      held.set(`${space}\n${topic}`, []);
+    },
+    release: (space, topic) => {
+      const waiting = held.get(`${space}\n${topic}`) ?? [];
+      held.delete(`${space}\n${topic}`);
+      for (const answer of waiting) {
+        answer();
       }
     },
     close: () => new Promise<void>((resolve) => {

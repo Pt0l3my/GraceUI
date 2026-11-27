@@ -412,6 +412,9 @@ void test_set_network_addresses(const std::uint8_t* addresses, std::uint32_t cou
 }
 
 std::uint32_t test_menu_shows(const char* text) noexcept { return menu::test_shows(text) ? 1 : 0; }
+std::uint32_t test_menu_page(const char* space, const char* page) noexcept {
+  return menu::test_page_present(space, page);
+}
 
 std::uint32_t test_init_step() noexcept { return state::init_step.load(std::memory_order_acquire); }
 

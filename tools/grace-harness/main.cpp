@@ -788,6 +788,7 @@ struct GraceUi {
   decltype(&GraceUI_Test_GetMenuBounds) get_menu_bounds = nullptr;
   decltype(&GraceUI_Test_SetAntiCheatRecheck) set_anti_cheat_recheck = nullptr;
   decltype(&GraceUI_Test_MenuShows) menu_shows = nullptr;
+  decltype(&GraceUI_Test_MenuPage) menu_page = nullptr;
   decltype(&GraceUI_Test_InitStep) init_step = nullptr;
   decltype(&GraceUI_Test_GetServer) get_server = nullptr;
   decltype(&GraceUI_Test_GetHeapGuard) get_heap_guard = nullptr;      // D235
@@ -845,6 +846,7 @@ struct GraceUi {
     get_menu_bounds = function_of<decltype(get_menu_bounds)>(module, "GraceUI_Test_GetMenuBounds");
     set_anti_cheat_recheck = function_of<decltype(set_anti_cheat_recheck)>(module, "GraceUI_Test_SetAntiCheatRecheck");
     menu_shows = function_of<decltype(menu_shows)>(module, "GraceUI_Test_MenuShows");
+    menu_page = function_of<decltype(menu_page)>(module, "GraceUI_Test_MenuPage");
     init_step = function_of<decltype(init_step)>(module, "GraceUI_Test_InitStep");
     get_server = function_of<decltype(get_server)>(module, "GraceUI_Test_GetServer");
     get_heap_guard = function_of<decltype(get_heap_guard)>(module, "GraceUI_Test_GetHeapGuard");
@@ -852,7 +854,8 @@ struct GraceUi {
     get_pairing_code = function_of<decltype(get_pairing_code)>(module, "GraceUI_Test_GetPairingCode");
     set_network_addresses = function_of<decltype(set_network_addresses)>(module, "GraceUI_Test_SetNetworkAddresses");
     return pad_state != nullptr && get_hook_lead != nullptr && get_server != nullptr && get_heap_guard != nullptr && heap_guard_probe != nullptr && get_pairing_code != nullptr && set_network_addresses != nullptr && get_menu != nullptr && get_setting != nullptr && get_topic != nullptr &&
-           get_menu_bounds != nullptr && set_anti_cheat_recheck != nullptr && menu_shows != nullptr && init_step != nullptr &&
+           get_menu_bounds != nullptr && set_anti_cheat_recheck != nullptr && menu_shows != nullptr && menu_page != nullptr &&
+           init_step != nullptr &&
            panel_published != nullptr && set_first_request_delay != nullptr && turn_off_render != nullptr && set_atlas_limit != nullptr &&
            version != nullptr && request_api != nullptr && set_panel != nullptr && get_state != nullptr &&
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
@@ -6927,6 +6930,18 @@ void run_master(const std::wstring& dll) {
     press(window, VK_NEXT, 0x51);
     menu = menu_after(game, grace, grace.menu().lists);
   }
+  // 0. A page's presence by its id (D269): the browser's alone and a later increment's absent, the rest present, an
+  // unknown page or space none.
+  const std::uint32_t log_page = grace.menu_page("demo", "demo.log");
+  const std::uint32_t workbench = grace.menu_page("demo", "demo.workbench");
+  const std::uint32_t own_menu = grace.menu_page("graceui", "graceui.menu");
+  const std::uint32_t later = grace.menu_page("graceui", "graceui.compatibility");
+  const std::uint32_t nowhere = grace.menu_page("demo", "demo.nowhere");
+  const std::uint32_t no_space = grace.menu_page("elsewhere", "demo.log");
+  check(log_page == 1 && workbench == 0 && own_menu == 1 && later == 0 && nowhere == 2 && no_space == 2,
+        "master: a page's presence by its id",
+        "demo.log %u, demo.workbench (the browser's alone) %u, graceui.menu %u, graceui.compatibility (0.6) %u; an "
+        "unknown page %u, an unknown space %u", log_page, workbench, own_menu, later, nowhere, no_space);
   // 1. The list's topic watched; once the mod publishes it, its first row is chosen and its member watched.
   const bool on_lamps = std::strcmp(grace.menu().page, "demo.lamps") == 0;
   const bool list_watched = heard(game, table, mod, GRACEUI_EVENT_WATCHED, "lantern.lamps");

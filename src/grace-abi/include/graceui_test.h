@@ -377,6 +377,10 @@ GRACEUI_API uint32_t GraceUI_Test_GetSetting(const char* key, char* out, uint32_
 GRACEUI_API uint32_t GraceUI_Test_GetMenuBounds(const char* name, float* out);
 /* 1 if the menu's last layout draws `text` within one of its texts (a component's words, D184), else 0. */
 GRACEUI_API uint32_t GraceUI_Test_MenuShows(const char* text);
+/* Whether a space's page was present in the menu's last layout (D269), by the space's id and the page's: 1 present, so
+ * in the rail, in search and in Related alike (one rule decides all three: its increment, browser_only and shown_with);
+ * 0 absent; 2 no such space or page, or no layout yet. Safe while GraceUI is busy. */
+GRACEUI_API uint32_t GraceUI_Test_MenuPage(const char* space, const char* page);
 /* The init thread's step (D220): 0 before it starts; 1 its fonts, 2 waiting for the game's window, 3 Direct3D bound,
  * 4 the hook targets read from a swap chain of GraceUI's own, 5 the input targets, 6 the install, 7 done. Readable from
  * any thread at any time, so that an init that stops says where (GraceUI's log drains on that same thread). */

@@ -265,6 +265,14 @@ GRACEUI_API uint32_t GraceUI_Test_MenuShows(const char* text) {
   }
 }
 
+GRACEUI_API uint32_t GraceUI_Test_MenuPage(const char* space, const char* page) {
+  try {
+    return grace::host::test_menu_page(space, page);
+  } catch (...) {
+    return 2;
+  }
+}
+
 GRACEUI_API uint32_t GraceUI_Test_GetMenuBounds(const char* name, float* out) {
   try {
     return grace::host::test_menu_bounds(name, out);
