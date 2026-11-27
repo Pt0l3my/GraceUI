@@ -486,6 +486,12 @@ class Seeded(unittest.TestCase):
         sp, desc, fx = demo()
         page(sp, "demo.keepers")["sections"][0]["blocks"][0]["row_actions"][0]["confirm_after_ms"] = 1000
         self.assertEqual(failures(sp, desc, fx), [])  # a destructive row action may wait too
+        sp, desc = copy.deepcopy(SPACES["graceui"])
+        fx = copy.deepcopy(build.fixtures_of("graceui"))
+        key = next(a for sec in page(sp, "graceui.hotkeys")["sections"] for b in sec["blocks"]
+                   for a in b.get("row_actions", []) if a.get("capture") == "key")
+        key.update(confirm="Use this key?", confirm_after_ms=1000)
+        self.expect("action key: confirm_after_ms on a capture", sp, desc, fx)
 
     def test_a_private_topic(self):  # D274
         sp, desc, fx = demo()

@@ -1920,7 +1920,7 @@ button reads "Press again to confirm" at once, greyed until the wait is over; a 
 nothing go, and moving away lets the confirmation go as before. In the browser the dialog shows your words at once and
 its action's button is disabled for the wait. The command still carries `"confirm": true`. So Forget declares
 `confirm_after_ms = 1000` on its row action. The lint refuses a value outside 1 to 3000, one on an action that does not
-ask first, and one on a header switch; both views draw a larger value as 3000.
+ask first, one on a header switch and one on a capture row action; both views draw a larger value as 3000.
 
 **`private = true`** on a topic (a chat's lines, a model's text): the lint, run by your CI over your `space.toml`, then
 refuses that topic as a section's status, a header switch's state, a filter's or a setting's choices, the scope's topic

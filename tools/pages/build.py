@@ -725,6 +725,9 @@ def lint_confirm_after(where, action, failures):
     if action.get("tone") != "destructive" and not action.get("confirm"):
         failures.append(f"{where}: confirm_after_ms waits on a confirmation: it is destructive or has confirm words "
                         "(D274)")
+    if action.get("capture"):
+        failures.append(f"{where}: confirm_after_ms on a capture: its key or chord is asked for, never a second press "
+                        "(D274)")
 
 
 def topics_under(node, keys):
