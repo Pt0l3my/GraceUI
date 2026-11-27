@@ -453,6 +453,7 @@ std::string uses_words(std::string_view caps) {
       {GRACEUI_CAP_WORLD_STATE, "world state"},    {GRACEUI_CAP_DISPLAY, "the display"},
       {GRACEUI_CAP_PAD_CHORDS, "pad chords"},      {GRACEUI_CAP_HOTKEY_BINDINGS, "hotkey bindings"},
       {GRACEUI_CAP_WAKE, "a wait handle"},         {GRACEUI_CAP_HOTKEY_BY, "what pressed a hotkey"},
+      {GRACEUI_CAP_PLAIN_TEXT, "Plain text"},
   };
   std::string out;
   for (const auto& [cap, word] : kWords) {
@@ -469,7 +470,9 @@ std::string uses_words(std::string_view caps) {
   if (out.empty()) {
     return "Nothing named";
   }
-  out[0] = static_cast<char>(out[0] - 'a' + 'A');
+  if (out[0] >= 'a' && out[0] <= 'z') {
+    out[0] = static_cast<char>(out[0] - 'a' + 'A');  // "Plain text" is a capital already (D268)
+  }
   return out;
 }
 
@@ -986,8 +989,9 @@ void publish_ui_scale(const grace::spaces::OwnSpace& own) noexcept {
   const protocol::Json& value = own.store().held("ui.scale");
   const protocol::Setting* setting = own.store().find("ui.scale");
   const double default_value = setting != nullptr && setting->default_.is_number() ? setting->default_.get<double>() : 1.0;
-  display::set_ui_scale(static_cast<float>(value.is_number() ? value.get<double>() : default_value),
-                        static_cast<float>(default_value));
+  // ui.scale, its default and Plain text together, one display event for a change of any of them (D180, D268).
+  display::set_settings(static_cast<float>(value.is_number() ? value.get<double>() : default_value),
+                        static_cast<float>(default_value), own.store().held("ui.menu.plain_text") == true);
 }
 
 void keep_own_settings() noexcept {

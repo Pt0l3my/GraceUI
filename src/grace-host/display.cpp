@@ -16,6 +16,7 @@ constinit std::atomic<std::uint32_t> g_height{0};
 constinit std::atomic<float> g_ui_scale{0.0f};
 constinit std::atomic<float> g_ui_default{0.0f};
 constinit std::atomic<float> g_faces_scale{0.0f};
+constinit std::atomic<bool> g_plain_text{false};
 constinit std::atomic<std::uint32_t> g_seen[grace::abi::kMaxConsumers + 1] = {};
 
 void changed() noexcept {
@@ -27,11 +28,13 @@ void changed() noexcept {
 
 }  // namespace
 
-void set_ui_scale(float value, float default_value) noexcept {
+void set_settings(float value, float default_value, bool plain_text) noexcept {
   const bool same = g_ui_scale.load(std::memory_order_relaxed) == value &&
-                    g_ui_default.load(std::memory_order_relaxed) == default_value;
+                    g_ui_default.load(std::memory_order_relaxed) == default_value &&
+                    g_plain_text.load(std::memory_order_relaxed) == plain_text;
   g_ui_scale.store(value, std::memory_order_relaxed);
   g_ui_default.store(default_value, std::memory_order_relaxed);
+  g_plain_text.store(plain_text, std::memory_order_relaxed);
   if (!same) {
     changed();
   }
@@ -62,6 +65,7 @@ Snapshot read() noexcept {
     out.ui_scale = g_ui_scale.load(std::memory_order_relaxed);
     out.ui_scale_default = g_ui_default.load(std::memory_order_relaxed);
     out.faces_scale = g_faces_scale.load(std::memory_order_relaxed);
+    out.plain_text = g_plain_text.load(std::memory_order_relaxed);
     std::atomic_thread_fence(std::memory_order_acquire);
     if (g_revision.load(std::memory_order_relaxed) == before) {
       out.revision = g_warm.load(std::memory_order_acquire) ? before : 0;

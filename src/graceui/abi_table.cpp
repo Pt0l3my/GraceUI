@@ -470,10 +470,11 @@ constexpr std::uint32_t kEvent02 = 48;       // with reply, frame, frame_capacit
 constexpr std::uint32_t kEvent11 = 104;      // with a holder's fields, ABI 1.1 (D176)
 constexpr std::uint32_t kEvent12 = 136;      // with the display's fields, ABI 1.2 (D180)
 constexpr std::uint32_t kEvent16 = 160;      // with a file's fields, ABI 1.6 (D226)
+constexpr std::uint32_t kEvent19 = 168;      // with Plain text, ABI 1.9 (D268)
 constexpr std::uint32_t kSpaceDesc02 = 64;   // GraceUiSpaceDesc as GraceUI 0.2 first gave it
 constexpr std::uint32_t kCaret11 = 32;       // GraceUiCaret as ABI 1.1 first gave it
 constexpr std::uint64_t kPagesMax = 1u << 20;  // a space's page data or settings description: 1 MiB (EST)
-static_assert(sizeof(GraceUiEvent) == kEvent16 && sizeof(GraceUiSpaceDesc) == kSpaceDesc02 &&
+static_assert(sizeof(GraceUiEvent) == kEvent19 && sizeof(GraceUiSpaceDesc) == kSpaceDesc02 &&
               sizeof(GraceUiCaret) == kCaret11);
 
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, const GraceUiHotkeyDesc* hotkey,

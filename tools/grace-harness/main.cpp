@@ -6070,8 +6070,15 @@ void run_settings_read(const std::wstring& dll) {
   if (!grace.load(dll)) {
     fatal("graceui.dll did not load, or lacks the test exports");
   }
-  start_host(game, grace);
+  const GraceUiApi1* table = start_host(game, grace);
   until_atlas(game, grace);
+  // A mod that connects now hears of Plain text as the last session kept it (D268), from GraceUI's load on.
+  const Connected reader = connect(table, request_for("kept-reader", GRACEUI_VERSION_PACK(0, 2, 61), "Kept reader",
+                                                      "display plain-text"));
+  check(reader.status == GRACEUI_OK && reader.answer.plain_text == 1 &&
+            std::fabs(reader.answer.ui_scale - 1.3f) < 0.002f,
+        "settings: Plain text kept, at a mod's connect", "its answer: Plain text %u, ui.scale %.2f",
+        reader.answer.plain_text, reader.answer.ui_scale);
   press(window, VK_F5, kScanF5);
   GraceUiTestMenu menu = menu_after(game, grace, 0);
   const std::string scale = grace.setting("ui.scale");
@@ -8535,10 +8542,11 @@ bool close_to(float a, float b) { return std::fabs(a - b) < 0.002f; }
 std::string display_text(const std::vector<GraceUiEvent>& events) {
   std::string text;
   for (const GraceUiEvent& e : events) {
-    char one[160];
-    std::snprintf(one, sizeof one, "%ux%u, ui.scale %.2f (default %.2f), scale %.3f, content %.3f, faces %.3f",
+    char one[192];
+    std::snprintf(one, sizeof one,
+                  "%ux%u, ui.scale %.2f (default %.2f), scale %.3f, content %.3f, faces %.3f, Plain text %u",
                   e.display_width, e.display_height, e.ui_scale, e.ui_scale_default, e.scale, e.content_scale,
-                  e.faces_scale);
+                  e.faces_scale, e.plain_text);
     text += text.empty() ? "" : "; ";
     text += one;
   }
@@ -9861,16 +9869,23 @@ void run_display(const std::wstring& dll) {
   older_answer.ui_scale = 7.0f;  // past a 1.0 answer's end: left alone
   older_answer.size = 32;
   const GraceUiStatus older_status = table->connect(&older_request, &older_answer);
+  // An answer of 1.8's size (48 bytes) is written no further either: Plain text is past its end (D268).
+  GraceUiConnectRequest request18 = request_for("mod-18", GRACEUI_VERSION_PACK(0, 2, 52), "Mod of 1.8", "display");
+  GraceUiConnectAnswer answer18{};
+  answer18.size = 48;
+  answer18.plain_text = 7;
+  const GraceUiStatus status18 = table->connect(&request18, &answer18);
   check(first.status == GRACEUI_OK && close_to(first.answer.ui_scale, 1.25f) &&
             close_to(first.answer.ui_scale_default, 1.25f) && first.answer.display_width == 0 &&
             first.answer.display_height == 0 && table->has_cap(GRACEUI_CAP_DISPLAY, std::strlen(GRACEUI_CAP_DISPLAY)) &&
-            older_status == GRACEUI_OK && older_answer.ui_scale == 7.0f && GRACEUI_ABI1_MINOR >= 2u,
+            older_status == GRACEUI_OK && older_answer.ui_scale == 7.0f && GRACEUI_ABI1_MINOR >= 2u &&
+            status18 == GRACEUI_OK && answer18.plain_text == 7 && close_to(answer18.ui_scale, 1.25f),
         "display: at connect",
         "ui.scale %.2f, its default %.2f, the size %ux%u (no swap chain bound yet); has_cap(\"display\") %s; a 1.0 "
-        "answer's bytes past its end %s",
+        "answer's bytes past its end %s; a 1.8 answer's (Plain text) %s",
         first.answer.ui_scale, first.answer.ui_scale_default, first.answer.display_width,
         first.answer.display_height, table->has_cap(GRACEUI_CAP_DISPLAY, 7) != 0 ? "yes" : "NO",
-        older_answer.ui_scale == 7.0f ? "untouched" : "WRITTEN");
+        older_answer.ui_scale == 7.0f ? "untouched" : "WRITTEN", answer18.plain_text == 7 ? "untouched" : "WRITTEN");
 
   // 2. Before warm-up: a scaled face of 16 px and a plain one; nothing to poll yet.
   const std::vector<unsigned char> noto = read_file(folder_of_this_program() + L"fonts\\NotoSans-Regular.ttf");
@@ -9955,6 +9970,38 @@ void run_display(const std::wstring& dll) {
             close_to(scaled[0].faces_scale, 720.0f / 1080.0f),
         "display: a new ui.scale", "→ on Menu size: %s", display_text(scaled).c_str());
 
+  // 4b. Plain text turned on in the menu (D268): one event, with plain_text, the rest as it was. Off at connect, and
+  // has_cap("plain-text").
+  press(window, VK_F5, kScanF5);
+  menu = menu_after(game, grace, menu.lists);
+  for (int i = 0; i < 8 && std::strcmp(menu.focused, "setting:ui.menu.plain_text") != 0; ++i) {
+    press(window, VK_DOWN, 0x50);
+    menu = menu_after(game, grace, menu.lists);
+  }
+  const bool on_plain = std::strcmp(menu.focused, "setting:ui.menu.plain_text") == 0;
+  press(window, VK_RETURN, 0x1C);
+  for (int i = 0; i < 150 && grace.setting("ui.menu.plain_text") != "true"; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  press(window, VK_F5, kScanF5);
+  frames(game, 3);
+  std::vector<GraceUiEvent> plain;
+  for (int i = 0; i < 50 && plain.empty(); ++i) {
+    plain = displays_of(table, first.answer.consumer);
+    if (plain.empty()) {
+      frames(game, 1);
+      Sleep(20);
+    }
+  }
+  check(first.answer.plain_text == 0 && table->has_cap(GRACEUI_CAP_PLAIN_TEXT, std::strlen(GRACEUI_CAP_PLAIN_TEXT)) != 0 &&
+            on_plain && plain.size() == 1 && plain[0].plain_text == 1 && close_to(plain[0].ui_scale, 1.3f) &&
+            GRACEUI_ABI1_MINOR >= 9u,
+        "display: Plain text for mods",
+        "off at connect (%u), has_cap(\"plain-text\") %s; Enter on Plain text (%s): %s", first.answer.plain_text,
+        table->has_cap(GRACEUI_CAP_PLAIN_TEXT, std::strlen(GRACEUI_CAP_PLAIN_TEXT)) != 0 ? "yes" : "NO",
+        on_plain ? "found" : "NOT FOUND", display_text(plain).c_str());
+
   // 5. The game resizes its swap chain: one event with the new size.
   game.resize(1600, 900);
   frames(game, 3);
@@ -9975,11 +10022,12 @@ void run_display(const std::wstring& dll) {
   const Connected late = connect(table, request_for("late-mod", GRACEUI_VERSION_PACK(0, 2, 2), "Late mod", "display"));
   const std::vector<GraceUiEvent> late_events = displays_of(table, late.answer.consumer);
   check(late.status == GRACEUI_OK && late.answer.display_width == 1600 && late.answer.display_height == 900 &&
-            close_to(late.answer.ui_scale, 1.3f) && late_events.size() == 1 && late_events[0].faces_scale == 0.0f &&
-            late_events[0].display_width == 1600,
+            close_to(late.answer.ui_scale, 1.3f) && late.answer.plain_text == 1 && late_events.size() == 1 &&
+            late_events[0].faces_scale == 0.0f && late_events[0].display_width == 1600 &&
+            late_events[0].plain_text == 1,
         "display: a mod that connects later",
-        "its answer: %ux%u, ui.scale %.2f; its first poll: %s", late.answer.display_width, late.answer.display_height,
-        late.answer.ui_scale, display_text(late_events).c_str());
+        "its answer: %ux%u, ui.scale %.2f, Plain text %u; its first poll: %s", late.answer.display_width,
+        late.answer.display_height, late.answer.ui_scale, late.answer.plain_text, display_text(late_events).c_str());
   DeleteFileW(settings_file_of(dll).c_str());  // the menu kept ui.scale: the next scenario starts from the defaults
 }
 

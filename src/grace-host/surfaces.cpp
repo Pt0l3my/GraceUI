@@ -713,6 +713,7 @@ void display_at_connect(GraceUiConnectAnswer& out) noexcept {
   out.ui_scale_default = now.ui_scale_default;
   out.display_width = now.width;
   out.display_height = now.height;
+  out.plain_text = now.plain_text ? 1u : 0u;  // ABI 1.9 (D268)
 }
 
 static_assert(grace::input::kByKey == GRACEUI_HOTKEY_BY_KEY && grace::input::kByChord == GRACEUI_HOTKEY_BY_CHORD,
@@ -742,6 +743,7 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, b
       out.scale = now.scale;
       out.content_scale = now.content_scale;
       out.faces_scale = session::registry().scaled_faces_of(consumer) ? now.faces_scale : 0.0f;
+      out.plain_text = now.plain_text ? 1u : 0u;  // ABI 1.9 (D268): written only as far as the mod's event reaches
       return GRACEUI_OK;
     }
   } catch (...) {

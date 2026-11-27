@@ -38,7 +38,7 @@ GU_AT(GraceUiConnectRequest, name_length, 40);
 GU_AT(GraceUiConnectRequest, caps, 48);
 GU_AT(GraceUiConnectRequest, caps_length, 56);
 
-GU_SIZE(GraceUiConnectAnswer, 48); /* 32 in ABI 1.0; the display appended in 1.2 (D180) */
+GU_SIZE(GraceUiConnectAnswer, 56); /* 32 in ABI 1.0; the display appended in 1.2 (D180); Plain text in 1.9 (D268) */
 GU_AT(GraceUiConnectAnswer, size, 0);
 GU_AT(GraceUiConnectAnswer, status, 4);
 GU_AT(GraceUiConnectAnswer, reason, 8);
@@ -50,6 +50,8 @@ GU_AT(GraceUiConnectAnswer, ui_scale, 32);
 GU_AT(GraceUiConnectAnswer, ui_scale_default, 36);
 GU_AT(GraceUiConnectAnswer, display_width, 40);
 GU_AT(GraceUiConnectAnswer, display_height, 44);
+GU_AT(GraceUiConnectAnswer, plain_text, 48);
+GU_AT(GraceUiConnectAnswer, reserved19, 52);
 
 GU_SIZE(GraceUiNotice, 32);
 GU_AT(GraceUiNotice, size, 0);
@@ -177,8 +179,8 @@ GU_AT(GraceUiHotkeyDesc, action_length, 24);
 GU_AT(GraceUiHotkeyDesc, name, 32);
 GU_AT(GraceUiHotkeyDesc, name_length, 40);
 
-GU_SIZE(GraceUiEvent, 160); /* 48 in GraceUI 0.2 (ABI 1.0); a holder's fields in 1.1 (D176); the display's in 1.2; a
-                               file in 1.6 (D226) */
+GU_SIZE(GraceUiEvent, 168); /* 48 in GraceUI 0.2 (ABI 1.0); a holder's fields in 1.1 (D176); the display's in 1.2; a
+                               file in 1.6 (D226); Plain text in 1.9 (D268) */
 GU_AT(GraceUiEvent, size, 0);
 GU_AT(GraceUiEvent, kind, 4);
 GU_AT(GraceUiEvent, hotkey_id, 8);
@@ -212,6 +214,8 @@ GU_AT(GraceUiEvent, hotkey_by, 132);  /* reserved3 until ABI 1.7 (D243) */
 GU_AT(GraceUiEvent, file, 136);
 GU_AT(GraceUiEvent, file_capacity, 144);
 GU_AT(GraceUiEvent, file_length, 152);
+GU_AT(GraceUiEvent, plain_text, 160);
+GU_AT(GraceUiEvent, reserved19, 164);
 
 GU_SIZE(GraceUiSpaceDesc, 64);
 GU_AT(GraceUiSpaceDesc, size, 0);
@@ -287,7 +291,7 @@ GU_AT(GraceUiPresentHook, callback, 16);
 GU_AT(GraceUiPresentHook, user, 24);
 
 /* The numbers a mod compiles in. */
-GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 8u, "ABI 1.8");
+GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 9u, "ABI 1.9");
 GU_ASSERT(GRACEUI_UPLOAD_MAX == 32u * 1024u * 1024u, "an upload's 32 MiB (D226)");
 GU_SIZE(GraceUiHotkeyBinding, 104); /* ABI 1.4 (D210) */
 GU_AT(GraceUiHotkeyBinding, key_text, 24);
