@@ -17,10 +17,13 @@ struct Snapshot {
   float scale = 0.0f;          // (height / 1080) x ui.scale, §3.13; 0 until the size is known
   float content_scale = 0.0f;  // scale / ui_scale_default: a mod's design size at 1080 lines and the default
   float faces_scale = 0.0f;    // the content scale its scaled faces were baked at; 0 before warm-up
+  bool plain_text = false;     // GraceUI's Plain text (D268)
 };
 
 // GraceUI's own settings, as loaded (the last session's ui.scale, D179) and after each change (GraceUI's thread).
 void set_ui_scale(float value, float default_value) noexcept;
+// Likewise GraceUI's Plain text (ui.menu.plain_text, D268).
+void set_plain_text(bool on) noexcept;
 // The back buffer's size, at a bind or a resize (the present thread).
 void set_size(std::uint32_t width, std::uint32_t height) noexcept;
 // Warm-up's bake: the content scale the mods' scaled faces were baked at. From then on, changes raise the revision.

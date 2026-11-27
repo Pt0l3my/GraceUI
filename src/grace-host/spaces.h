@@ -32,6 +32,7 @@ void keep_own_settings() noexcept;
 // hotkeys.menu as the store holds it, applied at once (D208): after a change from either view.
 void publish_menu_key(const grace::spaces::OwnSpace& own) noexcept;
 // ui.scale and its default, as the own space holds them, to the display's values (D180).
+// ui.scale and Plain text, as the store holds them, to the display that mods read (D180, D268).
 void publish_ui_scale(const grace::spaces::OwnSpace& own) noexcept;
 
 // GraceUI's own thread, at every wake: starts or stops the server as it is wanted, answers the browser's views on

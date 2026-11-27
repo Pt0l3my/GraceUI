@@ -453,6 +453,7 @@ std::string uses_words(std::string_view caps) {
       {GRACEUI_CAP_WORLD_STATE, "world state"},    {GRACEUI_CAP_DISPLAY, "the display"},
       {GRACEUI_CAP_PAD_CHORDS, "pad chords"},      {GRACEUI_CAP_HOTKEY_BINDINGS, "hotkey bindings"},
       {GRACEUI_CAP_WAKE, "a wait handle"},         {GRACEUI_CAP_HOTKEY_BY, "what pressed a hotkey"},
+      {GRACEUI_CAP_PLAIN_TEXT, "Plain text"},
   };
   std::string out;
   for (const auto& [cap, word] : kWords) {
@@ -983,6 +984,7 @@ void apply_menu_key(const grace::spaces::OwnSpace& own) {
 }  // namespace
 
 void publish_ui_scale(const grace::spaces::OwnSpace& own) noexcept {
+  display::set_plain_text(own.store().held("ui.menu.plain_text") == true);  // Plain text with it, for mods (D268)
   const protocol::Json& value = own.store().held("ui.scale");
   const protocol::Setting* setting = own.store().find("ui.scale");
   const double default_value = setting != nullptr && setting->default_.is_number() ? setting->default_.get<double>() : 1.0;
