@@ -156,6 +156,7 @@ std::uint32_t test_copy_setting(const char* key, char* out, std::uint32_t capaci
 std::uint32_t test_copy_topic(const char* topic, char* out, std::uint32_t capacity) noexcept;
 std::uint32_t test_menu_bounds(const char* name, float* out) noexcept;
 std::uint32_t test_menu_shows(const char* text) noexcept;
+std::uint32_t test_menu_page(const char* space, const char* page) noexcept;  // D269: 1 present, 0 absent, 2 none
 void test_set_recheck_ms(std::uint32_t ms) noexcept;
 std::uint32_t test_pairing_code(char* out, std::uint32_t capacity) noexcept;
 void test_set_network_addresses(const std::uint8_t* addresses, std::uint32_t count) noexcept;

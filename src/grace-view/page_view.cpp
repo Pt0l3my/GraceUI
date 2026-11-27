@@ -1054,6 +1054,20 @@ bool PageView::present(std::string_view page_id) const {
   return true;
 }
 
+bool PageView::has_page(std::string_view page_id) const {
+  return std::any_of(pages_.pages.begin(), pages_.pages.end(),
+                     [&](const protocol::Page& page) { return page.id == page_id; });
+}
+
+std::vector<std::string> PageView::page_ids() const {
+  std::vector<std::string> out;
+  out.reserve(pages_.pages.size());
+  for (const protocol::Page& page : pages_.pages) {
+    out.push_back(page.id);
+  }
+  return out;
+}
+
 void PageView::leave_absent_page() {
   if (!pages_.pages.empty() && !present(pages_.pages[page_].id)) {
     for (std::size_t p = 0; p < pages_.pages.size(); ++p) {

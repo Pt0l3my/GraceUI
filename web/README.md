@@ -39,7 +39,10 @@ fake host with those fixtures, and prints what the view shows. The dump covers t
 each switch a page is shown with turned the other way. It holds the rail, and each page's text, its gate's words first.
 It fails on a console error, a CSP violation, a request outside the page's origin or a text under 4.5:1, in either
 theme; `--golden` compares the dump with a file of the mod's, and `--update` writes it. It names no path. CTest runs it
-over the demo space (`web_space_check`, its golden `tests/golden/space-demo.txt`).
+over the demo space (`web_space_check`, its golden `tests/golden/space-demo.txt`). Each page is read once the page has
+sent nothing for 1.2 s (its subscriptions go a batch a second, so a page watching many topics sends them over several
+seconds), then once its text has held still for 400 ms; the dump goes whole through a pipe, the process ending only
+once it has been handed on (D269).
 
 ## What is where
 

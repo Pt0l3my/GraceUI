@@ -15,6 +15,7 @@ import process from "node:process";
 import type { JsonObject, SettingsDescription, SpacePages } from "../src/protocol.ts";
 import type { FixtureSpaceData, PagedFixture } from "../src/transport/fixture-space.ts";
 import type { PwBrowser, PwPage } from "../tests/support/browser.ts";
+import type { FakeHost } from "../tests/support/fake-host.ts";
 import { DIST, launch, lowContrast, openPage, violations } from "../tests/support/browser.ts";
 import { startHost } from "../tests/support/fake-host.ts";
 import { space as builtin } from "../tests/support/fixtures.ts";
@@ -113,8 +114,21 @@ async function rail(page: PwPage, pages: SpacePages): Promise<string[]> {
   return out;
 }
 
+/** Until the page has sent the host nothing for 1.2 s (at most 15 s): its subscriptions go at the protocol's rate, a
+ * batch a second (D203), so a page that watches many topics sends them over several seconds, and the fake host answers
+ * each at once. Past this, every topic the page asked for has its first body. */
+async function settled(page: PwPage, host: FakeHost): Promise<void> {
+  let count = host.received.length;
+  let quiet = 0;
+  for (let waited = 0; quiet < 1200 && waited < 15000; waited += 100) {
+    await page.waitForTimeout(100);
+    quiet = host.received.length === count ? quiet + 100 : 0;
+    count = host.received.length;
+  }
+}
+
 /** A page's text as the view shows it: its gate's words first, if it has one, then the page behind it. */
-async function pageText(page: PwPage, category: string, id: string): Promise<string[]> {
+async function pageText(page: PwPage, host: FakeHost, category: string, id: string): Promise<string[]> {
   const item = page.locator(`[data-rail="page:${id}"]`);
   if ((await item.count()) === 0) {
     await page.locator(`[data-rail="category:${category}"]`).first().click();
@@ -136,8 +150,9 @@ async function pageText(page: PwPage, category: string, id: string): Promise<str
     await gate.first().click();
     await page.locator(`main.page[data-page="${id}"]`).waitFor({ timeout: 5000 });
   }
-  // The topics' first bodies: the page's text once it has held still for 400 ms (at most 10 s), however loaded the
-  // machine, so that the dump never catches a page half drawn.
+  // Every topic's first body (the page's subscriptions all sent and answered), then the page's text once it has held
+  // still for 400 ms (at most 10 s), however loaded the machine, so that the dump never catches a page half drawn.
+  await settled(page, host);
   const main = page.locator(`main.page[data-page="${id}"]`).first();
   let text = (await main.innerText()) ?? "";
   for (let still = 0, waited = 0; still < 4 && waited < 10000; waited += 100) {
@@ -162,6 +177,7 @@ async function view(browser: PwBrowser, data: FixtureSpaceData, as: "browser" | 
   try {
     const { page } = opened;
     await page.locator("[data-rail]").first().waitFor({ timeout: 10000 });
+    await settled(page, host);  // the settings, which a page shown with a switch waits for (D258)
     out.push(...await rail(page, data.pages));
     for (const theme of ["grace", "clear"]) {
       if (theme === "clear") {
@@ -174,7 +190,7 @@ async function view(browser: PwBrowser, data: FixtureSpaceData, as: "browser" | 
       }
       for (const category of data.pages.categories) {
         for (const id of category.pages) {
-          const lines = await pageText(page, category.id, id);
+          const lines = await pageText(page, host, category.id, id);
           if (theme === "grace") {
             out.push(...lines);
           }
@@ -245,7 +261,15 @@ async function main(): Promise<number> {
   return failed ? 1 : 0;
 }
 
-main().then((code) => process.exit(code), (error: unknown) => {
+// Exits once both streams have handed on what was written: through a pipe Node writes asynchronously, 64 KiB at a time,
+// and process.exit at once would cut a larger dump short.
+function finish(code: number): void {
+  process.exitCode = code;
+  process.stdout.on("error", () => process.exit(code));  // a reader that stopped early (| head): the dump was taken
+  process.stdout.write("", () => process.stderr.write("", () => process.exit(code)));
+}
+
+main().then(finish, (error: unknown) => {
   process.stderr.write(`check:space: ${(error as Error).message}\n`);
-  process.exit(2);
+  finish(2);
 });

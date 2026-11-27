@@ -3352,6 +3352,44 @@ TEST_CASE("a browser-only page is absent in game; a page shown with a setting co
   CHECK(shown.page() != "demo.workbench");
 }
 
+TEST_CASE("one rule says a page is present, as the rail and Related have it; the test build reports it (D269)") {
+  const auto& s = test::space("demo");
+  Json pages = Json::parse(s.pages);
+  for (Json& p : pages["pages"]) {
+    if (p["id"] == "demo.workbench") {
+      p.erase("browser_only");
+      p.erase("gate");
+    }
+    if (p["id"] == "demo.overview") {
+      p["related"].push_back("demo.workbench");
+    }
+  }
+  PageView view;
+  std::string why;
+  REQUIRE(view.load(test::decoded<grace::protocol::SpacePages>(pages.dump()),
+                    test::decoded<grace::protocol::SettingsDescription>(s.settings), why));
+  CHECK(view.has_page("demo.workbench"));
+  CHECK_FALSE(view.has_page("demo.nowhere"));
+  CHECK(view.page_ids().size() == pages["pages"].size());
+  for (const bool on : {false, true}) {
+    CAPTURE(on);
+    view.set_values(Json::object({{"lantern.enabled", on}}));
+    CHECK(view.present("demo.workbench") == on);
+    // Related: the Overview's link to it is there only while it is present.
+    REQUIRE(view.open("demo.overview"));
+    CHECK(move_to(view, "related:demo.workbench") == on);
+    // The rail: with Records open, its entry is there only while it is present.
+    REQUIRE(view.open("demo.log"));
+    DisplayList list;
+    view.layout(Viewport{1920, 2160, 1.0f}, test::fonts(), list);
+    bool in_rail = false;
+    for (const auto& [name, bounds] : view.all_bounds()) {
+      in_rail = in_rail || name == "rail:demo.workbench";
+    }
+    CHECK(in_rail == on);
+  }
+}
+
 namespace {
 
 // A text item's words, and the first item with these words.

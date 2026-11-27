@@ -1366,16 +1366,47 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       await device.page.locator("[data-rail='page:demo.log']").first().waitFor({ state: "attached" });
       assert.equal(await device.page.locator("[data-rail='page:demo.workbench']").count(), 0);
       assert.equal(await device.page.locator(".related a, .related button", { hasText: "Workbench" }).count(), 0);
+      // Nor does search find it there (EldenNet's point 4): the same shown pages as the rail.
+      await device.page.locator("#search").fill("Workbench");
+      await device.page.locator(".search__count", { hasText: "No results" }).waitFor({ state: "attached" });
+      assert.equal(await device.page.locator("#search-results [role=option]", { hasText: "Workbench" }).count(), 0);
+      await device.page.locator("#search").fill("Lamps");  // the same search finds a page the device has
+      await device.page.locator("#search-results [role=option]", { hasText: "Lamps" }).first().waitFor();
     } finally {
       await device.close();
       await host.close();
     }
     const { page, close } = await fresh();
     try {
+      await page.locator("#search").fill("Workbench");  // on this PC, search finds it
+      await page.locator("#search-results [role=option]", { hasText: "Workbench" }).first().waitFor();
+      await page.keyboard.press("Escape");
       await openFromRail(page, "records", "demo.workbench");
       await page.locator("[data-gate='open']").waitFor();
     } finally {
       await close();
+    }
+  });
+
+  test("a page shown with a setting: absent until the settings come, then there at once (D258; EldenNet's point 5)",
+       async () => {
+    host = await startHost(DIST, builtinSpaces());
+    host.hold("demo", "settings");
+    const held = await openPage(browser, host);
+    try {
+      const { page } = held;
+      await page.locator("[data-rail='category:records']").first().waitFor();
+      if ((await page.locator("[data-rail='page:demo.log']").count()) === 0) {
+        await page.locator("[data-rail='category:records']").first().click();
+      }
+      await page.locator("[data-rail='page:demo.log']").first().waitFor({ state: "attached" });
+      await page.waitForTimeout(300);
+      assert.equal(await page.locator("[data-rail='page:demo.workbench']").count(), 0);  // its switch not yet known
+      host.release("demo", "settings");  // lantern.enabled is on by default: the page comes at once
+      await page.locator("[data-rail='page:demo.workbench']").first().waitFor({ state: "attached" });
+    } finally {
+      await held.close();
+      await host.close();
     }
   });
 

@@ -86,6 +86,9 @@ std::uint32_t test_setting(const char* key, char* out, std::uint32_t capacity) n
 bool test_bounds(const char* name, float (&out)[8]) noexcept;
 // Whether the menu's last layout draws `text` (within one of its texts).
 bool test_shows(const char* text) noexcept;
+// Whether the menu's last layout had a space's page present (1: in its rail and Related, its settings in search, the one
+// rule of PageView::present), absent (0), or no such space or page (2), D269.
+std::uint32_t test_page_present(const char* space, const char* page) noexcept;
 #endif
 
 }  // namespace grace::host::menu
