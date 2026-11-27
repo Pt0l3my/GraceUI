@@ -28,7 +28,8 @@ are checked against the protocol's schema as grace-protocol's decoders check the
      every other a state topic); a block's fields those of its kind; its props (D185 to D187): `field` a name on a
      state component, `empty` 1 to 80 characters on a component with a topic, `newest_first` a boolean on a log tail.
      The framework topic `space.state` (D188), if declared, a state topic that no component draws.
-  7. Actions: each command one the space declares; a destructive action has a confirmation.
+  7. Actions: each command one the space declares; a destructive action has a confirmation; an action's
+     confirm_after_ms (D274) 1 to 3000 on one that asks first, never on a header switch.
   8. Fixtures, where fixtures/<id>/topics.json exists: every declared topic but `settings` has one, a state topic's an
      object and a stream topic's a list of rows with rising sequence numbers.
 Exit status 0 when every space passes (and, with --check, nothing has drifted).
@@ -445,11 +446,13 @@ def lint(space_pages, description, fixtures, known_spaces):
                     failures.append(f"{swhere}: action {action['id']} has a label and sends a command of the space")
                 if action["tone"] == "destructive" and not action.get("confirm"):
                     failures.append(f"{swhere}: destructive action {action['id']} has no confirmation")
+                lint_confirm_after(f"{swhere}: action {action['id']}", action, failures)
         for action in p.get("actions", []):
             if action["command"] not in commands:
                 failures.append(f"{where}: action {action['id']} sends {action['command']}, not a command of the space")
             if action["tone"] == "destructive" and not action.get("confirm"):
                 failures.append(f"{where}: destructive action {action['id']} has no confirmation")
+            lint_confirm_after(f"{where}: action {action['id']}", action, failures)
             state = action.get("state")
             if state is not None:
                 # A header switch (D256): a session switch's form, as a quick switch's (D252), drawn in the header.
@@ -459,7 +462,7 @@ def lint(space_pages, description, fixtures, known_spaces):
                         name in space_pages.get("slow_commands", [])):
                     failures.append(f"{awhere}: a switch sends a command of the space's own, neither a settings, a "
                                     "file nor a slow command (D256)")
-                if action["tone"] == "destructive" or "confirm" in action:
+                if action["tone"] == "destructive" or "confirm" in action or "confirm_after_ms" in action:
                     failures.append(f"{awhere}: a switch is neither destructive nor confirmed: it sends {{on}} at "
                                     "once (D256)")
                 topic = state.get("topic")
@@ -625,6 +628,7 @@ def lint(space_pages, description, fixtures, known_spaces):
                                             "of the space")
                         if action["tone"] == "destructive" and not action.get("confirm"):
                             failures.append(f"{bwhere}: destructive row action {action['id']} has no confirmation")
+                        lint_confirm_after(f"{bwhere}: row action {action['id']}", action, failures)
                     if "row_secret" in block and block["row_secret"]["command"] not in commands:
                         failures.append(f"{bwhere}: the row secret sends {block['row_secret']['command']}, "
                                         "not a command of the space")
@@ -672,6 +676,7 @@ def lint(space_pages, description, fixtures, known_spaces):
             if tid not in topics and tid.rpartition("/")[0] not in families:
                 failures.append(f"{space}: fixture {tid} is for no declared topic or family")
     lint_pc_only(space, space_pages, description, failures)
+    lint_private(space, space_pages, description, failures)
     return failures
 
 
@@ -703,6 +708,58 @@ def keys_named(node):
         for item in node:
             out |= keys_named(item)
     return out
+
+
+# protocol.toml's limits.confirm_after_max_ms (test_build checks that they agree).
+CONFIRM_AFTER_MAX_MS = 3000
+
+
+def lint_confirm_after(where, action, failures):
+    """An action's confirmation that waits (D274): 1 to 3000 ms, on an action that asks first (a destructive one, or
+    one with words to confirm), its second press counting only after it."""
+    if "confirm_after_ms" not in action:
+        return
+    wait = action["confirm_after_ms"]
+    if not isinstance(wait, int) or isinstance(wait, bool) or not 1 <= wait <= CONFIRM_AFTER_MAX_MS:
+        failures.append(f"{where}: confirm_after_ms is 1 to {CONFIRM_AFTER_MAX_MS} (D274)")
+    if action.get("tone") != "destructive" and not action.get("confirm"):
+        failures.append(f"{where}: confirm_after_ms waits on a confirmation: it is destructive or has confirm words "
+                        "(D274)")
+
+
+def topics_under(node, keys):
+    """The topics named as {"topic": ...} under any of `keys`, anywhere in `node`."""
+    out = set()
+    if isinstance(node, dict):
+        for k, value in node.items():
+            if k in keys and isinstance(value, dict) and isinstance(value.get("topic"), str):
+                out.add(value["topic"])
+            out |= topics_under(value, keys)
+    elif isinstance(node, list):
+        for item in node:
+            out |= topics_under(item, keys)
+    return out
+
+
+def lint_private(space, space_pages, description, failures):
+    """A private topic (D274), as chat or a model's words: its text stays in the blocks that draw it. Never a section's
+    status, a header switch's state, a filter's choices, a setting's choices, the scope or a quick switch, where GraceUI
+    would show its text beside the page's own words, in the top bar or among the settings that search finds."""
+    private = {t["id"] for t in space_pages["topics"] if t.get("private")}
+    if not private:
+        return
+    for p in space_pages["pages"]:
+        for tid in sorted(topics_under(p, ("status", "state", "choices_from")) & private):
+            failures.append(f"{space}: page {p['id']} names {tid}, a private topic, as a status, a switch's state or a "
+                            "filter's choices: a private topic is drawn in its blocks alone (D274)")
+    if (space_pages.get("scope") or {}).get("topic") in private:
+        failures.append(f"{space}: the scope names {space_pages['scope']['topic']}, a private topic (D274)")
+    for tid in sorted(topics_under({"quick": space_pages.get("quick")}, ("state",)) & private):
+        failures.append(f"{space}: a quick switch's state is on {tid}, a private topic (D274)")
+    for s in description["settings"]:
+        if s.get("choices_from") in private:
+            failures.append(f"{space}: setting {s['key']} takes its choices from {s['choices_from']}, a private topic "
+                            "(D274)")
 
 
 def lint_pc_only(space, space_pages, description, failures):

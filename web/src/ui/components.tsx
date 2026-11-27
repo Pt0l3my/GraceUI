@@ -308,7 +308,8 @@ function Table({ space, block, body, empty, paged, own, barKey }: {
     setBusy(null);
     if (!answer.ok && answer.error === "confirm_required" && value !== undefined && !confirmed) {
       // The space asks first (another hotkey has it, D208): its words, then the same again with "confirm".
-      setAsking({ action: { ...a, confirm: answer.detail ?? "Use it here?" }, row, value });
+      // Its own question, not the action's: no wait, as in game (D274).
+      setAsking({ action: { ...a, confirm: answer.detail ?? "Use it here?", confirm_after_ms: 0 }, row, value });
     } else if (!answer.ok) {
       setRefusal(refusalWords(answer));
     }

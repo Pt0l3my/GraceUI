@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // modal.tsx: a modal of the native kind (§3.8, §5.9), and the confirmation an action that asks first shows: a header
-// action's (§7.3, D173) or a table's row action's (D192).
-import { useLayoutEffect, useRef } from "preact/hooks";
+// action's (§7.3, D173), a section's own (D202) or a table's row action's (D192), whose button may wait (D274).
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
+import { confirmWait } from "../model/confirm.ts";
 import { domId } from "./view-state.ts";
 
 /** A modal of the native kind: focus held inside, Escape closes it, focus back where it was (§3.8, §5.9). */
@@ -42,6 +43,31 @@ export interface Confirmable {
   label: string;
   tone: "primary" | "secondary" | "destructive";
   confirm?: string;
+  confirm_after_ms?: number;  // 1.21 (D274): its button counts a press only this long after the dialog opens
+}
+
+/** The action's own button in its confirmation: greyed until its wait is over, its words there at once (D274). */
+function ConfirmButton<T extends Confirmable>({ action, onPress }: { action: T; onPress: () => void }) {
+  const wait = confirmWait(action);
+  const [ready, setReady] = useState(wait === 0);
+  useEffect(() => {
+    if (wait === 0) {
+      return undefined;
+    }
+    const timer = setTimeout(() => setReady(true), wait);
+    return () => clearTimeout(timer);
+  }, [wait]);
+  return (
+    <button type="button" class={`button button--${action.tone === "destructive" ? "danger" : action.tone}`}
+            data-confirm={action.id} disabled={!ready}
+            onClick={() => {
+              if (ready) {
+                onPress();
+              }
+            }}>
+      {action.label}
+    </button>
+  );
 }
 
 /** The second press of an action that asks first: its words, Cancel focused, and the action's own button. */
@@ -57,14 +83,10 @@ export function ConfirmDialog<T extends Confirmable>({ space, action, onClose, o
           <p class="prose">{action.confirm ?? "This cannot be undone."}</p>
           <div class="modal__actions">
             <button type="button" class="button button--secondary" autofocus onClick={onClose}>Cancel</button>
-            <button type="button" class={`button button--${action.tone === "destructive" ? "danger" : action.tone}`}
-                    data-confirm={action.id}
-                    onClick={() => {
-                      onClose();
-                      onConfirm(action);
-                    }}>
-              {action.label}
-            </button>
+            <ConfirmButton key={action.id} action={action} onPress={() => {
+              onClose();
+              onConfirm(action);
+            }} />
           </div>
         </>
       )}

@@ -1911,3 +1911,18 @@ change, whether the menu is open or not. `GraceUI_Test_GetMenu`'s `plain_text` r
 last session before the menu has ever opened, and follows a browser's change with the menu closed at once, as the
 mods' display event already did. Your case may read the field again rather than `menu_plain_baked` and the settings
 topic, though both stay right.
+
+## 100. A confirmation that waits, and private topics (2026-11-27, D274; GraceUI 0.2.67, protocol 1.21)
+
+Built as you asked. **`confirm_after_ms`** (1 to 3000) on a header action, a section's own action or a row action that
+asks first (destructive, or with confirm words): its second press counts only that long after the first. In game the
+button reads "Press again to confirm" at once, greyed until the wait is over; a press before then does nothing and lets
+nothing go, and moving away lets the confirmation go as before. In the browser the dialog shows your words at once and
+its action's button is disabled for the wait. The command still carries `"confirm": true`. So Forget declares
+`confirm_after_ms = 1000` on its row action. The lint refuses a value outside 1 to 3000, one on an action that does not
+ask first, and one on a header switch; both views draw a larger value as 3000.
+
+**`private = true`** on a topic (a chat's lines, a model's text): the lint, run by your CI over your `space.toml`, then
+refuses that topic as a section's status, a header switch's state, a filter's or a setting's choices, the scope's topic
+and a quick switch's state, so that it is drawn in its own blocks alone. Neither view reads the mark: nothing of any
+topic reaches search, a title, a URL or storage already. Your page data names minor 21 once it uses either.

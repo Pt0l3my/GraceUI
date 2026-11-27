@@ -2117,7 +2117,33 @@ TEST_CASE("a section's chip, live status and own actions: drawn in its head, a d
     press(view, Key::up);
   }
   REQUIRE(view.focused() == "section-action:roster/dismiss_all");
+  view.tick(5000);
+  CHECK_FALSE(view.timed());
   CHECK(press(view, Key::activate).kind == Action::Kind::none);  // it asks first
+  // Its confirmation waits 1 s (D274): its words at once, greyed, and a press before then does nothing.
+  CHECK(view.timed());
+  CHECK(view.next_due() == 6000);  // when the host wakes to draw it counting
+  DisplayList waiting;
+  view.layout(Viewport{}, test::fonts(), waiting);
+  const auto line_of = [](const std::string& dump, std::string_view words) {
+    const std::size_t at = dump.find(words);
+    if (at == std::string::npos) {
+      return std::string();
+    }
+    const std::size_t from = dump.rfind('\n', at);
+    return dump.substr(from == std::string::npos ? 0 : from + 1, dump.find('\n', at) - (from == std::string::npos ? 0 : from + 1));
+  };
+  CHECK(line_of(waiting.dump(), "Press again to confirm").find(" a128") != std::string::npos);
+  CHECK_FALSE(view.tick(5999));
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);
+  CHECK(view.focused() == "section-action:roster/dismiss_all");
+  CHECK(view.tick(6000));  // it counts now: drawn live, and no longer greyed
+  CHECK_FALSE(view.timed());
+  CHECK(view.next_due() == 0);
+  DisplayList armed;
+  view.layout(Viewport{}, test::fonts(), armed);
+  REQUIRE_FALSE(line_of(armed.dump(), "Press again to confirm").empty());
+  CHECK(line_of(armed.dump(), "Press again to confirm").find(" a128") == std::string::npos);
   const Action sent = press(view, Key::activate);
   REQUIRE(sent.kind == Action::Kind::command);
   CHECK(sent.command.name == "keepers.dismiss_all");
@@ -3699,6 +3725,64 @@ std::size_t count_shape(const DisplayList& l, Shape shape) {
 }
 
 }  // namespace
+
+TEST_CASE("a header or row action's confirmation that waits (D274): inert until then, at most 3 s, any other key lets it go") {
+  // The log's Clear asks 60 s, past the limit: it waits 3 s (the lint refuses it in the author's build).
+  PageView log = loaded_changed("demo", "demo.log", [](Json& pages) {
+    page_of(pages, "demo.log")["actions"][0]["confirm_after_ms"] = 60000;
+  });
+  log.tick(10000);
+  REQUIRE(up_to(log, "action:clear"));
+  CHECK(press(log, Key::activate).kind == Action::Kind::none);  // asks
+  CHECK(log.timed());
+  CHECK_FALSE(log.tick(12999));
+  CHECK(press(log, Key::activate).kind == Action::Kind::none);  // too soon: nothing, and still asking
+  CHECK(log.tick(13000));
+  const Action cleared = press(log, Key::activate);
+  REQUIRE(cleared.kind == Action::Kind::command);
+  CHECK(cleared.command.name == "lantern.clear_log");
+  // A row's Dismiss asks 2 s; a move away lets it go, and the next ask waits again from its own press.
+  PageView keepers = loaded_changed("demo", "demo.keepers", [](Json& pages) {
+    for (Json& section : page_of(pages, "demo.keepers")["sections"]) {
+      for (Json& block : section["blocks"]) {
+        if (block.contains("row_actions")) {
+          block["row_actions"][0]["confirm_after_ms"] = 2000;
+        }
+      }
+    }
+  });
+  keepers.set_topic("lantern.keepers", kKeepers);
+  keepers.tick(1000);
+  for (int i = 0; i < 12 && keepers.focused() != "row:lantern.keepers/k1/dismiss"; ++i) {
+    press(keepers, Key::down);
+  }
+  REQUIRE(keepers.focused() == "row:lantern.keepers/k1/dismiss");
+  CHECK(press(keepers, Key::activate).kind == Action::Kind::none);
+  keepers.tick(2500);
+  CHECK(press(keepers, Key::activate).kind == Action::Kind::none);  // 1.5 s: too soon
+  press(keepers, Key::down);  // away: the confirmation goes
+  press(keepers, Key::up);
+  REQUIRE(keepers.focused() == "row:lantern.keepers/k1/dismiss");
+  keepers.tick(3500);  // 2.5 s after the first ask, but this is a new one
+  CHECK(press(keepers, Key::activate).kind == Action::Kind::none);  // asks again
+  keepers.tick(4500);
+  CHECK(press(keepers, Key::activate).kind == Action::Kind::none);  // 1 s into the new ask
+  keepers.tick(5500);
+  const Action dismissed = press(keepers, Key::activate);
+  REQUIRE(dismissed.kind == Action::Kind::command);
+  CHECK(dismissed.command.args == Json::object({{"id", "k1"}, {"confirm", true}}));
+  // Moving on lets a waiting confirmation go, and an unconfirmed action is pressed at once.
+  for (int i = 0; i < 20 && keepers.focused() != "row:lantern.keepers/k2/dismiss"; ++i) {
+    press(keepers, Key::down);
+  }
+  REQUIRE(keepers.focused() == "row:lantern.keepers/k2/dismiss");
+  CHECK(press(keepers, Key::activate).kind == Action::Kind::none);  // k2 asks: waiting
+  for (int i = 0; i < 20 && keepers.focused() != "section-action:oil/order"; ++i) {
+    press(keepers, Key::down);
+  }
+  REQUIRE(keepers.focused() == "section-action:oil/order");
+  CHECK(press(keepers, Key::activate).command.name == "oil.order");
+}
 
 TEST_CASE("a filter's own choices on a bar its view filters: in their order and words, by value; an unlisted value "
           "under All alone (D262)") {
