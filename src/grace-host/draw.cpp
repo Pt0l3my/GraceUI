@@ -221,7 +221,8 @@ constinit ImDrawVert g_fade_vertices[kFadeVertices] = {};
 
 // The menu's vertices into the fade room, each one's alpha times `alpha`.
 void fade_into(const grace::abi::DrawListData& data, float alpha) noexcept {
-  const std::size_t count = data.vertices.size();
+  const std::size_t count = data.vertices.size();  // within the room: build_frame checks it first
+  // SAFETY: GraceUiDrawVert has ImDrawVert's layout (the static_asserts above); the list is read, never written.
   const auto* from = reinterpret_cast<const ImDrawVert*>(data.vertices.data());
   for (std::size_t i = 0; i < count; ++i) {
     ImDrawVert vertex = from[i];
