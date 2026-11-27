@@ -873,13 +873,31 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       await page.keyboard.type("0.6");
       await page.locator("[data-row='setting:lantern.enabled'] .row__label").click();
       await valued("0.60");
-      for (let i = 0; i < 20 && cmds().length < 2; ++i) {
+      // A press on the track while typing keeps what was typed and does only that, as in game.
+      await page.locator(track).focus();
+      await page.keyboard.press("Enter");
+      await page.locator(entry).waitFor();
+      await page.keyboard.type("0.7");
+      const box = (await page.locator(track).boundingBox())!;
+      await page.mouse.click(box.x + 4, box.y + box.height / 2);
+      await valued("0.70");
+      await page.locator(entry).waitFor({ state: "detached" });
+      for (let i = 0; i < 20 && cmds().length < 3; ++i) {
         await page.waitForTimeout(50);
       }
+      await page.waitForTimeout(200);
       assert.deepEqual(cmds(), [
         { key: "lantern.brightness", value: 0.35 },
         { key: "lantern.brightness", value: 0.6 },
+        { key: "lantern.brightness", value: 0.7 },
       ]);
+      // A shortcut row's slider has no typed entry, as grace-view's: Enter there opens nothing.
+      await openFromRail(page, "lanterns", "demo.overview");
+      const shortcut = "[data-row='shortcut:lantern.brightness']";
+      await page.locator(`${shortcut} [role=slider]`).focus();
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(100);
+      assert.equal(await page.locator(`${shortcut} [data-entry], ${shortcut} [data-value]`).count(), 0);
     } finally {
       await close();
     }

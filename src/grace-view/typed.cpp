@@ -23,9 +23,14 @@ int step_decimals(double step) {
   return d;
 }
 
+int grid_decimals(const Setting& s) {
+  const int step = step_decimals(s.step.value_or(1.0));
+  return s.min_ ? std::max(step, step_decimals(*s.min_)) : step;
+}
+
 std::string plain_number(const Setting& s, double n) {
   char text[64];
-  std::snprintf(text, sizeof text, "%.*f", step_decimals(s.step.value_or(1.0)), n);
+  std::snprintf(text, sizeof text, "%.*f", grid_decimals(s), n);
   return text;
 }
 
@@ -131,6 +136,10 @@ Typed typed_value(const Setting& s, std::string_view text) {
     out.words = bounds_words(s);
     return out;
   }
+  if (std::fabs(x) >= 1e15) {
+    out.words = "Type a number of at most 15 digits.";  // beyond exact whole numbers in either view
+    return out;
+  }
   double n = x;
   if (s.step && *s.step > 0) {
     // The nearest step on the grid the settings store checks (from the minimum, or 0), within the bounds.
@@ -144,7 +153,7 @@ Typed typed_value(const Setting& s, std::string_view text) {
       k = std::max(k, 0.0);
     }
     n = from + k * step;
-    const double scale = std::pow(10.0, step_decimals(step));
+    const double scale = std::pow(10.0, grid_decimals(s));
     n = std::round(n * scale) / scale;
   }
   if (n == 0) {

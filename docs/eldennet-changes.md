@@ -1814,7 +1814,12 @@ Nothing to change on your side: every integer, number and duration setting on yo
 - **What a text becomes**: spaces and the unit at the end are ignored ("×" also as x). A full stop or a comma is the
   decimal point, so "1,024" is 1.024. The value is snapped to the nearest step from your minimum (or 0), within your
   bounds. A text that is no number, or one outside your bounds, sends nothing: the bounds show under the row in words,
-  as your refusals do: "Type a number from 0.75× to 1.50×." Both views follow `fixtures/typed-cases.json`.
+  as your refusals do: "Type a number from 0.75× to 1.50×." A number of 16 digits or more is refused too. Both views
+  follow `fixtures/typed-cases.json`.
+- **Rounding**: a value now rounds to the finer of your step's and your minimum's decimals, from the arrows and a
+  drag too, so a minimum of 0.25 with a step of 0.5 keeps 0.75. The page lint now refuses a min, max or step of more
+  than four decimals. Your settings on main hold no numbers yet, so nothing of yours moves.
+- **Shortcut rows** keep a plain slider: no typed entry, in either view.
 - **Your goldens**: a grace-dev dump with a slider focused gains "Enter  Type" in its footer, before "R  Reset". In the
   browser the value is now a button, `[data-value='<key>']`, and its field is `[data-entry='<key>']`; the value's text
   is as before.

@@ -1611,6 +1611,16 @@ TEST_CASE("a press on a slider's value types one; a press on its track still sli
   REQUIRE(kept.kind == Action::Kind::command);
   CHECK(kept.command.args == Json::object({{"key", "ui.scale"}, {"value", 1.0}}));
   CHECK_FALSE(view.editing());
+  // A press on its track while typed into ends the field and does only that: the hits were laid out around the
+  // field, the track shorter for it, so sliding there would set a value the pointer is not over.
+  press(view, Key::activate);
+  REQUIRE(view.editing());
+  view.layout(Viewport{}, test::fonts(), list);
+  const PageView::Bounds typing = view.bounds_of("setting:ui.scale");
+  CHECK(view.pointer(Pointer{Pointer::Kind::press, typing.control.x + 160, y}).kind == Action::Kind::none);
+  view.pointer(Pointer{Pointer::Kind::release, typing.control.x + 160, y});
+  CHECK_FALSE(view.editing());
+  CHECK(view.value("ui.scale") == Json(1.0));
 }
 
 TEST_CASE("a text setting in GraceUI's own field: Enter edits, Enter sends, Escape drops (G38 (a), D57)") {

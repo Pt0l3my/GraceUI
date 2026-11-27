@@ -24,11 +24,6 @@ bool numeric(SettingType type) {
   return type == SettingType::integer || type == SettingType::number || type == SettingType::duration_s;
 }
 
-// Decimals a step shows: 0.05 two, 0.5 one, 1 none (typed.h's, which a slider's field shares).
-int decimals_of(double step) {
-  return step_decimals(step);
-}
-
 std::string lower(std::string_view text) {
   std::string out(text);
   for (char& c : out) {
@@ -2525,7 +2520,7 @@ Action PageView::change(const Setting& s, int direction, bool shift) {
       const double step = s.step.value_or(1.0) * (shift ? 10 : 1);
       double n = (v.is_number() ? v.get<double>() : 0.0) + direction * step;
       n = std::clamp(n, s.min_.value_or(n), s.max_.value_or(n));
-      const double scale = std::pow(10.0, decimals_of(s.step.value_or(1.0)));
+      const double scale = std::pow(10.0, grid_decimals(s));  // on the store's grid (D266)
       n = std::round(n * scale) / scale;
       if (s.type == SettingType::integer) {
         return set(s, Json(static_cast<std::int64_t>(std::llround(n))));
@@ -2606,7 +2601,7 @@ Action PageView::slide(float x) {
   const double step = s->step.value_or(1.0);
   double n = lo + t * (hi - lo);
   n = step > 0 ? lo + std::round((n - lo) / step) * step : n;
-  const double scale = std::pow(10.0, decimals_of(step));
+  const double scale = std::pow(10.0, grid_decimals(*s));  // on the store's grid (D266)
   n = std::clamp(std::round(n * scale) / scale, lo, hi);
   const Json now = s->type == SettingType::integer ? Json(static_cast<std::int64_t>(std::llround(n))) : Json(n);
   const Json& was = value(s->key);
@@ -2680,9 +2675,13 @@ Action PageView::pointer_body(const Pointer& in) {
       // secret's edit dropped; search's results closed.
       const bool keep = (edit_.kind == EditKind::setting && !edit_.masked) || edit_.kind == EditKind::form_field ||
                         edit_.kind == EditKind::editor_text || edit_.kind == EditKind::editor_notes;
+      const Setting* typed_into = edit_.kind == EditKind::setting ? setting(edit_.id) : nullptr;
+      const bool slider = typed_into != nullptr && numeric(typed_into->type);
       Action left = edit_.kind == EditKind::search ? edit(EditInput{EditKey::tab}) : finish_edit(keep, 0);
-      if (left.kind == Action::Kind::command) {
-        return left;  // the edit's command; the click did only that
+      if (left.kind == Action::Kind::command || slider) {
+        // The edit's command, or a slider's typed entry ended (D266): the click did only that. (The hits it would
+        // test were laid out around the field, the track shorter for it.)
+        return left;
       }
       hit = hit_at(in.x, in.y);
     }

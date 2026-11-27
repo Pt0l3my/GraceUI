@@ -7,7 +7,7 @@
 // the row shows only Set or Not set (§7.4, invariant 5).
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Json, Setting } from "../protocol.ts";
-import { decimalsOf, formatValue, isNumeric, nextValue, roundHalfAway, sameJson, triLabels, triValues } from "../model/format.ts";
+import { formatValue, gridDecimals, isNumeric, nextValue, roundHalfAway, sameJson, triLabels, triValues } from "../model/format.ts";
 import { BROWSER_KEYS, LEAVES_CAPTURE, keyName } from "../model/keys.ts";
 import { TYPED_NUMBER_MAX, plainNumber, typedValue } from "../model/typed.ts";
 import { pageById, parseLink } from "../model/layout.ts";
@@ -24,6 +24,7 @@ interface ControlProps {
   labelId: string;
   helpId: string;
   disabled: boolean;
+  shortcut?: boolean;  // a shortcut row's control: a slider without typed entry, as grace-view's (D189, D266)
 }
 
 const EFFECT_WORDS: { [effect: string]: string } = {
@@ -82,12 +83,12 @@ function snap(s: Setting, raw: number): number {
   const step = s.step ?? 1;
   let n = lo + Math.round((raw - lo) / step) * step;
   n = Math.min(Math.max(n, s.min ?? n), s.max ?? n);
-  const scale = Math.pow(10, decimalsOf(step));
+  const scale = Math.pow(10, gridDecimals(s));  // on the store's grid (D266)
   n = roundHalfAway(n * scale) / scale;
   return s.type === "integer" ? roundHalfAway(n) : n;
 }
 
-function SliderControl({ s, space, shown, labelId, helpId, disabled }: ControlProps) {
+function SliderControl({ s, space, shown, labelId, helpId, disabled, shortcut }: ControlProps) {
   const session = useSession();
   const track = useRef<HTMLDivElement>(null);
   const entry = useRef<HTMLInputElement>(null);
@@ -124,7 +125,7 @@ function SliderControl({ s, space, shown, labelId, helpId, disabled }: ControlPr
     }
   }, [typing]);
   const open = () => {
-    if (!disabled && !live.current) {
+    if (!disabled && !shortcut && !live.current) {
       session.refuseHere(space, s.key, undefined);  // a new try: the last words go
       live.current = true;
       setTyping(true);
@@ -174,6 +175,12 @@ function SliderControl({ s, space, shown, labelId, helpId, disabled }: ControlPr
               if (disabled || e.button !== 0) {
                 return;
               }
+              if (live.current) {
+                // A press on the track while typing keeps what was typed and does only that, as in game (D266).
+                e.preventDefault();
+                done(true, true);
+                return;
+              }
               (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
               (e.currentTarget as HTMLElement).focus();
               setDrag(at(e.clientX));
@@ -207,7 +214,13 @@ function SliderControl({ s, space, shown, labelId, helpId, disabled }: ControlPr
                    done(e.key === "Enter", true);
                  }
                }}
-               onBlur={() => done(true, false)} />
+               onBlur={() => {
+                 if (document.hasFocus()) {
+                   done(true, false);  // leaving the field keeps it; the window losing focus (Alt+Tab) does not
+                 }
+               }} />
+      ) : shortcut ? (
+        <output class="slider__value" aria-hidden="true">{text}</output>
       ) : (
         <button type="button" class="slider__value" tabIndex={-1} aria-label={`Type a value for ${s.label}`}
                 aria-disabled={disabled || undefined} data-value={s.key} onClick={open}>
@@ -495,7 +508,7 @@ export function SettingRow({ space, settingKey, shortcut }: { space: string; set
           )}
         </div>
         <div class="row__control">
-          <Control s={s} space={space} shown={shown} labelId={labelId} helpId={helpId} disabled={inert} />
+          <Control s={s} space={space} shown={shown} labelId={labelId} helpId={helpId} disabled={inert} shortcut />
         </div>
       </div>
     );

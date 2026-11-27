@@ -535,6 +535,8 @@ class Seeded(unittest.TestCase):
             ("lantern.colour", "default", "green", "not one of its choices"),
             ("lantern.festival", "locked", False, "a later setting is locked"),
             ("lantern.wicks", "default", 12, "outside 1 to 8"),
+            ("lantern.brightness", "step", 0.00025, "its step 0.00025 has more than four decimals"),
+            ("lantern.brightness", "min", 0.00001, "its min 1e-05 has more than four decimals"),
             ("lantern.mode", "default", "maybe", "a tri-state's default"),
             ("lantern.shield", "third", "auto", "a tri-state's default is on, off or auto"),
             ("lantern.enabled", "availability", "soon", "is not live, later"),

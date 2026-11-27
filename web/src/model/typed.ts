@@ -3,7 +3,7 @@
 // field opens with, and what a typed text becomes, a value the settings store will take or the words that refuse it.
 // Both follow fixtures/typed-cases.json (web/tests/unit/typed.test.ts and grace-view's typed_tests.cpp).
 import type { Json, Setting } from "../protocol.ts";
-import { decimalsOf, fixed, formatValue, roundHalfAway } from "./format.ts";
+import { fixed, formatValue, gridDecimals, roundHalfAway } from "./format.ts";
 
 /** The most a slider's field holds (typed.h's kTypedNumberMax). */
 export const TYPED_NUMBER_MAX = 32;
@@ -12,9 +12,9 @@ export type Typed =
   | { ok: true; value: Json }
   | { ok: false; words: string };  // words empty: nothing typed, nothing said
 
-/** The text a slider's field opens with: the value at its step's decimals, without its unit ("1.25"). */
+/** The text a slider's field opens with: the value at its grid's decimals, without its unit ("1.25"). */
 export function plainNumber(s: Setting, n: number): string {
-  return fixed(n, decimalsOf(s.step ?? 1));
+  return fixed(n, gridDecimals(s));
 }
 
 function trimmed(text: string): string {
@@ -65,6 +65,9 @@ export function typedValue(s: Setting, raw: string): Typed {
   if ((s.min !== undefined && x < s.min) || (s.max !== undefined && x > s.max)) {
     return { ok: false, words: boundsWords(s) };
   }
+  if (Math.abs(x) >= 1e15) {
+    return { ok: false, words: "Type a number of at most 15 digits." };  // beyond exact whole numbers in either view
+  }
   let n = x;
   if (s.step !== undefined && s.step > 0) {
     // The nearest step on the grid the settings store checks (from the minimum, or 0), within the bounds.
@@ -78,11 +81,14 @@ export function typedValue(s: Setting, raw: string): Typed {
       k = Math.max(k, 0);
     }
     n = from + k * step;
-    const scale = Math.pow(10, decimalsOf(step));
+    const scale = Math.pow(10, gridDecimals(s));
     n = roundHalfAway(n * scale) / scale;
+  }
+  if (s.type === "integer") {
+    n = roundHalfAway(n);
   }
   if (n === 0) {
     n = 0;  // never a negative zero
   }
-  return { ok: true, value: s.type === "integer" ? roundHalfAway(n) : n };
+  return { ok: true, value: n };
 }

@@ -130,6 +130,33 @@
    "effect": "now",
    "availability": "live",
    "locked": false
+  },
+  {
+   "key": "half",
+   "type": "number",
+   "default": 0.75,
+   "label": "Half",
+   "help": "A case's setting.",
+   "synonyms": [],
+   "home": "cases.page",
+   "effect": "now",
+   "availability": "live",
+   "locked": false,
+   "min": 0.25,
+   "max": 2.25,
+   "step": 0.5
+  },
+  {
+   "key": "count",
+   "type": "integer",
+   "default": 0,
+   "label": "Count",
+   "help": "A case's setting.",
+   "synonyms": [],
+   "home": "cases.page",
+   "effect": "now",
+   "availability": "live",
+   "locked": false
   }
  ],
  "cases": [
@@ -422,6 +449,61 @@
    "setting": "free",
    "text": "123456789012345678901234567890123",
    "words": "Type a number."
+  },
+  {
+   "setting": "half",
+   "text": "0.75",
+   "value": 0.75
+  },
+  {
+   "setting": "half",
+   "text": "1",
+   "value": 1.25
+  },
+  {
+   "setting": "half",
+   "text": "2.25",
+   "value": 2.25
+  },
+  {
+   "setting": "half",
+   "text": "0.2",
+   "words": "Type a number from 0.25 to 2.25."
+  },
+  {
+   "setting": "above",
+   "text": "99999999999999999999",
+   "words": "Type a number of at most 15 digits."
+  },
+  {
+   "setting": "free",
+   "text": "1000000000000000",
+   "words": "Type a number of at most 15 digits."
+  },
+  {
+   "setting": "free",
+   "text": "999999999999999",
+   "value": 999999999999999.0
+  },
+  {
+   "setting": "below",
+   "text": "-99999999999999999",
+   "words": "Type a number of at most 15 digits."
+  },
+  {
+   "setting": "count",
+   "text": "-0.4",
+   "value": 0
+  },
+  {
+   "setting": "count",
+   "text": "2.5",
+   "value": 3
+  },
+  {
+   "setting": "count",
+   "text": "-2.5",
+   "value": -3
   }
  ]
 }
