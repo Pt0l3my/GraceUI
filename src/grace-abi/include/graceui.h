@@ -197,7 +197,8 @@ typedef struct GraceUiConnectAnswer {
   uint32_t display_height;
   /* From ABI 1.9 (D268): GraceUI's Plain text (ui.menu.plain_text), as ui_scale is: the player's, kept from the last
    * session, or its default. 1: the player wants prose and titles in a plain sans face (GraceUI's own fonts\
-   * NotoSans-Regular.ttf and NotoSans-SemiBold.ttf, which a mod may register as faces of its own); 0: not. */
+   * NotoSans-Regular.ttf and NotoSans-SemiBold.ttf, which a mod may register as faces of its own); 0: not. A GraceUI
+   * without has_cap("plain-text") leaves it as the mod set it: zero it before connect, or check the cap. */
   uint32_t plain_text;
   uint32_t reserved19;       /* 0 */
 } GraceUiConnectAnswer;
@@ -617,7 +618,8 @@ typedef struct GraceUiEvent {
   uint64_t file_capacity;  /* its size in bytes: GRACEUI_UPLOAD_MAX always suffices */
   uint64_t file_length;    /* the file's length, 0 when the command has none; with GRACEUI_FULL, the size needed */
   /* From ABI 1.9 (D268): with GRACEUI_EVENT_DISPLAY, GraceUI's Plain text, as connect's plain_text. A mod whose event is
-   * smaller than this still gets the display event, without it. */
+   * smaller than this still gets the display event, without it, and one more when only Plain text changed. A GraceUI
+   * without has_cap("plain-text") leaves it as the mod set it. */
   uint32_t plain_text;
   uint32_t reserved19;  /* 0 */
 } GraceUiEvent;

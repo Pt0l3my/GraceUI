@@ -470,7 +470,9 @@ std::string uses_words(std::string_view caps) {
   if (out.empty()) {
     return "Nothing named";
   }
-  out[0] = static_cast<char>(out[0] - 'a' + 'A');
+  if (out[0] >= 'a' && out[0] <= 'z') {
+    out[0] = static_cast<char>(out[0] - 'a' + 'A');  // "Plain text" is a capital already (D268)
+  }
   return out;
 }
 
@@ -984,12 +986,12 @@ void apply_menu_key(const grace::spaces::OwnSpace& own) {
 }  // namespace
 
 void publish_ui_scale(const grace::spaces::OwnSpace& own) noexcept {
-  display::set_plain_text(own.store().held("ui.menu.plain_text") == true);  // Plain text with it, for mods (D268)
   const protocol::Json& value = own.store().held("ui.scale");
   const protocol::Setting* setting = own.store().find("ui.scale");
   const double default_value = setting != nullptr && setting->default_.is_number() ? setting->default_.get<double>() : 1.0;
-  display::set_ui_scale(static_cast<float>(value.is_number() ? value.get<double>() : default_value),
-                        static_cast<float>(default_value));
+  // ui.scale, its default and Plain text together, one display event for a change of any of them (D180, D268).
+  display::set_settings(static_cast<float>(value.is_number() ? value.get<double>() : default_value),
+                        static_cast<float>(default_value), own.store().held("ui.menu.plain_text") == true);
 }
 
 void keep_own_settings() noexcept {

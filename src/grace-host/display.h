@@ -21,9 +21,9 @@ struct Snapshot {
 };
 
 // GraceUI's own settings, as loaded (the last session's ui.scale, D179) and after each change (GraceUI's thread).
-void set_ui_scale(float value, float default_value) noexcept;
-// Likewise GraceUI's Plain text (ui.menu.plain_text, D268).
-void set_plain_text(bool on) noexcept;
+// With Plain text (ui.menu.plain_text, D268), all three stored before one revision is raised, so that no event holds
+// one new and one old.
+void set_settings(float ui_scale, float ui_scale_default, bool plain_text) noexcept;
 // The back buffer's size, at a bind or a resize (the present thread).
 void set_size(std::uint32_t width, std::uint32_t height) noexcept;
 // Warm-up's bake: the content scale the mods' scaled faces were baked at. From then on, changes raise the revision.

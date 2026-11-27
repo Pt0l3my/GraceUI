@@ -6070,8 +6070,15 @@ void run_settings_read(const std::wstring& dll) {
   if (!grace.load(dll)) {
     fatal("graceui.dll did not load, or lacks the test exports");
   }
-  start_host(game, grace);
+  const GraceUiApi1* table = start_host(game, grace);
   until_atlas(game, grace);
+  // A mod that connects now hears of Plain text as the last session kept it (D268), from GraceUI's load on.
+  const Connected reader = connect(table, request_for("kept-reader", GRACEUI_VERSION_PACK(0, 2, 61), "Kept reader",
+                                                      "display plain-text"));
+  check(reader.status == GRACEUI_OK && reader.answer.plain_text == 1 &&
+            std::fabs(reader.answer.ui_scale - 1.3f) < 0.002f,
+        "settings: Plain text kept, at a mod's connect", "its answer: Plain text %u, ui.scale %.2f",
+        reader.answer.plain_text, reader.answer.ui_scale);
   press(window, VK_F5, kScanF5);
   GraceUiTestMenu menu = menu_after(game, grace, 0);
   const std::string scale = grace.setting("ui.scale");
@@ -9862,16 +9869,23 @@ void run_display(const std::wstring& dll) {
   older_answer.ui_scale = 7.0f;  // past a 1.0 answer's end: left alone
   older_answer.size = 32;
   const GraceUiStatus older_status = table->connect(&older_request, &older_answer);
+  // An answer of 1.8's size (48 bytes) is written no further either: Plain text is past its end (D268).
+  GraceUiConnectRequest request18 = request_for("mod-18", GRACEUI_VERSION_PACK(0, 2, 52), "Mod of 1.8", "display");
+  GraceUiConnectAnswer answer18{};
+  answer18.size = 48;
+  answer18.plain_text = 7;
+  const GraceUiStatus status18 = table->connect(&request18, &answer18);
   check(first.status == GRACEUI_OK && close_to(first.answer.ui_scale, 1.25f) &&
             close_to(first.answer.ui_scale_default, 1.25f) && first.answer.display_width == 0 &&
             first.answer.display_height == 0 && table->has_cap(GRACEUI_CAP_DISPLAY, std::strlen(GRACEUI_CAP_DISPLAY)) &&
-            older_status == GRACEUI_OK && older_answer.ui_scale == 7.0f && GRACEUI_ABI1_MINOR >= 2u,
+            older_status == GRACEUI_OK && older_answer.ui_scale == 7.0f && GRACEUI_ABI1_MINOR >= 2u &&
+            status18 == GRACEUI_OK && answer18.plain_text == 7 && close_to(answer18.ui_scale, 1.25f),
         "display: at connect",
         "ui.scale %.2f, its default %.2f, the size %ux%u (no swap chain bound yet); has_cap(\"display\") %s; a 1.0 "
-        "answer's bytes past its end %s",
+        "answer's bytes past its end %s; a 1.8 answer's (Plain text) %s",
         first.answer.ui_scale, first.answer.ui_scale_default, first.answer.display_width,
         first.answer.display_height, table->has_cap(GRACEUI_CAP_DISPLAY, 7) != 0 ? "yes" : "NO",
-        older_answer.ui_scale == 7.0f ? "untouched" : "WRITTEN");
+        older_answer.ui_scale == 7.0f ? "untouched" : "WRITTEN", answer18.plain_text == 7 ? "untouched" : "WRITTEN");
 
   // 2. Before warm-up: a scaled face of 16 px and a plain one; nothing to poll yet.
   const std::vector<unsigned char> noto = read_file(folder_of_this_program() + L"fonts\\NotoSans-Regular.ttf");
