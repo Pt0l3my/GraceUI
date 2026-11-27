@@ -452,6 +452,10 @@ bool take_from_spaces(State& m) {
     if (body.is_object() && body.contains("values") && body["values"].is_object()) {
       space.values = body["values"];
       space.view.set_values(space.values);
+      // A page shown with a switch comes and goes with it (D258): GraceUI's rail's links to the space's categories,
+      // and the switcher's, are worked out again with the values (D269's review).
+      space.categories = category_links(space.view.space_pages(), space.view);
+      update_rails(m);
     }
     if (body.is_object() && body.contains("changed") && body["changed"].is_array()) {
       std::vector<std::string> keys;  // the rows the space says are changed (D198)

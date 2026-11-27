@@ -1368,8 +1368,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       assert.equal(await device.page.locator(".related a, .related button", { hasText: "Workbench" }).count(), 0);
       // Nor does search find it there (EldenNet's point 4): the same shown pages as the rail.
       await device.page.locator("#search").fill("Workbench");
-      await device.page.locator("#search-results").waitFor({ state: "attached" }).catch(() => undefined);
-      await device.page.waitForTimeout(200);
+      await device.page.locator(".search__count", { hasText: "No results" }).waitFor({ state: "attached" });
       assert.equal(await device.page.locator("#search-results [role=option]", { hasText: "Workbench" }).count(), 0);
       await device.page.locator("#search").fill("Lamps");  // the same search finds a page the device has
       await device.page.locator("#search-results [role=option]", { hasText: "Lamps" }).first().waitFor();

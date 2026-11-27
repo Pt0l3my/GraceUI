@@ -298,7 +298,11 @@ export async function startHost(root: string, data: FixtureSpaceData[]): Promise
           send({ v: 1, t: "pong" });
         } else if (frame.t === "sub" && space && typeof frame.id === "number" && typeof frame.topic === "string") {
           subs.set(frame.id, { space: space.id, topic: frame.topic });
+          const id = frame.id;
           const answer = (topic: string, since: number | undefined) => () => {
+            if (subs.get(id)?.topic !== topic) {
+              return;  // let go before a held answer was released: nothing for it
+            }
             const first = space.subscribe(topic, since);
             if (first && "error" in first) {
               send({ v: 1, t: "error", space: space.id, code: first.error, detail: "no such topic" });

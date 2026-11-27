@@ -127,6 +127,8 @@ class PageView {
   // Whether the space's page data has a page of that id, present or not; and every page's id, in its order.
   bool has_page(std::string_view page_id) const;
   std::vector<std::string> page_ids() const;
+  // The space's page data as loaded.
+  const protocol::SpacePages& space_pages() const noexcept { return pages_; }
   // Opens a page (its first tab), focus on its first control; false for no such page, or one absent.
   bool open(std::string_view page_id);
 

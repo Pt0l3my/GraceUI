@@ -265,6 +265,7 @@ async function main(): Promise<number> {
 // and process.exit at once would cut a larger dump short.
 function finish(code: number): void {
   process.exitCode = code;
+  process.stdout.on("error", () => process.exit(code));  // a reader that stopped early (| head): the dump was taken
   process.stdout.write("", () => process.stderr.write("", () => process.exit(code)));
 }
 
