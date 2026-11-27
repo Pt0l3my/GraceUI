@@ -1875,3 +1875,15 @@ Nothing to change on your side; three things you may take up.
    the page; the demo's pc_only page has no settings, so the settings half rests on the same shown pages.
 5. **shown_with before the settings come**: the page is absent until the settings topic's values have come, then
    there at once. A DOM test now pins it.
+
+## 96. A held direction repeats in the menu (2026-11-27, D270; GraceUI 0.2.63)
+
+Nothing to change on your side.
+
+1. **Your pages in game**: a held d-pad or left stick now repeats, as a held arrow key does: along the rail, a page's
+   rows, a master's list or the top bar, and a slider's or an editor's number field steps on. A repeat never turns one
+   of your switches, moves a choice on, follows a link, turns a tab or a page, or goes from the rail into a page; a held
+   Enter or A acts once, and a step at a slider's bound sends nothing, so your space sees no stream of equal
+   `settings.set`s while a stick is held at the end. The browser view drops the same repeats.
+2. **Your own holders** (the chat box, the F11 view) are as before: their key events still carry `repeat`, and a pad's
+   buttons come as changes, never repeated. A panel of yours that wants a held direction to repeat times it itself.
