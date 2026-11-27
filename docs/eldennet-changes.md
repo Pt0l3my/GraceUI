@@ -1836,3 +1836,22 @@ Nothing to change on your side.
 - **The shared atlas** grows while Plain text is on at launch (2048 by 2048 at 1080p and a scale of 1.3 with it;
   1024 by 2048 at 1.25 without), up to 4096 by 4096. Past that, or if it cannot hold everything, Plain text's faces
   are left out before any of yours.
+
+## 94. Plain text for mods (2026-11-27, D268; GraceUI 0.2.61, ABI 1.9)
+
+Your request after §93, for the subtitles and the chat box if your O134 decides they follow Plain text.
+
+- **The value**: `GraceUiConnectAnswer.plain_text` at connect (1 or 0, the player's kept setting or its default, as
+  `ui_scale` is), and `GraceUiEvent.plain_text` with `GRACEUI_EVENT_DISPLAY`. The display event now also comes after
+  each change of Plain text. Both fields are appended; `has_cap("plain-text")` says a GraceUI has them. Build against
+  ABI 1.9's header to read them, and zero `plain_text` before connect or check the cap: an older GraceUI leaves it as
+  you set it. A mod built for 1.8 reads what it read, with one more display event, its values unchanged, when only
+  Plain text changes.
+- **The faces are yours**: GraceUI does not lend its menu's. Register `fonts\NotoSans-Regular.ttf` and
+  `fonts\NotoSans-SemiBold.ttf` from GraceUI's folder (OFL, credited in its `NOTICE`) with `register_face` in your
+  registration window, as you register EB Garamond Italic (§69, D241); `GRACEUI_FACE_SCALED` works on them as on any
+  face.
+- **A change in session** reaches you at once. With both your serif and your sans faces registered you can switch at
+  once; with only those connect's `plain_text` asks for, you follow it from the next launch. Both keep invariant 11.
+  For the subtitles and the chat box, the second is what we recommend: players set this once, and nobody pays atlas
+  room for faces they do not use.
