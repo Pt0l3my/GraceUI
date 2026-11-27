@@ -4372,6 +4372,53 @@ void run_menu(const std::wstring& dll) {
                                                                               : "NOT REFUSED IN WORDS",
         kept_scale.c_str(), refusals_before, refusals_after, grace.setting("ui.scale").c_str());
 
+  // 3c. A held key's characters (D270). `/` held: its press opens search (its character), and its repeats (bit 30,
+  // the key already down, on the key and on its character as TranslateMessage would post them) type nothing into the
+  // field it opened. A letter pressed in the field and held types its repeats, as in any field. Esc leaves search, ↓
+  // goes back to the page (only if search opened, so that what follows starts where it expects).
+  const auto key_and_character = [&](UINT vk, UINT scan, wchar_t character, bool repeat) {
+    post_key(window, vk, scan, true, repeat);
+    PostMessageW(window, WM_CHAR, static_cast<WPARAM>(character), key_lparam(scan, repeat, false));
+  };
+  key_and_character(VK_OEM_2, 0x35, L'/', false);
+  key_and_character(VK_OEM_2, 0x35, L'/', true);
+  key_and_character(VK_OEM_2, 0x35, L'/', true);
+  post_key(window, VK_OEM_2, 0x35, false, false);
+  for (int i = 0; i < 100 && std::string_view(grace.menu().focused) != "search"; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  frames(game, 6);
+  menu = menu_after(game, grace, 0);
+  const std::string slash_focus(menu.focused);
+  const bool slashes_typed = grace.menu_shows("//") != 0;
+  bool letters_typed = false;
+  if (slash_focus == "search") {
+    key_and_character('K', 0x25, L'k', false);
+    key_and_character('K', 0x25, L'k', true);
+    key_and_character('K', 0x25, L'k', true);
+    post_key(window, 'K', 0x25, false, false);
+    for (int i = 0; i < 100 && !letters_typed; ++i) {
+      frames(game, 1);
+      Sleep(20);
+      letters_typed = grace.menu_shows("kkk") != 0;
+    }
+    const std::uint64_t typed_lists = grace.menu().lists;
+    press(window, VK_ESCAPE, kScanEscape);
+    menu = menu_after(game, grace, typed_lists);  // the field closed on GraceUI's thread, so that ↓ is no field's
+    press(window, VK_DOWN, 0x50);
+    for (int i = 0; i < 100 && std::string_view(grace.menu().focused) != "setting:ui.scale"; ++i) {
+      frames(game, 1);
+      Sleep(20);
+    }
+  }
+  menu = menu_after(game, grace, 0);
+  check(slash_focus == "search" && !slashes_typed && letters_typed && std::strcmp(menu.focused, "setting:ui.scale") == 0,
+        "menu: a held key's characters",
+        "/ held: focus on %s, %s; k held in the field: %s; Esc and ↓: focus on %s", slash_focus.c_str(),
+        slashes_typed ? "ITS REPEATS TYPED INTO SEARCH" : "nothing typed", letters_typed ? "\"kkk\"" : "NOT TYPED",
+        menu.focused);
+
   // 4. Its frames cost the present thread little and allocate nothing (invariant 10): the list is lent, never copied.
   // At 1920 by 1080 Mesa's software renderer fills the screen on the machine's own cores, which the present thread
   // shares, so the budget is held at the other scenarios' 640 by 360; the full size is measured and printed.
@@ -7645,6 +7692,79 @@ void run_menu_pad(const std::wstring& dll) {
         "%.0f; Menu size reset to %s",
         largest.c_str(), held.c_str(), y_before, inputs_down, y_down, focus_down == held ? "kept" : "MOVED", y_back,
         grace.setting("ui.scale").c_str());
+
+  // A held direction (D270): its press, then, held, its repeats, the first after 400 ms and then one every 80 ms (40
+  // with the left stick past nine tenths of its travel); a repeat moves along or steps a number, and nothing more.
+  // `changes`, if given, counts how often a setting's stored value changed while the direction was held.
+  const auto hold = [&](std::uint32_t buttons, std::int32_t left_x, DWORD ms, const char* watched = nullptr,
+                        int* changes = nullptr) {
+    const std::uint32_t before = grace.menu().inputs;
+    std::string last = watched != nullptr ? grace.setting(watched) : std::string();
+    const DWORD start = GetTickCount();
+    while (GetTickCount() - start < ms) {
+      grace.pad_state(0, buttons, 0, 0, left_x, 0, 0, 0);
+      game.frame(kInputColour, PresentWith::present);
+      Sleep(10);
+      if (watched != nullptr) {
+        const std::string now = grace.setting(watched);
+        *changes += now != last ? 1 : 0;
+        last = now;
+      }
+    }
+    grace.pad_state(0, 0, 0, 0, 0, 0, 0, 0);
+    menu = menu_after(game, grace, grace.menu().lists);
+    frames(game, 6);  // the last step's settings.set into the store
+    return menu.inputs - before;
+  };
+  const auto scale = [&] { return std::stod(grace.setting("ui.scale").empty() ? "0" : grace.setting("ui.scale")); };
+  // ← held for a second on Menu size: a step at the press and at most eight after, short of its minimum (0.75); none
+  // once it is let go. The left stick held fully left for a second and a half: to its minimum.
+  const std::string slider(menu.focused);
+  const std::uint32_t pad_steps = hold(XINPUT_GAMEPAD_DPAD_LEFT, 0, 1000);
+  const double pad_scale = scale();
+  frames(game, 10);
+  const double after_release = scale();
+  pad_menu(XINPUT_GAMEPAD_X);
+  const std::uint32_t stick_steps = hold(0, -32767, 1500);
+  const double stick_scale = scale();
+  pad_menu(XINPUT_GAMEPAD_X);
+  check(slider == "setting:ui.scale" && pad_scale <= 1.05 + 1e-6 && pad_scale >= 0.8 - 1e-6 &&
+            after_release == pad_scale && std::fabs(stick_scale - 0.75) < 1e-6 && grace.setting("ui.scale") == "1.25",
+        "menu by pad: a held direction steps a slider",
+        "on %s, ← held 1 s: %u input(s), Menu size %.2f (%.2f a moment after its release); the stick held left 1.5 s: "
+        "%u input(s), %.2f; reset to %s",
+        slider.c_str(), pad_steps, pad_scale, after_release, stick_steps, stick_scale,
+        grace.setting("ui.scale").c_str());
+  // ↓ held: along the page's stops to its last (its last Related link); ↑ held: back up them to its first (the Look
+  // section's label). B to the rail, then → held: its press goes into the page, its repeats do not step the slider
+  // there. On the theme, → held turns it once: one change of the stored value while it is held, not one in two.
+  hold(XINPUT_GAMEPAD_DPAD_DOWN, 0, 1500);
+  const std::string bottom(menu.focused);
+  hold(XINPUT_GAMEPAD_DPAD_UP, 0, 1500);
+  const std::string top(menu.focused);
+  for (int i = 0; i < 8 && std::string_view(menu.focused) != "setting:ui.scale"; ++i) {
+    pad_menu(XINPUT_GAMEPAD_DPAD_DOWN);
+  }
+  pad_menu(XINPUT_GAMEPAD_B);
+  const std::string on_rail(menu.focused);
+  hold(XINPUT_GAMEPAD_DPAD_RIGHT, 0, 1000);
+  const std::string entered(menu.focused);
+  const std::string entered_scale = grace.setting("ui.scale");
+  pad_menu(XINPUT_GAMEPAD_DPAD_DOWN);
+  const std::string theme_row(menu.focused);
+  int theme_changes = 0;
+  hold(XINPUT_GAMEPAD_DPAD_RIGHT, 0, 1000, "ui.menu.theme", &theme_changes);
+  const std::string theme = grace.setting("ui.menu.theme");
+  pad_menu(XINPUT_GAMEPAD_X);
+  pad_menu(XINPUT_GAMEPAD_DPAD_UP);
+  check(bottom == "related:graceui.browser" && top == "section:look" && on_rail.rfind("rail:", 0) == 0 &&
+            entered == "setting:ui.scale" && entered_scale == "1.25" && theme_row == "setting:ui.menu.theme" &&
+            theme == "\"clear\"" && theme_changes == 1 && grace.setting("ui.menu.theme") == "\"grace\"",
+        "menu by pad: a held direction moves along, and no further",
+        "↓ held 1.5 s: focus on %s; ↑ held: %s; B: %s, then → held 1 s: %s, Menu size %s; → held on %s: the theme %s, "
+        "changed %d time(s) while held (reset to %s)",
+        bottom.c_str(), top.c_str(), on_rail.c_str(), entered.c_str(), entered_scale.c_str(), theme_row.c_str(),
+        theme.c_str(), theme_changes, grace.setting("ui.menu.theme").c_str());
 
   // A key: the keyboard's hints again. Then B to the rail and B again closes the menu: neither B reaches the game, nor
   // the second while it is still held after the close; a new press after it does.

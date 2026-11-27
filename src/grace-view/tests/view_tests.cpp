@@ -1951,6 +1951,105 @@ TEST_CASE("master and detail in game: ↑ ↓ along the list choose, → into th
   CHECK(view.chosen() == "old-crane");
 }
 
+TEST_CASE("a held direction's repeats: along the list it is in, and a number's next step, nothing more (D270)") {
+  const auto held = [](PageView& view, Key key) { return view.input(Input{key, false, true, true}); };
+  PageView view = loaded("graceui", "graceui.menu");
+  REQUIRE(view.focused() == "setting:ui.scale");
+  CHECK(held(view, Key::left).kind == Action::Kind::none);  // no repeat without its press
+  // A slider: its press, then each repeat, a step.
+  CHECK(press(view, Key::left).kind == Action::Kind::command);
+  CHECK(held(view, Key::left).kind == Action::Kind::command);
+  CHECK(held(view, Key::left).kind == Action::Kind::command);
+  CHECK(view.value("ui.scale").get<double>() == doctest::Approx(1.1));
+  // A choice: its press goes to the next, its repeats do not go round.
+  press(view, Key::down);
+  REQUIRE(view.focused() == "setting:ui.menu.theme");
+  CHECK(press(view, Key::right).kind == Action::Kind::command);
+  CHECK(held(view, Key::right).kind == Action::Kind::none);
+  CHECK(held(view, Key::right).kind == Action::Kind::none);
+  CHECK(view.value("ui.menu.theme") == "clear");
+  // ↓ held: along the page's stops. A switch turns with a press of ← → or Enter, never with a repeat.
+  press(view, Key::down);
+  CHECK(view.focused() == "section:comfort");
+  held(view, Key::down);
+  CHECK(view.focused() == "setting:ui.menu.reduce_motion");
+  CHECK(press(view, Key::right).kind == Action::Kind::command);
+  CHECK(held(view, Key::right).kind == Action::Kind::none);
+  CHECK(held(view, Key::activate).kind == Action::Kind::none);
+  CHECK(view.value("ui.menu.reduce_motion") == true);
+  held(view, Key::up);
+  CHECK(view.focused() == "section:comfort");
+  // ← at the page's edge: its press goes to the rail, and its repeats do nothing there. On the rail, ↓ held moves
+  // along it, and ← → held do nothing.
+  press(view, Key::left);
+  REQUIRE(view.scope() == Scope::rail);
+  held(view, Key::left);
+  held(view, Key::down);
+  CHECK(view.focused() == "rail:graceui.menu");
+  press(view, Key::down);
+  held(view, Key::down);
+  CHECK(view.focused() == "rail:graceui.browser");
+  held(view, Key::right);
+  CHECK(view.scope() == Scope::rail);
+
+  // → from the rail: its press goes into the page, and its repeats do not step the slider there; a new press does.
+  PageView menu = loaded("graceui", "graceui.menu");
+  press(menu, Key::back);
+  press(menu, Key::right);
+  REQUIRE(menu.focused() == "setting:ui.scale");
+  CHECK(held(menu, Key::right).kind == Action::Kind::none);
+  CHECK(menu.value("ui.scale").get<double>() == doctest::Approx(1.25));
+  press(menu, Key::right);
+  held(menu, Key::right);
+  CHECK(menu.value("ui.scale").get<double>() == doctest::Approx(1.35));
+  // Enter, Esc, a tab or a page: once a press.
+  for (const Key key : {Key::activate, Key::back, Key::next_tab, Key::next_page, Key::reset, Key::search}) {
+    CHECK(held(menu, key).kind == Action::Kind::none);
+  }
+  CHECK(menu.scope() == Scope::page);
+  CHECK(menu.value("ui.scale").get<double>() == doctest::Approx(1.35));
+  // At its bound a repeat's step changes nothing, and sends nothing.
+  press(menu, Key::right);
+  CHECK(held(menu, Key::right).kind == Action::Kind::command);
+  CHECK(held(menu, Key::right).kind == Action::Kind::command);
+  CHECK(menu.value("ui.scale").get<double>() == doctest::Approx(1.5));
+  CHECK(held(menu, Key::right).kind == Action::Kind::none);
+  CHECK(menu.value("ui.scale").get<double>() == doctest::Approx(1.5));
+
+  // A master's list: ↑ ↓ held along it, not from its first row up to its filter bar, nor down into it from the
+  // bar, nor → into the detail; in the detail, ↑ held stops at its first stop, short of the chosen row.
+  PageView lamps = loaded("demo", "demo.lamps");
+  lamps.set_topic("lantern.lamps", kLamps);
+  lamps.set_topic("lantern.lamp/harbour-mouth", kHarbour);
+  REQUIRE(lamps.focused() == "item:lantern.lamps/harbour-mouth");
+  press(lamps, Key::down);
+  held(lamps, Key::down);
+  CHECK(lamps.focused() == "item:lantern.lamps/old-crane");
+  held(lamps, Key::right);
+  CHECK(lamps.focused() == "item:lantern.lamps/old-crane");
+  for (int i = 0; i < 4; ++i) {
+    held(lamps, Key::up);
+  }
+  CHECK(lamps.focused() == "item:lantern.lamps/harbour-mouth");
+  press(lamps, Key::up);
+  REQUIRE(lamps.focused() == "filter:master:lantern.lamps/search");
+  press(lamps, Key::up);
+  press(lamps, Key::down);  // back onto the bar's last stop by a press that stays in the bar
+  REQUIRE(lamps.focused() == "filter:master:lantern.lamps/search");
+  held(lamps, Key::down);
+  CHECK(lamps.focused() == "filter:master:lantern.lamps/search");
+  press(lamps, Key::down);
+  REQUIRE(lamps.focused() == "item:lantern.lamps/harbour-mouth");
+  press(lamps, Key::right);
+  REQUIRE(lamps.focused() == "tab:lamp");
+  press(lamps, Key::down);
+  CHECK(lamps.focused() != "tab:lamp");
+  press(lamps, Key::up);
+  held(lamps, Key::up);
+  CHECK(lamps.focused() == "tab:lamp");
+  CHECK(lamps.chosen() == "harbour-mouth");
+}
+
 TEST_CASE("master and detail in game: a click on a row chooses it (D215)") {
   PageView view = loaded("demo", "demo.lamps");
   view.set_topic("lantern.lamps", kLamps);

@@ -33,7 +33,9 @@ struct Viewport {
 // What the host makes of a key or a button (§5.3, §5.4): ↑ ↓ and the d-pad; ← →; Tab and Shift+Tab; Enter, Space and A;
 // Esc and B; Q, E, LB and RB; Page Up, Page Down, LT and RT; R and X; `/`, Ctrl+F and Y, search (§4.3); the right stick,
 // a step of the page's scroll; View, the key hints shown or hidden (D242). `shift` is Shift held (a slider's ten steps);
-// `pad`, the input came from a pad, so that the key hints follow the last device used (§3.8).
+// `pad`, the input came from a pad, so that the key hints follow the last device used (§3.8); `repeat`, it is a held
+// direction's repeat (a held arrow key's, the d-pad's or the left stick's, D270), which moves focus along the list it is
+// in and steps a number, and does nothing else (repeat_acts).
 enum class Key : std::uint8_t {
   up, down, left, right, next, previous, activate, back, previous_tab, next_tab, previous_page, next_page, reset, search,
   scroll_up, scroll_down, toggle_hints,
@@ -44,6 +46,7 @@ struct Input {
   Key key = Key::down;
   bool shift = false;
   bool pad = false;
+  bool repeat = false;
 };
 
 enum class Scope : std::uint8_t { rail, top, page };
@@ -138,6 +141,9 @@ class PageView {
 
   // A key or a button: what it did (§5.3, §5.4, §5.7).
   Action input(const Input& input);
+  // The held key's repeats do nothing from here until a new press (D270): the host calls it when another space's view
+  // starts taking the keys.
+  void stop_repeats() noexcept { repeat_stays_ = false; }
   // The mouse (§5.5): a press focuses what it is on and does what Enter does there, or on a control what a click on its
   // part does (a switch turns, a choice's segment is chosen, a slider takes the value under the pointer); a slider's
   // moves while its button is held set it, and the release ends that; the wheel scrolls the page, which then stays
@@ -675,6 +681,26 @@ class PageView {
   const protocol::Json* master_body() const;
   bool has_quick() const noexcept { return pages_.quick && !pages_.quick->empty(); }
   Action quick_input(const Input& in);
+  // Whether a held direction's repeat acts where focus is (D270): along the list focus is in (the rail, the top bar's
+  // stops, a page's stops, a master's list, the Quick switches, a field's caret), and a slider's or a number field's
+  // next step. Never across into another part of the menu, nor a link followed, a switch turned, a choice's next, a tab
+  // or a page turned, a modal's key or a confirmation let go: those take a fresh press. Any other key's repeat: false.
+  bool repeat_acts(const Input& in);
+  // Where focus is, as far as a held direction's repeats go (D270): the rail, the top bar or the page; the page and its
+  // tab; a master's list or the rest of the page; a field editing; the Quick switches or a modal open.
+  struct Region {
+    Scope scope;
+    std::size_t page;
+    std::size_t tab;
+    bool list;
+    bool editing;
+    bool quick;
+    bool modal;
+    bool operator==(const Region&) const = default;
+  };
+  Region region() const;
+  bool of_master_list(const protocol::PageMaster& m, const Focus& one) const;  // a list's rows and paging stops
+  bool repeat_stays_ = false;  // the held press's repeats may act: the last fresh press left focus where it was
   Action flip_quick(std::size_t index, int step);
   const protocol::Json* latest(std::string_view topic) const;  // a held body first
   bool hold(std::string_view topic);

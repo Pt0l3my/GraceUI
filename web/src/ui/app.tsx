@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // app.tsx: the frame (DESIGN §3.7, §4.2): the rail, the top bar and the page, in that order for Tab (§5.7); the
 // browser's keyboard map (§5.9): / and Ctrl+F for search, Q and E for tabs, Page Up and Page Down for pages, Ctrl+Page Up
-// and Page Down for spaces, Esc for modals; GraceUI's own settings applied to the page (its theme, motion, type and
-// scale, §3.13, §3.15); and the connection's state, stale while it is lost (§3.9).
+// and Page Down for spaces, Esc for modals, a held key's repeats only to move along or step a slider (D270); GraceUI's
+// own settings applied to the page (its theme, motion, type and scale, §3.13, §3.15); and the connection's state,
+// stale while it is lost (§3.9).
 import { useEffect } from "preact/hooks";
 import { useSignalEffect } from "@preact/signals";
 import type { Session } from "../model/session.ts";
@@ -15,6 +16,7 @@ import { Rail, openSpace } from "./rail.tsx";
 import { TopBar } from "./topbar.tsx";
 import { expanded, menuWidth } from "./view-state.ts";
 import { noteSent } from "./live.ts";
+import { repeatActs, repeatRegion, repeatTarget } from "../model/repeat.ts";
 
 const THEMES = new Set(["grace", "clear"]);
 
@@ -144,10 +146,30 @@ export function App({ session }: { session: Session }) {
         }
       }
     };
+    // A held key (D270): before any element's own keys, a repeat that would turn, choose, open or press is dropped,
+    // and so is one whose press took focus out of the list it was in, or that a press of the mouse has come since.
+    let pressed: Element | null = null;
+    const held = (e: KeyboardEvent) => {
+      if (!e.repeat) {
+        pressed = repeatRegion(e.target);
+        return;
+      }
+      if (!repeatActs(e.key, repeatTarget(e.target)) || pressed === null || repeatRegion(e.target) !== pressed) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    const pointed = () => {
+      pressed = null;
+    };
     window.addEventListener("resize", resize);
+    document.addEventListener("keydown", held, true);
+    document.addEventListener("pointerdown", pointed, true);
     document.addEventListener("keydown", keys);
     return () => {
       window.removeEventListener("resize", resize);
+      document.removeEventListener("keydown", held, true);
+      document.removeEventListener("pointerdown", pointed, true);
       document.removeEventListener("keydown", keys);
     };
   }, [session]);

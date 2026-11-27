@@ -903,6 +903,88 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     }
   });
 
+  test("a held key: a slider steps on, a switch turns once, a choice moves once, Enter presses once (D270)", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "lanterns", "demo.behaviour");
+      const sent = (key: string) =>
+        host.received.filter((f) => f.t === "cmd" && f.args?.key === key).map((f) => f.args.value);
+      const attr = (sel: string, name: string, want: string) => page.waitForFunction(([s, n, w]) =>
+        document.querySelector(s!)?.getAttribute(n!) === w, [sel, name, want]);
+      // A slider: its press, then each repeat (a key pressed again before its release), a step.
+      const track = "[data-row='setting:lantern.brightness'] [role=slider]";
+      await page.locator(track).focus();
+      for (const want of ["0.85", "0.90", "0.95"]) {
+        await page.keyboard.down("ArrowRight");
+        await attr(track, "aria-valuetext", want);
+      }
+      await page.keyboard.up("ArrowRight");
+      // A switch: → turns it, its repeats do not; Enter presses it once however long it is held.
+      const lit = "[data-row='setting:lantern.enabled'] [role=switch]";
+      await page.locator(lit).focus();
+      await page.keyboard.down("ArrowRight");
+      await attr(lit, "aria-checked", "false");
+      await page.keyboard.down("ArrowRight");
+      await page.keyboard.down("ArrowRight");
+      await page.keyboard.up("ArrowRight");
+      await page.keyboard.down("Enter");
+      await attr(lit, "aria-checked", "true");
+      await page.keyboard.down("Enter");
+      await page.keyboard.down("Enter");
+      await page.keyboard.up("Enter");
+      // A choice: → moves it to the next, its repeats do not go round.
+      await page.locator("[data-row='setting:lantern.colour'] [role=radio][aria-checked=true]").focus();
+      await page.keyboard.down("ArrowRight");
+      await page.keyboard.down("ArrowRight");
+      await page.keyboard.down("ArrowRight");
+      await page.keyboard.up("ArrowRight");
+      await page.waitForTimeout(300);
+      assert.equal(await page.locator(lit).getAttribute("aria-checked"), "true");
+      assert.deepEqual(sent("lantern.enabled"), [false, true]);
+      assert.deepEqual(sent("lantern.colour"), ["white"]);
+      assert.deepEqual(sent("lantern.brightness"), [0.85, 0.9, 0.95]);
+      // `/` held: its press opens search, and its repeats, now in the field, type nothing there.
+      await page.locator(track).focus();
+      await page.keyboard.down("/");
+      await page.waitForFunction(() => document.activeElement?.id === "search");
+      await page.keyboard.down("/");
+      await page.keyboard.down("/");
+      await page.keyboard.up("/");
+      assert.equal(await page.locator("#search").inputValue(), "");
+      await page.keyboard.press("Escape");
+      // A repeat whose press took focus out of the list it was on (a list's row into its detail), or that a press of
+      // the mouse has come since, does nothing; on the element its press was on, it acts.
+      const prevented = await page.evaluate(() => {
+        const list = document.createElement("div");
+        list.setAttribute("role", "listbox");
+        const row = document.createElement("div");
+        row.setAttribute("role", "option");
+        list.append(row);
+        const slider = document.createElement("span");
+        slider.setAttribute("role", "slider");
+        document.body.append(list, slider);
+        const key = (on: Element, repeat: boolean) => {
+          const e = new KeyboardEvent("keydown", { key: "ArrowRight", repeat, bubbles: true, cancelable: true });
+          on.dispatchEvent(e);
+          return e.defaultPrevented;
+        };
+        const out: boolean[] = [];
+        key(row, false);
+        out.push(key(slider, true));   // the row's press, the slider's repeat: dropped
+        key(slider, false);
+        out.push(key(slider, true));   // the slider's own press: its repeat steps
+        slider.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        out.push(key(slider, true));   // after a press of the mouse: dropped
+        list.remove();
+        slider.remove();
+        return out;
+      });
+      assert.deepEqual(prevented, [true, false, true]);
+    } finally {
+      await close();
+    }
+  });
+
   test("a page of a later increment is absent from the rail (§4.2.2, D173)", async () => {
     const { page, close } = await fresh();
     try {

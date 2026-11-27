@@ -105,11 +105,15 @@ std::uint32_t keyboard_code_page(HWND window) noexcept {
   return page;
 }
 
+// The window procedure's own, while it hands on a character message: bit 30 of its lParam, the key already down (an
+// auto-repeat's character), for the menu (D270).
+bool g_char_repeat = false;
+
 void push_code_points(const char32_t* points, int count, std::uint32_t generation) noexcept {
   if (const grace::input::Holder holder = input::capture().holder();
       holder.kind == grace::input::Kind::menu && holder.owner == 0) {
     for (int i = 0; i < count; ++i) {
-      menu::character(points[i]);  // the menu's own field, or its search (G38 (a))
+      menu::character(points[i], g_char_repeat);  // the menu's own field, or its search (G38 (a))
     }
     return;
   }
@@ -196,7 +200,7 @@ void push_key(Key key, std::uint32_t vk, bool down, bool repeat) noexcept {
     // read only for its own presses.
     if (down) {
       menu::key_down(vk, key, (GetKeyState(VK_SHIFT) & 0x8000) != 0, (GetKeyState(VK_CONTROL) & 0x8000) != 0,
-                     (GetKeyState(VK_MENU) & 0x8000) != 0);
+                     (GetKeyState(VK_MENU) & 0x8000) != 0, repeat);
     }
     return;
   }
@@ -336,7 +340,9 @@ Outcome route(HWND window, UINT message, WPARAM wparam, LPARAM lparam, bool unic
     case WM_CHAR: {
       const Decision decision = rules.character(grace::input::key_from_message(bits, 0));
       if (decision.to_holder) {
+        g_char_repeat = (bits & (1u << 30)) != 0;
         push_character(wparam, unicode);
+        g_char_repeat = false;
       }
       out.route = decision.route;
       out.device = grace::input::want_keyboard;

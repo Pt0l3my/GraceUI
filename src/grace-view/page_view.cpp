@@ -3191,13 +3191,35 @@ Action PageView::input(const Input& in) {
     }
     return {};
   }
+  if (in.repeat && (!repeat_stays_ || !repeat_acts(in))) {
+    // A held key's repeat that would do more than move along or step a number, or whose press took focus into another
+    // part of the menu (the rail's → into the page): a fresh press does it (D270).
+    return {};
+  }
   master_focus_pending_ = false;  // a key moves focus on its own from now on
   refocus_name_.clear();
   if (in.key == Key::activate && !editing() && !capture_open() && scope_ == Scope::page && running(focused())) {
     return {};  // a control waiting for its slow command's answer takes no press (D216)
   }
   const std::string sender = focused();
+  const Region from = region();
+  // A repeat's step at a bound changes nothing: nothing is sent (a mod's queue would fill at the stick's pace).
+  Json held;
+  if (in.repeat && scope_ == Scope::page && page_focus_ < focus_.size() &&
+      (focus_[page_focus_].kind == FocusKind::setting || focus_[page_focus_].kind == FocusKind::shortcut)) {
+    held = value(settings_[focus_[page_focus_].index].key);
+  }
   Action action = input_body(in);
+  if (!in.repeat) {
+    repeat_stays_ = region() == from;
+  } else if (!(region() == from)) {
+    repeat_stays_ = false;  // a repeat that took focus elsewhere after all: the rest of the hold does nothing
+  }
+  if (in.repeat && action.kind == Action::Kind::command && action.command.name == "settings.set" &&
+      action.command.args.is_object() && action.command.args.contains("value") &&
+      action.command.args.at("value") == held) {
+    return {};
+  }
   note_running(action, sender);
   note_sent(action);
   if (on_master_row() && master() != nullptr) {
@@ -3215,6 +3237,7 @@ Action PageView::pointer(const Pointer& in) {
   if (in.kind == Pointer::Kind::press) {
     master_focus_pending_ = false;
     refocus_name_.clear();
+    repeat_stays_ = false;  // a held key's repeats stop at a press of the mouse (D270)
     if (const Hit* hit = hit_at(in.x, in.y); hit != nullptr && !editing() && !capture_open() &&
                                                running(name_of(hit->scope, hit->index))) {
       return {};
@@ -4380,6 +4403,83 @@ Action PageView::quick_input(const Input& in) {
   }
 }
 
+bool PageView::of_master_list(const protocol::PageMaster& m, const Focus& one) const {
+  return one.kind == FocusKind::master_row ||
+         (one.kind == FocusKind::paging && one.block == nullptr && one.id.rfind(master_name(m) + "/", 0) == 0);
+}
+
+PageView::Region PageView::region() const {
+  const protocol::PageMaster* m = scope_ == Scope::page && page_focus_ < focus_.size() ? master() : nullptr;
+  return Region{scope_, page_, tab_, m != nullptr && of_master_list(*m, focus_[page_focus_]), editing(), quick_open_,
+                sheet_open_ || capture_open()};
+}
+
+bool PageView::repeat_acts(const Input& in) {
+  const bool vertical = in.key == Key::up || in.key == Key::down;
+  const bool sideways = in.key == Key::left || in.key == Key::right;
+  if (!vertical && !sideways) {
+    return false;  // Enter, Esc, a tab, a page, reset, search: once a press
+  }
+  if (sheet_open_ || capture_open()) {
+    return false;  // a modal's keys: once a press
+  }
+  if (editing()) {
+    return true;  // a field's caret, or search's pick
+  }
+  if (quick_open_) {
+    return vertical;  // along the switches; ← → turn one
+  }
+  if (!confirming_.empty()) {
+    return false;  // a destructive action's second press waits: only a fresh press lets it go
+  }
+  if (scope_ == Scope::rail) {
+    return vertical;  // ← → follow the space switcher's links, → goes into the page
+  }
+  if (scope_ == Scope::top) {
+    return sideways;  // along the top bar's stops; ↓ goes into the page
+  }
+  if (focus_.empty() || page_focus_ >= focus_.size()) {
+    return false;  // ← goes back to the rail
+  }
+  const Focus& f = focus_[page_focus_];
+  if (const protocol::PageMaster* m = master(); m != nullptr) {
+    // Master and detail (D215): ↑ ↓ along the list, but not up from its first row to its filter bar, nor down into it
+    // from the stop above, nor from the detail's first stop back to the chosen row; → from a row goes into the detail.
+    const auto of_list = [&](const Focus& one) { return of_master_list(*m, one); };
+    std::size_t first = focus_.size();
+    std::size_t last = 0;
+    for (std::size_t i = 0; i < focus_.size(); ++i) {
+      if (of_list(focus_[i])) {
+        first = std::min(first, i);
+        last = i;
+      }
+    }
+    if (first < focus_.size()) {
+      if (of_list(f)) {
+        return vertical && !(in.key == Key::up && page_focus_ == first);
+      }
+      if ((in.key == Key::down && page_focus_ + 1 == first) || (in.key == Key::up && page_focus_ == last + 1)) {
+        return false;
+      }
+    }
+  }
+  if (vertical) {
+    return true;  // along the page's stops (Shift+↑ ↓ moves an editor's list item, as far as it goes)
+  }
+  // ← →: a number's next step, and nothing else (a switch would turn back and forth, a choice go round, ← leave).
+  if (f.kind == FocusKind::setting || f.kind == FocusKind::shortcut) {
+    const SettingType type = settings_[f.index].type;
+    return type == SettingType::integer || type == SettingType::number || type == SettingType::duration_s;
+  }
+  if (f.kind == FocusKind::editor && static_cast<EditorPart>(f.part) == EditorPart::field) {
+    // A number field that takes its step: not one that is locked, nor on a greyed page, where ← goes to the rail.
+    EditorAt at;
+    return editor_of(f, at) && f.index < at.doc.fields.size() && at.doc.fields[f.index].kind == FieldKind::number &&
+           at.doc.fields[f.index].locked.empty() && greyed_words(current().id).empty();
+  }
+  return false;
+}
+
 // ---- Rows read a page at a time (G45, D254).
 
 const PageView::Paged* PageView::paged_of(std::string_view key) const {
@@ -4843,10 +4943,7 @@ Action PageView::input_body(const Input& in) {
     std::size_t last = 0;
     std::size_t chosen_at = focus_.size();
     // The list's stops: its rows, and Show more and "New rows · Show" of a list read a page at a time (D254).
-    const auto of_list = [&](const Focus& one) {
-      return one.kind == FocusKind::master_row ||
-             (one.kind == FocusKind::paging && one.block == nullptr && one.id.rfind(master_name(*m) + "/", 0) == 0);
-    };
+    const auto of_list = [&](const Focus& one) { return of_master_list(*m, one); };
     for (std::size_t i = 0; i < focus_.size(); ++i) {
       if (of_list(focus_[i])) {
         first = std::min(first, i);

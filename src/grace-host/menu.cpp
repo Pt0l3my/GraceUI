@@ -64,6 +64,7 @@ struct MenuInput {
   char32_t character = 0;
   bool paste = false;
   bool pad = false;  // the present thread's, from the pad: the key hints follow it (D242)
+  bool repeat = false;  // a held key's or direction's repeat (D270)
 };
 
 // Whether the menu's view waits for a key to capture (D209): set on GraceUI's thread after each input, read by the
@@ -71,6 +72,10 @@ struct MenuInput {
 constinit std::atomic<bool> g_awaiting_key{false};
 // Whether one of its fields edits (G38 (a)), likewise: its keys then go to the field, and characters to the menu.
 constinit std::atomic<bool> g_editing{false};
+// The window procedure's thread alone (key_down, then character, in message order): whether the key last pressed went
+// down while a field edited, and whether it was Space taken as the menu's own press (D270).
+bool g_pressed_in_field = false;
+bool g_pressed_space = false;
 constinit std::atomic<bool> g_timer{false};  // Live updates holds bodies Every 5 s (D252): wake once a second
 // The clipboard's text for a paste, read on the window procedure's thread at Ctrl+V and taken on GraceUI's.
 constinit grace::abi::SpinLock g_paste_lock;
@@ -111,15 +116,21 @@ struct PadSeen {
   std::uint16_t buttons;
   bool left_trigger;
   bool right_trigger;
-  std::int8_t stick_x;
-  std::int8_t stick_y;
+  std::uint8_t directions;        // up 1, down 2, left 4, right 8: the d-pad's, or the left stick past half its travel
   std::int8_t scroll = 0;         // the right stick held up (1) or down (-1) past half its travel (D242)
   std::int64_t scroll_next = 0;   // when its next step is due (GetTickCount64)
+  std::uint8_t repeat = 0;        // the direction that repeats while held, the last pressed (D270); 0, none
+  std::int64_t repeat_next = 0;   // when its next repeat is due
 };
 constinit PadSeen g_pad_seen{};
 
 constexpr float kStickPress = 16384.0f;  // half the left stick's travel: a press of the d-pad (EST)
-constexpr float kStickFull = 29490.0f;   // nine tenths of a stick's travel: the right stick's faster scroll (EST)
+constexpr float kStickFull = 29490.0f;   // nine tenths of a stick's travel: a stick's faster steps (EST)
+// A held direction's repeat (D270): the first after 400 ms, then one every 80 ms, 40 with the left stick past nine
+// tenths of its travel (EST: near a held arrow key's, under Windows' default delay; slower, as a pad's is).
+constexpr std::int64_t kRepeatDelayMs = 400;
+constexpr std::int64_t kRepeatEveryMs = 80;
+constexpr std::int64_t kRepeatFastMs = 40;
 
 // A space the menu shows (D79, D171): GraceUI's own, or a mod's that asked for the game's view.
 struct SpaceView {
@@ -399,6 +410,7 @@ void activate(State& m, const std::string& id, const std::string& page, From fro
     }
     watch(m, false);
     m.active = i;
+    m.spaces[i]->view.stop_repeats();  // a key held before the switch does nothing in the space it lands in (D270)
     if (!page.empty()) {
       m.spaces[i]->view.open(page);
     }
@@ -864,7 +876,7 @@ void take(State& m, const MenuInput& in, bool& dirty) {
     action = view.edit(grace::view::PageView::EditInput{static_cast<grace::view::PageView::EditKey>(in.edit - 1),
                                                          (in.modifiers & 2u) != 0, (in.modifiers & 1u) != 0});
   } else {
-    action = view.input(grace::view::Input{in.key, in.shift != 0, in.pad});
+    action = view.input(grace::view::Input{in.key, in.shift != 0, in.pad, in.repeat});
   }
   // The last device used and the key hints' View toggle are the menu's, whichever space's view is drawn (D242).
   m.pad_mode = in.pad && in.captured == grace::input::kNoKey && in.character == 0 && !in.paste && in.edit == 0;
@@ -1118,11 +1130,12 @@ void serve_menu() {
   }
 }
 
-void push_pad(Key key, std::uint32_t generation, bool& any) noexcept {
+void push_pad(Key key, std::uint32_t generation, bool& any, bool repeat = false) noexcept {
   MenuInput in;
   in.key = key;
   in.generation = generation;
   in.pad = true;
+  in.repeat = repeat;
   any = g_pad.push(in) || any;
 }
 
@@ -1133,10 +1146,13 @@ void pad_inputs(std::uint32_t generation) noexcept {
     return;
   }
   const grace::input::Pad& pad = view.pad;
+  // The four directions: the d-pad's, and the left stick's past half its travel, as the d-pad (§5.4).
+  const auto directions = static_cast<std::uint8_t>((pad.buttons & 0x000F) | (pad.left_y > kStickPress ? 1 : 0) |
+                                                    (pad.left_y < -kStickPress ? 2 : 0) |
+                                                    (pad.left_x < -kStickPress ? 4 : 0) |
+                                                    (pad.left_x > kStickPress ? 8 : 0));
   PadSeen now{generation, pad.buttons, pad.left_trigger > grace::input::kTriggerThreshold,
-              pad.right_trigger > grace::input::kTriggerThreshold,
-              static_cast<std::int8_t>(pad.left_x > kStickPress ? 1 : pad.left_x < -kStickPress ? -1 : 0),
-              static_cast<std::int8_t>(pad.left_y > kStickPress ? 1 : pad.left_y < -kStickPress ? -1 : 0)};
+              pad.right_trigger > grace::input::kTriggerThreshold, directions};
   // The right stick scrolls the page (§5.4, D242): a step when it is pushed, then, held, one every 90 ms after 250 (45 ms
   // past nine tenths of its travel), as a key repeats.
   now.scroll = static_cast<std::int8_t>(pad.right_y > kStickPress ? 1 : pad.right_y < -kStickPress ? -1 : 0);
@@ -1156,6 +1172,30 @@ void pad_inputs(std::uint32_t generation) noexcept {
       now.scroll_next = before.scroll_next;
     }
   }
+  // A held direction (D270): a step when it is pressed, then, held, its repeats, as a held arrow key's: the first after
+  // 400 ms, then one every 80 ms (40 with the left stick past nine tenths of its travel). Only the last one pressed
+  // repeats, and only while it is held; the menu's view lets a repeat only move along or step a number.
+  const auto pressed_directions = static_cast<std::uint8_t>(now.directions & ~before.directions);
+  std::uint8_t repeat = 0;
+  if (!first && pressed_directions != 0) {
+    for (std::uint8_t bit = 8; bit != 0; bit = static_cast<std::uint8_t>(bit >> 1)) {
+      if ((pressed_directions & bit) != 0) {
+        now.repeat = bit;  // of several pressed at once, the first in up, down, left, right's order
+      }
+    }
+    now.repeat_next = at + kRepeatDelayMs;
+  } else if (!first && before.repeat != 0 && (now.directions & before.repeat) != 0) {
+    now.repeat = before.repeat;
+    now.repeat_next = before.repeat_next;
+    if (at >= before.repeat_next) {
+      const bool fast = (before.repeat == 1 && pad.left_y > kStickFull) ||
+                        (before.repeat == 2 && pad.left_y < -kStickFull) ||
+                        (before.repeat == 4 && pad.left_x < -kStickFull) ||
+                        (before.repeat == 8 && pad.left_x > kStickFull);
+      repeat = before.repeat;
+      now.repeat_next = at + (fast ? kRepeatFastMs : kRepeatEveryMs);
+    }
+  }
   g_pad_seen = now;
   if (first) {
     return;  // the first look for this holder: what is held now does nothing until it is released
@@ -1165,14 +1205,19 @@ void pad_inputs(std::uint32_t generation) noexcept {
     std::uint16_t mask;
     Key key;
   };
+  static constexpr Key kDirections[] = {Key::up, Key::down, Key::left, Key::right};
   static constexpr Map kButtons[] = {
-      {0x0001, Key::up},           {0x0002, Key::down},    {0x0004, Key::left},     {0x0008, Key::right},
       {0x1000, Key::activate},     {0x2000, Key::back},    {0x0100, Key::previous_tab},
       {0x0200, Key::next_tab},     {0x4000, Key::reset},   {0x8000, Key::search},   // Y (D242)
       {0x0020, Key::toggle_hints},  // View: the key hints off and on (D242)
       {0x0010, Key::quick},         // Start: the space's Quick switches (D252); like B, it never reaches the game
   };
   bool any = false;
+  for (std::size_t i = 0; i < 4; ++i) {
+    if ((pressed_directions & (1u << i)) != 0) {
+      push_pad(kDirections[i], generation, any);
+    }
+  }
   for (const Map& map : kButtons) {
     if ((pressed & map.mask) != 0) {
       push_pad(map.key, generation, any);
@@ -1184,11 +1229,8 @@ void pad_inputs(std::uint32_t generation) noexcept {
   if (now.right_trigger && !before.right_trigger) {
     push_pad(Key::next_page, generation, any);
   }
-  if (now.stick_y != before.stick_y && now.stick_y != 0) {
-    push_pad(now.stick_y > 0 ? Key::up : Key::down, generation, any);
-  }
-  if (now.stick_x != before.stick_x && now.stick_x != 0) {
-    push_pad(now.stick_x > 0 ? Key::right : Key::left, generation, any);
+  if (repeat != 0) {
+    push_pad(kDirections[repeat == 1 ? 0 : repeat == 2 ? 1 : repeat == 4 ? 2 : 3], generation, any, true);
   }
   if (scroll) {
     push_pad(now.scroll > 0 ? Key::scroll_up : Key::scroll_down, generation, any);
@@ -1376,11 +1418,16 @@ bool edit_key(std::uint32_t vk, bool shift, bool ctrl) noexcept {
 
 }  // namespace
 
-void character(char32_t code_point) noexcept {
+void character(char32_t code_point, bool repeat) noexcept {
   // While a capture waits, a character is none of the menu's. Otherwise it goes in order with the keys, even before
   // GraceUI's thread has seen the Enter that starts an edit, and that thread drops what no field wants (only `/` opens
   // search, §4.3).
   if (g_awaiting_key.load(std::memory_order_acquire)) {
+    return;
+  }
+  // A held key (D270): Space taken as the menu's own press types no space into the field it opens, nor do its
+  // repeats; and a key pressed outside a field types none of its repeats into one (a held `/` opens search once).
+  if ((g_pressed_space && code_point == U' ') || (repeat && !g_pressed_in_field)) {
     return;
   }
   MenuInput in;
@@ -1391,11 +1438,21 @@ void character(char32_t code_point) noexcept {
   }
 }
 
-bool key_down(std::uint32_t vk, grace::input::Key code, bool shift, bool ctrl, bool alt) noexcept {
+bool key_down(std::uint32_t vk, grace::input::Key code, bool shift, bool ctrl, bool alt, bool repeat) noexcept {
+  if (!repeat) {
+    g_pressed_in_field = g_editing.load(std::memory_order_acquire) && !g_awaiting_key.load(std::memory_order_acquire);
+    g_pressed_space = false;
+  }
   if (g_editing.load(std::memory_order_acquire) && !g_awaiting_key.load(std::memory_order_acquire)) {
-    return edit_key(vk, shift, ctrl);
+    if (repeat && (vk == VK_RETURN || vk == VK_ESCAPE || vk == VK_TAB)) {
+      return true;  // a field is kept, left or finished by a fresh press: the held Enter that opened it does not (D270)
+    }
+    return edit_key(vk, shift, ctrl);  // the caret's keys, Backspace and Delete repeat as in any field
   }
   if (g_awaiting_key.load(std::memory_order_acquire) && vk != VK_ESCAPE) {
+    if (repeat) {
+      return true;  // a capture takes a fresh press, never the held Enter's repeat that opened it (D270)
+    }
     // A capture waits (D209): the key itself, with its modifiers; a modifier alone waits on, and Escape cancels below.
     if (code == grace::input::kNoKey || vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU || vk == VK_LSHIFT ||
         vk == VK_RSHIFT || vk == VK_LCONTROL || vk == VK_RCONTROL || vk == VK_LMENU || vk == VK_RMENU ||
@@ -1419,8 +1476,11 @@ bool key_down(std::uint32_t vk, grace::input::Key code, bool shift, bool ctrl, b
     case VK_RIGHT: key = Key::right; break;
     // Tab moves no focus in the menu (G41): the arrows, Enter and Esc do. Inside a field it finishes the entry (its
     // edit keys, above); otherwise it does nothing here, and never reaches the game while the menu holds the keyboard.
-    case VK_RETURN:
-    case VK_SPACE: key = Key::activate; break;
+    case VK_RETURN: key = Key::activate; break;
+    case VK_SPACE:
+      key = Key::activate;
+      g_pressed_space = !ctrl;  // its character is the press's own, never typed (D270)
+      break;
     case VK_ESCAPE: key = Key::back; break;
     case 'Q': key = Key::previous_tab; break;
     case 'E': key = Key::next_tab; break;
@@ -1439,7 +1499,9 @@ bool key_down(std::uint32_t vk, grace::input::Key code, bool shift, bool ctrl, b
     return false;
   }
   const std::uint32_t generation = input::capture().holder().generation;
-  if (g_keys.push(MenuInput{key, static_cast<std::uint8_t>(shift ? 1 : 0), generation})) {
+  MenuInput in{key, static_cast<std::uint8_t>(shift ? 1 : 0), generation};
+  in.repeat = repeat;  // the view lets a repeat only move along or step a number (D270)
+  if (g_keys.push(in)) {
     hooks::wake();
   }
   return true;
