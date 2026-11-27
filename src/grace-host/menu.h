@@ -44,9 +44,18 @@ void character(char32_t code_point, bool repeat = false) noexcept;
 void pointer(std::uint8_t kind, float x, float y, float wheel, std::uint32_t generation) noexcept;
 
 // The present thread, each frame: the menu's newest list for the holder of this generation if the menu holds input and
-// has published one for it, else null. Also turns the pad's new presses into the menu's inputs, and notes the display's
-// size, which a change of makes GraceUI's thread lay the page out again.
-grace::abi::DrawListData* frame(std::uint32_t width, std::uint32_t height) noexcept;
+// has published one for it, with the alpha of its fade in (§3.10, D271); after a close by the player, its last list
+// while it fades out; else none. Also turns the pad's new presses into the menu's inputs, and notes the display's size,
+// which a change of makes GraceUI's thread lay the page out again.
+struct Frame {
+  grace::abi::DrawListData* list = nullptr;  // null: nothing of the menu's drawn this frame
+  float alpha = 1.0f;                        // its fade (§3.10): below 1 while it fades in or out
+  bool closing = false;                      // it fades out after a close by the player, holding no input
+};
+Frame frame(std::uint32_t width, std::uint32_t height) noexcept;
+// The present thread: whether the menu's list was drawn in its last frame, open or fading out (D271), so that the next
+// frame is built and sees the menu close, and draws its fade out.
+bool drawing() noexcept;
 
 // GraceUI's own thread, when woken.
 void serve() noexcept;
@@ -79,6 +88,9 @@ struct TestView {
   char footer[160];             // the footer's words as drawn
   std::uint32_t plain_text;     // 1 while the menu draws its serif and display roles in Noto Sans (D267)
   std::uint32_t plain_baked;    // 1 if Plain text's own faces were baked at warm-up
+  std::uint32_t fade_in_frames;   // frames the present thread drew while the menu faded in (D271)
+  std::uint32_t fade_out_frames;  // and while it faded out after a close by the player
+  std::uint32_t alpha_milli;      // the last frame's alpha, in thousandths
 };
 void test_view(TestView& out) noexcept;
 // A setting of GraceUI's own space as JSON text (a secret's as its status); answers its length, 0 for none.

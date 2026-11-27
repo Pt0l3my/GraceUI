@@ -1887,3 +1887,13 @@ Nothing to change on your side.
    `settings.set`s while a stick is held at the end. The browser view drops the same repeats.
 2. **Your own holders** (the chat box, the F11 view) are as before: their key events still carry `repeat`, and a pad's
    buttons come as changes, never repeated. A panel of yours that wants a held direction to repeat times it itself.
+
+## 97. The in-game menu fades (2026-11-27, D271; GraceUI 0.2.64)
+
+Nothing to change on your side.
+
+1. **The menu** fades in over 120 ms when it opens and, when the player closes it (F5, Esc or B on the top level, the
+   close button), fades out over 200 ms while input is already the game's again. Danger, a load, focus lost, the
+   watchdog, a fault and the player's exit still take it away at once; Reduce motion turns both fades off.
+2. **Your panels and notices** are drawn as before: the fade is the menu's alone. A panel of yours that opens as the
+   menu closes is drawn at once above or below the fading menu by its layer.
