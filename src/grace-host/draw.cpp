@@ -611,19 +611,25 @@ bool bake_atlas() {
   std::uint32_t mod_faces = session::registry().faces();
   float scale = menu::bake_scale(g.height);  // the menu's faces at the effective scale (§3.13, D167)
   const float content = display::content_scale(g.height);  // the mods' scaled faces' (D180)
+  bool plain = scale > 0.0f && menu::bake_plain();  // Plain text's faces too, when it is on (§3.4, D267)
   for (;;) {
     try {
-      atlas::bake(ImGui::GetIO().Fonts, mod_faces, scale, content);
+      atlas::bake(ImGui::GetIO().Fonts, mod_faces, scale, content, plain);
       break;
     } catch (const ImGuiAssertion& failed) {
       log_line("the shared atlas could not be baked with %u of the mods' faces%s (a Dear ImGui assertion at line %d: "
                "%.60s)",
-               mod_faces, scale > 0.0f ? " and the menu's" : "", failed.line, failed.expression);
+               mod_faces, scale > 0.0f ? (plain ? " and the menu's, Plain text's among them" : " and the menu's") : "",
+               failed.line, failed.expression);
       if (mod_faces == 0 && scale == 0.0f) {
         return false;
       }
       abandon_context();
       make_context();
+      if (plain) {
+        plain = false;  // Plain text's own faces go first: the nearest sans bakes serve it, scaled (D267)
+        continue;
+      }
       if (mod_faces == 0) {
         scale = 0.0f;  // the last try leaves the menu's faces out: notices before the menu (D167)
       }

@@ -375,6 +375,10 @@ void test_fill_menu(GraceUiTestMenu& out) noexcept {
     out.hints_shown = view.hints_shown;
     std::memcpy(out.footer, view.footer, sizeof out.footer);
   }
+  if (out.size >= offsetof(GraceUiTestMenu, plain_baked) + sizeof out.plain_baked) {  // D267's
+    out.plain_text = view.plain_text;
+    out.plain_baked = view.plain_baked;
+  }
 }
 
 void test_fill_server(GraceUiTestServer& out) noexcept {

@@ -18,6 +18,9 @@ namespace grace::host::menu {
 
 // The effective scale the menu's faces are baked at (§3.13): (height / 1080) times ui.scale.
 float bake_scale(std::uint32_t height) noexcept;
+// Whether the bake adds Plain text's faces (D267): ui.menu.plain_text as GraceUI's own store holds it, the last
+// session's if it kept one (D179), else its default.
+bool bake_plain() noexcept;
 // Whether GraceUI's theme is Grace Clear (ui.menu.theme), for what the present thread draws in it: the pointer.
 bool clear_theme() noexcept;
 
@@ -72,6 +75,8 @@ struct TestView {
   std::uint32_t pad_mode;       // 1 while the key hints are the pad's (D242)
   std::uint32_t hints_shown;    // 1 while they are drawn
   char footer[160];             // the footer's words as drawn
+  std::uint32_t plain_text;     // 1 while the menu draws its serif and display roles in Noto Sans (D267)
+  std::uint32_t plain_baked;    // 1 if Plain text's own faces were baked at warm-up
 };
 void test_view(TestView& out) noexcept;
 // A setting of GraceUI's own space as JSON text (a secret's as its status); answers its length, 0 for none.

@@ -359,6 +359,9 @@ typedef struct GraceUiTestMenu {
   uint32_t pad_mode;    /* 1 while the key hints are the pad's: after the pad, until a key or the mouse */
   uint32_t hints_shown; /* 1 while the key hints are drawn (View on a pad turns them off and on) */
   char footer[160];     /* the footer's words as drawn: "A  Toggle    X  Reset    B  Back" in pad mode; "" hidden */
+  /* Appended for Plain text in game (D267): */
+  uint32_t plain_text;  /* 1 while the menu draws its serif and display roles in Noto Sans (ui.menu.plain_text) */
+  uint32_t plain_baked; /* 1 if Plain text's own faces were baked at warm-up; 0, the nearest sans bakes serve it */
 } GraceUiTestMenu;
 
 /* Fills *out as far as out->size reaches (a caller built against an older header gets the fields it knows); answers 1,
