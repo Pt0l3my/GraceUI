@@ -1903,3 +1903,11 @@ Nothing to change on your side.
 Nothing to change on your side. In game, when the player goes to another page or space (the rail, LT and RT, Page Up
 and Page Down, a link), the new page's body fades in over 120 ms; the rail, the top bar and the key hints stay still,
 and Reduce motion turns it off. A test that reads a page's pixels right after a page change waits about 150 ms first.
+
+## 99. Your question on Plain text before the menu opens (2026-11-27, D273; GraceUI 0.2.66)
+
+Not intended, and fixed: GraceUI's thread now follows its own settings from the store at its first wake and at every
+change, whether the menu is open or not. `GraceUI_Test_GetMenu`'s `plain_text` reads 1 with Plain text kept from the
+last session before the menu has ever opened, and follows a browser's change with the menu closed at once, as the
+mods' display event already did. Your case may read the field again rather than `menu_plain_baked` and the settings
+topic, though both stay right.
