@@ -1897,3 +1897,9 @@ Nothing to change on your side.
    watchdog, a fault and the player's exit still take it away at once; Reduce motion turns both fades off.
 2. **Your panels and notices** are drawn as before: the fade is the menu's alone. A panel of yours that opens as the
    menu closes is drawn at once above or below the fading menu by its layer.
+
+## 98. A page's body fades in at a change of page (2026-11-27, D272; GraceUI 0.2.65)
+
+Nothing to change on your side. In game, when the player goes to another page or space (the rail, LT and RT, Page Up
+and Page Down, a link), the new page's body fades in over 120 ms; the rail, the top bar and the key hints stay still,
+and Reduce motion turns it off. A test that reads a page's pixels right after a page change waits about 150 ms first.
