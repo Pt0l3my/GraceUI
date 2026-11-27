@@ -72,6 +72,10 @@ struct MenuInput {
 constinit std::atomic<bool> g_awaiting_key{false};
 // Whether one of its fields edits (G38 (a)), likewise: its keys then go to the field, and characters to the menu.
 constinit std::atomic<bool> g_editing{false};
+// The window procedure's thread alone (key_down, then character, in message order): whether the key last pressed went
+// down while a field edited, and whether it was Space taken as the menu's own press (D270).
+bool g_pressed_in_field = false;
+bool g_pressed_space = false;
 constinit std::atomic<bool> g_timer{false};  // Live updates holds bodies Every 5 s (D252): wake once a second
 // The clipboard's text for a paste, read on the window procedure's thread at Ctrl+V and taken on GraceUI's.
 constinit grace::abi::SpinLock g_paste_lock;
@@ -406,6 +410,7 @@ void activate(State& m, const std::string& id, const std::string& page, From fro
     }
     watch(m, false);
     m.active = i;
+    m.spaces[i]->view.stop_repeats();  // a key held before the switch does nothing in the space it lands in (D270)
     if (!page.empty()) {
       m.spaces[i]->view.open(page);
     }
@@ -1413,11 +1418,16 @@ bool edit_key(std::uint32_t vk, bool shift, bool ctrl) noexcept {
 
 }  // namespace
 
-void character(char32_t code_point) noexcept {
+void character(char32_t code_point, bool repeat) noexcept {
   // While a capture waits, a character is none of the menu's. Otherwise it goes in order with the keys, even before
   // GraceUI's thread has seen the Enter that starts an edit, and that thread drops what no field wants (only `/` opens
   // search, §4.3).
   if (g_awaiting_key.load(std::memory_order_acquire)) {
+    return;
+  }
+  // A held key (D270): Space taken as the menu's own press types no space into the field it opens, nor do its
+  // repeats; and a key pressed outside a field types none of its repeats into one (a held `/` opens search once).
+  if ((g_pressed_space && code_point == U' ') || (repeat && !g_pressed_in_field)) {
     return;
   }
   MenuInput in;
@@ -1429,6 +1439,10 @@ void character(char32_t code_point) noexcept {
 }
 
 bool key_down(std::uint32_t vk, grace::input::Key code, bool shift, bool ctrl, bool alt, bool repeat) noexcept {
+  if (!repeat) {
+    g_pressed_in_field = g_editing.load(std::memory_order_acquire) && !g_awaiting_key.load(std::memory_order_acquire);
+    g_pressed_space = false;
+  }
   if (g_editing.load(std::memory_order_acquire) && !g_awaiting_key.load(std::memory_order_acquire)) {
     if (repeat && (vk == VK_RETURN || vk == VK_ESCAPE || vk == VK_TAB)) {
       return true;  // a field is kept, left or finished by a fresh press: the held Enter that opened it does not (D270)
@@ -1462,8 +1476,11 @@ bool key_down(std::uint32_t vk, grace::input::Key code, bool shift, bool ctrl, b
     case VK_RIGHT: key = Key::right; break;
     // Tab moves no focus in the menu (G41): the arrows, Enter and Esc do. Inside a field it finishes the entry (its
     // edit keys, above); otherwise it does nothing here, and never reaches the game while the menu holds the keyboard.
-    case VK_RETURN:
-    case VK_SPACE: key = Key::activate; break;
+    case VK_RETURN: key = Key::activate; break;
+    case VK_SPACE:
+      key = Key::activate;
+      g_pressed_space = !ctrl;  // its character is the press's own, never typed (D270)
+      break;
     case VK_ESCAPE: key = Key::back; break;
     case 'Q': key = Key::previous_tab; break;
     case 'E': key = Key::next_tab; break;

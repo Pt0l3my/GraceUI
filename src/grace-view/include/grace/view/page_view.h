@@ -141,6 +141,9 @@ class PageView {
 
   // A key or a button: what it did (§5.3, §5.4, §5.7).
   Action input(const Input& input);
+  // The held key's repeats do nothing from here until a new press (D270): the host calls it when another space's view
+  // starts taking the keys.
+  void stop_repeats() noexcept { repeat_stays_ = false; }
   // The mouse (§5.5): a press focuses what it is on and does what Enter does there, or on a control what a click on its
   // part does (a switch turns, a choice's segment is chosen, a slider takes the value under the pointer); a slider's
   // moves while its button is held set it, and the release ends that; the wheel scrolls the page, which then stays

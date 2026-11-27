@@ -2008,9 +2008,16 @@ TEST_CASE("a held direction's repeats: along the list it is in, and a number's n
   }
   CHECK(menu.scope() == Scope::page);
   CHECK(menu.value("ui.scale").get<double>() == doctest::Approx(1.35));
+  // At its bound a repeat's step changes nothing, and sends nothing.
+  press(menu, Key::right);
+  CHECK(held(menu, Key::right).kind == Action::Kind::command);
+  CHECK(held(menu, Key::right).kind == Action::Kind::command);
+  CHECK(menu.value("ui.scale").get<double>() == doctest::Approx(1.5));
+  CHECK(held(menu, Key::right).kind == Action::Kind::none);
+  CHECK(menu.value("ui.scale").get<double>() == doctest::Approx(1.5));
 
-  // A master's list: ↑ ↓ held along it, not from its first row up to its filter bar, nor → into the detail; in the
-  // detail, ↑ held stops at its first stop, short of the chosen row.
+  // A master's list: ↑ ↓ held along it, not from its first row up to its filter bar, nor down into it from the
+  // bar, nor → into the detail; in the detail, ↑ held stops at its first stop, short of the chosen row.
   PageView lamps = loaded("demo", "demo.lamps");
   lamps.set_topic("lantern.lamps", kLamps);
   lamps.set_topic("lantern.lamp/harbour-mouth", kHarbour);
@@ -2024,6 +2031,15 @@ TEST_CASE("a held direction's repeats: along the list it is in, and a number's n
     held(lamps, Key::up);
   }
   CHECK(lamps.focused() == "item:lantern.lamps/harbour-mouth");
+  press(lamps, Key::up);
+  REQUIRE(lamps.focused() == "filter:master:lantern.lamps/search");
+  press(lamps, Key::up);
+  press(lamps, Key::down);  // back onto the bar's last stop by a press that stays in the bar
+  REQUIRE(lamps.focused() == "filter:master:lantern.lamps/search");
+  held(lamps, Key::down);
+  CHECK(lamps.focused() == "filter:master:lantern.lamps/search");
+  press(lamps, Key::down);
+  REQUIRE(lamps.focused() == "item:lantern.lamps/harbour-mouth");
   press(lamps, Key::right);
   REQUIRE(lamps.focused() == "tab:lamp");
   press(lamps, Key::down);

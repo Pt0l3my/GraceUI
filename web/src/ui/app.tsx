@@ -16,7 +16,7 @@ import { Rail, openSpace } from "./rail.tsx";
 import { TopBar } from "./topbar.tsx";
 import { expanded, menuWidth } from "./view-state.ts";
 import { noteSent } from "./live.ts";
-import { repeatActs, repeatTarget } from "../model/repeat.ts";
+import { repeatActs, repeatRegion, repeatTarget } from "../model/repeat.ts";
 
 const THEMES = new Set(["grace", "clear"]);
 
@@ -146,19 +146,30 @@ export function App({ session }: { session: Session }) {
         }
       }
     };
-    // A held key (D270): before any element's own keys, a repeat that would turn, choose, open or press is dropped.
+    // A held key (D270): before any element's own keys, a repeat that would turn, choose, open or press is dropped,
+    // and so is one whose press took focus out of the list it was in, or that a press of the mouse has come since.
+    let pressed: Element | null = null;
     const held = (e: KeyboardEvent) => {
-      if (e.repeat && !repeatActs(e.key, repeatTarget(e.target))) {
+      if (!e.repeat) {
+        pressed = repeatRegion(e.target);
+        return;
+      }
+      if (!repeatActs(e.key, repeatTarget(e.target)) || pressed === null || repeatRegion(e.target) !== pressed) {
         e.preventDefault();
         e.stopPropagation();
       }
     };
+    const pointed = () => {
+      pressed = null;
+    };
     window.addEventListener("resize", resize);
     document.addEventListener("keydown", held, true);
+    document.addEventListener("pointerdown", pointed, true);
     document.addEventListener("keydown", keys);
     return () => {
       window.removeEventListener("resize", resize);
       document.removeEventListener("keydown", held, true);
+      document.removeEventListener("pointerdown", pointed, true);
       document.removeEventListener("keydown", keys);
     };
   }, [session]);

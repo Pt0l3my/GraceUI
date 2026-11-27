@@ -2,8 +2,10 @@
 // repeat.ts: what a held key's repeat does in the browser view (DESIGN §5.9, D270), as grace-view's repeat_acts does in
 // game: it moves along and steps a slider, and nothing more. A switch, a choice, a tab, a tree's category, a list's row
 // into its detail, a button's Enter or Space, Esc, a page or a tab turned, search opened: once a press. A key capture
-// takes no repeat. In a text field every key but Enter and Esc repeats, as in any field; elsewhere a held arrow still
-// scrolls the page, as the browser does.
+// takes no repeat. In a text field every key but Enter and Esc repeats, as in any field, but not a key pressed outside
+// it (a held `/` opens search once); elsewhere a held arrow still scrolls the page, as the browser does. And as in game,
+// once the press has taken focus out of the list or the element it was on (a list's row into its detail), its repeats
+// do nothing until a new press.
 
 /** The focused element, as far as a repeat goes. */
 export interface RepeatTarget {
@@ -35,6 +37,18 @@ export function repeatActs(key: string, at: RepeatTarget): boolean {
     return !SIDEWAYS_ACTS.has(at.role ?? "") && !at.select;  // a slider steps; elsewhere the page scrolls
   }
   return PASSES.has(key);
+}
+
+// What a repeat may move along: the list an element is in (the rail's tree, a master's list, a radio group, a tab list,
+// a flyout), or the element itself.
+const LISTS = "[role=tree], [role=listbox], [role=radiogroup], [role=tablist], .flyout";
+
+/** The list `target` is in for a held key's repeats, or `target` itself; null for anything not an element. */
+export function repeatRegion(target: EventTarget | null): Element | null {
+  if (typeof Element === "undefined" || !(target instanceof Element)) {
+    return null;
+  }
+  return target.closest(LISTS) ?? target;
 }
 
 /** The repeat's view of a key event's target. */

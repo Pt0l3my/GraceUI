@@ -3203,9 +3203,22 @@ Action PageView::input(const Input& in) {
   }
   const std::string sender = focused();
   const Region from = region();
+  // A repeat's step at a bound changes nothing: nothing is sent (a mod's queue would fill at the stick's pace).
+  Json held;
+  if (in.repeat && scope_ == Scope::page && page_focus_ < focus_.size() &&
+      (focus_[page_focus_].kind == FocusKind::setting || focus_[page_focus_].kind == FocusKind::shortcut)) {
+    held = value(settings_[focus_[page_focus_].index].key);
+  }
   Action action = input_body(in);
   if (!in.repeat) {
     repeat_stays_ = region() == from;
+  } else if (!(region() == from)) {
+    repeat_stays_ = false;  // a repeat that took focus elsewhere after all: the rest of the hold does nothing
+  }
+  if (in.repeat && action.kind == Action::Kind::command && action.command.name == "settings.set" &&
+      action.command.args.is_object() && action.command.args.contains("value") &&
+      action.command.args.at("value") == held) {
+    return {};
   }
   note_running(action, sender);
   note_sent(action);
@@ -4430,8 +4443,8 @@ bool PageView::repeat_acts(const Input& in) {
   }
   const Focus& f = focus_[page_focus_];
   if (const protocol::PageMaster* m = master(); m != nullptr) {
-    // Master and detail (D215): ↑ ↓ along the list, but not up from its first row to its filter bar, nor from the
-    // detail's first stop back to the chosen row; → from a row goes into the detail.
+    // Master and detail (D215): ↑ ↓ along the list, but not up from its first row to its filter bar, nor down into it
+    // from the stop above, nor from the detail's first stop back to the chosen row; → from a row goes into the detail.
     const auto of_list = [&](const Focus& one) { return of_master_list(*m, one); };
     std::size_t first = focus_.size();
     std::size_t last = 0;
@@ -4445,7 +4458,7 @@ bool PageView::repeat_acts(const Input& in) {
       if (of_list(f)) {
         return vertical && !(in.key == Key::up && page_focus_ == first);
       }
-      if (in.key == Key::up && page_focus_ == last + 1) {
+      if ((in.key == Key::down && page_focus_ + 1 == first) || (in.key == Key::up && page_focus_ == last + 1)) {
         return false;
       }
     }
@@ -4459,8 +4472,10 @@ bool PageView::repeat_acts(const Input& in) {
     return type == SettingType::integer || type == SettingType::number || type == SettingType::duration_s;
   }
   if (f.kind == FocusKind::editor && static_cast<EditorPart>(f.part) == EditorPart::field) {
+    // A number field that takes its step: not one that is locked, nor on a greyed page, where ← goes to the rail.
     EditorAt at;
-    return editor_of(f, at) && f.index < at.doc.fields.size() && at.doc.fields[f.index].kind == FieldKind::number;
+    return editor_of(f, at) && f.index < at.doc.fields.size() && at.doc.fields[f.index].kind == FieldKind::number &&
+           at.doc.fields[f.index].locked.empty() && greyed_words(current().id).empty();
   }
   return false;
 }
