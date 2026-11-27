@@ -63,12 +63,24 @@ struct DisplayList {
   std::vector<Rect> clips;  // clips[0] is the whole display
   std::string text;         // every text item's words, one after another
   std::uint32_t generation = 0;  // the shared atlas's generation its glyphs come from
+  // The page's body, items[body_first, body_end): what fades in when the page changes in game (§3.10, D272), the rail,
+  // the top bar and the key hints staying still. Empty (both 0) for a list with no page.
+  std::uint32_t body_first = 0;
+  std::uint32_t body_end = 0;
+  // The focus ring while it is in the page, items[ring_first, ring_end): drawn after the key hints, it fades with the
+  // body. Empty when the ring is on the rail or the top bar, or not drawn.
+  std::uint32_t ring_first = 0;
+  std::uint32_t ring_end = 0;
 
   void clear() noexcept {
     items.clear();
     glyphs.clear();
     clips.clear();
     text.clear();
+    body_first = 0;
+    body_end = 0;
+    ring_first = 0;
+    ring_end = 0;
   }
   // One line per item, with its colour's role and the text it draws: the structure dumps of §9.3's parity tests.
   std::string dump() const;

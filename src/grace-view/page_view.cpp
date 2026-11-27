@@ -5534,6 +5534,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     c.line(page_x, bar_h, page_w, Colour::rule);
 
     // ---- The page, clipped between the top bar and the key hints, scrolled to keep focus in view.
+    out.body_first = static_cast<std::uint32_t>(out.items.size());  // what fades in at a page change (D272)
     const float footer_h = std::round(36 * s);
     const Rect page_area{page_x, bar_h + 1, page_w, H - bar_h - 1 - footer_h};
     out.clips.push_back(page_area);
@@ -7656,6 +7657,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     const float content_bottom = y + scroll_;
 
     // ---- The key hints for the focused control, and the focus ring.
+    out.body_end = static_cast<std::uint32_t>(out.items.size());
     c.clip = 0;
     c.line(page_x, H - footer_h, page_w, Colour::rule);
     std::string hints = "Esc  Back";
@@ -7770,8 +7772,13 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const float off = std::round(tokens::kGrace.size.focus_offset * s);
       const Rect ring{c.focus.x - off, c.focus.y - off, c.focus.w + 2 * off, c.focus.h + 2 * off};
       c.clip = scope_ == Scope::page ? 1 : 0;
+      const auto ring_first = static_cast<std::uint32_t>(out.items.size());
       c.stroke(ring, Colour::gold_hi, std::round(tokens::kGrace.size.focus_width * s),
                std::round((tokens::radius::control + tokens::kGrace.size.focus_offset) * s));
+      if (scope_ == Scope::page) {
+        out.ring_first = ring_first;  // the ring on the page fades in with its body (D272)
+        out.ring_end = static_cast<std::uint32_t>(out.items.size());
+      }
     }
     // Search's results (§4.3), under its box and over the page: this space's settings, each by its label and its page.
     if (edit_.kind == EditKind::search && !search_query_.empty()) {

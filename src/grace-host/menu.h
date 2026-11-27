@@ -51,11 +51,14 @@ struct Frame {
   grace::abi::DrawListData* list = nullptr;  // null: nothing of the menu's drawn this frame
   float alpha = 1.0f;                        // its fade (§3.10): below 1 while it fades in or out
   bool closing = false;                      // it fades out after a close by the player, holding no input
+  float body_alpha = 1.0f;                   // its page body's own, below 1 while a new page fades in (D272)
 };
 Frame frame(std::uint32_t width, std::uint32_t height) noexcept;
 // The present thread: whether the menu's list was drawn in its last frame, open or fading out (D271), so that the next
 // frame is built and sees the menu close, and draws its fade out.
 bool drawing() noexcept;
+// The present thread, for the test build: a frame was drawn with a page's body fading in (D272).
+void body_faded() noexcept;
 
 // GraceUI's own thread, when woken.
 void serve() noexcept;
@@ -90,7 +93,8 @@ struct TestView {
   std::uint32_t plain_baked;    // 1 if Plain text's own faces were baked at warm-up
   std::uint32_t fade_in_frames;   // frames the present thread drew while the menu faded in (D271)
   std::uint32_t fade_out_frames;  // and while it faded out after a close by the player
-  std::uint32_t alpha_milli;      // the last frame's alpha, in thousandths
+  std::uint32_t alpha_milli;      // the last frame's alpha, in thousandths (the body's times the menu's)
+  std::uint32_t body_fade_frames;  // frames drawn while a page's body faded in (D272)
 };
 void test_view(TestView& out) noexcept;
 // A setting of GraceUI's own space as JSON text (a secret's as its status); answers its length, 0 for none.

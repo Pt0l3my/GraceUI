@@ -61,6 +61,58 @@ TEST_CASE("the Menu page passes the checker a mod's panel passes") {
   CHECK(stats.commands <= GRACEUI_DRAW_COMMANDS_MAX);
 }
 
+TEST_CASE("the page's body: its items' vertices, between the rail and top bar's and the key hints' (D272)") {
+  const view::DisplayList list = menu();
+  REQUIRE(list.body_first > 0);
+  REQUIRE(list.body_end > list.body_first);
+  REQUIRE(list.body_end <= list.items.size());
+  const auto text_of = [&](const Item& item) { return list.text.substr(item.text_first, item.text_size); };
+  // A setting's label lies within the body; the rail's page names and the key hints' words outside it.
+  std::size_t label = list.items.size();
+  std::size_t rail = list.items.size();
+  std::size_t hint = list.items.size();
+  for (std::size_t i = 0; i < list.items.size(); ++i) {
+    if (list.items[i].shape != Shape::text) {
+      continue;
+    }
+    const std::string words = text_of(list.items[i]);
+    if (words == "Menu size" && label == list.items.size()) {
+      label = i;
+    } else if (words == "Hotkeys" && rail == list.items.size()) {
+      rail = i;
+    } else if (words == "Back") {
+      hint = i;
+    }
+  }
+  REQUIRE(label < list.items.size());
+  REQUIRE(rail < list.items.size());
+  REQUIRE(hint < list.items.size());
+  CHECK(label >= list.body_first);
+  CHECK(label < list.body_end);
+  CHECK(rail < list.body_first);
+  CHECK(hint >= list.body_end);
+  // Tessellated, the body's vertices are the run its items made, within the list.
+  abi::DrawListData out;
+  const draw::Stats stats = draw::tessellate(list, tokens::kGrace.colour, kAtlas, out);
+  CHECK(out.body_first > 0);
+  CHECK(out.body_end > out.body_first);
+  CHECK(out.body_end < stats.vertices);
+  view::DisplayList none = one(Item{});
+  none.items[0].rect = Rect{0, 0, 10, 10};
+  CHECK(draw::tessellate(none, tokens::kGrace.colour, kAtlas, out).vertices > 0);
+  CHECK(out.body_first == 0);  // a list with no page, as a panel's: no body
+  CHECK(out.body_end == 0);
+  // The focus ring on the page, drawn after the key hints, is its own run, which fades with the body.
+  REQUIRE(list.ring_end > list.ring_first);
+  CHECK(list.ring_first >= list.body_end);
+  CHECK(list.items[list.ring_first].shape == Shape::stroke);
+  CHECK(list.items[list.ring_first].colour == tokens::Colour::gold_hi);
+  abi::DrawListData again;
+  draw::tessellate(list, tokens::kGrace.colour, kAtlas, again);
+  CHECK(again.ring_first >= again.body_end);
+  CHECK(again.ring_end > again.ring_first);
+}
+
 TEST_CASE("Grace Clear changes colours and nothing else") {
   const view::DisplayList list = menu();
   abi::DrawListData grace_out;
