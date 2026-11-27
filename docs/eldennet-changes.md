@@ -1823,3 +1823,15 @@ Nothing to change on your side: every integer, number and duration setting on yo
 - **Your goldens**: a grace-dev dump with a slider focused gains "Enter  Type" in its footer, before "R  Reset". In the
   browser the value is now a button, `[data-value='<key>']`, and its field is `[data-entry='<key>']`; the value's text
   is as before.
+
+## 93. Plain text in game (2026-11-27, D267; GraceUI 0.2.60)
+
+Nothing to change on your side.
+
+- **Your pages in game** now follow GraceUI's Plain text (GraceUI › Menu), as they did in the browser: titles and
+  prose in Noto Sans in place of Cinzel and EB Garamond. Turned on in a session it applies at once, from GraceUI's
+  nearest sans faces, scaled; from the next launch those faces are baked at their own sizes.
+- **Your own panels** (the subtitles, the chat box, F11) draw with your own faces and are not changed. If you want
+  them to follow Plain text, say so: GraceUI can publish it to mods as it publishes `ui.scale` (D180).
+- **The shared atlas** grows while Plain text is on at launch (2048 by 2048 at 1080p and a scale of 1.3 with it;
+  1024 by 2048 at 1.25 without). If it cannot hold everything, Plain text's faces are left out before any of yours.

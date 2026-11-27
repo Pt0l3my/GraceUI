@@ -51,6 +51,17 @@ constexpr const char* kMenuNames[kMenuFiles] = {  // as logged: relative to Grac
     "fonts\\Cinzel-Regular.ttf",      "fonts\\Cinzel-Bold.ttf",         "fonts\\EBGaramond-Regular.ttf",
     "fonts\\EBGaramond-Medium.ttf",   "fonts\\EBGaramond-SemiBold.ttf"};
 
+// Whether a role is drawn in a serif or display face, which Plain text draws in Noto Sans instead (§3.4, D267).
+bool serif_role(const grace::tokens::Type& type) noexcept {
+  return type.font == grace::tokens::Font::display || type.font == grace::tokens::Font::serif;
+}
+
+// A serif or display role's Noto Sans in Plain text: SemiBold for Cinzel's titles and for a weight of 600 or more, as
+// the browser view draws them (§3.4); Regular for the rest (no Noto Sans Medium ships).
+MenuFile plain_file_of(const grace::tokens::Type& type) noexcept {
+  return type.font == grace::tokens::Font::display || type.weight >= 600 ? noto_semibold : noto_regular;
+}
+
 MenuFile file_of(const grace::tokens::Type& type) noexcept {
   using grace::tokens::Font;
   switch (type.font) {
@@ -92,6 +103,11 @@ constinit std::vector<unsigned char>* g_menu_data[kMenuFiles] = {};  // the init
 constinit std::atomic<bool> g_menu_loaded{false};
 constinit grace::view::Fonts* g_menu_fonts = nullptr;  // made at the bake, never changed or freed after it
 constinit grace::view::Face* g_menu_faces = nullptr;   // kTypeCount of them
+// Plain text's table (D267): the serif and display roles in Noto Sans, each from its own bake when Plain text was on at
+// the bake, else from the nearest sans role's bake, scaled; every other role as g_menu_fonts has it.
+constinit grace::view::Fonts* g_plain_fonts = nullptr;
+constinit grace::view::Face* g_plain_faces = nullptr;  // kTypeCount of them, the serif and display roles' only
+constinit bool g_plain_baked = false;
 constinit float g_white_u = 0.0f;
 constinit float g_white_v = 0.0f;
 constinit float g_menu_scale = 0.0f;
@@ -250,7 +266,7 @@ constinit std::atomic<std::uint32_t> g_test_limit{0};
 void test_set_limit(std::uint32_t side) noexcept { g_test_limit.store(side, std::memory_order_relaxed); }
 #endif
 
-void bake(ImFontAtlas* fonts, std::uint32_t mod_faces, float menu_scale, float content_scale) {
+void bake(ImFontAtlas* fonts, std::uint32_t mod_faces, float menu_scale, float content_scale, bool plain) {
   grace::abi::Registry& registry = session::registry();  // sealed by the present thread before this runs (D80)
   // A fresh start: an earlier attempt that failed left nothing GraceUI keeps.
   g_table_count = 0;
@@ -296,6 +312,40 @@ void bake(ImFontAtlas* fonts, std::uint32_t mod_faces, float menu_scale, float c
                                                      static_cast<int>(data->size()), pixels, &config, kMenuRanges);
       if (const std::vector<unsigned char>* mono = g_menu_data[noto_mono];
           menu_fonts[role] != nullptr && !has_arrows(file) && mono != nullptr) {
+        ImFontConfig merge = face_config();
+        merge.MergeMode = true;
+        // SAFETY: as above.
+        fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(mono->data()), static_cast<int>(mono->size()), pixels,
+                                    &merge, kArrowRanges);
+      }
+    }
+  }
+  // Plain text's faces (§3.4, D267), only when it is on at the bake: the serif and display roles once more, in Noto
+  // Sans at their own sizes, a role that shares another's file and size sharing its bake (prose and rail).
+  ImFont* plain_fonts[grace::tokens::kTypeCount] = {};
+  if (menu && plain) {
+    for (int role = 0; role < grace::tokens::kTypeCount; ++role) {
+      const grace::tokens::Type& type = grace::tokens::kTypes[role];
+      if (!serif_role(type)) {
+        continue;
+      }
+      const MenuFile file = plain_file_of(type);
+      const float pixels = std::clamp(type.size * menu_scale, 6.0f, 128.0f);
+      for (int earlier = 0; earlier < role && plain_fonts[role] == nullptr; ++earlier) {
+        const grace::tokens::Type& other = grace::tokens::kTypes[earlier];
+        if (plain_fonts[earlier] != nullptr && plain_file_of(other) == file && other.size == type.size) {
+          plain_fonts[role] = plain_fonts[earlier];
+        }
+      }
+      const std::vector<unsigned char>* data = g_menu_data[file] != nullptr ? g_menu_data[file] : g_menu_data[noto_regular];
+      if (plain_fonts[role] != nullptr || data == nullptr) {
+        continue;
+      }
+      const ImFontConfig config = face_config();
+      // SAFETY: as above.
+      plain_fonts[role] = fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(data->data()),
+                                                      static_cast<int>(data->size()), pixels, &config, kMenuRanges);
+      if (const std::vector<unsigned char>* mono = g_menu_data[noto_mono]; plain_fonts[role] != nullptr && mono != nullptr) {
         ImFontConfig merge = face_config();
         merge.MergeMode = true;
         // SAFETY: as above.
@@ -358,6 +408,61 @@ void bake(ImFontAtlas* fonts, std::uint32_t mod_faces, float menu_scale, float c
       g_menu_fonts->by_role[static_cast<std::size_t>(role)] = &g_menu_faces[role];
     }
     g_menu_fonts->generation = 1;
+    // Plain text's table (D267): a serif or display role from its own plain bake, or from the sans role of the same
+    // weight nearest its size (a larger one on a tie), scaled, until a bake with Plain text on.
+    if (g_plain_faces == nullptr) {
+      g_plain_faces = new grace::view::Face[grace::tokens::kTypeCount]();
+      g_plain_fonts = new grace::view::Fonts();
+    }
+    *g_plain_fonts = *g_menu_fonts;
+    g_plain_baked = false;
+    bool plain_whole = plain;
+    for (int role = 0; role < grace::tokens::kTypeCount; ++role) {
+      const grace::tokens::Type& type = grace::tokens::kTypes[role];
+      g_plain_faces[role] = grace::view::Face{};
+      if (!serif_role(type)) {
+        continue;
+      }
+      if (plain_fonts[role] != nullptr) {
+        for (int earlier = 0; earlier < role; ++earlier) {
+          if (plain_fonts[earlier] == plain_fonts[role]) {
+            g_plain_fonts->by_role[static_cast<std::size_t>(role)] = g_plain_fonts->by_role[static_cast<std::size_t>(earlier)];
+          }
+        }
+        if (g_plain_fonts->by_role[static_cast<std::size_t>(role)] == &g_menu_faces[role]) {
+          make_menu_face(plain_fonts[role], g_plain_faces[role]);
+          if (!g_plain_faces[role].glyphs.empty()) {
+            g_plain_fonts->by_role[static_cast<std::size_t>(role)] = &g_plain_faces[role];
+            continue;
+          }
+        } else {
+          continue;
+        }
+      }
+      plain_whole = false;
+      const bool semibold = plain_file_of(type) == noto_semibold;
+      int nearest = -1;
+      for (int other = 0; other < grace::tokens::kTypeCount; ++other) {
+        const grace::tokens::Type& sans = grace::tokens::kTypes[other];
+        if (sans.font != grace::tokens::Font::sans || (sans.weight >= 600) != semibold) {
+          continue;
+        }
+        const float gap = std::fabs(sans.size - type.size);
+        if (nearest < 0 || gap < std::fabs(grace::tokens::kTypes[nearest].size - type.size) ||
+            (gap == std::fabs(grace::tokens::kTypes[nearest].size - type.size) && sans.size > grace::tokens::kTypes[nearest].size)) {
+          nearest = other;
+        }
+      }
+      if (nearest >= 0) {
+        g_plain_fonts->by_role[static_cast<std::size_t>(role)] = &g_menu_faces[nearest];
+      }
+    }
+    g_plain_baked = plain && plain_whole;
+    if (plain) {
+      log_line(g_plain_baked ? "the menu's Plain text faces were baked too (Noto Sans for its serif roles)"
+                             : "the menu's Plain text faces could not all be baked: its serif roles take the nearest "
+                               "Noto Sans, scaled");
+    }
     g_menu_scale = whole ? menu_scale : 0.0f;
     if (!whole) {
       log_line("the menu's faces could not all be baked: the menu cannot open this session");
@@ -411,9 +516,14 @@ bool own_folder(std::wstring& out) noexcept {
   }
 }
 
-const grace::view::Fonts* menu_fonts() noexcept {
-  return g_generation.load(std::memory_order_acquire) != 0 && g_menu_scale > 0.0f ? g_menu_fonts : nullptr;
+const grace::view::Fonts* menu_fonts(bool plain) noexcept {
+  if (g_generation.load(std::memory_order_acquire) == 0 || g_menu_scale <= 0.0f) {
+    return nullptr;
+  }
+  return plain && g_plain_fonts != nullptr ? g_plain_fonts : g_menu_fonts;
 }
+
+bool plain_baked() noexcept { return g_generation.load(std::memory_order_acquire) != 0 && g_plain_baked; }
 
 void white_pixel(float& u, float& v) noexcept {
   u = g_white_u;

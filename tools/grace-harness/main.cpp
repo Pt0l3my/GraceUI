@@ -6016,14 +6016,41 @@ void run_settings_write(const std::wstring& dll) {
   press(window, VK_DOWN, 0x50);
   press(window, VK_RIGHT, 0x4D);  // the theme: Grace Clear
   menu = menu_after(game, grace, menu.lists);
+  // Plain text (D267), down the page and Enter: the page's serif and display roles drawn in Noto Sans at once, from the
+  // nearest sans bakes, scaled, since Plain text was off at this session's bake.
+  for (int i = 0; i < 8 && std::strcmp(menu.focused, "setting:ui.menu.plain_text") != 0; ++i) {
+    press(window, VK_DOWN, 0x50);
+    menu = menu_after(game, grace, menu.lists);
+  }
+  const bool on_plain = std::strcmp(menu.focused, "setting:ui.menu.plain_text") == 0;
+  const Frame serif_shot = game.frame_and_read(kInputColour, PresentWith::present);
+  press(window, VK_RETURN, 0x1C);
+  for (int i = 0; i < 150 && grace.setting("ui.menu.plain_text") != "true"; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  menu = menu_after(game, grace, grace.menu().lists);
+  const Frame plain_shot = game.frame_and_read(kInputColour, PresentWith::present);
+  int redrawn = 0;
+  for (std::size_t i = 0; i < plain_shot.pixels.size() && i < serif_shot.pixels.size(); ++i) {
+    redrawn += plain_shot.pixels[i] != serif_shot.pixels[i] ? 1 : 0;
+  }
+  save_shot(plain_shot, "menu-plain-text-1920x1080.bmp");
+  check(on_plain && grace.setting("ui.menu.plain_text") == "true" && menu.plain_text == 1 && menu.plain_baked == 0 &&
+            redrawn > 2000,
+        "settings: Plain text in game at once",
+        "Enter on Plain text (%s): ui.menu.plain_text %s; the menu draws in Noto Sans %s, from the nearest sans bakes "
+        "(its own %s); %d pixels redrawn",
+        on_plain ? "found" : "NOT FOUND", grace.setting("ui.menu.plain_text").c_str(),
+        menu.plain_text == 1 ? "yes" : "NO", menu.plain_baked == 0 ? "not baked, as expected" : "BAKED", redrawn);
   press(window, VK_F5, kScanF5);
   frames(game, 2);
-  const Json want = Json::object({{"ui.scale", 1.3}, {"ui.menu.theme", "clear"}});
+  const Json want = Json::object({{"ui.scale", 1.3}, {"ui.menu.theme", "clear"}, {"ui.menu.plain_text", true}});
   const Json kept = wait_for_kept(game, dll, want);
   check(none_at_start && none_when_opened && !kept.is_discarded() && kept.value("graceui_settings", 0) == 1 &&
             kept.value("values", Json()) == want,
         "settings: kept for the next session",
-        "no file at the start (%s) or when the menu opened (%s); after → on Menu size and Grace Clear: %s",
+        "no file at the start (%s) or when the menu opened (%s); after → on Menu size, Grace Clear and Plain text: %s",
         none_at_start ? "yes" : "NO", none_when_opened ? "yes" : "NO", kept.is_discarded() ? "NO FILE" : kept.dump().c_str());
 }
 
@@ -6043,26 +6070,45 @@ void run_settings_read(const std::wstring& dll) {
   GraceUiTestMenu menu = menu_after(game, grace, 0);
   const std::string scale = grace.setting("ui.scale");
   const std::string theme = grace.setting("ui.menu.theme");
-  const bool said = grace.logged("GraceUI's settings: 2 kept from an earlier session, 0 left out");
+  const bool said = grace.logged("GraceUI's settings: 3 kept from an earlier session, 0 left out");
   check(scale == "1.3" && theme == "\"clear\"" && std::fabs(menu.baked_scale - 1.3f) < 0.001f &&
             std::fabs(menu.scale - 1.3f) < 0.001f && said,
         "settings: the next session starts from them",
         "ui.scale %s, the theme %s; the menu's faces baked at %.2f and laid out at %.2f; the log %s",
         scale.c_str(), theme.c_str(), menu.baked_scale, menu.scale, said ? "says so" : "DOES NOT SAY SO");
+  const bool plain_said = grace.logged("the menu's Plain text faces were baked too (Noto Sans for its serif roles)");
+  const GraceUiTestState baked = grace.state();
+  check(grace.setting("ui.menu.plain_text") == "true" && menu.plain_text == 1 && menu.plain_baked == 1 && plain_said,
+        "settings: Plain text's faces baked at the next launch",
+        "ui.menu.plain_text %s; the menu draws in Noto Sans %s, from its own bakes %s; the log %s; the atlas %ux%u",
+        grace.setting("ui.menu.plain_text").c_str(), menu.plain_text == 1 ? "yes" : "NO",
+        menu.plain_baked == 1 ? "yes" : "NO", plain_said ? "says so" : "DOES NOT SAY SO", baked.atlas_width,
+        baked.atlas_height);
   // R on each resets it: nothing differs from its default, so nothing is kept.
   press(window, 'R', 0x13);
   menu = menu_after(game, grace, menu.lists);
   press(window, VK_DOWN, 0x50);
   press(window, 'R', 0x13);
   menu = menu_after(game, grace, menu.lists);
+  for (int i = 0; i < 8 && std::strcmp(menu.focused, "setting:ui.menu.plain_text") != 0; ++i) {
+    press(window, VK_DOWN, 0x50);
+    menu = menu_after(game, grace, menu.lists);
+  }
+  press(window, 'R', 0x13);
+  for (int i = 0; i < 150 && grace.setting("ui.menu.plain_text") != "false"; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  menu = menu_after(game, grace, grace.menu().lists);
+  const bool serif_again = menu.plain_text == 0;
   press(window, VK_F5, kScanF5);
   frames(game, 2);
   const Json kept = wait_for_kept(game, dll, Json::object());
   check(!kept.is_discarded() && kept.value("values", Json(nullptr)) == Json::object() &&
-            grace.setting("ui.scale") == "1.25",
+            grace.setting("ui.scale") == "1.25" && serif_again,
         "settings: a reset keeps nothing",
-        "after R on both: %s, ui.scale %s", kept.is_discarded() ? "NO FILE" : kept.dump().c_str(),
-        grace.setting("ui.scale").c_str());
+        "after R on all three: %s, ui.scale %s; the serif faces again %s", kept.is_discarded() ? "NO FILE" : kept.dump().c_str(),
+        grace.setting("ui.scale").c_str(), serif_again ? "yes" : "NO");
 }
 
 void run_settings_bad(const std::wstring& dll) {

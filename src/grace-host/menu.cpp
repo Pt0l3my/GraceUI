@@ -91,6 +91,7 @@ constinit std::atomic<std::uint32_t> g_width{0};
 constinit std::atomic<std::uint32_t> g_height{0};
 constinit std::atomic<bool> g_clear_theme{false};  // ui.menu.theme is Grace Clear: the pointer's colours (G31)
 constinit std::atomic<float> g_ui_scale{0.0f};  // ui.scale as the store holds it, for the next bake's scale; 0 unread
+constinit std::atomic<int> g_plain_text{-1};     // ui.menu.plain_text as the store holds it (D267): 1, 0, or -1 unread
 
 // The test exports' view (and nothing else reads it).
 constinit std::atomic<std::uint64_t> g_published{0};
@@ -143,6 +144,7 @@ struct State {
   std::uint32_t height = 0;
   std::uint64_t serial = 0;
   double ui_scale = 1.0;
+  bool plain = false;  // ui.menu.plain_text: the serif and display roles in Noto Sans (§3.4, D267)
   bool clear = false;  // ui.menu.theme is Grace Clear
   std::vector<std::unique_ptr<SpaceView>> spaces;  // the mods' first, in the order they registered, GraceUI's last
   std::size_t active = 0;                          // the space whose page is open
@@ -578,6 +580,8 @@ void take_effects(State& m) {
   g_ui_scale.store(static_cast<float>(m.ui_scale), std::memory_order_relaxed);
   m.clear = store.held("ui.menu.theme") == "clear";
   g_clear_theme.store(m.clear, std::memory_order_relaxed);
+  m.plain = store.held("ui.menu.plain_text") == true;
+  g_plain_text.store(m.plain ? 1 : 0, std::memory_order_relaxed);
   own_view(m).view.set_values(store.values());
   m.revision = own_space().revision();
   spaces::publish_ui_scale(own_space());  // the mods hear of a new ui.scale (D180)
@@ -889,7 +893,7 @@ void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
 }
 
 void publish(State& m) {
-  const grace::view::Fonts* fonts = atlas::menu_fonts();
+  const grace::view::Fonts* fonts = atlas::menu_fonts(m.plain);  // Plain text's table while it is on (D267)
   grace::abi::DrawListBuffers* lists = g_lists.load(std::memory_order_acquire);
   if (fonts == nullptr || lists == nullptr || m.width == 0 || m.height == 0) {
     return;
@@ -1202,6 +1206,18 @@ float stored_ui_scale() noexcept {
 
 bool clear_theme() noexcept { return g_clear_theme.load(std::memory_order_relaxed); }
 
+bool bake_plain() noexcept {
+  const int read = g_plain_text.load(std::memory_order_relaxed);
+  if (read >= 0) {
+    return read == 1;
+  }
+  try {
+    return own_space().store().held("ui.menu.plain_text") == true;
+  } catch (...) {
+    return false;
+  }
+}
+
 float bake_scale(std::uint32_t height) noexcept {
   float ui_scale = g_ui_scale.load(std::memory_order_relaxed);
   if (ui_scale <= 0.0f) {
@@ -1479,6 +1495,8 @@ void test_view(TestView& out) noexcept {
   out.scale = g_scale.load(std::memory_order_relaxed);
   out.faces = atlas::menu_fonts() != nullptr ? static_cast<std::uint32_t>(grace::tokens::kTypeCount) : 0;
   out.baked_scale = atlas::menu_scale();
+  out.plain_text = g_plain_text.load(std::memory_order_relaxed) == 1 ? 1 : 0;
+  out.plain_baked = atlas::plain_baked() ? 1 : 0;
   g_view_lock.lock();
   if (g_state != nullptr) {
     std::snprintf(out.page, sizeof out.page, "%s", g_state->page.c_str());
