@@ -510,6 +510,12 @@ export class Session {
     this.edits.value = edits;
   }
 
+  /** The view's own refusal of what was typed (D266: a slider's bounds in words), under the row as a space's would
+   * be; undefined clears it. Nothing is sent. */
+  refuseHere(space: string, key: string, reason: string | undefined): void {
+    this.setRefusal(space, key, reason);
+  }
+
   private setRefusal(space: string, key: string, reason: string | undefined): void {
     const refusals = new Map(this.refusals.value);
     if (reason === undefined) {

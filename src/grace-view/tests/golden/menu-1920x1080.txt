@@ -77,12 +77,16 @@ tri     ink.body      541,1051    7x14   <
 fill    ink.body      565,1057    9x2   
 tri     ink.body      573,1051    7x14   >
 text    ink.faint     595,1045   51x25   glyphs 5 "By ten"
-fill    ground.well   670,1044   25x28   r3
-stroke  edge          670,1044   25x28   r3 w1
-text    ink.body      678,1046    9x25   glyphs 1 "R"
-text    ink.faint     702,1045   42x25   glyphs 5 "Reset"
-fill    ground.well   769,1044   42x28   r3
-stroke  edge          769,1044   42x28   r3 w1
-text    ink.body      777,1046   26x25   glyphs 3 "Esc"
-text    ink.faint     818,1045   34x25   glyphs 4 "Back"
+fill    ground.well   670,1044   60x28   r3
+stroke  edge          670,1044   60x28   r3 w1
+text    ink.body      678,1046   44x25   glyphs 5 "Enter"
+text    ink.faint     737,1045   34x25   glyphs 4 "Type"
+fill    ground.well   796,1044   25x28   r3
+stroke  edge          796,1044   25x28   r3 w1
+text    ink.body      804,1046    9x25   glyphs 1 "R"
+text    ink.faint     828,1045   42x25   glyphs 5 "Reset"
+fill    ground.well   895,1044   42x28   r3
+stroke  edge          895,1044   42x28   r3 w1
+text    ink.body      903,1046   26x25   glyphs 3 "Esc"
+text    ink.faint     944,1045   34x25   glyphs 4 "Back"
 stroke  gold.hi      1502, 266  356x41   r5 w3 clip1

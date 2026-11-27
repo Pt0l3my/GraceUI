@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // page_view.cpp: one space's menu in game (page_view.h).
 #include "grace/view/page_view.h"
+#include "grace/view/typed.h"
 
 #include <algorithm>
 #include <array>
@@ -21,15 +22,6 @@ namespace size = tokens::size;
 
 bool numeric(SettingType type) {
   return type == SettingType::integer || type == SettingType::number || type == SettingType::duration_s;
-}
-
-// Decimals a step shows: 0.05 two, 0.5 one, 1 none.
-int decimals_of(double step) {
-  int d = 0;
-  while (d < 4 && std::fabs(step * std::pow(10.0, d) - std::round(step * std::pow(10.0, d))) > 1e-9) {
-    ++d;
-  }
-  return d;
 }
 
 std::string lower(std::string_view text) {
@@ -2461,22 +2453,13 @@ std::string PageView::format(std::string_view key, const Json& v) const {
   if (s == nullptr) {
     return "";
   }
-  char text[64];
   switch (s->type) {
     case SettingType::bool_:
       return v.is_boolean() && v.get<bool>() ? "On" : "Off";
     case SettingType::integer:
     case SettingType::number:
-    case SettingType::duration_s: {
-      const double n = v.is_number() ? v.get<double>() : 0.0;
-      std::snprintf(text, sizeof text, "%.*f", decimals_of(s->step.value_or(1.0)), n);
-      std::string out = text;
-      if (s->unit) {
-        const bool word = !s->unit->empty() && (*s->unit)[0] >= 'a' && (*s->unit)[0] <= 'z';
-        out += (word ? " " : "") + *s->unit;
-      }
-      return out;
-    }
+    case SettingType::duration_s:
+      return format_number(*s, v.is_number() ? v.get<double>() : 0.0);
     case SettingType::choice:
       for (const protocol::Choice& c : s->choices.value_or(std::vector<protocol::Choice>{})) {
         if (v.is_string() && c.value == v.get_ref<const std::string&>()) {
@@ -2537,7 +2520,7 @@ Action PageView::change(const Setting& s, int direction, bool shift) {
       const double step = s.step.value_or(1.0) * (shift ? 10 : 1);
       double n = (v.is_number() ? v.get<double>() : 0.0) + direction * step;
       n = std::clamp(n, s.min_.value_or(n), s.max_.value_or(n));
-      const double scale = std::pow(10.0, decimals_of(s.step.value_or(1.0)));
+      const double scale = std::pow(10.0, grid_decimals(s));  // on the store's grid (D266)
       n = std::round(n * scale) / scale;
       if (s.type == SettingType::integer) {
         return set(s, Json(static_cast<std::int64_t>(std::llround(n))));
@@ -2618,7 +2601,7 @@ Action PageView::slide(float x) {
   const double step = s->step.value_or(1.0);
   double n = lo + t * (hi - lo);
   n = step > 0 ? lo + std::round((n - lo) / step) * step : n;
-  const double scale = std::pow(10.0, decimals_of(step));
+  const double scale = std::pow(10.0, grid_decimals(*s));  // on the store's grid (D266)
   n = std::clamp(std::round(n * scale) / scale, lo, hi);
   const Json now = s->type == SettingType::integer ? Json(static_cast<std::int64_t>(std::llround(n))) : Json(n);
   const Json& was = value(s->key);
@@ -2692,9 +2675,13 @@ Action PageView::pointer_body(const Pointer& in) {
       // secret's edit dropped; search's results closed.
       const bool keep = (edit_.kind == EditKind::setting && !edit_.masked) || edit_.kind == EditKind::form_field ||
                         edit_.kind == EditKind::editor_text || edit_.kind == EditKind::editor_notes;
+      const Setting* typed_into = edit_.kind == EditKind::setting ? setting(edit_.id) : nullptr;
+      const bool slider = typed_into != nullptr && numeric(typed_into->type);
       Action left = edit_.kind == EditKind::search ? edit(EditInput{EditKey::tab}) : finish_edit(keep, 0);
-      if (left.kind == Action::Kind::command) {
-        return left;  // the edit's command; the click did only that
+      if (left.kind == Action::Kind::command || slider) {
+        // The edit's command, or a slider's typed entry ended (D266): the click did only that. (The hits it would
+        // test were laid out around the field, the track shorter for it.)
+        return left;
       }
       hit = hit_at(in.x, in.y);
     }
@@ -2773,6 +2760,9 @@ Action PageView::pointer_body(const Pointer& in) {
       }
       if (st.type == SettingType::bool_) {
         return change(st, 1, false);
+      }
+      if (numeric(st.type) && target.value.w > 0 && in.x >= target.value.x) {
+        return input(Input{Key::activate, false});  // its value: typed entry (D266)
       }
       if (numeric(st.type)) {
         drag_ = st.key;  // its moves are the slider's until the button is released
@@ -3875,6 +3865,14 @@ Action PageView::finish_edit(bool keep, int move_on) {
           if (!text.empty()) {
             action = set(*st, Json(text));
             values_[st->key] = "set";  // the view keeps whether it is set, never the secret (invariant 5)
+          }
+        } else if (numeric(st->type)) {
+          // A slider's typed entry (D266): a value on its grid within its bounds, or the bounds in words on its row.
+          Typed typed = typed_value(*st, text);
+          if (typed.ok && value(st->key) != typed.value) {
+            action = set(*st, std::move(typed.value));
+          } else if (!typed.ok && !typed.words.empty()) {
+            refusals_[st->key] = std::move(typed.words);
           }
         } else if (value(st->key) != Json(text)) {
           action = set(*st, Json(text));
@@ -5041,6 +5039,15 @@ Action PageView::input_body(const Input& in) {
                        kSettingTextMax, secret);
             return {};
           }
+          if (numeric(s->type) && !in.pad && !s->locked && !greyed(*s) && s->availability != "later") {
+            // A slider's typed entry (§3.8, D266), from the keyboard: its value in GraceUI's own field, all of it
+            // chosen, so that what is typed replaces it. A pad has its arrows (Steam's keyboard is not built yet).
+            const Json& v = value(s->key);
+            start_edit(EditKind::setting, s->key, plain_number(*s, v.is_number() ? v.get<double>() : 0.0),
+                       kTypedNumberMax, false);
+            edit_.field.select_all();
+            return {};
+          }
           if (s->type == SettingType::key_name && !s->locked && s->availability != "later") {
             capture_ = Capture{};  // a key's setting takes the next key press (D209)
             capture_.kind = CaptureKind::key;
@@ -5159,14 +5166,14 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     edit_stops_.clear();
     prose_stops_.clear();
     const auto hit = [&](Rect rect, Scope scope, std::size_t index, Rect control = {}, Rect track = {},
-                         std::size_t segments = 0) {
+                         std::size_t segments = 0, Rect value = {}) {
       const Rect& clip = out.clips[c.clip];
       const float left = std::max(rect.x, clip.x);
       const float top = std::max(rect.y, clip.y);
       const float right = std::min(rect.right(), clip.right());
       const float bottom = std::min(rect.bottom(), clip.bottom());
       if (right > left && bottom > top && index != kNone) {
-        hits_.push_back(Hit{Rect{left, top, right - left, bottom - top}, control, track, scope, index, segments});
+        hits_.push_back(Hit{Rect{left, top, right - left, bottom - top}, control, track, scope, index, segments, value});
       }
     };
     const auto hovered = [&](Rect rect) {
@@ -7288,6 +7295,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             }
             Rect track_rect{};
             std::size_t segment_count = 0;
+            Rect value_rect{};  // a slider's value, where a press types one (D266)
             const Json& v = value(key);
             const float label_y = y + std::round((row_h - line_height(TypeRole::ui, s)) / 2);
             const bool changed = changed_known_ ? changed_.count(key) != 0 : v != st.default_;  // D198
@@ -7350,11 +7358,24 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               // Inside its column by a margin on each side, so that neither the value nor the knob at either end
               // meets the focus outline drawn around the column.
               const float inset = std::round(12 * s);
-              const std::string shown = format(key, v);
-              const float vw = c.width(shown, TypeRole::num);
-              c.text(shown, TypeRole::num, col.right() - inset - vw,
-                     y + std::round((row_h - line_height(TypeRole::num, s)) / 2), vw + 1, Colour::ink_body, alpha);
-              const float track_w = control_w - std::round(64 * s) - 2 * inset;
+              const bool typing = edit_.kind == EditKind::setting && edit_.id == key;
+              // Its value, or while typed into (D266) GraceUI's field in its place, wider, the track shorter for it.
+              const float value_w = typing ? std::round(96 * s) : std::round(64 * s);
+              if (typing) {
+                const Rect box{col.right() - inset - value_w, y + std::round((row_h - 28 * s) / 2), value_w,
+                               std::round(28 * s)};
+                draw_field(box, "", Colour::ink_body, true, alpha, TypeRole::num);
+                value_rect = box;
+              } else {
+                const std::string shown = format(key, v);
+                const float vw = c.width(shown, TypeRole::num);
+                c.text(shown, TypeRole::num, col.right() - inset - vw,
+                       y + std::round((row_h - line_height(TypeRole::num, s)) / 2), vw + 1, Colour::ink_body, alpha);
+                // A press here types a value (D266): from past the knob at the track's end to the column's.
+                value_rect = Rect{col.right() - inset - value_w + std::round(8 * s), y, value_w + inset - std::round(8 * s),
+                                  row_h};
+              }
+              const float track_w = control_w - value_w - 2 * inset;
               const Rect track{col.x + inset, y + std::round((row_h - 4 * s) / 2), track_w, std::round(4 * s)};
               track_rect = track;
               c.fill(track, Colour::ground_well, track.h / 2, alpha);
@@ -7423,7 +7444,7 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               draw_field(control, shown, ink, edit_.kind == EditKind::setting && edit_.id == key, alpha, role);
             }
             hit(row, Scope::page, focus_index(shortcut ? FocusKind::shortcut : FocusKind::setting, key), control, track_rect,
-                segment_count);
+                segment_count, shortcut ? Rect{} : value_rect);
             if (focused_row) {
               c.focused(control);
             }
@@ -7548,7 +7569,10 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         hints = changes ? "← →  Change    Enter  Go to its page    Esc  Back" : "Enter  Go to its page    Esc  Back";
       } else if (f.kind == FocusKind::setting) {
         const Setting& st = settings_[f.index];
-        hints = numeric(st.type) ? "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back"
+        // Enter types a value from the keyboard (D266); a pad has no keyboard yet, so its footer leaves it out.
+        hints = numeric(st.type) && !st.locked && !greyed(st) && st.availability != "later" && !pad_mode_
+                    ? "← →  Change    Shift+← →  By ten    Enter  Type    R  Reset    Esc  Back"
+                : numeric(st.type) ? "← →  Change    Shift+← →  By ten    R  Reset    Esc  Back"
                 : st.type == SettingType::bool_ ? "Enter  Toggle    R  Reset    Esc  Back"
                 : (st.type == SettingType::choice || st.type == SettingType::tri_state ||
                    (st.type == SettingType::text && st.choices_from))
@@ -7609,6 +7633,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                   ? "↑ ↓  Line    Enter  Done    Esc  Done    Ctrl+V  Paste"
               : edit_.kind == EditKind::editor_text ? "Enter  Done    Esc  Done    Ctrl+V  Paste"
               : edit_.masked                       ? "Enter  Set    Esc  Cancel    Ctrl+V  Paste"
+              : edit_.kind == EditKind::setting && setting(edit_.id) != nullptr && numeric(setting(edit_.id)->type)
+                  ? "Enter  Set    Esc  Cancel"
                                                    : "Enter  Save    Esc  Cancel    Ctrl+V  Paste";
     }
     if (capture_open()) {

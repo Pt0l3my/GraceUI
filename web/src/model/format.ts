@@ -21,6 +21,13 @@ export function decimalsOf(step: number): number {
   return d;
 }
 
+/** The decimals of a number setting's grid (typed.h's grid_decimals): the finer of its step's and its minimum's, so
+ * that a value rounded to them stays on the grid the settings store checks (D266). */
+export function gridDecimals(s: Setting): number {
+  const step = decimalsOf(s.step ?? 1);
+  return s.min !== undefined ? Math.max(step, decimalsOf(s.min)) : step;
+}
+
 /** std::round: halves away from zero. */
 export function roundHalfAway(x: number): number {
   return x < 0 ? -Math.round(-x) : Math.round(x);
@@ -88,7 +95,7 @@ export function formatValue(s: Setting, v: Json | undefined): string {
     case "number":
     case "duration_s": {
       const n = typeof v === "number" ? v : 0;
-      let out = fixed(n, decimalsOf(s.step ?? 1));
+      let out = fixed(n, gridDecimals(s));
       if (s.unit !== undefined) {
         const first = s.unit.charCodeAt(0);
         const word = s.unit.length > 0 && first >= 97 && first <= 122;  // a unit that is a word takes a space
@@ -137,7 +144,7 @@ export function nextValue(s: Setting, v: Json | undefined, direction: 1 | -1, sh
       const step = (s.step ?? 1) * (shift ? 10 : 1);
       let n = (typeof v === "number" ? v : 0) + direction * step;
       n = Math.min(Math.max(n, s.min ?? n), s.max ?? n);
-      const scale = Math.pow(10, decimalsOf(s.step ?? 1));
+      const scale = Math.pow(10, gridDecimals(s));  // on the store's grid (D266)
       n = roundHalfAway(n * scale) / scale;
       return s.type === "integer" ? roundHalfAway(n) : n;
     }

@@ -19,7 +19,8 @@ are checked against the protocol's schema as grace-protocol's decoders check the
      that exist (this space's, or another built-in space's as "<space>/<page>"), never itself.
   4. Settings (invariant 12): every key on a settings block is the space's, homed on that page; every setting appears
      on exactly one settings block, on its home page; a shortcut is to a key homed elsewhere.
-  5. A setting's description: its default of its type and within its bounds; min, max and step only for numbers;
+  5. A setting's description: its default of its type and within its bounds; min, max and step only for numbers,
+     each of at most four decimals;
      choices only for a choice, and its default one of them; a secret's default empty (PV3); an availability in its
      form (live, later, inert, check:<id>, version:<x.y>, requires:<key>); a later setting locked; a tri-state's
      default on, off or its third value (auto, or inherit, D163).
@@ -131,6 +132,12 @@ def lint_setting(space, s, failures):
                 failures.append(f"{where}: a number needs min, max and step")
             elif not lo <= default <= hi:
                 failures.append(f"{where}: its default {default} is outside {lo} to {hi}")
+            for bound in ("min", "max", "step"):
+                # Both views round a number to four decimals at most, so a finer bound or step would leave the grid
+                # the settings store checks (D266).
+                x = s.get(bound)
+                if isinstance(x, (int, float)) and not isinstance(x, bool) and abs(x * 1e4 - round(x * 1e4)) > 1e-6:
+                    failures.append(f"{where}: its {bound} {x} has more than four decimals")
     else:
         for bound in ("min", "max", "step"):
             if bound in s:
