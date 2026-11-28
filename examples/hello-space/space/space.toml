@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: MIT
+# hello-space's space (D85, D283): the fourth example mod's pages, with invented content and our own words. One page, a
+# count with two actions, its two settings and a log of its changes: a state topic, a stream topic, the settings topic,
+# the mod's own commands and the framework's. tools/pages/build.py --build compiles it, at the example's build, into
+# its space folder (pages.json, settings.json) and the header hello_space_data.h; topics.json beside it holds the
+# fixtures the lint checks and grace-dev serves.
+
+[space]
+id = "hello-space"
+name = "Hello space"
+settings_schema = 1
+commands = ["settings.set", "settings.reset", "hello.add", "hello.reset"]
+
+[[topic]]
+id = "settings"
+shape = "state"
+
+[[topic]]
+id = "hello.status"  # the count, who changed it last, and a sentence
+shape = "state"
+
+[[topic]]
+id = "hello.log"  # a line for each change, while "Write changes to the log" is on
+shape = "stream"
+ring = 50
+
+[[category]]
+id = "hello"
+name = "Hello space"
+pages = ["hello.counter"]
+icon = "spark"
+
+[[setting]]
+key = "hello.step"
+type = "integer"
+default = 1
+min = 1
+max = 10
+step = 1
+label = "Step"
+help = "How much Add puts on the count."
+synonyms = ["amount", "increment", "by"]
+home = "hello.counter"
+effect = "now"
+availability = "live"
+
+[[setting]]
+key = "hello.log_changes"
+type = "bool"
+default = true
+label = "Write changes to the log"
+help = "Adds a line to the log below each time the count changes."
+synonyms = ["log", "history"]
+home = "hello.counter"
+effect = "now"
+availability = "live"
+
+[[page]]
+id = "hello.counter"
+category = "hello"
+name = "Counter"
+description = "A count, the buttons that change it, and how it counts."
+increment = "0.2"
+related = ["graceui/graceui.mods"]  # GraceUI's own Mods page, where the player quiets a mod's notices
+help.purpose = "See the example mod's count, and change it from either view."
+help.steps = ["Read the count and where it was changed last.", "Press Add, or reset the count from the header.", "Choose the step, and whether each change is written to the log."]
+
+[[page.actions]]
+id = "add"
+label = "Add"
+command = "hello.add"
+tone = "primary"
+
+[[page.actions]]
+id = "reset"
+label = "Reset the count"
+command = "hello.reset"
+tone = "destructive"
+confirm = "The count goes back to 0. The log is kept."
+
+[[page.sections]]
+id = "now"
+title = "Now"
+blocks = [{ kind = "component", component = "stat_tiles", topic = "hello.status" }, { kind = "component", component = "computed_sentence", topic = "hello.status" }]
+
+[[page.sections]]
+id = "how"
+title = "How it counts"
+blocks = [{ kind = "settings", keys = ["hello.step", "hello.log_changes"] }]
+
+[[page.sections]]
+id = "log"
+title = "Log"
+blocks = [{ kind = "component", component = "live_feed", topic = "hello.log", props = { empty = "Nothing has changed yet." } }]

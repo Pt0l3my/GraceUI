@@ -1,0 +1,10 @@
+{
+  "hello.status": {
+    "tiles": [{ "label": "Count", "value": "3" }, { "label": "Changed in", "value": "the browser" }],
+    "sentence": "The count is 3, last changed in the browser."
+  },
+  "hello.log": [
+    { "seq": 1, "time": "0:01", "line": "Added 1 in game: 1." },
+    { "seq": 2, "time": "0:02", "line": "Added 2 in the browser: 3." }
+  ]
+}
