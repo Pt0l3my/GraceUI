@@ -3,7 +3,7 @@
 A mod's pages are data. It describes them once, as a **space**: its rail of categories and pages, the topics those
 pages draw, the commands they send, and its settings. GraceUI draws the same data in game and in the browser, with its
 own components, so a mod writes no HTML, no script and no stylesheet (D81). This part describes that data. Every
-component is described in its own part, *to come*.
+component is described in [Components](components.md).
 
 GraceUI's own built-in spaces are written as TOML, `src/grace-pages/spaces/<id>/space.toml`, and compiled by
 `tools/pages/build.py`. The same file format is checked for any space by the page lint:
@@ -11,7 +11,7 @@ GraceUI's own built-in spaces are written as TOML, `src/grace-pages/spaces/<id>/
     python3 -I tools/pages/build.py --lint path/to/space.toml
 
 The lint is the authority on what is allowed: the rules below are its rules, numbered as in its own header. A mod hands
-GraceUI the compiled page data and settings description with `register_pages` (the C ABI part, *to come*).
+GraceUI the compiled page data and settings description with `register_pages` ([The C ABI](abi.md)).
 
 ## The file's parts
 
@@ -20,7 +20,7 @@ GraceUI the compiled page data and settings description with `register_pages` (t
 | `[space]` | The space's id and name, its commands and their kinds, its quick switches and its scope |
 | `[[topic]]` | Each topic its pages draw: a state (one body, replaced) or a stream (rows, appended) |
 | `[[category]]` | The rail's categories, in order, and the pages each lists |
-| `[[setting]]` | Every setting, with its one home page (the settings description part, *to come*) |
+| `[[setting]]` | Every setting, with its one home page ([The settings description](settings.md)) |
 | `[[page]]` | Each page, with its tabs or sections, under `[[page.tabs]]`, `[[page.sections]]` and `[[page.actions]]` |
 
 ## `[space]`
@@ -99,7 +99,7 @@ values. `space.state`, if declared, holds the space's greyed pages: `{"greyed": 
 |---|---|
 | `settings` | `keys`: the rows of settings homed on this page; each setting appears on exactly one settings block, on its home page (rule 4) |
 | `shortcuts` | `keys`: rows of settings homed elsewhere, editable in place, each with a "Lives in" link to its home |
-| `component` | A `component` bound to a `topic`, with its `props`; a table's `row_actions`, `row_secret`, `filter_bar` and `page` source (the components part, *to come*) |
+| `component` | A `component` bound to a `topic`, with its `props`; a table's `row_actions`, `row_secret`, `filter_bar` and `page` source ([Components](components.md)) |
 | `form` | A small form: a `command`, one to four `fields` (each an id, a label and its most bytes; `prose` for several lines) and a `submit` label |
 | `editor` | A document on a state topic, edited field by field, with its own save, check, reset, restore and draft commands (1.7) |
 | `upload` | A file command's drop zone in the browser: its `command`, a `submit` label and an `accept` hint (1.9) |
