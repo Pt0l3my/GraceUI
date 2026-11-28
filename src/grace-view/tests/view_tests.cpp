@@ -2321,19 +2321,30 @@ TEST_CASE("a section's chip, live status and own actions: drawn in its head, a d
 
 namespace {
 
+// The Modifier column's choice (D279), as GraceUI's host publishes it.
+Json modifier_choice() {
+  return {{"command", "hotkeys.modifier"},
+          {"key", "id"},
+          {"choices", Json::array({{{"value", "None"}, {"label", "None"}},
+                                   {{"value", "Shift"}, {"label", "Shift"}},
+                                   {{"value", "Ctrl"}, {"label", "Ctrl"}},
+                                   {{"value", "Alt"}, {"label", "Alt"}}})}};
+}
+
 Json hotkeys_body() {
   return {{"columns", Json::array({{{"id", "mod"}, {"label", "Mod"}},
                                    {{"id", "action"}, {"label", "Action"}},
                                    {{"id", "key"}, {"label", "Key"}},
+                                   {{"id", "modifier"}, {"label", "Modifier"}, {"choice", modifier_choice()}},
                                    {{"id", "chord"}, {"label", "Pad chord"}},
                                    {{"id", "state"}, {"label", "State"}}})},
           {"rows", Json::array({{{"id", ""}, {"mod", "GraceUI"}, {"action", "Open the menu"}, {"key", "F5"},
-                                 {"chord", "No pad chord"}, {"state", "Bound"}},
+                                 {"modifier", "None"}, {"chord", "No pad chord"}, {"state", "Bound"}},
                                 {{"id", "tide-charts/tide-table"}, {"mod", "Tide Charts"},
-                                 {"action", "Show the tide table"}, {"key", "Ctrl+T"},
+                                 {"action", "Show the tide table"}, {"key", "T"}, {"modifier", "Ctrl"},
                                  {"chord", "D-pad Down, then A"}, {"state", "Bound"}},
                                 {{"id", "quiet-camp/pitch-tent"}, {"mod", "Quiet Camp"}, {"action", "Pitch the tent"},
-                                 {"key", "No key"}, {"chord", "No pad chord"},
+                                 {"key", "No key"}, {"modifier", "None"}, {"chord", "No pad chord"},
                                  {"state", "Unbound: no key or pad chord"}}})}};
 }
 
@@ -2356,13 +2367,17 @@ TEST_CASE("the Hotkeys page in game (D206): the menu's key, and every hotkey wit
   DisplayList list;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
   const std::string dump = list.dump();
-  // A row's cells, each in its column's slot (D260), in order along the row.
-  const std::size_t key_at = dump.find("\"Ctrl+T\"");
+  // A row's cells, each in its column's slot (D260), in order along the row: its key, its modifier's drop-down beside
+  // it (D279), its chord and its state.
+  const std::size_t key_at = dump.find("\"T\"", dump.find("\"Show the tide table\""));
+  const std::size_t modifier_at = dump.find("\"Ctrl\"", key_at);
   const std::size_t chord_at = dump.find("\"D-pad Down, then A\"");
   const std::size_t bound_at = dump.find("\"Bound\"", chord_at);
   CHECK(key_at != std::string::npos);
-  CHECK(chord_at > key_at);
+  CHECK(modifier_at > key_at);
+  CHECK(chord_at > modifier_at);
   CHECK(bound_at > chord_at);
+  CHECK(dump.find("\"Modifier\"") != std::string::npos);  // its column's label in the header line
   CHECK(dump.find("\"No pad chord\"") != std::string::npos);
   CHECK(dump.find("Later version") == std::string::npos);  // the menu's key is live since D208
   CHECK(dump.find("Change key") != std::string::npos);
@@ -2375,6 +2390,99 @@ TEST_CASE("the Hotkeys page in game (D206): the menu's key, and every hotkey wit
   }
   CHECK(view.focused() == "row:graceui.hotkeys/tide-charts/tide-table/key");
   golden("hotkeys-1920x1080.txt", dump);
+}
+
+TEST_CASE("a hotkey's modifier chosen in game (D279): ← → step and send; a taken one asked, then moved") {
+  PageView view = loaded("graceui", "graceui.hotkeys");
+  view.set_increment("0.2");
+  view.set_topic("graceui.hotkeys", hotkeys_body());
+  view.open("graceui.hotkeys");
+  // The menu's own row (no id) has its modifier's words alone; a mod's row has a drop-down before its row actions.
+  REQUIRE(focus_on(view, "pick:graceui.hotkeys/tide-charts/tide-table"));
+  press(view, Key::down);
+  CHECK(view.focused() == "row:graceui.hotkeys/tide-charts/tide-table/key");
+  press(view, Key::up);
+  DisplayList focused;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), focused);
+  CHECK(view.footer() == "← →  Change    Esc  Back");
+  // → from Ctrl is Alt, sent with the row's id; the cell shows Alt, and takes no other step until its answer.
+  Action sent = press(view, Key::right);
+  REQUIRE(sent.kind == Action::Kind::command);
+  CHECK(sent.command.space == "graceui");
+  CHECK(sent.command.name == "hotkeys.modifier");
+  CHECK(sent.command.args == Json::object({{"id", "tide-charts/tide-table"}, {"value", "Alt"}}));
+  CHECK(press(view, Key::right).kind == Action::Kind::none);
+  DisplayList waiting;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), waiting);
+  CHECK(waiting.dump().find("\"Alt\"") != std::string::npos);
+  // Taken: the space's words under the row, Enter in the footer; Enter sends it again with "confirm".
+  view.pick_answered("pick:graceui.hotkeys/tide-charts/tide-table", false, true,
+                     "Alt+T is Quiet Camp's Pitch the tent. Use it here, and leave that one with no key?");
+  DisplayList asking;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), asking);
+  CHECK(asking.dump().find("Quiet Camp's Pitch the tent") != std::string::npos);
+  CHECK(view.footer().find("Enter  Use it here") != std::string::npos);
+  golden("hotkeys-modifier-1920x1080.txt", asking.dump());
+  const Action moved = press(view, Key::activate);
+  REQUIRE(moved.kind == Action::Kind::command);
+  CHECK(moved.command.args == Json::object({{"id", "tide-charts/tide-table"}, {"value", "Alt"}, {"confirm", true}}));
+  view.pick_answered("pick:graceui.hotkeys/tide-charts/tide-table", true, false, "");
+  DisplayList taken;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), taken);
+  CHECK(taken.dump().find("Quiet Camp's Pitch the tent") == std::string::npos);
+  CHECK(taken.dump().find("\"Alt\"") != std::string::npos);  // shown until the space publishes its table again
+  Json moved_body = hotkeys_body();
+  moved_body["rows"][1]["modifier"] = "Alt";
+  view.set_topic("graceui.hotkeys", moved_body);
+  CHECK(view.focused() == "pick:graceui.hotkeys/tide-charts/tide-table");
+
+  // ← steps back; a question let go by any other key: the cell shows the space's choice again.
+  sent = press(view, Key::left);
+  CHECK(sent.command.args["value"] == "Ctrl");
+  view.pick_answered("pick:graceui.hotkeys/tide-charts/tide-table", false, true, "Ctrl+T is another hotkey's.");
+  press(view, Key::down);
+  press(view, Key::up);
+  DisplayList let_go;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), let_go);
+  CHECK(let_go.dump().find("another hotkey's") == std::string::npos);
+  CHECK(view.footer().find("Use it here") == std::string::npos);
+  // Any other refusal: its words under the row, the space's choice shown.
+  sent = press(view, Key::right);
+  CHECK(sent.command.args["value"] == "None");  // from Alt, round to the first
+  view.pick_answered("pick:graceui.hotkeys/tide-charts/tide-table", false, false, "That hotkey has gone.");
+  DisplayList refused;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), refused);
+  CHECK(refused.dump().find("That hotkey has gone.") != std::string::npos);
+  // An answer for a step of a visit that has ended says nothing.
+  view.pick_answered("pick:graceui.hotkeys/quiet-camp/pitch-tent", false, false, "Not shown.");
+  DisplayList quiet;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), quiet);
+  CHECK(quiet.dump().find("Not shown.") == std::string::npos);
+}
+
+TEST_CASE("a choice column's value that is none of its choices shows as its own until changed (D279)") {
+  PageView view = loaded("graceui", "graceui.hotkeys");
+  view.set_increment("0.2");
+  Json body = hotkeys_body();
+  body["rows"][1]["modifier"] = "Ctrl+Alt";  // a mod's default with two modifiers
+  view.set_topic("graceui.hotkeys", body);
+  view.open("graceui.hotkeys");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
+  CHECK(list.dump().find("\"Ctrl+Alt\"") != std::string::npos);
+  REQUIRE(focus_on(view, "pick:graceui.hotkeys/tide-charts/tide-table"));
+  CHECK(press(view, Key::right).command.args["value"] == "None");  // → the first choice
+  view.pick_answered("pick:graceui.hotkeys/tide-charts/tide-table", false, false, "No.");
+  CHECK(press(view, Key::left).command.args["value"] == "Alt");  // ← the last
+  // A click on the drop-down: its → third steps on, as → does.
+  view.pick_answered("pick:graceui.hotkeys/tide-charts/tide-table", false, false, "No.");
+  DisplayList again;
+  view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), again);
+  const PageView::Bounds b = view.bounds_of("pick:graceui.hotkeys/tide-charts/tide-table");
+  REQUIRE(b.control.w > 0);
+  const Action clicked =
+      view.pointer(Pointer{Pointer::Kind::press, b.control.x + b.control.w - 4, b.control.y + b.control.h / 2});
+  CHECK(clicked.command.args["value"] == "None");
 }
 
 TEST_CASE("a row's key captured in game: the next key, sent with the row's key; a taken one asked, then moved (D209)") {

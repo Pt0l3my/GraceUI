@@ -9164,10 +9164,11 @@ std::string display_text(const std::vector<GraceUiEvent>& events) {
 // the next session, in two processes of their own; then every hotkey reset from the page's action.
 
 GraceUiStatus hotkey_of(const GraceUiApi1* table, GraceUiConsumer mod, const char* action, const char* name,
-                        std::uint32_t vk, std::uint32_t& id) {
+                        std::uint32_t vk, std::uint32_t& id, std::uint32_t modifiers = 0) {
   GraceUiHotkeyDesc desc{};
   desc.size = sizeof desc;
   desc.key = vk;
+  desc.modifiers = modifiers;
   desc.action = action;
   desc.action_length = std::strlen(action);
   desc.name = name;
@@ -9262,7 +9263,9 @@ void run_bindings_write(const std::wstring& dll) {
   std::uint32_t tide_id = 0, camp_id = 0, older_id = 0;
   const GraceUiStatus tide_status = hotkey_of(table, tide.answer.consumer, "tide-table", "Show the tide table", VK_F9, tide_id);
   const GraceUiStatus camp_status = hotkey_of(table, camp.answer.consumer, "pitch-tent", "Pitch the tent", VK_F7, camp_id);
-  const GraceUiStatus older_status = hotkey_of(table, older.answer.consumer, "old", "An old one", VK_F11, older_id);
+  // The older mod's Ctrl+F7: the combination Tide Charts' modifier asks about below (D279).
+  const GraceUiStatus older_status =
+      hotkey_of(table, older.answer.consumer, "old", "An old one", VK_F7, older_id, GRACEUI_MOD_CTRL);
   GraceUiStatus described_status = GRACEUI_FAULT;
   const GraceUiHotkeyBinding before = binding_of(table, tide.answer.consumer, tide_id, described_status);
   GraceUiStatus foreign_status = GRACEUI_FAULT;
@@ -9344,6 +9347,47 @@ void run_bindings_write(const std::wstring& dll) {
         hotkey_cell(moved, "tide-charts/tide-table", "key").c_str(),
         hotkey_cell(moved, "quiet-camp/pitch-tent", "key").c_str(), camp_told.size(), camp_now.key);
 
+  // 2b. The modifier beside the key (the owner's O150, D279): Quiet Camp's row, with no key, refused in its words; Tide
+  // Charts' F7 with Shift, then with Ctrl, which the older mod's Ctrl+F7 has: asked first, Enter moves it.
+  menu = to_hotkeys(game, grace, window, "pick:graceui.hotkeys/quiet-camp/pitch-tent");
+  press(window, VK_RIGHT, 0x4D);
+  menu = menu_after(game, grace, menu.lists);
+  const bool no_key = grace.menu_shows("It has no key: change its key first, then its modifier.");
+  menu = to_hotkeys(game, grace, window, "pick:graceui.hotkeys/tide-charts/tide-table");
+  const std::string on_pick = menu.focused;
+  press(window, VK_RIGHT, 0x4D);
+  menu = menu_after(game, grace, menu.lists);
+  const Json shifted = own_topic(game, grace, "graceui.hotkeys", [](const Json& b) {
+    return hotkey_cell(b, "tide-charts/tide-table", "modifier") == "Shift";
+  });
+  GraceUiStatus shift_status = GRACEUI_FAULT;
+  const GraceUiHotkeyBinding shift_binding = binding_of(table, tide.answer.consumer, tide_id, shift_status);
+  press(window, VK_RIGHT, 0x4D);
+  menu = menu_after(game, grace, menu.lists);
+  const bool asked_ctrl = grace.menu_shows("Ctrl+F7 is Older mod's An old one. Use it here, and leave that one with no key?");
+  save_shot(game.frame_and_read(kInputColour, PresentWith::present), "hotkeys-modifier-1920x1080.bmp");  // GRACE_SHOTS
+  press(window, VK_RETURN, 0x1C);
+  menu = menu_after(game, grace, menu.lists);
+  const Json ctrl = own_topic(game, grace, "graceui.hotkeys", [](const Json& b) {
+    return hotkey_cell(b, "tide-charts/tide-table", "modifier") == "Ctrl" &&
+           hotkey_cell(b, "older-mod/old", "key") == "No key";
+  });
+  GraceUiStatus ctrl_status = GRACEUI_FAULT;
+  const GraceUiHotkeyBinding ctrl_binding = binding_of(table, tide.answer.consumer, tide_id, ctrl_status);
+  check(no_key && on_pick == "pick:graceui.hotkeys/tide-charts/tide-table" &&
+            hotkey_cell(shifted, "tide-charts/tide-table", "key") == "F7" &&
+            std::string(shift_binding.key_text) == "Shift+F7" && asked_ctrl &&
+            hotkey_cell(ctrl, "tide-charts/tide-table", "modifier") == "Ctrl" &&
+            hotkey_cell(ctrl, "older-mod/old", "key") == "No key" && std::string(ctrl_binding.key_text) == "Ctrl+F7" &&
+            menu.open == 1,
+        "bindings: a modifier chosen beside the key",
+        "Quiet Camp's, with no key, %s; focus on %s; Shift: the row's key %s, describe_hotkey \"%s\"; Ctrl+F7 %s; "
+        "after Enter: Tide Charts' modifier %s, the older mod's key %s, describe_hotkey \"%s\"; the menu %s",
+        no_key ? "refused in its words" : "NOT REFUSED IN WORDS", on_pick.c_str(),
+        hotkey_cell(shifted, "tide-charts/tide-table", "key").c_str(), shift_binding.key_text,
+        asked_ctrl ? "asked about" : "NOT ASKED ABOUT", hotkey_cell(ctrl, "tide-charts/tide-table", "modifier").c_str(),
+        hotkey_cell(ctrl, "older-mod/old", "key").c_str(), ctrl_binding.key_text, menu.open != 0 ? "still open" : "CLOSED");
+
   // 3. The menu's key moved to F6 on its row: F6 then closes the menu, and F5 opens nothing.
   menu = to_hotkeys(game, grace, window, "setting:hotkeys.menu");
   press(window, VK_RETURN, 0x1C);
@@ -9374,9 +9418,10 @@ void run_bindings_write(const std::wstring& dll) {
   // 4. Kept for the next session: ids and key names only.
   const Json file = wait_for_bindings(game, dll, true);
   const Json bindings = file.is_object() ? file.value("hotkey_bindings", Json()) : Json();
-  const Json want = Json::array({Json::object({{"mod", "tide-charts"}, {"action", "tide-table"}, {"key", "F7"}, {"chord", 0}}),
-                                 Json::object({{"mod", "quiet-camp"}, {"action", "pitch-tent"}, {"key", ""}, {"chord", 0}})});
-  bool same = bindings.is_array() && bindings.size() == 2;
+  const Json want = Json::array({Json::object({{"mod", "tide-charts"}, {"action", "tide-table"}, {"key", "Ctrl+F7"}, {"chord", 0}}),
+                                 Json::object({{"mod", "quiet-camp"}, {"action", "pitch-tent"}, {"key", ""}, {"chord", 0}}),
+                                 Json::object({{"mod", "older-mod"}, {"action", "old"}, {"key", ""}, {"chord", 0}})});
+  bool same = bindings.is_array() && bindings.size() == 3;
   for (const Json& one : want) {
     same = same && std::find(bindings.begin(), bindings.end(), one) != bindings.end();
   }
@@ -9398,13 +9443,14 @@ void run_bindings_read(const std::wstring& dll) {
   if (table == nullptr) {
     fatal("no table");
   }
-  // Tide Charts connects before GraceUI's thread has read its settings: its default F9 first, the kept F7 once read.
+  // Tide Charts connects before GraceUI's thread has read its settings: its default F9 first, the kept Ctrl+F7 once
+  // read (D279).
   const Connected tide = connect(table, request_for("tide-charts", GRACEUI_VERSION_PACK(0, 2, 16), "Tide Charts", "hotkeys hotkey-bindings"));
   std::uint32_t tide_id = 0, camp_id = 0;
   const GraceUiStatus tide_first = hotkey_of(table, tide.answer.consumer, "tide-table", "Show the tide table", VK_F9, tide_id);
   start_host(game, grace);
   until_atlas(game, grace);
-  for (int i = 0; i < 150 && !grace.logged("2 hotkey bindings kept"); ++i) {
+  for (int i = 0; i < 150 && !grace.logged("3 hotkey bindings kept"); ++i) {
     frames(game, 1);
     Sleep(20);
   }
@@ -9426,9 +9472,9 @@ void run_bindings_read(const std::wstring& dll) {
   press(window, VK_F6, 0x40);
   GraceUiTestMenu menu = menu_after(game, grace, 0);
   check(tide_first == GRACEUI_OK && camp_second == GRACEUI_UNBOUND && tide_now.key == VK_F7 &&
-            std::string(tide_now.key_text) == "F7" &&
+            std::string(tide_now.key_text) == "Ctrl+F7" &&
             (tide_told.empty() || tide_told == std::vector<std::uint32_t>{tide_id}) &&
-            camp_now.key == 0 && !f5_opens && menu.open == 1 && grace.logged("2 hotkey bindings kept"),
+            camp_now.key == 0 && !f5_opens && menu.open == 1 && grace.logged("3 hotkey bindings kept"),
         "bindings: the next session keeps them",
         "Tide Charts, registered as GraceUI started, %s and now \"%s\" (told %zu: 1 if its thread read the settings "
         "after, 0 if before); Quiet Camp, after, %s, "

@@ -167,6 +167,35 @@ function switchOf(column: JsonObject): SwitchColumn | null {
     command !== "" && key !== "" ? { command, key, on, off } : null;
 }
 
+interface ChoiceColumn {
+  command: string;
+  key: string;
+  choices: { value: string; label: string }[];
+}
+
+// A column whose cells are a drop-down (protocol 1.24, D279): its command, the row's field that names the row, and its
+// choices, one to sixteen.
+function choiceOf(column: JsonObject): ChoiceColumn | null {
+  const ch = column.choice;
+  if (typeof ch !== "object" || ch === null || Array.isArray(ch)) {
+    return null;
+  }
+  const { command, key, choices } = ch;
+  if (typeof command !== "string" || command === "" || typeof key !== "string" || key === "" ||
+      !Array.isArray(choices) || choices.length === 0 || choices.length > 16) {
+    return null;
+  }
+  const out: { value: string; label: string }[] = [];
+  for (const one of choices) {
+    if (typeof one !== "object" || one === null || Array.isArray(one) || typeof one.value !== "string" ||
+        typeof one.label !== "string" || one.label === "") {
+      return null;
+    }
+    out.push({ value: one.value, label: one.label });
+  }
+  return { command, key, choices: out };
+}
+
 function named(value: Json | undefined): value is string | number {
   return typeof value === "string" || typeof value === "number";
 }
@@ -252,8 +281,17 @@ function Table({ space, block, body, empty, paged, own, barKey }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   // A row action asking first: a destructive one's second press, or the space's question before a move (D209).
-  const [asking, setAsking] = useState<{ action: RowAction; row: JsonObject; value?: string | number } | null>(null);
+  const [asking, setAsking] = useState<{ action: RowAction; row: JsonObject; value?: string | number;
+                                         choice?: ChoiceColumn } | null>(null);
   const [capturing, setCapturing] = useState<{ action: RowAction; row: JsonObject } | null>(null);
+  // A choice asked for (D279): shown in its row's drop-down until the space publishes, answers no, or its question goes.
+  const [picked, setPicked] = useState<{ row: string; value: string } | null>(null);
+  const inFlight = busy !== null || asking !== null;
+  useEffect(() => {
+    if (!inFlight) {
+      setPicked(null);  // the space's next body shows what it took (invariant 1)
+    }
+  }, [body]);
   const greyed = useContext(GreyedContext);
   const inert = greyed.words(greyed.page) !== null;  // a greyed page's switches do nothing (D188)
   const labelled = objects(body.columns).filter((c) => text(c.id) !== null && text(c.label) !== null);
@@ -278,7 +316,7 @@ function Table({ space, block, body, empty, paged, own, barKey }: {
       </>
     );
   }
-  const first = columns.find((c) => switchOf(c) === null && c.numeric !== true);
+  const first = columns.find((c) => switchOf(c) === null && choiceOf(c) === null && c.numeric !== true);
   const actions = block.row_actions ?? [];
   const secret = block.row_secret ?? null;
   const act = async (a: RowAction, row: JsonObject, confirmed: boolean, value?: string | number) => {
@@ -311,6 +349,31 @@ function Table({ space, block, body, empty, paged, own, barKey }: {
       // Its own question, not the action's: no wait, as in game (D274).
       setAsking({ action: { ...a, confirm: answer.detail ?? "Use it here?", confirm_after_ms: 0 }, row, value });
     } else if (!answer.ok) {
+      setRefusal(refusalWords(answer));
+    }
+  };
+  // A choice's drop-down (D279): its command with the row's key and the value; a move the space asks about first opens
+  // its question, and Use it here sends the same again with "confirm".
+  const choose = async (ch: ChoiceColumn, row: JsonObject, value: string, confirmed: boolean) => {
+    const name = row[ch.key];
+    if (!named(name) || name === "" || busy !== null || inert) {
+      return;
+    }
+    setRefusal(null);
+    setPicked({ row: String(name), value });
+    setBusy(String(name));
+    const args: JsonObject = { [ch.key]: name, value };
+    if (confirmed) {
+      args.confirm = true;
+    }
+    const answer = await session.command(space, ch.command, args);
+    setBusy(null);
+    if (!answer.ok && answer.error === "confirm_required" && !confirmed) {
+      setAsking({ action: { id: `choice-${String(name)}`, label: "Use it here", command: ch.command, key: ch.key,
+                            tone: "secondary", confirm: answer.detail ?? "Use it here?", confirm_after_ms: 0 },
+                  row, value, choice: ch });
+    } else if (!answer.ok) {
+      setPicked(null);
       setRefusal(refusalWords(answer));
     }
   };
@@ -373,6 +436,35 @@ function Table({ space, block, body, empty, paged, own, barKey }: {
                     <td key={id} class="table__secret">
                       <SecretCell space={space} secret={secret} row={r} status={text(r[id])} label={label} inert={inert}
                                   onRefusal={setRefusal} />
+                    </td>
+                  );
+                }
+                const ch = choiceOf(c);
+                if (ch !== null && sw === null) {
+                  // Its drop-down (D279), on a row with its key; a value that is none of the choices shows as its own.
+                  const name = r[ch.key];
+                  const published = text(r[id]) ?? "";
+                  if ((typeof name !== "string" && typeof name !== "number") || name === "") {
+                    return <td key={id}>{ch.choices.find((o) => o.value === published)?.label ?? published}</td>;
+                  }
+                  const shown = picked !== null && picked.row === String(name) ? picked.value : published;
+                  const rowName = first ? text(r[text(first.id) ?? ""]) : null;
+                  return (
+                    <td key={id} class="table__choice">
+                      <select class="field field--small table__select" value={shown} data-choice={String(name)}
+                              aria-label={rowName !== null ? `${text(c.label) ?? ""}: ${rowName}` : text(c.label) ?? undefined}
+                              aria-disabled={busy !== null || inert || undefined}
+                              onChange={(e) => {
+                                const value = e.currentTarget.value;
+                                if (busy !== null || inert) {
+                                  e.currentTarget.value = shown;  // nothing sent: it shows what it showed
+                                  return;
+                                }
+                                void choose(ch, r, value, false);
+                              }}>
+                        {!ch.choices.some((o) => o.value === shown) && <option value={shown}>{shown}</option>}
+                        {ch.choices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
                     </td>
                   );
                 }
@@ -445,10 +537,16 @@ function Table({ space, block, body, empty, paged, own, barKey }: {
       </table>}
       {paged && <PagingFoot paged={paged} />}
       {refusal !== null && <p class="table__notice" role="alert"><Warning /> {refusal}</p>}
-      <ConfirmDialog space={space} action={asking?.action ?? null} onClose={() => setAsking(null)}
+      <ConfirmDialog space={space} action={asking?.action ?? null}
+                     onClose={() => {
+                       setAsking(null);
+                       setPicked(null);  // its question let go: the space's choice again (D279)
+                     }}
                      onConfirm={(a) => {
                        const row = asking?.row;
-                       if (row) {
+                       if (row && asking?.choice) {
+                         void choose(asking.choice, row, String(asking.value ?? ""), true);
+                       } else if (row) {
                          void act(a, row, true, asking?.value);
                        }
                      }} />
@@ -471,7 +569,8 @@ function captureTitle(a: RowAction, row: JsonObject, columns: JsonObject[]): str
   const words: string[] = [];
   for (const c of columns) {
     const cell = text(row[text(c.id) ?? ""]);
-    if (cell !== null && cell !== "" && switchOf(c) === null && c.numeric !== true && words.length < 2) {
+    if (cell !== null && cell !== "" && switchOf(c) === null && choiceOf(c) === null && c.numeric !== true &&
+        words.length < 2) {
       words.push(cell);
     }
   }

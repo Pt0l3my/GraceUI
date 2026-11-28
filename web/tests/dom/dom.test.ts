@@ -354,7 +354,7 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       // A key another row has: the space's question, then the same again with its confirmation.
       await rows.nth(2).locator("[data-row-action='key']").click();
       await field.waitFor();
-      await field.press("Control+T");  // its own key: nothing to ask
+      await field.press("Control+T");  // a key no other row has: nothing to ask
       await page.waitForFunction(() => document.querySelector("dialog.modal[open]") === null);
       await rows.nth(2).locator("[data-row-action='key']").click();
       await field.waitFor();
@@ -390,6 +390,59 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       }
       assert.deepEqual(chords()[1]?.args, { id: "quiet-camp/pitch-tent", value: 0 });
     } finally {
+      await close();
+    }
+  });
+
+  test("a hotkey's modifier chosen in the browser (D279): a drop-down beside its key, a taken one asked about then " +
+       "moved, a refusal in words; the menu's row has its words alone", async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFromRail(page, "graceui", "graceui.hotkeys");
+      const rows = page.locator("main table.table tbody tr");
+      assert.equal(await rows.nth(0).locator("select[data-choice]").count(), 0, "the menu's own row: no id, no drop-down");
+      assert.match((await rows.nth(0).textContent()) ?? "", /None/);
+      const header = await page.locator("main table.table thead th").allTextContents();
+      assert.deepEqual(header.slice(2, 5), ["Key", "Modifier", "Pad chord"]);
+      const tide = rows.nth(2).locator("select[data-choice]");
+      assert.equal(await tide.getAttribute("aria-label"), "Modifier: Tide Charts");
+      // A mod's default with two modifiers shows as its own choice until it is changed.
+      assert.equal(await tide.inputValue(), "Ctrl+Alt");
+      assert.deepEqual(await tide.locator("option").allTextContents(), ["Ctrl+Alt", "None", "Shift", "Ctrl", "Alt"]);
+      const sent = () => host.received.filter((f) => f.t === "cmd" && f.name === "hotkeys.modifier");
+      await tide.selectOption("Shift");
+      for (let i = 0; i < 20 && sent().length === 0; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(sent()[0]?.args, { id: "tide-charts/tide-table", value: "Shift" });
+      assert.equal(await page.locator("dialog.modal[open]").count(), 0);
+      assert.equal(await tide.inputValue(), "Shift");  // shown until the space publishes
+      // T alone is Demo space's: its question first, then the same again with its confirmation.
+      await tide.selectOption("None");
+      await page.locator("dialog.modal[open] [data-confirm]").waitFor();
+      assert.match((await page.locator("dialog.modal[open] .prose").textContent()) ?? "",
+                   /T is Demo space's Trim the wick\. Use it here/);
+      assert.equal(await page.locator("dialog.modal[open] [data-confirm]").textContent(), "Use it here");
+      await page.locator("dialog.modal[open] [data-confirm]").click();
+      for (let i = 0; i < 20 && sent().length < 3; ++i) {
+        await page.waitForTimeout(50);
+      }
+      assert.deepEqual(sent()[1]?.args, { id: "tide-charts/tide-table", value: "None" });
+      assert.deepEqual(sent()[2]?.args, { id: "tide-charts/tide-table", value: "None", confirm: true });
+      // Its question let go: the drop-down shows the space's choice again.
+      await tide.selectOption("None");
+      await page.locator("dialog.modal[open] [data-confirm]").waitFor();
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => document.querySelector("dialog.modal[open]") === null);
+      assert.equal(await tide.inputValue(), "Ctrl+Alt");
+      // A row with no key is refused in its row's words, and shows what the space has.
+      host.refuse.set("hotkeys.modifier", "not_now");
+      await rows.nth(1).locator("select[data-choice]").selectOption("Alt");
+      await page.locator(".table__notice[role=alert]").waitFor();
+      assert.match((await page.locator(".table__notice").textContent()) ?? "", /Not possible right now/);
+      assert.equal(await rows.nth(1).locator("select[data-choice]").inputValue(), "None");
+    } finally {
+      host.refuse.delete("hotkeys.modifier");
       await close();
     }
   });

@@ -409,6 +409,28 @@ TEST_CASE("a key's name read back, with its modifiers; anything else is not a ke
   }
 }
 
+TEST_CASE("a hotkey's modifiers alone, named and read back, as the Modifier column has them (D279)") {
+  CHECK(modifiers_text(0) == "None");
+  CHECK(modifiers_text(kModShift) == "Shift");
+  CHECK(modifiers_text(kModCtrl) == "Ctrl");
+  CHECK(modifiers_text(kModAlt) == "Alt");
+  CHECK(modifiers_text(kModCtrl | kModAlt) == "Ctrl+Alt");
+  for (std::uint8_t m = 0; m <= kModAll; ++m) {
+    std::uint8_t back = 0xFF;
+    CHECK(modifiers_from_text(modifiers_text(m), back));
+    CHECK(back == m);
+  }
+  std::uint8_t modifiers = 9;
+  CHECK_FALSE(modifiers_from_text("", modifiers));
+  CHECK(modifiers == 0);
+  CHECK_FALSE(modifiers_from_text("Ctrl+", modifiers));
+  CHECK_FALSE(modifiers_from_text("Shift+Ctrl", modifiers));  // key_text's order alone
+  CHECK_FALSE(modifiers_from_text("Ctrl+Ctrl", modifiers));
+  CHECK_FALSE(modifiers_from_text("Ctrl+K", modifiers));
+  CHECK_FALSE(modifiers_from_text("none", modifiers));
+  CHECK_FALSE(modifiers_from_text("Win", modifiers));
+}
+
 TEST_CASE("the player rebinds a hotkey: a taken key is named and changes nothing, unless moved (G37, D208)") {
   Hotkeys hotkeys;
   std::uint32_t f11 = 0;

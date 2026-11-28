@@ -1878,6 +1878,17 @@ ul, ol {
   white-space: nowrap;
 }
 
+/* A choice column's drop-down (D279), as narrow as its choices. */
+.table .table__choice {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.table__select {
+  width: auto;
+  min-width: 7rem;
+}
+
 .table__notice {
   margin: var(--space-8) 0 0;
 }

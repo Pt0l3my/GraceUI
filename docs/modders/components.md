@@ -41,6 +41,13 @@ A table's body has its `columns` and its `rows`:
   - `drawer` shows it only in the row's drawer, opened from the row (1.15).
   - `switch: {command, key, on, off}` makes each cell a switch. It shows the state the space published, and sends
     `command` with the row's `key` and `on` (D181).
+  - `choice: {command, key, choices}` makes each cell a drop-down of one to sixteen `{value, label}` (1.24, D279). It
+    shows the label of the value the row holds; a value that is none of the choices shows as its own until changed. A
+    change sends `command` with the row's `key` and `value`. Answer `confirm_required` with your question, and the view
+    asks it before sending the same again with `"confirm": true`; any other refusal's words show under the row. A row
+    without the `key` member shows the label alone, and the first column, which names the row, is never a drop-down.
+    In game it is a field in its column's place, stepped with ← and →; in the browser, a `<select>`. One switch column
+    and one choice column a table.
 - Each row is an object of its members.
 
 On the block:

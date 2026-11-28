@@ -1196,6 +1196,39 @@ const Json* switch_of(const Json& column) {
   return is_text("command") && is_text("key") && is_text("on") && is_text("off") ? &sw : nullptr;
 }
 
+// A table body's choice column (protocol 1.24, D279): {command, key, choices: [{value, label}]}, one to sixteen
+// choices; null if it has none, or one not whole.
+const Json* choice_of(const Json& column) {
+  const auto found = column.find("choice");
+  if (found == column.end() || !found->is_object()) {
+    return nullptr;
+  }
+  const Json& ch = *found;
+  const auto is_text = [](const Json& j, const char* name) {
+    return j.contains(name) && j[name].is_string() && !j[name].get_ref<const std::string&>().empty();
+  };
+  if (!is_text(ch, "command") || !is_text(ch, "key") || !ch.contains("choices") || !ch["choices"].is_array() ||
+      ch["choices"].empty() || ch["choices"].size() > 16) {
+    return nullptr;
+  }
+  for (const Json& one : ch["choices"]) {
+    if (!one.is_object() || !one.contains("value") || !one["value"].is_string() || !is_text(one, "label")) {
+      return nullptr;
+    }
+  }
+  return &ch;
+}
+
+// A choice's label, by its value; the value itself for one that is none of them (shown as its own, D279).
+std::string choice_label(const Json& choice, const std::string& value) {
+  for (const Json& one : choice["choices"]) {
+    if (one["value"].get_ref<const std::string&>() == value) {
+      return one["label"].get<std::string>();
+    }
+  }
+  return value;
+}
+
 // A cell's words: a string as it is, a number as JSON writes it, anything else nothing.
 std::string cell_words(const Json& row, const std::string& column) {
   const auto found = row.find(column);
@@ -1248,6 +1281,9 @@ void PageView::set_topic(std::string_view topic, const Json& body) {
   for (const std::string& prefix : std::array<std::string, 2>{std::string(topic) + "/", std::string(topic) + "#"}) {
     for (auto at = refusals_.lower_bound(prefix); at != refusals_.end() && at->first.rfind(prefix, 0) == 0;) {
       at = refusals_.erase(at);  // a new body answers what was refused of its rows
+    }
+    for (auto at = picks_.lower_bound(prefix); at != picks_.end() && at->first.rfind(prefix, 0) == 0;) {
+      at = at->second.taken ? picks_.erase(at) : std::next(at);  // the choice taken is the body's to show now (D279)
     }
   }
   const bool stepped = flow_follow(topic);  // the open flow's step, as its space publishes it (D278)
@@ -1612,6 +1648,7 @@ void PageView::arrive() {
   // flow's press waiting for its answer, stay with the visit they belonged to.
   tab_ = flow_step();
   flow_sent_.clear();  // an answer to a press of the last visit frees nothing, says nothing and opens nothing here
+  picks_.clear();      // nor does a choice's (D279)
   for (const char* prefix : {"action:", "flow:"}) {
     for (auto at = refusals_.lower_bound(prefix); at != refusals_.end() && at->first.rfind(prefix, 0) == 0;) {
       at = refusals_.erase(at);
@@ -2294,28 +2331,37 @@ Action PageView::flip_part(const Focus& f) const {
   return action;  // the space's next body shows it (invariant 1)
 }
 
-Action PageView::toggle_cell(const Focus& f) const {
-  if (!greyed_words(current().id).empty()) {
-    return {};  // a greyed page's controls are inert (D188)
-  }
-  const std::string_view base = std::string_view(f.id).substr(0, f.id.find('/'));
+const Json* PageView::table_at(std::string_view focus_id) const {
+  const std::string_view base = focus_id.substr(0, focus_id.find('/'));
   const std::size_t hash = base.find('#');
   const auto found = topics_.find(base.substr(0, hash));
   if (found == topics_.end() || !found->second.is_object()) {
-    return {};
+    return nullptr;
   }
   const Json* table = &found->second;
   if (hash != std::string_view::npos) {
     const auto member = table->find(std::string(base.substr(hash + 1)));
     if (member == table->end() || !member->is_object()) {
-      return {};
+      return nullptr;
     }
     table = &*member;  // a table fed by its topic's field (D185)
   }
   const Json& body = *table;
   if (!body.contains("columns") || !body["columns"].is_array() || !body.contains("rows") || !body["rows"].is_array()) {
+    return nullptr;
+  }
+  return table;
+}
+
+Action PageView::toggle_cell(const Focus& f) const {
+  if (!greyed_words(current().id).empty()) {
+    return {};  // a greyed page's controls are inert (D188)
+  }
+  const Json* table = table_at(f.id);
+  if (table == nullptr) {
     return {};
   }
+  const Json& body = *table;
   for (const Json& column : body["columns"]) {
     const Json* sw = switch_of(column);
     if (sw == nullptr || !column.contains("id") || !column["id"].is_string() || f.index >= body["rows"].size()) {
@@ -2332,6 +2378,125 @@ Action PageView::toggle_cell(const Focus& f) const {
     return action;
   }
   return {};
+}
+
+namespace {
+
+// A table's choice column and its id, the first one whole (D279); none for a table with none.
+std::pair<const Json*, std::string> choice_column_of(const Json& body) {
+  for (const Json& column : body["columns"]) {
+    if (column.is_object() && column.contains("id") && column["id"].is_string() && switch_of(column) == nullptr &&
+        !(column.contains("drawer") && column["drawer"] == true)) {
+      if (const Json* choice = choice_of(column); choice != nullptr) {
+        return {choice, column["id"].get<std::string>()};
+      }
+    }
+  }
+  return {nullptr, {}};
+}
+
+}  // namespace
+
+std::string PageView::pick_published(const Focus& f) const {
+  const Json* table = table_at(f.id);
+  if (table == nullptr || f.index >= (*table)["rows"].size()) {
+    return {};
+  }
+  const auto [choice, column] = choice_column_of(*table);
+  const Json& row = (*table)["rows"][f.index];
+  return choice != nullptr && row.is_object() ? cell_words(row, column) : std::string();
+}
+
+Action PageView::pick_input(const Focus& f, int direction, bool enter) {
+  if (!greyed_words(current().id).empty()) {
+    return {};  // a greyed page's controls are inert (D188)
+  }
+  const Json* table = table_at(f.id);
+  if (table == nullptr || f.index >= (*table)["rows"].size()) {
+    return {};
+  }
+  const auto [choice, column] = choice_column_of(*table);
+  const Json& row = (*table)["rows"][f.index];
+  if (choice == nullptr || !row.is_object()) {
+    return {};
+  }
+  const std::string key = (*choice)["key"].get<std::string>();
+  const auto held = picks_.find(f.id);
+  if (held != picks_.end() && held->second.sent) {
+    return {};  // its last step waits for its answer
+  }
+  Action action;
+  action.kind = Action::Kind::command;
+  action.command.space = pages_.space;
+  action.command.name = (*choice)["command"].get<std::string>();
+  if (enter && held != picks_.end() && !held->second.asking.empty()) {
+    // The space asked before a move (D279): Enter sends the same choice again, with "confirm".
+    held->second.asking.clear();
+    held->second.sent = true;
+    action.command.args = Json::object({{key, row[key]}, {"value", held->second.value}, {"confirm", true}});
+    return action;
+  }
+  const std::string published = cell_words(row, column);
+  const std::string shown = held != picks_.end() ? held->second.value : published;
+  const Json& choices = (*choice)["choices"];
+  const std::size_t n = choices.size();
+  std::size_t at = n;  // a value that is none of the choices stands before the first (D279)
+  for (std::size_t i = 0; i < n; ++i) {
+    if (choices[i]["value"].get_ref<const std::string&>() == shown) {
+      at = i;
+    }
+  }
+  const std::size_t next = direction > 0 ? (at == n ? 0 : (at + 1) % n) : (at == n ? n - 1 : (at + n - 1) % n);
+  const std::string value = choices[next]["value"].get<std::string>();
+  refusals_.erase(f.id);  // a new try: the last refusal's line goes
+  if (value == published) {
+    picks_.erase(f.id);  // back to what the space has: nothing to send
+    return {};
+  }
+  picks_[f.id] = Pick{value, true, false, {}};
+  action.command.args = Json::object({{key, row[key]}, {"value", value}});
+  return action;
+}
+
+void PageView::pick_answered(std::string_view where, bool ok, bool confirm_required, std::string_view words) {
+  if (where.rfind("pick:", 0) != 0) {
+    return;
+  }
+  const std::string id(where.substr(5));
+  const auto held = picks_.find(id);
+  if (held == picks_.end()) {
+    return;  // a step of a visit or an opening that has ended: nothing to show
+  }
+  held->second.sent = false;
+  if (ok) {
+    held->second.taken = true;
+    for (const Focus& f : focus_) {
+      if (f.kind == FocusKind::pick && f.id == id && pick_published(f) == held->second.value) {
+        picks_.erase(held);  // the space has published it already
+        break;
+      }
+    }
+    return;
+  }
+  if (confirm_required) {
+    held->second.asking = words.empty() ? std::string("Another has it. Use it here?") : std::string(words);
+    return;
+  }
+  picks_.erase(held);
+  refusals_[id] = words.empty() ? std::string("Not possible right now.") : std::string(words);
+}
+
+bool PageView::let_picks_go(std::string_view keep) {
+  bool any = false;
+  for (auto at = picks_.begin(); at != picks_.end();) {
+    if (!at->second.asking.empty() && at->first != keep) {
+      at = picks_.erase(at);  // its question let go: the cell shows what the space has (D279)
+      any = true;
+    } else {
+      ++at;
+    }
+  }
+  return any;
 }
 
 void PageView::focus_rail(bool switcher) {
@@ -2519,6 +2684,7 @@ void PageView::rebuild() {
               break;  // one switch column a table
             }
           }
+          const Json* choice = choice_column_of(*table).first;  // and one choice column (D279)
           const std::size_t actions = block.row_actions ? block.row_actions->size() : 0;
           push_bar(bar_of_table(block), &block);  // its filter bar first (D250), then its rows as they show
           const Paged* paged = block.page ? paged_of(cell_base(block)) : nullptr;
@@ -2532,6 +2698,12 @@ void PageView::rebuild() {
               // The row itself first, where its table has drawer columns and it fills one: Enter opens its drawer
               // (D256, D262).
               focus_.push_back({FocusKind::drawer, cell_base(block) + "/" + drawer_key(row, r), r, &block});
+            }
+            if (choice != nullptr && row.is_object()) {
+              // Its choice's drop-down (D279), in its column's place: a row with no key has its words alone.
+              if (const std::string id = cell_words(row, (*choice)["key"].get<std::string>()); !id.empty()) {
+                focus_.push_back({FocusKind::pick, cell_base(block) + "/" + id, r, &block});
+              }
             }
             if (sw != nullptr) {
               const std::string id = row.is_object() ? cell_words(row, (*sw)["key"].get<std::string>()) : std::string();
@@ -2676,7 +2848,7 @@ std::string PageView::name_of(Scope scope, std::size_t index) const {
   }
   static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
                                           "cell", "row", "section-action", "field", "submit", "secret", "item", "editor",
-                                          "filter", "link", "part", "paging", "drawer", "share", "flow"};
+                                          "filter", "link", "part", "paging", "drawer", "share", "flow", "pick"};
   const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -2996,6 +3168,7 @@ Action PageView::pointer_body(const Pointer& in) {
       !(clicked.kind == FocusKind::editor && "editor:" + clicked.id == confirming_)) {
     confirming_.clear();  // a click elsewhere lets a destructive action's confirmation go, as any other key does
   }
+  let_picks_go(clicked.kind == FocusKind::pick ? std::string_view(clicked.id) : std::string_view());
   scope_ = Scope::page;
   page_focus_ = target.index;
   const Focus f = focus_[target.index];
@@ -3046,6 +3219,15 @@ Action PageView::pointer_body(const Pointer& in) {
       }
       refusals_.erase(f.id);
       return toggle_cell(f);
+    case FocusKind::pick:
+      // A choice's drop-down (D279): its ← third the one before, its → third the next, its middle as Enter.
+      if (!on_control) {
+        return {};
+      }
+      if (in.x < c.x + c.w / 3) {
+        return pick_input(f, -1, false);
+      }
+      return pick_input(f, 1, in.x < c.x + 2 * c.w / 3);
     case FocusKind::master_row:
       return {};  // focused: the row is chosen (D215); Enter would go into the detail
     case FocusKind::filter:
@@ -4489,6 +4671,7 @@ void PageView::cancel_confirmation() noexcept {
   paged_.clear();         // and pages asked for afresh
   drawer_open_.clear();
   capture_ = Capture{};  // and an open capture: nothing changes (D209)
+  picks_.clear();        // and a choice's question, or a step waiting for its answer, which then says nothing (D279)
   if (editing()) {
     // As Escape, whatever closed the menu (§5.1, G38 (2)): a form's fields keep their text for the next open (kept at
     // each change), a setting's and a secret's edit is dropped, and search empties.
@@ -5058,6 +5241,15 @@ Action PageView::input_body(const Input& in) {
       return {};
     }
   }
+  // A choice's question (D279) waits for Enter on its own cell; ← → there step on, and any other key lets it go.
+  if (!picks_.empty()) {
+    const bool on_pick = scope_ == Scope::page && page_focus_ < focus_.size() &&
+                         focus_[page_focus_].kind == FocusKind::pick;
+    const bool stays = on_pick && (in.key == Key::activate || in.key == Key::left || in.key == Key::right);
+    if (let_picks_go(stays ? std::string_view(focus_[page_focus_].id) : std::string_view()) && in.key == Key::back) {
+      return {};
+    }
+  }
   // Rail order across categories, for Page Up and Page Down.
   std::vector<std::size_t> order;
   for (const protocol::Category& c : pages_.categories) {
@@ -5271,7 +5463,7 @@ Action PageView::input_body(const Input& in) {
       }
       return {};
     }
-    const bool takes_sideways = f.kind == FocusKind::cell || f.kind == FocusKind::filter ||
+    const bool takes_sideways = f.kind == FocusKind::cell || f.kind == FocusKind::pick || f.kind == FocusKind::filter ||
                                 (s != nullptr && s->type != SettingType::key_name &&
                                  (s->type != SettingType::text || s->choices_from) && s->type != SettingType::secret);
     if (!on_row && chosen_at < focus_.size() &&
@@ -5314,6 +5506,9 @@ Action PageView::input_body(const Input& in) {
       if (f.kind == FocusKind::cell) {
         refusals_.erase(f.id);  // a new try: the last refusal's line goes
         return toggle_cell(f);  // a switch turns with ← and →, as a setting's does
+      }
+      if (f.kind == FocusKind::pick) {
+        return pick_input(f, in.key == Key::right ? 1 : -1, false);  // a choice steps, as a setting's picker does
       }
       if (f.kind == FocusKind::part) {
         return flip_part(f);  // a switch turns with ← and →, as a setting's does
@@ -5482,6 +5677,8 @@ Action PageView::input_body(const Input& in) {
         case FocusKind::cell:
           refusals_.erase(f.id);
           return toggle_cell(f);
+        case FocusKind::pick:
+          return pick_input(f, 1, true);  // its question's confirmation, or its next choice (D279)
         case FocusKind::form_field: {
           if (!greyed_words(current().id).empty() || f.block == nullptr || !f.block->fields) {
             return {};  // a greyed page's form is inert (D188)
@@ -7446,6 +7643,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             std::string switch_column;
             std::string secret_label;  // a row secret's column (D194): its status in words, edited in the browser
             const Json* sw = nullptr;
+            const Json* choice = nullptr;  // a choice column (D279): a drop-down in its slot, on each row with its key
+            std::size_t choice_k = 0;      // ... its text column's index, never the first (the row's name)
             for (const Json& column : (*table)["columns"]) {
               if (!column.is_object() || !column.contains("id") || !column["id"].is_string()) {
                 continue;
@@ -7456,6 +7655,14 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               } else if (column.contains("drawer") && column["drawer"] == true) {
                 drawer_columns.emplace_back(column["id"].get<std::string>(), cell_words(column, "label"));
               } else {
+                if (const Json* found_choice = choice_of(column); found_choice != nullptr && choice == nullptr) {
+                  if (text_columns.empty()) {
+                    found_choice = nullptr;  // the first column names the row: its words alone
+                  } else {
+                    choice = found_choice;
+                    choice_k = text_columns.size();
+                  }
+                }
                 text_columns.push_back(column["id"].get<std::string>());
                 text_labels.push_back(cell_words(column, "label"));
                 text_numeric.push_back(column.contains("numeric") && column["numeric"] == true);
@@ -7513,6 +7720,31 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
             for (const std::size_t r : shown_lines) {
               widest_controls = std::max(widest_controls, controls_of(rows[r]));
             }
+            // A choice's drop-down (D279): its words between drawn ← and →, as wide as its widest choice or its own value.
+            const float pick_pad = std::round(8 * s);
+            const float pick_arrow_w = std::round(8 * s);
+            float pick_inner = 0;
+            if (choice != nullptr) {
+              for (const Json& one : (*choice)["choices"]) {
+                pick_inner = std::max(pick_inner, c.width(one["label"].get_ref<const std::string&>(), TypeRole::ui_sm));
+              }
+            }
+            const auto pick_id_of = [&](const Json& line) {
+              const std::string id = choice != nullptr && line.is_object()
+                                         ? cell_words(line, (*choice)["key"].get<std::string>()) : std::string();
+              return id.empty() ? id : cell_base(block) + "/" + id;
+            };
+            // The choice a row's cell shows: the one asked for until the space publishes, else the space's own.
+            const auto pick_words = [&](const Json& line) {
+              std::string value = cell_words(line, text_columns[choice_k]);
+              if (const auto held = picks_.find(pick_id_of(line)); held != picks_.end()) {
+                value = held->second.value;
+              }
+              return choice_label(*choice, value);
+            };
+            const auto pick_w = [&](const std::string& words) {
+              return std::max(pick_inner, c.width(words, TypeRole::ui_sm)) + 2 * pick_arrow_w + 4 * pick_pad;
+            };
             const std::size_t slot_count = text_columns.size() > 1 ? text_columns.size() - 1 : 0;
             const float slots_x = table_x + table_w / 3;
             const float slots_w = table_x + table_w - widest_controls - slots_x;
@@ -7523,6 +7755,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               std::string words = line.is_object() ? cell_words(line, text_columns[k]) : std::string();
               if (block.row_secret && text_columns[k] == block.row_secret->column) {
                 words = secret_status_words(words);
+              } else if (choice != nullptr && k == choice_k && line.is_object()) {
+                words = pick_words(line);
               }
               return words;
             };
@@ -7536,7 +7770,10 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               for (std::size_t k = 1; k < text_columns.size(); ++k) {
                 need[k - 1] = c.width(text_labels[k], TypeRole::ui_sm) + gap12;
                 for (const std::size_t r : shown_lines) {
-                  need[k - 1] = std::max(need[k - 1], c.width(slot_words(rows[r], k), TypeRole::ui_sm) + gap12);
+                  const std::string words = slot_words(rows[r], k);
+                  const float w = choice != nullptr && k == choice_k && !pick_id_of(rows[r]).empty()
+                                      ? pick_w(words) : c.width(words, TypeRole::ui_sm);
+                  need[k - 1] = std::max(need[k - 1], w + gap12);
                 }
               }
               std::vector<bool> settled(slot_count, false);
@@ -7609,9 +7846,19 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               const std::string label = text_columns.empty() ? std::string() : cell_words(line, text_columns[0]);
               std::vector<std::string> cells(text_columns.size());
               std::string rest;  // without slots: each value after its column's label, joined (D260)
+              const std::string pick_id = pick_id_of(line);  // its choice's drop-down, if it has one (D279)
               for (std::size_t k = 1; k < text_columns.size(); ++k) {
                 std::string words = cell_words(line, text_columns[k]);
-                if (block.row_secret && text_columns[k] == block.row_secret->column) {
+                if (choice != nullptr && k == choice_k) {
+                  words = pick_words(line);
+                  if (!pick_id.empty()) {
+                    cells[k] = std::move(words);  // drawn in its box, never joined into the rest
+                    continue;
+                  }
+                  if (!slotted && !text_labels[k].empty()) {
+                    words = text_labels[k] + " " + words;
+                  }
+                } else if (block.row_secret && text_columns[k] == block.row_secret->column) {
                   words = (secret_label.empty() || slotted ? "" : secret_label + ": ") + secret_status_words(words);
                 } else if (!slotted && !words.empty() && !text_labels[k].empty()) {
                   words = text_labels[k] + " " + words;
@@ -7692,16 +7939,51 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
               const float actions_w = row.right() - right;
               const float rest_w = (sw != nullptr ? row.w - control_w : row.w) - actions_w - row.w / 3 - std::round(12 * s);
               const float cell_y = y + std::round((row_h - line_height(TypeRole::ui_sm, s)) / 2);
+              // A choice's drop-down (D279): its words between ← and →, dimmed while its step waits for its answer.
+              const auto draw_pick = [&](const std::string& words, float bx, float bw) {
+                const Rect box{bx, y + std::round((row_h - 28 * s) / 2), bw, std::round(28 * s)};
+                const auto held = picks_.find(pick_id);
+                const std::uint8_t alpha = held != picks_.end() && held->second.sent ? 160 : 255;
+                const float rr = std::round(tokens::radius::control * s);
+                c.fill(box, Colour::ground_well, rr, alpha);
+                c.stroke(box, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), rr, alpha);
+                const float ay = box.y + std::round((box.h - line_height(TypeRole::ui_sm, s)) / 2);
+                const float arrow_y = box.y + std::round((box.h - pick_arrow_w) / 2);
+                const Colour arrow_ink = alpha < 255 ? Colour::ink_faint : Colour::ink_mute;
+                c.triangle(Rect{box.x + pick_pad, arrow_y, pick_arrow_w, pick_arrow_w}, Facing::left, arrow_ink);
+                c.triangle(Rect{box.right() - pick_pad - pick_arrow_w, arrow_y, pick_arrow_w, pick_arrow_w}, Facing::right,
+                           arrow_ink);
+                const float inner_x = box.x + 2 * pick_pad + pick_arrow_w;
+                const float inner_w = box.w - 2 * (2 * pick_pad + pick_arrow_w);
+                const float tw = std::min(c.width(words, TypeRole::ui_sm), inner_w);
+                c.text(words, TypeRole::ui_sm, inner_x + std::round((inner_w - tw) / 2), ay, inner_w, Colour::ink_body,
+                       alpha);
+                hit(box, Scope::page, focus_index(FocusKind::pick, pick_id), box);
+                if (page_focus(FocusKind::pick, pick_id)) {
+                  c.focused(box);
+                }
+                return box.right();
+              };
               if (slotted) {
                 // Each cell in its column's slot, within this row's own controls; an empty one leaves its slot empty.
                 const float limit = row.right() - actions_w - (sw != nullptr ? control_w : 0.0f) - std::round(12 * s);
                 for (std::size_t k = 1; k < cells.size(); ++k) {
                   const float sx = slot_xs[k - 1];
                   const float w = std::min(slot_ws[k - 1] - std::round(12 * s), limit - sx);
-                  if (!cells[k].empty() && w > 0) {
+                  if (choice != nullptr && k == choice_k && !pick_id.empty()) {
+                    if (w > 0) {
+                      draw_pick(cells[k], sx, std::min(pick_w(cells[k]), w));
+                    }
+                  } else if (!cells[k].empty() && w > 0) {
                     slot_text(cells[k], k, sx, cell_y, w, Colour::ink_body);
                   }
                 }
+              } else if (choice != nullptr && !pick_id.empty()) {
+                // No room for slots: its drop-down first after the row's name, the rest of its words after it.
+                const float bw = std::min(pick_w(cells[choice_k]), std::max(rest_w, 0.0f));
+                const float after = bw > 0 ? draw_pick(cells[choice_k], row.x + row.w / 3, bw) + std::round(12 * s)
+                                           : row.x + row.w / 3;
+                c.text(rest, TypeRole::ui_sm, after, cell_y, rest_w - (after - row.x - row.w / 3), Colour::ink_mute);
               } else {
                 c.text(rest, TypeRole::ui_sm, row.x + row.w / 3, cell_y, rest_w, Colour::ink_mute);
               }
@@ -7729,7 +8011,16 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
                 }
               }
               y += row_h;
-              const auto said = refusal != refusals_.end() ? refusal : refusals_.find(row_refusal_id);
+              const auto asked = pick_id.empty() ? picks_.end() : picks_.find(pick_id);
+              if (asked != picks_.end() && !asked->second.asking.empty()) {
+                // The space's question before a move (D279), under its row until Enter or another key answers it.
+                c.text(asked->second.asking, TypeRole::ui_sm, row.x, y - std::round(8 * s), row.w, Colour::ink_body);
+                y += std::round(line_height(TypeRole::ui_sm, s));
+              }
+              auto said = refusal != refusals_.end() ? refusal : refusals_.find(row_refusal_id);
+              if (said == refusals_.end() && !pick_id.empty()) {
+                said = refusals_.find(pick_id);
+              }
               if (said != refusals_.end()) {  // the space's reason, under its row (§5.7)
                 c.text(said->second, TypeRole::ui_sm, row.x, y - std::round(8 * s), row.w, Colour::rot);
                 y += std::round(line_height(TypeRole::ui_sm, s));
@@ -8185,6 +8476,10 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         hints = f.index == 0 ? "Enter  Copy    Esc  Back" : "Enter  Save    Esc  Back";
       } else if (f.kind == FocusKind::flow) {
         hints = "Enter  Press    Esc  Back";  // a flow's Back, Skip, Next or Done (D278)
+      } else if (f.kind == FocusKind::pick) {
+        const auto held = picks_.find(f.id);  // a table's choice (D279)
+        hints = held != picks_.end() && !held->second.asking.empty() ? "Enter  Use it here    ← →  Change    Esc  Back"
+                                                                      : "← →  Change    Esc  Back";
       } else if (f.kind == FocusKind::row_action) {
         hints = confirming_ == "row:" + f.id ? "Enter  Confirm    Esc  Back" : "Enter  Press    Esc  Back";
       } else if (f.kind == FocusKind::filter) {

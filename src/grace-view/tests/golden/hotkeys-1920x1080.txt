@@ -44,15 +44,17 @@ text    gold          365, 396  182x20   clip1 glyphs 17 "Every mod's hotkeys"
 text    ink.faint    1842, 396    8x25   clip1 glyphs 1 "-"
 text    ink.mute      365, 439   25x25   clip1 glyphs 3 "Mod"
 text    ink.mute      862, 439   51x25   clip1 glyphs 6 "Action"
-text    ink.mute     1037, 439   25x25   clip1 glyphs 3 "Key"
-text    ink.mute     1102, 439   76x25   clip1 glyphs 8 "Pad chord"
-text    ink.mute     1268, 439   42x25   clip1 glyphs 5 "State"
+text    ink.mute      999, 439   25x25   clip1 glyphs 3 "Key"
+text    ink.mute     1064, 439   68x25   clip1 glyphs 8 "Modifier"
+text    ink.mute     1181, 439   76x25   clip1 glyphs 8 "Pad chord"
+text    ink.mute     1318, 439   42x25   clip1 glyphs 5 "State"
 line    rule          365, 469 1490x1    clip1
 text    ink.hi        365, 485   66x28   clip1 glyphs 7 "GraceUI"
 text    ink.body      862, 487  110x25   clip1 glyphs 11 "Open the menu"
-text    ink.body     1037, 487   17x25   clip1 glyphs 2 "F5"
-text    ink.body     1102, 487  101x25   clip1 glyphs 10 "No pad chord"
-text    ink.body     1268, 487   42x25   clip1 glyphs 5 "Bound"
+text    ink.body      999, 487   17x25   clip1 glyphs 2 "F5"
+text    ink.body     1064, 487   34x25   clip1 glyphs 4 "None"
+text    ink.body     1181, 487  101x25   clip1 glyphs 10 "No pad chord"
+text    ink.body     1318, 487   42x25   clip1 glyphs 5 "Bound"
 line    rule          365, 529 1490x1    clip1
 text    ink.hi        365, 545  103x28   clip1 glyphs 10 "Tide Charts"
 stroke  edge         1783, 542   72x35   r3 w1 clip1
@@ -61,10 +63,15 @@ stroke  edge         1603, 542  165x35   r3 w1 clip1
 text    ink.hi       1618, 547  135x25   clip1 glyphs 14 "Change pad chord"
 stroke  edge         1473, 542  114x35   r3 w1 clip1
 text    ink.hi       1488, 547   84x25   clip1 glyphs 9 "Change key"
-text    ink.body      862, 547  152x25   clip1 glyphs 15 "Show the tide table"
-text    ink.body     1037, 547   42x25   clip1 glyphs 5 "Ctrl+T"
-text    ink.body     1102, 547  143x25   clip1 glyphs 15 "D-pad Down, then A"
-text    ink.body     1268, 547   42x25   clip1 glyphs 5 "Bound"
+text    ink.body      862, 547  118x25   clip1 glyphs 12 "Show the tide table"
+text    ink.body      999, 547    8x25   clip1 glyphs 1 "T"
+fill    ground.well  1064, 542  102x35   r3 clip1
+stroke  edge         1064, 542  102x35   r3 w1 clip1
+tri     ink.mute     1074, 555   10x10   clip1 <
+tri     ink.mute     1146, 555   10x10   clip1 >
+text    ink.body     1098, 547   34x25   clip1 glyphs 4 "Ctrl"
+text    ink.body     1181, 547  118x25   clip1 glyphs 12 "D-pad Down, then A"
+text    ink.body     1318, 547   42x25   clip1 glyphs 5 "Bound"
 line    rule          365, 589 1490x1    clip1
 text    ink.hi        365, 605   94x28   clip1 glyphs 9 "Quiet Camp"
 stroke  edge         1783, 602   72x35   r3 w1 clip1
@@ -74,9 +81,14 @@ text    ink.hi       1618, 607  135x25   clip1 glyphs 14 "Change pad chord"
 stroke  edge         1473, 602  114x35   r3 w1 clip1
 text    ink.hi       1488, 607   84x25   clip1 glyphs 9 "Change key"
 text    ink.body      862, 607  118x25   clip1 glyphs 12 "Pitch the tent"
-text    ink.body     1037, 607   42x25   clip1 glyphs 4 "No key"
-text    ink.body     1102, 607  101x25   clip1 glyphs 10 "No pad chord"
-text    ink.body     1268, 607  169x25   clip1 glyphs 16 "Unbound: no key or pad chord"
+text    ink.body      999, 607   42x25   clip1 glyphs 4 "No key"
+fill    ground.well  1064, 602  102x35   r3 clip1
+stroke  edge         1064, 602  102x35   r3 w1 clip1
+tri     ink.mute     1074, 615   10x10   clip1 <
+tri     ink.mute     1146, 615   10x10   clip1 >
+text    ink.body     1098, 607   34x25   clip1 glyphs 4 "None"
+text    ink.body     1181, 607  101x25   clip1 glyphs 10 "No pad chord"
+text    ink.body     1318, 607  118x25   clip1 glyphs 12 "Unbound: no key or pad chord"
 fill    ground.2      340, 684 1540x175  r5 clip1
 stroke  rule          340, 684 1540x175  r5 w1 clip1
 text    gold          365, 704   67x20   clip1 glyphs 7 "Related"

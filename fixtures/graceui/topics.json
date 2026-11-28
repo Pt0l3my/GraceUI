@@ -4,14 +4,17 @@
       {"id": "mod", "label": "Mod"},
       {"id": "action", "label": "Action"},
       {"id": "key", "label": "Key"},
+      {"id": "modifier", "label": "Modifier", "choice": {"command": "hotkeys.modifier", "key": "id", "choices": [
+        {"value": "None", "label": "None"}, {"value": "Shift", "label": "Shift"},
+        {"value": "Ctrl", "label": "Ctrl"}, {"value": "Alt", "label": "Alt"}]}},
       {"id": "chord", "label": "Pad chord"},
       {"id": "state", "label": "State"}
     ],
     "rows": [
-      {"mod": "GraceUI", "action": "Open the menu", "key": "F5", "chord": "No pad chord", "state": "Bound"},
-      {"id": "demo/trim-wick", "mod": "Demo space", "action": "Trim the wick", "key": "T", "chord": "No pad chord", "state": "Bound"},
-      {"id": "tide-charts/tide-table", "mod": "Tide Charts", "action": "Show the tide table", "key": "Ctrl+T", "chord": "D-pad Down, then A", "state": "Bound"},
-      {"id": "quiet-camp/pitch-tent", "mod": "Quiet Camp", "action": "Pitch the tent", "key": "T", "chord": "D-pad Down, then A", "state": "Unbound: Demo space took T first; Tide Charts took its chord first"}
+      {"mod": "GraceUI", "action": "Open the menu", "key": "F5", "modifier": "None", "chord": "No pad chord", "state": "Bound"},
+      {"id": "demo/trim-wick", "mod": "Demo space", "action": "Trim the wick", "key": "T", "modifier": "None", "chord": "No pad chord", "state": "Bound"},
+      {"id": "tide-charts/tide-table", "mod": "Tide Charts", "action": "Show the tide table", "key": "T", "modifier": "Ctrl+Alt", "chord": "D-pad Down, then A", "state": "Bound"},
+      {"id": "quiet-camp/pitch-tent", "mod": "Quiet Camp", "action": "Pitch the tent", "key": "T", "modifier": "None", "chord": "D-pad Down, then A", "state": "Unbound: Demo space took T first; Tide Charts took its chord first"}
     ]
   },
   "graceui.dashboard": {

@@ -7,11 +7,12 @@ id = "graceui"
 name = "GraceUI"
 settings_schema = 1
 commands = ["settings.set", "settings.reset", "menu.close", "dashboard.disconnect", "dashboard.pair",
-            "dashboard.forget_device", "mods.notices", "hotkeys.key", "hotkeys.chord", "hotkeys.reset", "hotkeys.reset_all"]
+            "dashboard.forget_device", "mods.notices", "hotkeys.key", "hotkeys.modifier",
+            "hotkeys.chord", "hotkeys.reset", "hotkeys.reset_all"]
 # Never from a paired device on the home network (G9, §7.2 item 16): the browser view's own controls, the hotkeys and
 # whose notices show stay this PC's (D221's review).
 sensitive_commands = ["dashboard.disconnect", "dashboard.pair", "dashboard.forget_device", "mods.notices", "hotkeys.key",
-                      "hotkeys.chord", "hotkeys.reset", "hotkeys.reset_all"]
+                      "hotkeys.modifier", "hotkeys.chord", "hotkeys.reset", "hotkeys.reset_all"]
 
 [[topic]]
 id = "settings"
@@ -183,7 +184,7 @@ description = "The menu's key, and every mod's hotkeys with their conflicts."
 increment = "0.2"
 related = ["graceui.menu", "graceui.mods"]
 help.purpose = "See every hotkey GraceUI watches for, and which mod each belongs to."
-help.steps = ["Choose the key that opens the menu: no Ctrl, Shift or Alt with it.", "Look down the list: every mod's hotkeys, with their keys, pad chords and states.", "Change a hotkey's key or pad chord on its row; a key another hotkey has is asked about first, then moved.", "Reset puts a hotkey back to its mod's own keys, where they are free."]
+help.steps = ["Choose the key that opens the menu: no Ctrl, Shift or Alt with it.", "Look down the list: every mod's hotkeys, with their keys, pad chords and states.", "Change a hotkey's key or pad chord on its row; a key another hotkey has is asked about first, then moved.", "Choose its modifier beside the key: None, Shift, Ctrl or Alt. GraceUI keeps only the whole combination from the game, never the key alone.", "Reset puts a hotkey back to its mod's own keys, where they are free."]
 
 [[page.sections]]
 id = "menu-key"

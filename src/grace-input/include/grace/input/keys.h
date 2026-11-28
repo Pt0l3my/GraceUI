@@ -48,6 +48,11 @@ std::string_view key_name(Key key) noexcept;
 std::string key_text(Key key, std::uint8_t modifiers);
 // The other way: false for a text that is not a key's name with its modifiers (key_text's form; "" is no key).
 bool key_from_text(std::string_view text, Key& key, std::uint8_t& modifiers) noexcept;
+// A hotkey's modifiers alone, as the Hotkeys page's Modifier column names them (D279): "None", or key_text's prefixes
+// without the last "+" ("Shift", "Ctrl+Alt").
+std::string modifiers_text(std::uint8_t modifiers);
+// The other way: false for a text that is not "None" or a set of modifiers in key_text's order, each once.
+bool modifiers_from_text(std::string_view text, std::uint8_t& modifiers) noexcept;
 
 // A set of keys, by their code.
 class KeyBits {

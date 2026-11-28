@@ -534,6 +534,7 @@ protocol::Json hotkeys_body() {
   rows.push_back({{"mod", "GraceUI"},
                   {"action", "Open the menu"},
                   {"key", grace::input::key_text(menu, 0)},
+                  {"modifier", "None"},  // the menu's key takes none: no id, so no drop-down (D279)
                   {"chord", "No pad chord"},
                   {"state", "Bound"}});
   for (std::size_t i = 0; i < count; ++i) {
@@ -566,7 +567,8 @@ protocol::Json hotkeys_body() {
     rows.push_back({{"id", row_id},
                     {"mod", mod_name(one.owner)},
                     {"action", one.name().empty() ? std::string(one.action()) : std::string(one.name())},
-                    {"key", key},
+                    {"key", has_key ? grace::input::key_text(one.key, 0) : std::string("No key")},
+                    {"modifier", grace::input::modifiers_text(has_key ? one.modifiers : 0)},
                     {"chord", has_chord ? grace::input::chord_text(one.chord) : std::string("No pad chord")},
                     {"state", std::move(state)}});
   }
@@ -574,6 +576,18 @@ protocol::Json hotkeys_body() {
            {{{"id", "mod"}, {"label", "Mod"}},
             {{"id", "action"}, {"label", "Action"}},
             {{"id", "key"}, {"label", "Key"}},
+            // Beside the key, a drop-down of its modifier (the owner's O150, D279): a mod's default with two shows as
+            // its own choice until it is changed.
+            {{"id", "modifier"},
+             {"label", "Modifier"},
+             {"choice",
+              {{"command", "hotkeys.modifier"},
+               {"key", "id"},
+               {"choices",
+                {{{"value", "None"}, {"label", "None"}},
+                 {{"value", "Shift"}, {"label", "Shift"}},
+                 {{"value", "Ctrl"}, {"label", "Ctrl"}},
+                 {{"value", "Alt"}, {"label", "Alt"}}}}}}},
             {{"id", "chord"}, {"label", "Pad chord"}},
             {{"id", "state"}, {"label", "State"}}}},
           {"rows", std::move(rows)}};
@@ -786,8 +800,9 @@ grace::pages::Outcome refusal(protocol::ErrorCode code, std::string words) {
   return out;
 }
 
-// hotkeys.key, hotkeys.chord, hotkeys.reset and hotkeys.reset_all, from either view (D208): {"id": a row's id,
-// "value": a key's name ("" for none) or a chord (0 for none), "confirm": true to move one another hotkey has}.
+// hotkeys.key, hotkeys.modifier, hotkeys.chord, hotkeys.reset and hotkeys.reset_all, from either view (D208, D279):
+// {"id": a row's id, "value": a key's name ("" for none), a modifier's ("None", "Shift", "Ctrl", "Alt") or a chord (0
+// for none), "confirm": true to move one another hotkey has}.
 grace::pages::Outcome hotkeys_command(const protocol::Cmd& command) {
   const protocol::Json& args = command.args;
   if (command.name == "hotkeys.reset_all") {
@@ -835,6 +850,26 @@ grace::pages::Outcome hotkeys_command(const protocol::Cmd& command) {
       return refusal(protocol::ErrorCode::confirm_required,
                      name + " is " + whose(other.id) + ". Use it here, and leave that one with no key?");
     }
+  } else if (command.name == "hotkeys.modifier") {
+    // Its key kept, with the modifier chosen beside it (D279): "None", "Shift", "Ctrl", "Alt", or a mod's two.
+    std::uint8_t modifiers = 0;
+    if (!args.contains("value") || !args["value"].is_string() ||
+        !grace::input::modifiers_from_text(args["value"].get_ref<const std::string&>(), modifiers)) {
+      return refusal(protocol::ErrorCode::invalid_value, "Not a modifier GraceUI knows.");
+    }
+    if (hotkey.key == grace::input::kNoKey) {
+      return refusal(protocol::ErrorCode::invalid_value, "It has no key: change its key first, then its modifier.");
+    }
+    done = input::hotkeys().rebind_key(hotkey.id, hotkey.key, modifiers, input::menu_key(), move, other);
+    if (done == grace::input::Rebound::taken) {
+      const std::string name = grace::input::key_text(hotkey.key, modifiers);
+      if (other.menu) {
+        return refusal(protocol::ErrorCode::invalid_value,
+                       name + " opens the menu: give the menu another key first, or choose another here.");
+      }
+      return refusal(protocol::ErrorCode::confirm_required,
+                     name + " is " + whose(other.id) + ". Use it here, and leave that one with no key?");
+    }
   } else if (command.name == "hotkeys.chord") {
     if (!args.contains("value") || !args["value"].is_number_unsigned()) {
       return refusal(protocol::ErrorCode::invalid_value, "Not a pad chord.");
@@ -856,6 +891,8 @@ grace::pages::Outcome hotkeys_command(const protocol::Cmd& command) {
     return refusal(protocol::ErrorCode::invalid_value,
                    command.name == "hotkeys.chord"
                        ? "A pad chord is two different buttons: not a trigger or a stick."
+                   : command.name == "hotkeys.modifier"  // its key was a hotkey's already: Alt on F4 alone is refused
+                       ? "Alt+F4 closes the game: it cannot be a hotkey."
                        : "Escape, Alt+F4, and the Ctrl, Shift, Alt and Windows keys alone cannot be a hotkey.");
   }
   if (done == grace::input::Rebound::gone) {

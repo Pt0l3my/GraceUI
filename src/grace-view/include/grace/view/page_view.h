@@ -176,6 +176,16 @@ class PageView {
   // "confirm"; any other refusal shows its words and waits again.
   bool capture_open() const noexcept { return capture_.kind != CaptureKind::none; }
 
+  // ---- A table's choice column (protocol 1.24, D279). Each row with the column's `key` member has a drop-down in the
+  // column's place, focused as "pick:<topic>/<row key>": ← → step through its choices (Enter, the next), and each step
+  // sends its command with {<key>: the row's, "value": the choice}, the cell showing that choice until the space
+  // publishes, and taking no other step until its answer comes, by that name, through pick_answered. Done, the space's
+  // next body shows it. `confirm_required` keeps the choice with the space's words under the row, and Enter sends it
+  // again with "confirm"; any other key or a click elsewhere lets it go. Any other refusal shows its words under the
+  // row, and the cell shows what the space published. A value the space publishes that is none of the choices shows as
+  // its own, until it is changed.
+  void pick_answered(std::string_view where, bool ok, bool confirm_required, std::string_view words);
+
   // ---- A sheet (G9): a modal of the host's own words over the page, such as Pair a device's code. The host sets it,
   // and sets it again whenever its words change (a countdown). Enter, Escape, A, B or a press on its Close closes it and
   // answers sheet_closed, which the host takes as the end of what it showed; close_sheet, the host's own close (the
@@ -377,7 +387,8 @@ class PageView {
                                         paging,  // Show more, or "New rows · Show", of rows read a page at a time (D254)
                                         drawer,    // a table's row, its drawer opened with Enter (D256)
                                         share,     // a report preview's Copy or Save (D263)
-                                        flow };    // a flow's Back, Skip, Next or Done (D278)
+                                        flow,      // a flow's Back, Skip, Next or Done (D278)
+                                        pick };    // a table's choice cell, its row's drop-down (D279)
   struct Focus {
     FocusKind kind;
     std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
@@ -620,6 +631,19 @@ class PageView {
     std::string to;
   };
   std::map<std::string, Opening, std::less<>> opens_;
+  // A choice cell's step (D279), by its focus id: the value asked for, whether it waits for its answer, whether the
+  // space took it (shown until the space publishes its table again), and the space's question before a move.
+  struct Pick {
+    std::string value;
+    bool sent = true;
+    bool taken = false;
+    std::string asking;
+  };
+  std::map<std::string, Pick, std::less<>> picks_;
+  const protocol::Json* table_at(std::string_view focus_id) const;  // a cell's table body, by its focus id's topic and field
+  std::string pick_published(const Focus& f) const;      // the value its row holds now, as the space published it
+  Action pick_input(const Focus& f, int direction, bool enter);
+  bool let_picks_go(std::string_view keep = {});  // a choice's question let go, but the focused one's (D279)
   std::size_t flow_step() const;                 // the open flow's step the space publishes, or its first
   bool flow_optional(std::size_t step) const;    // a step the flow may skip (never its last)
   std::string flow_blocked() const;              // the space's words for what Next waits for, or empty

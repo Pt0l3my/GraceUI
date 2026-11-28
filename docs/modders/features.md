@@ -39,6 +39,7 @@ Both majors are 1. The decision named in each row is in `docs/DESIGN.md` §13.
 | 1.21 | 0.2.67 | D274 | A confirmation that waits before its second press counts; a private topic |
 | 1.22 | 0.2.70 | D277 | A category's line icon, one of GraceUI's own |
 | 1.23 | 0.2.71 | D278 | A page that is a flow, outside the rail, its tabs its steps; an action that opens a page once answered |
+| 1.24 | 0.2.72 | D279 | A table's choice column: a drop-down in each row, its command sent with the row's key and the value |
 
 ## The C ABI
 

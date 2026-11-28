@@ -570,6 +570,26 @@ bool take_from_spaces(State& m) {
       changed = true;
       continue;
     }
+    if (it->second.second.rfind("pick:", 0) == 0) {
+      // A table's choice (D279): its answer goes back to the cell that sent it, which asks before a move.
+      const bool refused = result.result.error.has_value();
+      if (refused) {
+        g_refusals.fetch_add(1, std::memory_order_relaxed);
+      }
+      std::string words = refused ? refusal_words(*result.result.error) : std::string();
+      if (refused && result.result.detail.has_value() && !result.result.detail->empty()) {
+        words = *result.result.detail;  // the space's own words (protocol 1.1)
+      }
+      for (auto& view : m.spaces) {
+        if (view->id == it->second.first) {
+          view->view.pick_answered(it->second.second, !refused,
+                                   refused && *result.result.error == grace::protocol::ErrorCode::confirm_required, words);
+        }
+      }
+      m.commands.erase(it);
+      changed = true;
+      continue;
+    }
     if (it->second.second.rfind("editor:", 0) == 0) {
       // An editor's command (D217): its answer, body and all, goes to the element that sent it, whatever is open.
       if (result.result.error.has_value()) {
@@ -769,6 +789,7 @@ void run(State& m, const grace::protocol::Cmd& command) {
                               : focused.rfind("share:", 0) == 0          ? focused.substr(6)  // a report's Save (D263)
                               : focused.rfind("flow:", 0) == 0           ? focused  // a flow's button, whole (D278)
                               : focused.rfind("action:", 0) == 0         ? focused  // a header action's (D278)
+                              : focused.rfind("pick:", 0) == 0           ? focused  // a table's choice, whole (D279)
                                                                          : key_of(command);
     std::uint64_t ticket = 0;
     const bool capture = space.view.capture_open();
@@ -789,6 +810,8 @@ void run(State& m, const grace::protocol::Cmd& command) {
         busy.error = grace::protocol::ErrorCode::busy;
         busy.detail = "Not now: the space has too many commands waiting.";
         space.view.editor_answer(where, busy);
+      } else if (where.rfind("pick:", 0) == 0) {
+        space.view.pick_answered(where, false, false, "Not now: the space has too many commands waiting.");
       } else {
         space.view.refused(where, "Not now: the space has too many commands waiting.");
       }
@@ -836,6 +859,18 @@ void run(State& m, const grace::protocol::Cmd& command) {
     m.pairing = true;
     m.sheet = pairing_sheet(spaces::pairing_view());
     own_view(m).view.show_sheet(m.sheet);  // open before refresh_pairing looks, which takes a closed sheet as ended
+    return;
+  }
+  if (const std::string focused = own_view(m).view.focused(); focused.rfind("pick:", 0) == 0) {
+    // A table's choice (the Hotkeys page's modifier, D279): its answer goes back to the cell, which asks before a move.
+    const grace::pages::Outcome outcome = own_space().apply(command);
+    if (!outcome.ok) {
+      g_refusals.fetch_add(1, std::memory_order_relaxed);
+    }
+    own_view(m).view.pick_answered(
+        focused, outcome.ok, !outcome.ok && outcome.error == grace::protocol::ErrorCode::confirm_required,
+        outcome.ok ? std::string_view() : std::string_view(outcome.detail));
+    take_topics(m);
     return;
   }
   // Its other commands (a Mods page switch, D181) go to the one entry point the browser's views use too.

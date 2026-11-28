@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 23;
-inline constexpr std::string_view kProtocolVersion = "1.23";
+inline constexpr std::uint32_t kProtocolMinor = 24;
+inline constexpr std::string_view kProtocolVersion = "1.24";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;

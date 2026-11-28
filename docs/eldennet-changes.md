@@ -2018,3 +2018,32 @@ First light (your PAGES §4.6.10) is the first one it is for. What to do:
 Roadmap line, if you take it: "First light as a flow (GraceUI 0.2.71, protocol 1.23, D278; eldennet-changes §104): its
 steps as a flow page's tabs, its state and step command EldenNet's, start for the first run with a notice of its own,
 Run setup again by an action's opens."
+
+## 105. A modifier beside each hotkey's key (2026-11-28, D279; GraceUI 0.2.72, protocol 1.24)
+
+Your owner's O150 ("users should have a drop down menu next to each key to select a modifier: Shift, Ctrl, Alt, None")
+is done on GraceUI › Hotkeys, where every mod's hotkeys are rebound (D208), for EldenNet's and every other mod's alike.
+Nothing to change in your code for it:
+
+- **What the player sees.** Each of your hotkeys' rows shows its key alone under Key, and beside it a Modifier
+  drop-down: None, Shift, Ctrl or Alt. A change rebinds the key with that modifier at once. A combination another
+  hotkey has is asked about first ("Ctrl+F7 is Tide Charts' Show the tide table. Use it here, and leave that one with no
+  key?"), then moved, that one left with no key and told. A row with no key is refused in words. The page's help says
+  GraceUI keeps only the whole combination from the game, never the key alone.
+- **Your defaults.** A default you register with two modifiers (GRACEUI_MOD_CTRL | GRACEUI_MOD_ALT) shows as its own
+  choice, "Ctrl+Alt", until the player changes it. Register what you want first offered; the player's choice is kept in
+  GraceUI's settings file as before, by your mod's id and the action's.
+- **What you are told.** A change made with the drop-down reaches you as any other rebinding does: HOTKEY_CHANGED, and
+  `describe_hotkey` gives the key with its modifiers ("Ctrl+F7").
+- **For your own pages.** Any table of yours may now have a choice column, a drop-down in each row (protocol 1.24): a
+  column with `choice = {command, key, choices = [{value, label}, ...]}` in the topic's body, one to sixteen choices,
+  beside D181's switch column. A change sends `command` with `{<key>: the row's, "value": ...}`. Answer
+  `confirm_required` with your question to have it asked before the same is sent again with `"confirm": true`; any other
+  refusal's words show under the row. A value of yours that is none of the choices shows as its own. In game it is a
+  field in its column's slot stepped with ← and →, and in the browser a `<select>`.
+- **Minor 24** in page data that relies on it; a body's choice column needs no change of the page data, but GraceUI
+  before 0.2.72 shows it as plain words.
+
+Roadmap line, if you take it: "A modifier beside each hotkey's key on GraceUI › Hotkeys (O150; GraceUI 0.2.72, D279;
+eldennet-changes §105): None, Shift, Ctrl or Alt per row, a taken combination asked about then moved; done in GraceUI,
+nothing of EldenNet's to change."

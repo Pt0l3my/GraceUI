@@ -104,4 +104,34 @@ std::string key_text(Key key, std::uint8_t modifiers) {
   return text;
 }
 
+std::string modifiers_text(std::uint8_t modifiers) {
+  std::string text = key_text(kNoKey, modifiers);  // "Ctrl+Shift+" and so on; kNoKey has no name
+  if (text.empty()) {
+    return "None";
+  }
+  text.pop_back();
+  return text;
+}
+
+bool modifiers_from_text(std::string_view text, std::uint8_t& modifiers) noexcept {
+  modifiers = 0;
+  if (text == "None") {
+    return true;
+  }
+  std::uint8_t found = 0;
+  bool joined = false;  // a "+" was taken, so another name must follow
+  for (const auto& [name, bit] : {std::pair<std::string_view, std::uint8_t>{"Ctrl", 1u}, {"Shift", 2u}, {"Alt", 4u}}) {
+    if (text.substr(0, name.size()) == name && (text.size() == name.size() || text[name.size()] == '+')) {
+      found = static_cast<std::uint8_t>(found | bit);
+      joined = text.size() > name.size();
+      text.remove_prefix(joined ? name.size() + 1 : name.size());
+    }
+  }
+  if (found == 0 || joined || !text.empty()) {
+    return false;
+  }
+  modifiers = found;
+  return true;
+}
+
 }  // namespace grace::input

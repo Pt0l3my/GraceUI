@@ -250,17 +250,29 @@ export class FixtureSpace {
       }
       return { answer: { ok: true }, publish: this.changedState() };
     }
-    if (name === "hotkeys.key" && typeof args.value === "string" && args.value !== "" && args.confirm !== true) {
-      // As GraceUI's host asks before a move (D208): a key another row of the Hotkeys page's list has.
+    if ((name === "hotkeys.key" || name === "hotkeys.modifier") && typeof args.value === "string" &&
+        args.value !== "" && args.confirm !== true) {
+      // As GraceUI's host asks before a move (D208, D279): a key and modifier another row of the Hotkeys page's list
+      // has, the row's modifier beside its key ("None" for none).
       const listed = this.data.topics?.["graceui.hotkeys"];
       const rows = typeof listed === "object" && listed !== null && !Array.isArray(listed) && Array.isArray(listed.rows)
         ? listed.rows : [];
+      const combination = (key: Json | undefined, modifier: Json | undefined) =>
+        modifier === "None" || modifier === undefined ? String(key) : `${String(modifier)}+${String(key)}`;
+      const own = rows.find((r) => typeof r === "object" && r !== null && !Array.isArray(r) && r.id === args.id);
+      const ownRow = typeof own === "object" && own !== null && !Array.isArray(own) ? own : null;
+      if (name === "hotkeys.modifier" && (ownRow === null || ownRow.key === "No key")) {
+        return { answer: { ok: false, error: "invalid_value",
+                           detail: "It has no key: change its key first, then its modifier." }, publish: [] };
+      }
+      const wanted = name === "hotkeys.key" ? args.value : combination(ownRow?.key, args.value);
       for (const row of rows) {
-        if (typeof row === "object" && row !== null && !Array.isArray(row) && row.key === args.value &&
-            row.id !== args.id && typeof row.id === "string" && row.id !== "") {
+        if (typeof row === "object" && row !== null && !Array.isArray(row) &&
+            combination(row.key, row.modifier) === wanted && row.id !== args.id && typeof row.id === "string" &&
+            row.id !== "") {
           return {
             answer: { ok: false, error: "confirm_required",
-                      detail: `${args.value} is ${String(row.mod)}'s ${String(row.action)}. Use it here, and leave that one with no key?` },
+                      detail: `${wanted} is ${String(row.mod)}'s ${String(row.action)}. Use it here, and leave that one with no key?` },
             publish: [],
           };
         }
