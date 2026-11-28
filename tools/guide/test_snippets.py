@@ -32,10 +32,13 @@ class Snippets(unittest.TestCase):
         (self.root / "examples" / "hello").mkdir(parents=True)
         (self.root / "examples" / "hello" / "hello.c").write_text(SOURCE, encoding="utf-8")
         (self.root / "outside.c").write_text(SOURCE, encoding="utf-8")
-        saved = (snippets.ROOT, snippets.GUIDE, snippets.EXAMPLES)
-        snippets.ROOT, snippets.GUIDE, snippets.EXAMPLES = self.root, self.root / "docs" / "modders", self.root / "examples"
+        (self.root / "src" / "graceui-mock" / "tests").mkdir(parents=True)
+        (self.root / "src" / "graceui-mock" / "tests" / "a_test.c").write_text(SOURCE, encoding="utf-8")
+        saved = (snippets.ROOT, snippets.GUIDE, snippets.EXAMPLES, snippets.MOCK)
+        snippets.ROOT, snippets.GUIDE = self.root, self.root / "docs" / "modders"
+        snippets.EXAMPLES, snippets.MOCK = self.root / "examples", self.root / "src" / "graceui-mock"
         self.addCleanup(lambda: setattr(snippets, "ROOT", saved[0]) or setattr(snippets, "GUIDE", saved[1]) or
-                        setattr(snippets, "EXAMPLES", saved[2]))
+                        setattr(snippets, "EXAMPLES", saved[2]) or setattr(snippets, "MOCK", saved[3]))
 
     def guide(self, text):
         (snippets.GUIDE / "part.md").write_text(text, encoding="utf-8")
@@ -72,9 +75,14 @@ class Snippets(unittest.TestCase):
         self.assertIn("no code block after it", failures[0])
 
     def test_a_marker_outside_the_examples_fails(self):
-        for where in ("outside.c", "examples/../outside.c", "examples/hello/missing.c"):
+        for where in ("outside.c", "examples/../outside.c", "examples/hello/missing.c", "src/graceui-mock/../../outside.c",
+                      "src/other/a_test.c"):
             failures, _ = self.guide(f"<!-- snippet: {where} -->\n\n    int found = 0;\n")
             self.assertIn("no file of examples/", failures[0], where)
+
+    def test_a_block_of_the_mocks(self):
+        failures, checked = self.guide("<!-- snippet: src/graceui-mock/tests/a_test.c -->\n\n    int found = 0;\n")
+        self.assertEqual((failures, checked), ([], 1))
 
     def test_commands_and_frames_are_not_looked_for(self):
         failures, checked = self.guide("<!-- snippet: shell -->\n\n    python3 -I tools/x.py\n\n"
