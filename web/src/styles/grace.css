@@ -314,6 +314,21 @@ ul, ol {
   box-shadow: inset 2px 0 0 var(--gold);
 }
 
+.tree__icon {
+  /* A category's line icon (§3.8, D277): ink.faint, gold.hi on the open page's; an empty place where a category of a
+     space with icons has none, so that the names line up. */
+  display: inline-flex;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-right: var(--space-12);
+  color: var(--ink-faint);
+}
+
+.tree__category.is-current .tree__icon {
+  color: var(--gold-hi);
+}
+
 .tree__page {
   min-height: var(--size-rail-page);
   padding-left: var(--space-48);
@@ -385,6 +400,10 @@ ul, ol {
 .mark:hover {
   background: var(--tint-hover);
   color: var(--ink-body);
+}
+
+.mark__icon {
+  display: inline-flex;  /* a category's line icon in the collapsed rail (D277); its initial when it has none */
 }
 
 .mark__glyph {

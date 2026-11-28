@@ -9,7 +9,7 @@ import type { Category, Page } from "../protocol.ts";
 import { pageById, railOrder } from "../model/layout.ts";
 import type { SpaceView } from "../model/session.ts";
 import { useSession } from "./context.ts";
-import { ChevronSide } from "./icons.tsx";
+import { CategoryIcon, ChevronSide } from "./icons.tsx";
 import { focusHeading } from "./navigate.ts";
 import { domId, expanded, railCollapsed, railManual } from "./view-state.ts";
 
@@ -57,6 +57,8 @@ function RailTree({ view, label, part = "all" }: { view: SpaceView; label: strin
   const route = session.route.value;
   const open = expanded.value;
   const items: Item[] = [];
+  // Once any of the space's categories has an icon, every category row keeps its place, so that the names line up (D277).
+  const withIcons = pages.categories.some((category) => category.icon !== undefined);
   const categories = pages.categories.filter((category) => inPart(category, part));
   categories.forEach((category, c) => {
     items.push({ key: `category:${category.id}`, kind: "category", category, level: 1, posinset: c + 1,
@@ -156,6 +158,9 @@ function RailTree({ view, label, part = "all" }: { view: SpaceView; label: strin
                    e.preventDefault();
                  }
                }}>
+            {item.kind === "category" && withIcons && (
+              <span class="tree__icon">{item.category.icon && <CategoryIcon icon={item.category.icon} />}</span>
+            )}
             <span class="tree__label">{item.kind === "category" ? item.category.name : item.page?.name}</span>
             {item.page?.tag && <span class="tag" title="Arrives in a later version">
               {item.page.tag === "wip" ? "WIP" : "Later"}
@@ -212,7 +217,9 @@ function RailMarks({ view, label, part = "all" }: { view: SpaceView; label: stri
                         setFlyout(null);
                       }
                     }}>
-              <span class="mark__glyph" aria-hidden="true">{category.name.slice(0, 1)}</span>
+              {category.icon
+                ? <span class="mark__icon" aria-hidden="true"><CategoryIcon icon={category.icon} /></span>
+                : <span class="mark__glyph" aria-hidden="true">{category.name.slice(0, 1)}</span>}
               <span class="mark__name" aria-hidden="true">{category.name}</span>
             </button>
             {flyout === category.id && (

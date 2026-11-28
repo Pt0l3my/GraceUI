@@ -1,11 +1,12 @@
 {
   "space": "graceui",
   "name": "GraceUI",
-  "minor": 21,
+  "minor": 22,
   "categories": [
     {
       "id": "graceui",
       "name": "GraceUI",
+      "icon": "grace",
       "pages": [
         "graceui.menu",
         "graceui.hotkeys",

@@ -493,6 +493,16 @@ class Seeded(unittest.TestCase):
         key.update(confirm="Use this key?", confirm_after_ms=1000)
         self.expect("action key: confirm_after_ms on a capture", sp, desc, fx)
 
+    def test_a_categorys_icon(self):  # D277
+        sp, desc, fx = demo()
+        self.assertEqual(failures(sp, desc, fx), [])  # the lantern and the book
+        self.assertEqual(SCHEMA["enums"]["icon"]["values"][:3], ["home", "spark", "voice"])
+        sp["categories"][0]["icon"] = "dragon"
+        self.expect("categories[0].icon: not one of icon's names", sp, desc, fx)
+        sp, desc, fx = demo()
+        del sp["categories"][0]["icon"]
+        self.assertEqual(failures(sp, desc, fx), [])  # optional: the rail draws its initial
+
     def test_a_private_topic(self):  # D274
         sp, desc, fx = demo()
         self.assertEqual(failures(sp, desc, fx), [])  # the journal is private, drawn in its log tail alone

@@ -48,6 +48,7 @@ shape = "state"
 [[category]]
 id = "graceui"
 name = "GraceUI"
+icon = "grace"  # its line icon on the rail (D277)
 pages = ["graceui.menu", "graceui.hotkeys", "graceui.browser", "graceui.mods", "graceui.compatibility", "graceui.about"]
 
 # ---- Settings (§6.9; D84, D115).

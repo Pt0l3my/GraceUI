@@ -1960,3 +1960,26 @@ closes it itself when your holder ends, whatever ends it. The keyboard types int
 your field takes its characters as your holder's key and character events, as now. Check
 `GRACEUI_API1_COVERS(api, pad_keyboard)` and `has_cap("pad-keyboard")`, and EldenNet then makes no Steam call of its
 own: R2's one third-party call can go. A mod built for ABI 1.9 sees nothing new.
+
+## 103. Your categories' icons on the rail (2026-11-28, D277; GraceUI 0.2.70, protocol 1.22)
+
+A category may now name its line icon, drawn before its name on the rail in both views and alone in the browser's
+collapsed rail (which shows the initial without one). Add `icon = "<name>"` to each `[[category]]` in your
+`space.toml`, and name minor 22 in your page data. The set is GraceUI's own, in `tokens/icons.toml`. For your ten,
+this is what I would choose:
+
+| Category | Icon |
+|---|---|
+| Home | `home` |
+| AI | `spark` |
+| Voice | `voice` |
+| Characters | `people` |
+| Map | `map` |
+| History | `history` |
+| Behaviour | `sliders` |
+| System | `pulse` |
+| Tools | `tools` |
+| Settings | `gear` |
+
+The rest of the set: `grace` (GraceUI's own), `lamp`, `book`, `chat`, `cube` and `shield`. Give all ten or none: once
+one category has an icon, every name moves after the icon's place, so that they line up.

@@ -232,7 +232,8 @@ Stats tessellate(const view::DisplayList& list, const tokens::Palette& palette, 
     ++index;
     const Rect& clip = item.clip < list.clips.size() ? list.clips[item.clip] : kNoClip;
     const std::uint32_t colour = pack(tokens::colour(palette, item.colour), item.alpha);
-    if ((colour >> 24) == 0 || item.rect.w <= 0 || item.rect.h <= 0) {
+    // A segment's rectangle is its bounding box, flat for a level or upright one (D277).
+    if ((colour >> 24) == 0 || (item.shape != Shape::segment && (item.rect.w <= 0 || item.rect.h <= 0))) {
       continue;  // nothing to draw
     }
     // Wholly outside its clip (a long page's rows above or below the view): nothing of it would show, so no vertex is
@@ -311,6 +312,34 @@ Stats tessellate(const view::DisplayList& list, const tokens::Palette& palette, 
             break;
         }
         fill_convex(w, points, 3, colour, clip);
+        break;
+      }
+      case Shape::segment: {
+        // A line `width` wide between two corners of its rectangle, with a disc at each end for its round ends and
+        // joins (D277): the quad clockwise on the display, as fill_convex's normals need.
+        const Point a = item.facing == view::Facing::up ? Point{r.x, r.bottom()} : Point{r.x, r.y};
+        const Point b = item.facing == view::Facing::up ? Point{r.right(), r.y} : Point{r.right(), r.bottom()};
+        const float half = std::max(item.width, 0.5f) / 2;
+        const float dx = b.x - a.x;
+        const float dy = b.y - a.y;
+        const float length = std::sqrt(dx * dx + dy * dy);
+        if (length > 0.01f) {
+          const float nx = -dy / length * half;
+          const float ny = dx / length * half;
+          points[0] = {a.x - nx, a.y - ny};
+          points[1] = {b.x - nx, b.y - ny};
+          points[2] = {b.x + nx, b.y + ny};
+          points[3] = {a.x + nx, a.y + ny};
+          fill_convex(w, points, 4, colour, clip);
+        }
+        for (const Point end : {a, b}) {
+          constexpr int kEnd = 12;
+          for (int i = 0; i < kEnd; ++i) {
+            const float t = 2 * kPi * static_cast<float>(i) / static_cast<float>(kEnd);
+            points[static_cast<std::size_t>(i)] = {end.x + half * std::cos(t), end.y + half * std::sin(t)};
+          }
+          fill_convex(w, points, kEnd, colour, clip);
+        }
         break;
       }
       case Shape::text: {

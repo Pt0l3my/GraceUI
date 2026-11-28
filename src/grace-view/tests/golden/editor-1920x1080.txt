@@ -2,16 +2,44 @@ fill    scrim           0,   0 1920x1080
 fill    ground.1        0,   0 1920x1080
 fill    ground.0        0,   0  240x1080
 text    gold           24,  24  114x28   glyphs 9 "Demo space"
-text    ink.mute       24,  76   68x24   glyphs 8 "Lanterns"
+segment ink.faint      30,  84    6x0    w2 v
+segment ink.faint      30,  84    1x9    w2 ^
+segment ink.faint      36,  84    1x9    w2 v
+segment ink.faint      29,  93    8x0    w2 v
+segment ink.faint      30,  95    5x0    w2 v
+segment ink.faint      33,  87    1x2    w2 v
+segment ink.faint      33,  89    1x2    w2 ^
+segment ink.faint      32,  89    1x2    w2 v
+segment ink.faint      32,  87    1x2    w2 ^
+segment ink.faint      31,  82    0x1    w2 ^
+segment ink.faint      31,  82    0x0    w2 ^
+segment ink.faint      31,  82    0x0    w2 ^
+segment ink.faint      32,  81    0x0    w2 ^
+segment ink.faint      32,  81    0x0    w2 ^
+segment ink.faint      32,  81    1x0    w2 ^
+segment ink.faint      33,  81    1x0    w2 v
+segment ink.faint      34,  81    0x0    w2 v
+segment ink.faint      34,  81    0x0    w2 v
+segment ink.faint      34,  82    0x0    w2 v
+segment ink.faint      35,  82    0x0    w2 v
+segment ink.faint      35,  82    0x1    w2 v
+text    ink.mute       52,  76   68x24   glyphs 8 "Lanterns"
 line    rule           24, 856  192x1   
-text    ink.hi         24, 864   60x24   glyphs 7 "Records"
-text    ink.mute       40, 902   20x20   glyphs 3 "Log"
-text    ink.mute       40, 934   54x20   glyphs 8 "Festival"
+segment gold.hi        26, 870    7x2    w2 v
+segment gold.hi        33, 870    7x2    w2 ^
+segment gold.hi        40, 870    0x10   w2 v
+segment gold.hi        33, 881    7x2    w2 ^
+segment gold.hi        26, 881    7x2    w2 v
+segment gold.hi        26, 870    0x10   w2 ^
+segment gold.hi        33, 872    0x10   w2 v
+text    ink.hi         52, 864   60x24   glyphs 7 "Records"
+text    ink.mute       52, 902   20x20   glyphs 3 "Log"
+text    ink.mute       52, 934   54x20   glyphs 8 "Festival"
 fill    tint.select     0, 960  240x32  
 fill    gold            0, 960    2x32  
-text    gold.hi        40, 966   34x20   glyphs 5 "Lamps"
-text    ink.mute       40, 998   61x20   glyphs 9 "Lightings"
-text    ink.mute       40,1030   54x20   glyphs 8 "Handbook"
+text    gold.hi        52, 966   34x20   glyphs 5 "Lamps"
+text    ink.mute       52, 998   61x20   glyphs 9 "Lightings"
+text    ink.mute       52,1030   54x20   glyphs 8 "Handbook"
 fill    ground.well   272,   8  280x28   r2
 text    ink.faint     282,  12   40x20   glyphs 6 "Search"
 text    ink.faint    1827,  12   61x20   glyphs 7 "F5  Close"

@@ -3,7 +3,8 @@
 """tools/tokens/build.py: the Grace theme's tokens, from tokens/grace.toml to both views (GraceUI DESIGN §3.15, D108,
 D157; invariants 13 and 14).
 
-    python3 -I tools/tokens/build.py            write web/src/tokens.css and src/grace-tokens/include/grace/tokens.h
+    python3 -I tools/tokens/build.py            write web/src/tokens.css and src/grace-tokens/include/grace/tokens.h,
+                                                and the line icons: web/src/icons.ts and .../grace/icons.h (D277)
     python3 -I tools/tokens/build.py --check    fail if either is not what the tokens build, or a check fails
     python3 -I tools/tokens/build.py --table    print §3.3's contrast table, as the tokens give it
 
@@ -19,6 +20,9 @@ Before anything is written, the tokens pass four checks, each failure printed wi
      animation, `iterations: Infinity`). The web app's own CSS (D166) writes no colour, type size or duration as a
      literal, only the tokens' custom properties, redefines no font or type token, and has no url(), @import or
      @font-face (invariant 6); no component sets an inline style, which the page's CSP refuses.
+  5. The icons (tokens/icons.toml, §3.8, D277): each a polyline of two points or more, a ring or an arc, every point
+     and every ring within the square's margin (the stroke's width from its edge), and the names exactly protocol
+     1.22's `icon` values, in their order.
 Exit status 0 when all pass (and, with --check, nothing has drifted).
 """
 import argparse
@@ -32,6 +36,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 SOURCE = ROOT / "tokens" / "grace.toml"
 CSS_OUT = ROOT / "web" / "src" / "tokens.css"
 HEADER_OUT = ROOT / "src" / "grace-tokens" / "include" / "grace" / "tokens.h"
+ICONS_SOURCE = ROOT / "tokens" / "icons.toml"
+ICONS_HEADER_OUT = ROOT / "src" / "grace-tokens" / "include" / "grace" / "icons.h"
+ICONS_TS_OUT = ROOT / "web" / "src" / "icons.ts"
+PROTOCOL = ROOT / "src" / "grace-protocol" / "protocol.toml"
+ARC_STEP_DEGREES = 15
 WEB_SRC = ROOT / "web" / "src"
 
 HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -447,6 +456,133 @@ def build_header(data, variants):
     return "\n".join(out)
 
 
+def load_icons(text=None, protocol_text=None):
+    """The icons as segments and rings, in protocol 1.22's order, and the failures of check 5."""
+    raw = tomllib.loads(text if text is not None else ICONS_SOURCE.read_text(encoding="utf-8"))
+    proto = tomllib.loads(protocol_text if protocol_text is not None else PROTOCOL.read_text(encoding="utf-8"))
+    names = list(proto.get("enums", {}).get("icon", {}).get("values", []))
+    stroke = float(raw["stroke"])
+    size = float(raw["size"])
+    low, high = stroke, size - stroke
+    failures = []
+    icons = []
+    if list(raw.get("icon", {})) != names:
+        failures.append(f"icons: {list(raw.get('icon', {}))} are not protocol 1.22's icon values {names}, in order")
+
+    def within(where, x, y):
+        if not (low <= x <= high and low <= y <= high):
+            failures.append(f"icon {where}: the point {x:g},{y:g} is outside {low:g} to {high:g}")
+
+    for name, body in raw.get("icon", {}).items():
+        segments, rings = [], []
+        for line in body.get("lines", []):
+            if len(line) < 4 or len(line) % 2 != 0:
+                failures.append(f"icon {name}: a line needs two points or more, as x, y pairs")
+                continue
+            points = [(float(line[i]), float(line[i + 1])) for i in range(0, len(line), 2)]
+            for x, y in points:
+                within(name, x, y)
+            segments += [(a[0], a[1], b[0], b[1]) for a, b in zip(points, points[1:])]
+        for ring in body.get("rings", []):
+            cx, cy, r = (float(v) for v in ring)
+            if r <= 0 or cx - r < low or cx + r > high or cy - r < low or cy + r > high:
+                failures.append(f"icon {name}: the ring at {cx:g},{cy:g} of {r:g} is not within the margin")
+            rings.append((cx, cy, r))
+        for arc in body.get("arcs", []):
+            cx, cy, r, start, end = (float(v) for v in arc)
+            if r <= 0 or end <= start or end - start > 360:
+                failures.append(f"icon {name}: an arc runs from its start to a later end, at most 360 degrees")
+                continue
+            steps = max(1, math.ceil((end - start) / ARC_STEP_DEGREES))
+            points = []
+            for i in range(steps + 1):
+                a = math.radians(start + (end - start) * i / steps)
+                points.append((round(cx + r * math.cos(a), 3), round(cy + r * math.sin(a), 3)))
+            for x, y in points:
+                within(name, x, y)
+            segments += [(a[0], a[1], b[0], b[1]) for a, b in zip(points, points[1:])]
+        if not segments and not rings:
+            failures.append(f"icon {name}: nothing to draw")
+        icons.append((name, segments, rings))
+    return {"stroke": stroke, "size": size, "icons": icons}, failures
+
+
+def icon_number(value):
+    text = f"{round(value, 3):.3f}".rstrip("0").rstrip(".")
+    return "0" if text == "-0" else text
+
+
+def icon_float(value):
+    """A C++ float literal: always with a point, so that 18 is 18.0f."""
+    text = icon_number(value)
+    return (text if "." in text else text + ".0") + "f"
+
+
+def build_icons_header(icons):
+    out = [
+        "// GENERATED by tools/tokens/build.py from tokens/icons.toml: do not edit.",
+        "// The Grace theme's line icons for the rail's categories (DESIGN §3.8, D277), as both views draw them: segments",
+        "// with round ends and rings, on an 18-unit square, in protocol 1.22's icon order.",
+        "#pragma once",
+        "",
+        "#include <array>",
+        "#include <cstdint>",
+        "",
+        "namespace grace::tokens::icons {",
+        "",
+        "struct Segment {",
+        "  float x0, y0, x1, y1;",
+        "};",
+        "struct Ring {",
+        "  float cx, cy, r;",
+        "};",
+        "struct Icon {",
+        "  const char* name;",
+        "  std::uint16_t segment_first, segment_count, ring_first, ring_count;",
+        "};",
+        "",
+        f"inline constexpr float kStroke = {icon_float(icons['stroke'])};",
+        f"inline constexpr float kSize = {icon_float(icons['size'])};",
+        "",
+    ]
+    segments, rings, entries = [], [], []
+    for name, seg, ring in icons["icons"]:
+        entries.append((name, len(segments), len(seg), len(rings), len(ring)))
+        segments += seg
+        rings += ring
+    out.append(f"inline constexpr std::array<Segment, {len(segments)}> kSegments{{{{")
+    out += [f"    {{{', '.join(icon_float(v) for v in s)}}}," for s in segments]
+    out.append("}};")
+    out.append(f"inline constexpr std::array<Ring, {len(rings)}> kRings{{{{")
+    out += [f"    {{{', '.join(icon_float(v) for v in r)}}}," for r in rings]
+    out.append("}};")
+    out.append(f"inline constexpr std::array<Icon, {len(entries)}> kIcons{{{{")
+    out += [f'    {{"{n}", {a}, {b}, {c}, {d}}},' for n, a, b, c, d in entries]
+    out.append("}};")
+    out += ["", "}  // namespace grace::tokens::icons", ""]
+    return "\n".join(out)
+
+
+def build_icons_ts(icons):
+    out = [
+        "// GENERATED by tools/tokens/build.py from tokens/icons.toml: do not edit.",
+        "// The Grace theme's line icons for the rail's categories (DESIGN §3.8, D277), as both views draw them: segments",
+        "// [x0, y0, x1, y1] with round ends, and rings [cx, cy, r], on an 18-unit square.",
+        "",
+        f"export const ICON_STROKE = {icon_number(icons['stroke'])};",
+        f"export const ICON_SIZE = {icon_number(icons['size'])};",
+        "",
+        "export const ICONS: Record<string, { segments: readonly (readonly number[])[]; rings: readonly (readonly number[])[] }> = {",
+    ]
+    for name, seg, ring in icons["icons"]:
+        out.append(f"  {name}: {{")
+        out.append("    segments: [" + ", ".join("[" + ", ".join(icon_number(v) for v in s) + "]" for s in seg) + "],")
+        out.append("    rings: [" + ", ".join("[" + ", ".join(icon_number(v) for v in r) + "]" for r in ring) + "],")
+        out.append("  },")
+    out += ["};", ""]
+    return "\n".join(out)
+
+
 def table(data, variants):
     rules = data["contrast"]
     colours = variants["grace"]["colour"]
@@ -470,7 +606,13 @@ def run(argv):
     except (TokenError, KeyError, tomllib.TOMLDecodeError) as error:
         print(f"tokens: {error}", file=sys.stderr)
         return 1
-    failures = check_contrast(data, variants) + check_type(data) + check_motion(data) + check_stylesheets()
+    try:
+        icons, icon_failures = load_icons()
+    except (KeyError, ValueError, TypeError, tomllib.TOMLDecodeError) as error:
+        print(f"tokens: tokens/icons.toml: {error}", file=sys.stderr)
+        return 1
+    failures = (check_contrast(data, variants) + check_type(data) + check_motion(data) + check_stylesheets() +
+                icon_failures)
     if failures:
         for failure in failures:
             print(f"tokens: {failure}", file=sys.stderr)
@@ -478,12 +620,13 @@ def run(argv):
     if args.table:
         print(table(data, variants))
         return 0
-    outputs = {CSS_OUT: build_css(data, variants), HEADER_OUT: build_header(data, variants)}
+    outputs = {CSS_OUT: build_css(data, variants), HEADER_OUT: build_header(data, variants),
+               ICONS_HEADER_OUT: build_icons_header(icons), ICONS_TS_OUT: build_icons_ts(icons)}
     if args.check:
         stale = [path for path, text in outputs.items()
                  if not path.is_file() or path.read_text(encoding="utf-8") != text]
         for path in stale:
-            print(f"tokens: {path.relative_to(ROOT).as_posix()} is not what tokens/grace.toml builds: run "
+            print(f"tokens: {path.relative_to(ROOT).as_posix()} is not what tokens/ builds: run "
                   "python3 -I tools/tokens/build.py", file=sys.stderr)
         if not stale:
             print("tokens: ok")

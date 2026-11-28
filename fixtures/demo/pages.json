@@ -1,11 +1,12 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 21,
+  "minor": 22,
   "categories": [
     {
       "id": "lanterns",
       "name": "Lanterns",
+      "icon": "lamp",
       "pages": [
         "demo.overview",
         "demo.behaviour",
@@ -15,6 +16,7 @@
     {
       "id": "records",
       "name": "Records",
+      "icon": "book",
       "pages": [
         "demo.log",
         "demo.festival",

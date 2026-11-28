@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 21;
-inline constexpr std::string_view kProtocolVersion = "1.21";
+inline constexpr std::uint32_t kProtocolMinor = 22;
+inline constexpr std::string_view kProtocolVersion = "1.22";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -106,6 +106,27 @@ enum class CommandView : std::uint8_t {
 };
 std::string_view to_string(CommandView value) noexcept;
 bool from_string(std::string_view text, CommandView& out) noexcept;
+
+enum class Icon : std::uint8_t {
+  home,
+  spark,
+  voice,
+  people,
+  map,
+  history,
+  sliders,
+  pulse,
+  tools,
+  gear,
+  grace,
+  lamp,
+  book,
+  chat,
+  cube,
+  shield,
+};
+std::string_view to_string(Icon value) noexcept;
+bool from_string(std::string_view text, Icon& out) noexcept;
 
 enum class TopicShape : std::uint8_t {
   state,
@@ -572,6 +593,7 @@ struct Category {
   std::string name{};
   std::vector<std::string> pages{};
   std::optional<bool> foot{};
+  std::optional<Icon> icon{};
   bool operator==(const Category&) const = default;
 };
 bool decode(const Json& in, Category& out, const std::string& path, DecodeError& e);

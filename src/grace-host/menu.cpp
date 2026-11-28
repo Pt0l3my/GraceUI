@@ -241,7 +241,9 @@ std::vector<grace::view::RailLink> category_links(const grace::protocol::SpacePa
   for (const grace::protocol::Category& category : pages.categories) {
     for (const std::string& page : category.pages) {
       if (view.present(page)) {
-        links.push_back(grace::view::RailLink{category.name, pages.space, page, true, category.foot.value_or(false)});
+        grace::view::RailLink link{category.name, pages.space, page, true, category.foot.value_or(false)};
+        link.icon = category.icon;  // drawn beside its name, as its own space's rail draws it (D277)
+        links.push_back(std::move(link));
         break;
       }
     }
