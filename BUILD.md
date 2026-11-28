@@ -326,7 +326,11 @@ review's fixes; at 0.2.70 (D277's category icons, the Menu page 3,616 vertices f
 the review's fixes, found grace-dev's dump goldens and the built-in pages' round trip out of date on the Linux trees,
 MinGW whole and clang-cl all but the menu's frame cost; the second, after them, passed all 35 suites on the three Linux
 trees and all but the menu's frame cost on both builds, whose scenario then passed whole alone on clang-cl in one run of
-one and on MinGW in one run of three) at a load average
+one and on MinGW in one run of three; at 0.2.71 (D278's flows, and the new menu-flow scenario's five checks, which
+passed on both builds in both runs) the first full run, before the review's fixes, passed all 35 suites on the three
+Linux trees and all 323 checks but the menu's frame cost on both builds; the second, after them, all 35 suites on the
+three Linux trees, all 323 checks on clang-cl and all but the menu's frame cost on MinGW, whose scenario then passed
+whole alone in one run of one) at a load average
 of 1.3 to 10.5 on four cores, a frame-cost check taking a second window in 6 of the 80 checks run, a third in none.
 Wine 9.0's wineserver (Ubuntu's 9.0~repack-4build3) aborts as it starts, with "free(): invalid pointer", whenever
 `TMPDIR` is set, even to `/tmp`: it frees the variable's own string (a backtrace, 2026-11-20). Every Wine command
