@@ -17,11 +17,11 @@ own example mods, and they grow by minors that only add. This guide is written a
 | [The space and its pages](pages.md) | `space.toml`, the page data a space registers: categories, pages, tabs, sections, blocks, actions, flows | Written |
 | [Components](components.md) | Every component, the topic body each draws, in game and in the browser | Written |
 | [The settings description](settings.md) | Every setting type, its bounds, availability and effect; the settings topic and its commands | Written |
-| The protocol | Topics, commands, results and errors as the views and GraceUI send them | *To come* |
-| The C ABI | `GraceUI_RequestApi`, `connect` and its answers, each slot | *To come* |
+| [The protocol](protocol.md) | Topics, commands, results and errors as the views and GraceUI send them | Written |
+| [The C ABI](abi.md) | `GraceUI_RequestApi`, `connect` and its answers, each slot | Written |
 | Panels and your own Dear ImGui | Draw lists, their checks and budgets; Dear ImGui's core without a backend | *To come* |
-| Input and focus | The input holder, hotkeys and pad chords, the closing press, Steam's floating keyboard | *To come* |
-| Threads and budgets | Which calls go on which thread; the present thread's budget | *To come* |
+| [Input and focus](input.md) | The input holder, hotkeys and pad chords, the closing press, Steam's floating keyboard | Written |
+| [Threads and budgets](threads.md) | Which calls go on which thread; the present thread's budget | Written |
 | Secrets, privacy and spoilers | What a view may see; secrets write-only; projections only | *To come* |
 | Versions and distribution | One copy in `Game\GraceUI\`; requiring a version; what a mod ships | *To come* |
 | Troubleshooting and bug reports | GraceUI's log, its notices, what to put in a report | *To come* |

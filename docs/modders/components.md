@@ -51,8 +51,8 @@ On the block:
   (Missing), or "none" for a row that needs none. Its `command` sets it, sent with the row's `key` and the value,
   which no view keeps; an empty value clears it.
 - `filter_bar`: filters, a sort and a search over the rows the view holds, never sent to the space (1.11).
-- `page`: rows read a page at a time from a command of the space's, with Show more (1.14). See the protocol part,
-  *to come*.
+- `page`: rows read a page at a time from a command of the space's, with Show more (1.14). See
+  [The protocol](protocol.md#rows-a-page-at-a-time-114).
 
 ### Report previews
 
