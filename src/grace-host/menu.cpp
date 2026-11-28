@@ -140,7 +140,7 @@ constexpr float kStickFull = 29490.0f;   // nine tenths of a stick's travel: a s
 constexpr std::int64_t kRepeatDelayMs = 400;
 constexpr std::int64_t kRepeatEveryMs = 80;
 constexpr std::int64_t kRepeatFastMs = 40;
-constexpr std::int64_t kLandWithinMs = 1000;  // a flow lands on an opening only this soon after it (D278)
+constexpr std::int64_t kLandWithinMs = 2000;  // a flow lands on an opening only this soon after it (D278)
 
 // A space the menu shows (D79, D171): GraceUI's own, or a mod's that asked for the game's view.
 struct SpaceView {

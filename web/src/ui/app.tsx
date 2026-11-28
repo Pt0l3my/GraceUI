@@ -12,6 +12,7 @@ import { pageById } from "../model/layout.ts";
 import { SessionContext } from "./context.ts";
 import { focusActiveTab, focusHeading, focusSearch } from "./navigate.ts";
 import { PageView } from "./page.tsx";
+import { FlowLanding } from "./flow.tsx";
 import { Rail, openSpace } from "./rail.tsx";
 import { TopBar } from "./topbar.tsx";
 import { expanded, menuWidth } from "./view-state.ts";
@@ -132,7 +133,8 @@ export function App({ session }: { session: Session }) {
       } else if ((e.key === "q" || e.key === "Q" || e.key === "e" || e.key === "E") && !e.shiftKey) {
         const route = session.route.value;
         const pages = route ? session.space(route.space)?.pages.value : undefined;
-        const tabs = route && pages ? pageById(pages, route.page)?.tabs ?? [] : [];
+        const target = route && pages ? pageById(pages, route.page) : undefined;
+        const tabs = target && !target.flow ? target.tabs ?? [] : [];  // a flow's step is its space's (D278)
         const next = route ? route.tab + (e.key.toLowerCase() === "e" ? 1 : -1) : -1;
         if (tabs.length >= 2 && next >= 0 && next < tabs.length) {
           e.preventDefault();
@@ -184,6 +186,7 @@ export function App({ session }: { session: Session }) {
           <PageView />
         </div>
       </div>
+      <FlowLanding />
     </SessionContext.Provider>
   );
 }

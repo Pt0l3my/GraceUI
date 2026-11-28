@@ -5,7 +5,7 @@
 // its bounds, nothing locked, a confirmation for a page or all; a secret is kept only as "set" (invariant 5). Pure: the
 // fixture transport and the tests' fake host share it.
 import type {
-  ErrorCode, InheritedValue, Json, JsonObject, PageBlock, Rows, Setting, SettingsBody, SettingsDescription, SpaceInfo,
+  ErrorCode, InheritedValue, Json, JsonObject, Page, PageBlock, Rows, Setting, SettingsBody, SettingsDescription, SpaceInfo,
   SpacePages, State,
 } from "../protocol.ts";
 import { PROTOCOL } from "../protocol.ts";
@@ -287,7 +287,47 @@ export class FixtureSpace {
       this.rev += 1;
       return { answer: { ok: true }, publish: [this.stateFrame(quick.state.topic, next)] };
     }
+    const flow = this.data.pages.pages.find((p) => p.flow?.command === name && (p.tabs ?? []).length > 0);
+    if (flow !== undefined) {
+      return this.flowCommand(flow, args);
+    }
     return { answer: { ok: true }, publish: [] };  // the space's own commands: accepted, with nothing to show here
+  }
+
+  /** A flow's command (D278), as grace-dev answers it: from the step the view showed, next to the step after it (that
+   * step done), skip to it (left undone), back to the step before, done on the last step (that step done, start
+   * false); its blocked words gone. Unlike grace-dev it takes the view's step as it is, for the tests publish steps of
+   * their own. */
+  private flowCommand(page: Page, args: JsonObject): Outcome {
+    const steps = (page.tabs ?? []).map((t) => t.id);
+    const at = typeof args.step === "string" ? steps.indexOf(args.step) : -1;
+    if (at < 0 || page.flow === undefined) {
+      return { answer: { ok: false, error: "invalid_value", detail: "That step is not one of this flow's." }, publish: [] };
+    }
+    const topic = page.flow.topic;
+    const fixture = this.docs.get(topic) ?? this.data.topics?.[topic];
+    const body: JsonObject = typeof fixture === "object" && fixture !== null && !Array.isArray(fixture) ? { ...fixture } : {};
+    const done = new Set(Array.isArray(body.done) ? body.done.filter((d): d is string => typeof d === "string") : []);
+    const last = at + 1 === steps.length;
+    const here = steps[at]!;
+    if ((args.go === "next" || args.go === "skip") && !last) {
+      if (args.go === "next") {
+        done.add(here);
+      }
+      body.step = steps[at + 1]!;
+    } else if (args.go === "back" && at > 0) {
+      body.step = steps[at - 1]!;
+    } else if (args.go === "done" && last) {
+      done.add(here);
+      body.start = false;
+    } else {
+      return { answer: { ok: false, error: "not_now", detail: "Not possible on this step." }, publish: [] };
+    }
+    body.done = [...done];
+    delete body.blocked;
+    this.docs.set(topic, body);
+    this.rev += 1;
+    return { answer: { ok: true }, publish: [this.stateFrame(topic, body)] };
   }
 
   /** A file command with its file (G28), as the demo space answers it: a roster file's entries counted, one for each

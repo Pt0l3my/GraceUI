@@ -30,6 +30,8 @@ import { filters, gatesOpened, openGate } from "./view-state.ts";
 import { railOrder } from "../model/layout.ts";
 import { FRESH } from "../model/filter.ts";
 import { DocumentBlock } from "./document.tsx";
+import { FlowButtons, FlowSteps } from "./flow.tsx";
+import { flowStep } from "../model/flow.ts";
 import { dropDrafts } from "../model/editor.ts";
 
 // The framework topic a space's greyed pages come on (D188): {"greyed": {page: words}, "inactive": words}.
@@ -137,6 +139,15 @@ function sectionStatus(data: TopicData | undefined, field: string | undefined): 
   return { word, tone };
 }
 
+/** An action that opens a page once answered ok (D278): opened if the player is still on the page that sent it. */
+function opened(session: ReturnType<typeof useSession>, space: string, from: string, action: PageAction): void {
+  const now = session.route.value;
+  if (action.opens !== undefined && now && now.space === space && now.page === from &&
+      session.open(space, action.opens)) {
+    focusHeading();
+  }
+}
+
 function SectionCard({ space, page, section }: { space: string; page: Page; section: PageSection }) {
   const session = useSession();
   const greyed = useContext(GreyedContext);
@@ -150,6 +161,8 @@ function SectionCard({ space, page, section }: { space: string; page: Page; sect
     const answer = await session.action(space, action);  // a destructive one carries its confirmation (D173)
     if (!answer.ok) {
       setRefusal(refusalWords(answer));
+    } else {
+      opened(session, space, page.id, action);
     }
   };
   const collapsed = isCollapsed(space, page.id, section);
@@ -426,6 +439,8 @@ export function PageView() {
     ? (masterPaged.body !== null ? { columns: masterPaged.body.columns, rows: masterPaged.body.rows } : undefined)
     : masterData?.kind === "state" ? masterData.body : undefined;
   const masterKeys = master ? masterRows(master, masterBody).map((r) => r.key) : [];
+  // A flow (D278): its state, which says the step shown.
+  const flowData = useTopic(route?.space ?? "", page?.flow?.topic);
   const held = route && page ? chosen.value.get(`${route.space}/${page.id}`) : undefined;
   const wanted = route && page ? expected.value.get(`${route.space}/${page.id}`) : undefined;
   const current = master ? rowToShow(masterKeys, held, wanted) : null;
@@ -481,8 +496,10 @@ export function PageView() {
                    words: (id: string) => greyedWords(stateBody, id) ?? (id === page.id ? readOnly : null) };
   const pageWords = greyed.words(page.id);
   const space = route.space;
-  const sections = sectionsOf(page, route.tab);
-  const tabs = page.tabs ?? [];
+  const flowBody = flowData?.kind === "state" ? flowData.body : undefined;
+  const step = page.flow ? flowStep(page, flowBody) : route.tab;  // a flow's step is its space's (D278)
+  const sections = sectionsOf(page, step);
+  const tabs = page.flow ? [] : page.tabs ?? [];
   const panelId = domId("panel", space, page.id);
   const run = async (action: PageAction, confirmed: boolean) => {
     setNotice(null);
@@ -491,6 +508,8 @@ export function PageView() {
       setConfirming(action);
     } else if (!answer.ok) {
       setNotice({ page: page.id, text: refusalWords(answer) });
+    } else {
+      opened(session, space, page.id, action);
     }
   };
   return (
@@ -565,10 +584,12 @@ export function PageView() {
           ))}
         </div>
       )}
+      {page.flow && <FlowSteps page={page} body={flowBody} step={step} />}
       <div class="page__body" id={panelId} role={tabs.length > 0 ? "tabpanel" : undefined}
            aria-labelledby={tabs.length > 0 ? domId("tab", space, page.id, tabs[route.tab]?.id ?? "") : undefined}>
         {(!master || current !== null) &&
           sections.map((section) => <SectionCard key={section.id} space={space} page={page} section={section} />)}
+        {page.flow && <FlowButtons space={space} page={page} step={step} body={flowBody} inert={pageWords !== null} />}
         <RelatedCard space={space} page={page} />
       </div>
       </ScopeContext.Provider>

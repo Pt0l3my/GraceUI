@@ -62,7 +62,7 @@ TEST_CASE("the demo's own scenario is whole: its steps in time order, its reacti
   CHECK_FALSE(scenario.loop);
   CHECK(scenario.steps.size() == 9);
   CHECK(scenario.steps.front().line == 10);
-  CHECK(scenario.reactions.size() == 3);
+  CHECK(scenario.reactions.size() == 4);  // and Set up again's (D278)
   REQUIRE(scenario.reaction("lightings.page") != nullptr);
   REQUIRE(scenario.reaction("lightings.page")->body.has_value());  // ok, with a page of rows (D254)
   CHECK((*scenario.reaction("lightings.page")->body)["total"] == 1);

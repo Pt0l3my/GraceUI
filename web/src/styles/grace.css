@@ -2397,3 +2397,102 @@ ul, ol {
 .preview__fields .kv__value {
   white-space: pre-line;
 }
+
+/* A flow (D278): its steps, numbered, the current in gold and each done checked; its buttons under the step. */
+.flow-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12) var(--space-24);
+  margin: 0 0 var(--space-20);
+  padding: 0 0 var(--space-12);
+  list-style: none;
+  border-bottom: var(--size-edge-width) solid var(--rule);
+}
+
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-family: var(--stack-sans);
+  font-size: var(--type-tab-size);
+  line-height: var(--type-tab-line);
+  font-weight: var(--type-tab-weight);
+  letter-spacing: var(--type-tab-tracking);
+  text-transform: var(--type-tab-case);
+  color: var(--ink-faint);
+}
+
+.flow-step__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--edge);
+  border-radius: 50%;
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.flow-step__mark svg {
+  width: 22px;
+  height: 22px;
+  color: var(--gold);
+}
+
+.flow-step.is-done {
+  color: var(--ink-mute);
+}
+
+.flow-step.is-done .flow-step__mark {
+  border-color: var(--gold-deep);
+}
+
+.flow-step.is-current {
+  color: var(--gold-hi);
+}
+
+.flow-step.is-current .flow-step__name {
+  box-shadow: 0 2px 0 var(--gold);
+}
+
+.flow-step.is-current .flow-step__mark {
+  border-color: var(--gold);
+  background: var(--gold);
+  color: var(--on-gold);
+}
+
+.flow-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.flow-foot__note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--type-ui-sm-size);
+  line-height: var(--type-ui-sm-line);
+  color: var(--ink-body);
+}
+
+.flow-foot__note--refused {
+  color: var(--rot);
+}
+
+.flow-foot__buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.flow-foot__gap {
+  flex: 1;
+}
+
+.flow-foot .button[aria-disabled="true"] {
+  opacity: 0.5;
+}

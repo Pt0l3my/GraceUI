@@ -3,7 +3,8 @@
 // grace-dev takes: pages.json and settings.json, and optionally topics.json and paged.json. The check opens GraceUI's
 // built browser view (npm run build first) over GraceUI's fake host with the folder's fixtures. For this PC's browser
 // and a paired device, and for each switch a page is shown with, it prints what the view shows: the rail, and each
-// page as its text reads (its gate first, then the page behind it), in both themes for the contrast check. It fails,
+// page as its text reads (its gate first, then the page behind it), in both themes for the contrast check; and each
+// flow (D278) as the player meets it, a load whose state says start landing on it, step by step. It fails,
 // naming each, on a console error, a CSP violation, a request outside the page's origin or a text under 4.5:1. The
 // printed dump is a consumer's golden: --golden <file> compares with it and --update writes it. Nothing it prints names
 // the folder or any path (PV3).
@@ -150,8 +151,13 @@ async function pageText(page: PwPage, host: FakeHost, category: string, id: stri
     await gate.first().click();
     await page.locator(`main.page[data-page="${id}"]`).waitFor({ timeout: 5000 });
   }
-  // Every topic's first body (the page's subscriptions all sent and answered), then the page's text once it has held
-  // still for 400 ms (at most 10 s), however loaded the machine, so that the dump never catches a page half drawn.
+  out.push(`page ${id}:`, ...await textOf(page, host, id));
+  return out;
+}
+
+/** Every topic's first body (the page's subscriptions all sent and answered), then the page's text once it has held
+ * still for 400 ms (at most 10 s), however loaded the machine, so that the dump never catches a page half drawn. */
+async function textOf(page: PwPage, host: FakeHost, id: string): Promise<string[]> {
   await settled(page, host);
   const main = page.locator(`main.page[data-page="${id}"]`).first();
   let text = (await main.innerText()) ?? "";
@@ -161,11 +167,70 @@ async function pageText(page: PwPage, host: FakeHost, category: string, id: stri
     still = now === text ? still + 1 : 0;
     text = now;
   }
-  out.push(`page ${id}:`);
-  for (const line of text.split("\n").map(squash).filter((l) => l !== "")) {
-    out.push(`  ${line}`);
+  return text.split("\n").map(squash).filter((l) => l !== "").map((line) => `  ${line}`);
+}
+
+/** A space's flows (D278), each as the player meets it: a load whose state says start lands on it; then each of its
+ * steps as the space would publish it, its text and, in both themes, its contrast. */
+async function flows(browser: PwBrowser, data: FixtureSpaceData, problems: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const flow of data.pages.pages) {
+    if (flow.flow === undefined) {
+      continue;
+    }
+    const topic = flow.flow.topic;
+    const state = { ...((data.topics?.[topic] ?? {}) as JsonObject) };
+    const asking: FixtureSpaceData = { ...data, topics: { ...data.topics, [topic]: { ...state, start: true } } };
+    const host = await startHost(DIST, [builtin("graceui"), asking]);
+    const opened = await openPage(browser, host);
+    try {
+      const { page } = opened;
+      try {
+        await page.locator(`main.page[data-page="${flow.id}"]`).waitFor({ timeout: 10000 });
+      } catch {
+        out.push(`page ${flow.id}: did not land`);
+        problems.push(`flow ${flow.id}: a load whose state says start does not land on it`);
+        continue;
+      }
+      await settled(page, host);
+      for (const theme of ["grace", "clear"]) {
+        if (theme === "clear") {
+          const toggle = page.locator("[data-shortcut='ui.menu.theme']");
+          if ((await toggle.count()) === 0) {
+            break;
+          }
+          await toggle.first().click();
+          await page.waitForFunction(() => document.documentElement.dataset.theme === "clear");
+        }
+        for (const step of flow.tabs ?? []) {
+          host.push(data.pages.space, topic, { ...state, step: step.id });
+          try {
+            await page.locator(`.flow-step.is-current[data-step="${step.id}"]`).waitFor({ timeout: 5000 });
+          } catch {
+            problems.push(`flow ${flow.id}: step ${step.id} is not shown when its state names it`);
+            continue;
+          }
+          const lines = await textOf(page, host, flow.id);
+          if (theme === "grace") {
+            out.push(`page ${flow.id}#${step.id}:`, ...lines);
+          }
+          for (const faint of await lowContrast(page)) {
+            problems.push(`flow ${flow.id}, ${theme} theme, step ${step.id}: under 4.5:1: ${faint}`);
+          }
+        }
+      }
+      for (const v of await violations(page)) {
+        problems.push(`flow ${flow.id}: CSP violation: ${v}`);
+      }
+      for (const p of opened.problems) {
+        problems.push(`flow ${flow.id}: ${p}`);
+      }
+    } finally {
+      await opened.close();
+      await host.close();
+    }
   }
-  return out;
+  return out.length > 0 ? ["== this PC's browser, its flows", ...out] : out;
 }
 
 async function view(browser: PwBrowser, data: FixtureSpaceData, as: "browser" | "device", label: string,
@@ -235,6 +300,7 @@ async function main(): Promise<number> {
   try {
     dump.push(...await view(browser, data, "browser", "this PC's browser", problems));
     dump.push(...await view(browser, data, "device", "a paired device", problems));
+    dump.push(...await flows(browser, data, problems));
     for (const key of switches) {
       const setting = data.settings.settings.find((s) => s.key === key);
       const now = setting?.default === true ? "off" : "on";

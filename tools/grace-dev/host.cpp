@@ -459,6 +459,92 @@ struct DevHost::Live {
     return "";
   }
 
+  // A flow's page whose command this is (D278), or null.
+  const protocol::Page* flow_of(std::string_view command) const {
+    for (const protocol::Page& p : data.pages.pages) {
+      if (p.flow && p.flow->command == command && p.tabs && !p.tabs->empty()) {
+        return &p;
+      }
+    }
+    return nullptr;
+  }
+
+  // A flow's command with no reaction of the scenario's (D278): grace-dev moves the flow as a space would, from the step
+  // the view showed: next to the step after it, that step done; skip to it, left undone; back to the step before; done,
+  // on the last step, that step done and start false. Each publishes the flow's state anew, its blocked words gone; a
+  // view that showed another step than the state's is answered conflict.
+  bool move_flow(const protocol::Page& page, const Json& args, protocol::ErrorCode& code, std::string& why) {
+    const auto& tabs = *page.tabs;
+    const auto text = [&](const char* name) {
+      return args.is_object() && args.contains(name) && args[name].is_string() ? args[name].get<std::string>()
+                                                                              : std::string();
+    };
+    const std::string step = text("step");
+    const std::string go = text("go");
+    std::size_t at = tabs.size();
+    for (std::size_t i = 0; i < tabs.size(); ++i) {
+      if (tabs[i].id == step) {
+        at = i;
+      }
+    }
+    StateTopic& topic = states[page.flow->topic];
+    Json body = topic.has_body && topic.body.is_object() ? topic.body : Json::object();
+    const std::string now = body.contains("step") && body["step"].is_string() ? body["step"].get<std::string>()
+                                                                               : tabs.front().id;
+    code = protocol::ErrorCode::not_now;
+    if (at == tabs.size()) {
+      code = protocol::ErrorCode::invalid_value;
+      why = "That step is not one of this flow's.";
+      return false;
+    }
+    if (step != now) {
+      code = protocol::ErrorCode::conflict;
+      why = "Changed elsewhere since you opened it.";
+      return false;
+    }
+    std::vector<std::string> done;
+    if (body.contains("done") && body["done"].is_array()) {
+      for (const Json& d : body["done"]) {
+        if (d.is_string()) {
+          done.push_back(d.get<std::string>());
+        }
+      }
+    }
+    const auto mark = [&](const std::string& id) {
+      if (std::find(done.begin(), done.end(), id) == done.end()) {
+        done.push_back(id);
+      }
+    };
+    const bool last = at + 1 == tabs.size();
+    if ((go == "next" || go == "skip") && !last) {
+      if (go == "next") {
+        mark(step);
+      }
+      body["step"] = tabs[at + 1].id;
+    } else if (go == "back" && at > 0) {
+      body["step"] = tabs[at - 1].id;
+    } else if (go == "done" && last) {
+      mark(step);
+      body["start"] = false;
+    } else {
+      why = "Not possible on this step.";
+      return false;
+    }
+    Json list = Json::array();
+    for (const std::string& d : done) {
+      list.push_back(d);
+    }
+    body["done"] = std::move(list);
+    body.erase("blocked");
+    topic.body = std::move(body);
+    topic.has_body = true;
+    ++topic.rev;
+    if (is_watched(page.flow->topic)) {
+      publish_state(page.flow->topic);
+    }
+    return true;
+  }
+
   void command(const serve::SpaceEvent& event) {
     protocol::Result result;
     std::string label = event.command;
@@ -505,6 +591,15 @@ struct DevHost::Live {
         refuse(reaction->error, reaction->detail);
       }
       done = ", the scenario's reaction";
+    } else if (const protocol::Page* flow = flow_of(event.command); flow != nullptr) {
+      protocol::ErrorCode code{};
+      std::string why;
+      if (move_flow(*flow, event.args, code, why)) {
+        result.ok = true;
+        done = ", the flow moved";
+      } else {
+        refuse(code, why);
+      }
     } else {
       result.ok = true;  // a space's own command with no reaction: ok, and nothing changes
     }
