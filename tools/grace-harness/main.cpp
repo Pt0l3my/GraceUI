@@ -9530,18 +9530,27 @@ void run_bindings(const std::wstring& dll) {
   std::size_t before_lines = 0;
   const bool now_ok = lines_ok(now, now_lines);
   const bool before_ok = lines_ok(before, before_lines);
-  // The write session alone captured F8; the read session alone reset every hotkey.
-  const bool before_is_write = before.find("hotkey tide-table: key F8") != std::string::npos &&
-                               before.find("every hotkey is back") == std::string::npos;
-  const bool now_is_read = now.find("2 hotkey bindings kept") != std::string::npos &&
-                           now.find("every hotkey is back") != std::string::npos &&
-                           now.find("hotkey tide-table: key F8") == std::string::npos;
-  check(now_ok && before_ok && before_is_write && now_is_read, "bindings: GraceUI's log file",
-        "user\\graceui.log: %zu line(s), %s, %s; graceui-previous.log: %zu line(s), %s, %s", now_lines,
-        now_ok ? "each GraceUI's own and naming no place" : "NOT ALL GRACEUI'S OWN OR ONE NAMES A PLACE",
-        now_is_read ? "the read session's" : "NOT THE READ SESSION'S", before_lines,
+  // The read session's lines end graceui.log; the write session's are kept, in graceui-previous.log, or before the
+  // read session's in graceui.log where the previous file could not be replaced (in the full run, the harness's own
+  // GraceUI holds it open, and Wine replaces no file another process holds). The write session alone captured F8; the
+  // read session alone reset every hotkey.
+  const std::size_t last_start = now.rfind(" starting (ABI ");  // GraceUI's first line of a session
+  const std::size_t line_start = last_start == std::string::npos ? std::string::npos : now.rfind('\n', last_start);
+  const std::size_t read_from = line_start == std::string::npos ? 0 : line_start + 1;
+  const std::string read_part = now.substr(read_from);
+  const std::string earlier = before + now.substr(0, read_from);
+  const bool read_last = read_part.find("2 hotkey bindings kept") != std::string::npos &&
+                         read_part.find("every hotkey is back") != std::string::npos &&
+                         read_part.find("hotkey tide-table: key F8") == std::string::npos;
+  const bool write_kept = earlier.find("hotkey tide-table: key F8") != std::string::npos;
+  const bool appended = read_from > 0;
+  check(now_ok && before_ok && read_last && write_kept, "bindings: GraceUI's log file",
+        "user\\graceui.log: %zu line(s), %s, %s%s; graceui-previous.log: %zu line(s), %s; the write session's lines %s",
+        now_lines, now_ok ? "each GraceUI's own and naming no place" : "NOT ALL GRACEUI'S OWN OR ONE NAMES A PLACE",
+        read_last ? "ending with the read session's" : "NOT ENDING WITH THE READ SESSION'S",
+        appended ? " (after earlier sessions': the previous file was held)" : "", before_lines,
         before_ok ? "each GraceUI's own and naming no place" : "NOT ALL GRACEUI'S OWN OR ONE NAMES A PLACE",
-        before_is_write ? "the write session's" : "NOT THE WRITE SESSION'S");
+        write_kept ? "kept" : "LOST");
 }
 
 // ---- A wait handle for each mod's events (D212, ABI 1.5): set once when asked for, then whenever something is kept for

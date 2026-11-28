@@ -13,7 +13,7 @@ another listener of Windows' debug output shows them. Lines the ring overwrote b
 line of their own: "‹n› lines were not passed to the debugger".
 
 Since GraceUI 0.2.74 the same lines go to a file too (D84, D282): `Game\GraceUI\user\graceui.log`, this session's, and
-`graceui-previous.log`, the session before, kept for a report about a session that ended badly. The file is opened at
+`graceui-previous.log`, the session before, kept for a report about a session that ended badly. If the previous file cannot be replaced (an editor holding it open), this session's lines follow the last session's in `graceui.log`, after a line that says so: no session's log is lost. The file is opened at
 GraceUI's first line of the session, the one before moved aside then, and holds at most 1 MiB (EST): past it, one line
 says so and later lines go to the debugger alone. A line that seems to name a place on the player's PC (a drive, a
 share, a home folder) is left out of the file, and a line says one was. The files stay in `user\` across GraceUI's

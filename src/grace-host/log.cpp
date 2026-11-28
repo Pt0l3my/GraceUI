@@ -46,6 +46,8 @@ void to_debugger_alone(const char* why) noexcept {
   OutputDebugStringA(line);
 }
 
+void to_file(std::string_view text) noexcept;
+
 // Opens the session's file at the first drain, the last session's moved aside; off for the session if it cannot.
 void open_file() noexcept {
   g_file_state = FileState::off;
@@ -59,15 +61,32 @@ void open_file() noexcept {
     std::error_code error;
     std::filesystem::create_directories(user, error);
     const std::filesystem::path path = user / L"graceui.log";
-    // The last session's, for a report about it (a session that fell): kept once, the one before it replaced.
-    MoveFileExW(path.c_str(), (user / L"graceui-previous.log").c_str(), MOVEFILE_REPLACE_EXISTING);
-    g_file = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, CREATE_ALWAYS,
-                         FILE_ATTRIBUTE_NORMAL, nullptr);
+    const std::filesystem::path previous = user / L"graceui-previous.log";
+    // The last session's, for a report about it (a session that fell): kept once, the one before it replaced. Never
+    // lost: if it cannot be moved aside (the previous file held open by an editor that shares no deletion), this
+    // session's lines follow it in the same file, after a line that says so.
+    bool moved = MoveFileExW(path.c_str(), previous.c_str(), MOVEFILE_REPLACE_EXISTING) != 0 ||
+                 GetLastError() == ERROR_FILE_NOT_FOUND;
+    if (!moved) {
+      DeleteFileW(previous.c_str());
+      moved = MoveFileExW(path.c_str(), previous.c_str(), MOVEFILE_REPLACE_EXISTING) != 0 ||
+              GetLastError() == ERROR_FILE_NOT_FOUND;
+    }
+    g_file = CreateFileW(path.c_str(), moved ? GENERIC_WRITE : FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE,
+                         nullptr, moved ? CREATE_ALWAYS : OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (g_file == INVALID_HANDLE_VALUE) {
       to_debugger_alone("could not be opened");
       return;
     }
     g_file_state = FileState::open;
+    if (!moved) {
+      LARGE_INTEGER size{};
+      g_file_bytes = GetFileSizeEx(g_file, &size) ? static_cast<std::uint64_t>(size.QuadPart) : 0;
+      char line[128];
+      std::snprintf(line, sizeof line, "%sthe last session's log could not be moved aside: this session's follows it\n",
+                    kPrefix);
+      to_file(line);
+    }
   } catch (...) {
     to_debugger_alone("could not be opened");
   }
