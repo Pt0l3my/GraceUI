@@ -280,7 +280,7 @@ A draw list is in Dear ImGui's default `ImDrawVert` layout (position, texture co
 with 16-bit indices relative to each command's own vertex range and commands that each name a clip rectangle within
 the panel, a texture and their ranges. Its coordinates are the panel's own pixels, its top-left corner at 0,0; GraceUI
 moves the list where the anchor puts the panel. The checks, the bounds and a mod's own headless Dear ImGui are in
-Panels and your own Dear ImGui (*to come*).
+[Panels and your own Dear ImGui](panels.md).
 
 - **`register_texture(consumer, &texture, &texture_id)`**: in the mod's registration window, `GRACEUI_TEXTURE_RGBA8`
   (four bytes a pixel, R first, straight alpha), `row_bytes` at least `width` × 4, each side at most 4096, its pixels
