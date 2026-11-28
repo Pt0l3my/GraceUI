@@ -50,6 +50,7 @@
 #include "graceui_sys.hpp"
 #include "graceui_test.h"
 #include "hello_debug_view.h"
+#include "hello_space.h"
 #include "grace_spike.h"
 #include "hello_panel.h"
 
@@ -11138,6 +11139,167 @@ int run_child(const std::wstring& dll, const wchar_t* scenario, std::wstring pro
   return static_cast<int>(code);
 }
 
+// ---- D283: the fourth example mod, hello-space: a space of its own, its pages compiled from its space.toml by
+// GraceUI's page tool at its build, in both views. Its count's step is changed in the in-game menu, its count in the
+// browser; it refuses in its own words a step out of its bounds, and its log keeps each change.
+
+std::wstring hello_space_path() { return folder_of_this_program() + L"hello-space.dll"; }
+
+void run_hello_space(const std::wstring& dll) {
+  namespace io = grace::serve::iotest;
+  using grace::protocol::Json;
+  DeleteFileW(settings_file_of(dll).c_str());  // GraceUI's own settings as a first session's
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  start_host(game, grace);
+  until_atlas(game, grace);
+
+  // 1. The example, loaded once the hooks are in, finds GraceUI, connects and registers its space for both views:
+  // GraceUI's server starts for it.
+  if (LoadLibraryW(hello_space_path().c_str()) == nullptr) {
+    fatal("hello-space.dll did not load");
+  }
+  bool connected = false;
+  GraceUiTestServer server = grace.server();
+  for (int i = 0; i < 250 && !(connected && server.running == 1 && server.spaces == 1); ++i) {
+    frames(game, 1);
+    Sleep(20);
+    for (const GraceUiTestConsumer& consumer : grace.consumers()) {
+      connected = connected || std::string_view(consumer.id) == HELLO_SPACE_ID;
+    }
+    server = grace.server();
+  }
+  check(connected && server.running == 1 && server.spaces == 1, "hello-space: connects and registers its space",
+        "the example %s; the server %s on port %u with %u space(s)", connected ? "connected" : "DID NOT CONNECT",
+        server.running != 0 ? "runs" : "DOES NOT RUN", server.port, server.spaces);
+  if (!connected || server.running == 0) {
+    grace.print_log();
+    return;
+  }
+
+  // 2. F5 opens the menu on its page; the mod builds its status once the menu watches it, and the page draws it.
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  const bool first = until_shows(game, grace, HELLO_SPACE_FIRST_SENTENCE);
+  menu = grace.menu();
+  check(menu.open == 1 && std::strcmp(menu.page, HELLO_SPACE_PAGE) == 0 && first && menu_says(grace, "None yet"),
+        "hello-space: its page in game", "F5: the menu %s on %s; its status %s", menu.open == 1 ? "open" : "NOT OPEN",
+        menu.page, first ? "drawn" : "NOT DRAWN");
+
+  // 3. In game, → on Step: the mod takes the game's settings.set, checks it and keeps it, and its sentence follows.
+  const bool on_step = down_to(game, grace, window, "setting:" HELLO_SPACE_STEP);
+  const std::uint64_t lists = grace.menu().lists;
+  press(window, VK_RIGHT, 0x4D);
+  menu_after(game, grace, lists);
+  const bool stepped = until_shows(game, grace, "Add puts 2 on it.");
+  check(on_step && stepped, "hello-space: its setting changed in game",
+        "↓ to Step %s; →: the mod's sentence %s", on_step ? "focused" : "NOT FOCUSED",
+        stepped ? "says \"Add puts 2 on it.\"" : "DID NOT FOLLOW");
+  press(window, VK_F5, kScanF5);
+  faded_out(game, grace);
+
+  // 4. The browser: its status as the game left it; Add, as the mod's own command, answered and published.
+  io::start_client_network();
+  const auto port = static_cast<std::uint16_t>(server.port);
+  const io::Reply page = io::request(port, io::page_load(port));
+  const std::string cookie = io::cookie_from(page);
+  const std::string ticket = cookie.empty() ? std::string() : io::fetch_ticket(port, cookie);
+  io::WsClient view;
+  const bool joined = !ticket.empty() && view.join(port, cookie, ticket);
+  // One reader for both: until the result of command `id` (none for 0) and the status sentence `want` (none for "")
+  // have come, at most 5 s. The mod publishes its status before it answers, so a state may come before its result.
+  std::string sentence;  // the newest status sentence the view was sent
+  const auto await = [&](int id, std::string_view want) {
+    Json result;
+    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < end && ((id != 0 && result.is_null()) || (!want.empty() && sentence != want))) {
+      const std::optional<Json> frame = view.next_json(std::chrono::milliseconds(500));
+      if (!frame || !frame->is_object()) {
+        continue;
+      }
+      const std::string kind = frame->value("t", "");
+      if (kind == "result" && frame->value("id", -1) == id) {
+        result = *frame;
+      } else if (kind == "state" && frame->value("topic", "") == HELLO_SPACE_STATUS && frame->contains("body") &&
+                 (*frame)["body"].is_object() && (*frame)["body"].value("sentence", Json()).is_string()) {
+        sentence = (*frame)["body"]["sentence"].get<std::string>();
+      }
+    }
+    return result;
+  };
+  const auto member = [](const Json& result, const char* name) {  // "" for a result that never came, or has none
+    return result.is_object() && result.contains(name) && result[name].is_string() ? result[name].get<std::string>()
+                                                                                    : std::string();
+  };
+  const auto ok = [](const Json& result) { return result.is_object() && result.value("ok", false); };
+  const auto said = [](const Json& result) { return result.is_null() ? std::string("NOTHING") : result.dump(); };
+  if (joined) {
+    view.send_json({{"v", 1}, {"t", "sub"}, {"space", HELLO_SPACE_ID}, {"id", 1}, {"topic", HELLO_SPACE_STATUS}});
+  }
+  const std::string want_first = "The count is 0, and nothing has changed it yet. Add puts 2 on it.";
+  await(0, want_first);
+  const std::string as_left = sentence;
+  view.send_json({{"v", 1}, {"t", "cmd"}, {"space", HELLO_SPACE_ID}, {"id", 2}, {"name", HELLO_SPACE_ADD},
+                  {"args", Json::object()}});
+  const std::string want_added = "The count is 2, last changed in the browser. Add puts 2 on it.";
+  const Json added = await(2, want_added);
+  const std::string after_add = sentence;
+  check(joined && as_left == want_first && ok(added) && after_add == want_added,
+        "hello-space: its command from the browser",
+        "the WebSocket %s; its status \"%s\"; Add answered %s, then \"%s\"", joined ? "joined" : "REFUSED",
+        as_left.c_str(), said(added).c_str(), after_add.c_str());
+
+  // 5. Its own refusal: a step of 11 from the browser, which GraceUI passes on, since a setting's bounds are the space's
+  // to check; refused in the mod's words, the step kept. Reset with no confirm: refused by GraceUI itself, the mod never
+  // hearing of it, as the page marks Reset destructive; confirmed, done.
+  view.send_json({{"v", 1}, {"t", "cmd"}, {"space", HELLO_SPACE_ID}, {"id", 3}, {"name", "settings.set"},
+                  {"args", {{"key", HELLO_SPACE_STEP}, {"value", 11}}}});
+  const Json too_big = await(3, "");
+  view.send_json({{"v", 1}, {"t", "cmd"}, {"space", HELLO_SPACE_ID}, {"id", 4}, {"name", HELLO_SPACE_RESET},
+                  {"args", Json::object()}});
+  const Json unconfirmed = await(4, "");
+  view.send_json({{"v", 1}, {"t", "cmd"}, {"space", HELLO_SPACE_ID}, {"id", 5}, {"name", HELLO_SPACE_RESET},
+                  {"args", {{"confirm", true}}}});
+  const std::string want_reset = "The count is 0, last changed in the browser. Add puts 2 on it.";
+  const Json reset = await(5, want_reset);
+  const std::string after_reset = sentence;
+  check(member(too_big, "error") == "invalid_value" && member(too_big, "detail") == HELLO_SPACE_STEP_REFUSED &&
+            member(unconfirmed, "error") == "confirm_required" && unconfirmed.is_object() &&
+            !unconfirmed.contains("detail") && ok(reset) && after_reset == want_reset,
+        "hello-space: its own refusal, GraceUI's, then a confirmed reset",
+        "a step of 11: %s; Reset with no confirm: %s; confirmed: %s, then \"%s\"", said(too_big).c_str(),
+        said(unconfirmed).c_str(), said(reset).c_str(), after_reset.c_str());
+
+  // 6. Its log, watched from the start: a line for each change, the mod's own words, as rows of its stream.
+  view.send_json({{"v", 1}, {"t", "sub"}, {"space", HELLO_SPACE_ID}, {"id", 6}, {"topic", HELLO_SPACE_LOG}, {"since", 0}});
+  std::vector<std::string> lines;
+  const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (lines.size() < 2 && std::chrono::steady_clock::now() < end) {
+    const std::optional<Json> rows = view.next_of("rows", std::chrono::milliseconds(500));
+    if (rows && (*rows)["topic"] == HELLO_SPACE_LOG && (*rows)["rows"].is_array()) {
+      for (const Json& row : (*rows)["rows"]) {
+        const std::string line = row.value("line", "");
+        if (std::find(lines.begin(), lines.end(), line) == lines.end()) {
+          lines.push_back(line);
+        }
+      }
+    }
+  }
+  std::string said;
+  for (const std::string& line : lines) {
+    said += (said.empty() ? "\"" : ", \"") + line + "\"";
+  }
+  check(lines == std::vector<std::string>{"Added 2 in the browser: 2.", "Reset in the browser."},
+        "hello-space: its log", "its rows: %s", said.empty() ? "NONE" : said.c_str());
+  grace.print_log();
+  DeleteFileW(settings_file_of(dll).c_str());
+}
+
 // ---- S10.4.d: two example mods at once, each way round (D156): hello-notice and hello-debug-view, the one loaded
 // before GraceUI and the other after it, then the other way round in a second process. The debug view is EldenNet's
 // banner and F11 view in miniature: a banner notice under its own key, and a panel on its own headless Dear ImGui that
@@ -11477,6 +11639,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"absent") {
     std::printf("-- scenario: graceui-sys with GraceUI not installed\n");
     run_absent();
+  } else if (scenario == L"hello-space") {
+    std::printf("-- scenario: the fourth example mod's space, in game and in the browser (D283)\n");
+    run_hello_space(dll);
   } else if (scenario == L"examples") {
     std::printf("-- scenario: hello-notice before GraceUI, hello-debug-view after\n");
     run_examples(dll, true);
@@ -11515,6 +11680,7 @@ int wmain(int argc, wchar_t** argv) {
       run(L"anti-cheat-recheck", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());
       run(L"pairing", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());  // G9: the app's page
       run(L"free-port", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());  // D234
+      run(L"hello-space", folder_of_this_program() + L"..\\GraceUI\\graceui.dll", this_program());  // D283
       DeleteFileW(settings_file_of(folder_of_this_program() + L"..\\GraceUI\\graceui.dll").c_str());  // D179: none left
       // found-by-path runs from a folder of its own, as a game's folder: the harness, the example, and GraceUI in
       // GraceUI\graceui.dll, which nothing else loads.

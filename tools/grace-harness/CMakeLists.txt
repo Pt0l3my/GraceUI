@@ -12,8 +12,8 @@ target_compile_definitions(grace_harness PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UN
   GRACE_BUILD_MAJOR=${PROJECT_VERSION_MAJOR} GRACE_BUILD_MINOR=${PROJECT_VERSION_MINOR}
   GRACE_BUILD_PATCH=${PROJECT_VERSION_PATCH})
 target_include_directories(grace_harness PRIVATE ${CMAKE_SOURCE_DIR}/examples/hello-panel  # what the examples draw
-  ${CMAKE_SOURCE_DIR}/examples/hello-debug-view ${CMAKE_SOURCE_DIR}/tools/grace-spike)
-add_dependencies(grace_harness graceui hello_notice hello_panel hello_debug_view grace_harness_shield grace_spike
+  ${CMAKE_SOURCE_DIR}/examples/hello-debug-view ${CMAKE_SOURCE_DIR}/examples/hello-space ${CMAKE_SOURCE_DIR}/tools/grace-spike)
+add_dependencies(grace_harness graceui hello_notice hello_panel hello_debug_view hello_space grace_harness_shield grace_spike
   grace_standin grace_harness_steam)
 gu_own_code(grace_harness)
 if(MINGW)

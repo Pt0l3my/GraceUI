@@ -149,7 +149,8 @@ answer comes.
 
 A destructive action has a confirmation and sends `"confirm": true`; a destructive command needs `confirm: true` and an
 exact target (§7.3). A command without the `confirm` it needs is answered `confirm_required`, and the view shows its
-confirmation. A row action's `confirm_required` answer with words in its `detail` is asked as that question (the browser's confirm dialog,
+confirmation. GraceUI answers that itself for a command a destructive action sends, from every view, before the space
+hears of it; a space still checks `confirm` on its own destructive commands. A row action's `confirm_required` answer with words in its `detail` is asked as that question (the browser's confirm dialog,
 the game's modal with Enter) and sent again with `confirm` (1.4, D209). An action's `confirm_after_ms` makes its second
 press count only after a wait of up to 3000 ms (1.21, D274). `settings.reset` of a page or all needs `confirm: true`.
 

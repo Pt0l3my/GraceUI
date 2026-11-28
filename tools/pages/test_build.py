@@ -4,9 +4,15 @@ page lint fails on a space seeded to break it.
 
     python3 -I -m unittest discover -s tools/pages
 """
+import contextlib
 import copy
+import io
+import json
 import pathlib
+import re
+import shutil
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -684,6 +690,122 @@ class Seeded(unittest.TestCase):
                 build.documents(bad, SCHEMA)
         finally:
             bad.unlink()
+
+
+EXAMPLE = build.ROOT / "examples" / "hello-space" / "space"
+
+
+def run_quietly(argv):
+    """build.run with its output kept: (status, what it printed to stdout and stderr)."""
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        status = build.run(argv)
+    return status, out.getvalue() + err.getvalue()
+
+
+def header_arrays(text):
+    """The char arrays of a header --build wrote, decoded: {NAME: bytes}, each checked against its _LENGTH."""
+    arrays = {}
+    for name, body in re.findall(r"static const char (\w+)\[\d+\] = \{([^}]*)\};", text):
+        data = bytes(int(b, 16) for b in re.findall(r"0x([0-9a-f]{2})", body))
+        length = re.search(rf"#define {name}_LENGTH (\d+)u", text)
+        assert length and int(length.group(1)) == len(data), name
+        arrays[name] = data
+    return arrays
+
+
+class BuildOne(unittest.TestCase):  # D283: --build, a mod's space compiled
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+
+    def copy_example(self):
+        source = self.dir / "src"
+        shutil.copytree(EXAMPLE, source)
+        return source
+
+    def test_the_example_builds_and_its_outputs_hold(self):
+        out, header = self.dir / "space", self.dir / "hello_space_data.h"
+        args = ["--build", str(EXAMPLE / "space.toml"), "--out", str(out), "--header", str(header)]
+        status, printed = run_quietly(args)
+        self.assertEqual(status, 0, printed)
+        pages = json.loads((out / "pages.json").read_text(encoding="utf-8"))
+        settings = json.loads((out / "settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(pages["space"], "hello-space")
+        self.assertEqual(pages["minor"], SCHEMA["protocol"]["minor"])
+        arrays = header_arrays(header.read_text(encoding="ascii"))
+        self.assertEqual(set(arrays), {"HELLO_SPACE_PAGES", "HELLO_SPACE_SETTINGS"})
+        self.assertEqual(json.loads(arrays["HELLO_SPACE_PAGES"]), pages)
+        self.assertEqual(json.loads(arrays["HELLO_SPACE_SETTINGS"]), settings)
+        self.assertTrue(all(b < 0x80 for b in arrays["HELLO_SPACE_PAGES"]))  # ASCII: no narrowing in a C++ char
+        self.assertEqual(run_quietly(args + ["--check"])[0], 0)
+        (out / "settings.json").write_text("{}\n", encoding="utf-8")
+        status, printed = run_quietly(args + ["--check"])
+        self.assertEqual(status, 1)
+        self.assertIn("settings.json is not what", printed)
+
+    def test_the_minor_named(self):
+        out = self.dir / "space"
+        base = ["--build", str(EXAMPLE / "space.toml"), "--out", str(out)]
+        self.assertEqual(run_quietly(base + ["--minor", "21"])[0], 0)
+        self.assertEqual(json.loads((out / "pages.json").read_text(encoding="utf-8"))["minor"], 21)
+        newest = SCHEMA["protocol"]["minor"]
+        for minor in (newest + 1, -1):
+            status, printed = run_quietly(base + ["--minor", str(minor)])
+            self.assertEqual(status, 1)
+            self.assertIn(f"0 to {newest}", printed)
+
+    def test_a_builtin_space_is_not_a_mods(self):
+        status, printed = run_quietly(["--build", str(build.SPACES / "demo" / "space.toml"), "--out", str(self.dir)])
+        self.assertEqual(status, 1)
+        self.assertIn("one of GraceUI's own", printed)
+
+    def test_its_fixtures_are_linted_and_a_failure_writes_nothing(self):
+        source = self.copy_example()
+        fixtures = json.loads((source / "topics.json").read_text(encoding="utf-8"))
+        del fixtures["hello.log"]
+        (source / "topics.json").write_text(json.dumps(fixtures), encoding="utf-8")
+        out = self.dir / "space"
+        status, printed = run_quietly(["--build", str(source / "space.toml"), "--out", str(out)])
+        self.assertEqual(status, 1)
+        self.assertIn("hello.log", printed)
+        self.assertFalse(out.exists())
+
+    def test_the_lints_rules_hold(self):
+        source = self.copy_example()
+        text = (source / "space.toml").read_text(encoding="utf-8")
+        (source / "space.toml").write_text(text.replace('command = "hello.add"', 'command = "hello.double"'), "utf-8")
+        status, printed = run_quietly(["--build", str(source / "space.toml"), "--out", str(self.dir / "space")])
+        self.assertEqual(status, 1)
+        self.assertIn("hello.double", printed)
+
+    def test_its_options_go_together(self):
+        for argv in (["--build", str(EXAMPLE / "space.toml")], ["--out", str(self.dir)], ["--minor", "3"],
+                     ["--build", str(EXAMPLE / "space.toml"), "--out", str(self.dir), "--lint", "x.toml"],
+                     ["--build", ""], ["--build", "", "--out", str(self.dir)], ["--out", ""], ["--header", ""]):
+            with self.assertRaises(SystemExit, msg=argv):  # never the built-in spaces' outputs rewritten instead
+                run_quietly(argv)
+
+    def test_a_header_name_never_starts_with_a_digit(self):
+        self.assertEqual(build.c_name("hello-space"), "HELLO_SPACE")
+        self.assertEqual(build.c_name("3d-map"), "SPACE_3D_MAP")
+        source = self.copy_example()
+        text = (source / "space.toml").read_text(encoding="utf-8")
+        (source / "space.toml").write_text(text.replace('id = "hello-space"', 'id = "3d-map"'), "utf-8")
+        header = self.dir / "map.h"
+        status, printed = run_quietly(["--build", str(source / "space.toml"), "--out", str(self.dir / "space"),
+                                       "--header", str(header)])
+        self.assertEqual(status, 0, printed)
+        self.assertEqual(set(header_arrays(header.read_text(encoding="ascii"))), {"SPACE_3D_MAP_PAGES",
+                                                                                  "SPACE_3D_MAP_SETTINGS"})
+        self.assertIn("#ifndef SPACE_3D_MAP_SPACE_DATA_H", header.read_text(encoding="ascii"))
+
+    def test_a_source_not_in_utf8_is_an_error_not_a_traceback(self):
+        source = self.copy_example()
+        (source / "topics.json").write_bytes(b'{"hello.status": "\xff"}')
+        status, printed = run_quietly(["--build", str(source / "space.toml"), "--out", str(self.dir / "space")])
+        self.assertEqual(status, 1)
+        self.assertIn("pages:", printed)
 
 
 if __name__ == "__main__":
