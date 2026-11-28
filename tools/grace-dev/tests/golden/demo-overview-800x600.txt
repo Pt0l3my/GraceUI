@@ -48,13 +48,15 @@ fill    ground.well   550,   6   78x20   r1
 text    ink.body      558,   9   61x14   glyphs 12 "Updates: Live"
 line    rule          167,  31  633x1   
 text    ink.hi        189,  49   88x25   clip1 glyphs 8 "Overview"
-stroke  edge          652,  50  126x22   r1 w1 clip1
-text    ink.hi        663,  53   68x15   clip1 glyphs 11 "Hush the bell"
-fill    ground.well   739,  53   28x15   r8 clip1
-stroke  edge          739,  53   28x15   r8 w1 clip1
-circle  ink.mute      741,  55   11x11   clip1
-fill    gold          555,  50   90x22   r1 clip1
-text    on.gold       566,  53   68x15   clip1 glyphs 11 "Trim the wick"
+stroke  edge          694,  50   84x22   r1 w1 clip1
+text    ink.hi        704,  53   62x15   clip1 glyphs 10 "Set up again"
+stroke  edge          560,  50  126x22   r1 w1 clip1
+text    ink.hi        571,  53   68x15   clip1 glyphs 11 "Hush the bell"
+fill    ground.well   646,  53   28x15   r8 clip1
+stroke  edge          646,  53   28x15   r8 w1 clip1
+circle  ink.mute      648,  55   11x11   clip1
+fill    gold          462,  50   90x22   r1 clip1
+text    on.gold       473,  53   68x15   clip1 glyphs 11 "Trim the wick"
 text    ink.mute      189,  77  291x14   clip1 glyphs 50 "The lantern at a glance: its flame, its oil and its last trim."
 line    rule.strong   189,  99  589x1    clip1
 diamond gold.deep     189,  96    6x6    w1 clip1
@@ -108,4 +110,4 @@ stroke  edge          380, 580   23x15   r1 w1
 text    ink.body      384, 581   15x14   glyphs 3 "Esc"
 text    ink.faint     407, 581   19x14   glyphs 4 "Back"
 stroke  gold.hi       569, 241  196x21   r3 w1 clip1
-# 109 items, 3788 vertices, 10170 indices, 4 commands; check_draw_list: passes
+# 111 items, 3876 vertices, 10446 indices, 4 commands; check_draw_list: passes

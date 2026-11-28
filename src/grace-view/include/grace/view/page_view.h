@@ -133,8 +133,19 @@ class PageView {
   std::vector<std::string> page_ids() const;
   // The space's page data as loaded.
   const protocol::SpacePages& space_pages() const noexcept { return pages_; }
-  // Opens a page (its first tab), focus on its first control; false for no such page, or one absent.
+  // Opens a page (its first tab; a flow's, the step its space publishes), focus on its first control; false for no such
+  // page, or one absent.
   bool open(std::string_view page_id);
+  // ---- Flows (D278). A page with a flow is outside the rail: its tabs are its steps, drawn as a strip of numbered
+  // names that takes no focus, and the step shown is the one its state topic names (`step`; the first while none or an
+  // unknown one is published), each in `done` checked, `blocked` the space's words beside Next, which waits for them.
+  // Under the step's sections: Back (not on the first step), Skip (on an optional step), and Next, or Done on the last,
+  // named "flow:back", "flow:skip", "flow:next" and "flow:done"; each sends the flow's command with {step, go} and
+  // takes no press until its answer (accepted() or refused(), by that name) or a new step. Done, answered, opens the
+  // flow's `then`, or the space's first page. Every present flow's state topic is watched with every page of its space.
+  // The flow whose state says `start` (a present one, the first in the page data), or empty: the host lands on it once
+  // a session, at an opening the player has not yet moved in.
+  std::string flow_to_land() const;
 
   // The frame and the open page at `viewport`, drawn with `fonts`' faces, into `out` (cleared first). It keeps the
   // focused control in view, scrolling the page as it must.
@@ -284,8 +295,9 @@ class PageView {
   // field's edit from the next even when one press ends the first and begins the second.
   Rect edit_box() const noexcept { return edit_box_; }
   std::uint64_t edit_serial() const noexcept { return edit_serial_; }
-  // A command the space accepted, by where its refusal's words would have gone: a form's fields clear (D195).
-  // A command the space took: a form's fields empty (D195); a report's Save, the space's words under it (D263).
+  // A command the space took, by where its refusal's words would have gone: a form's fields empty again (D195), a
+  // report's Save its words under it (D263); a flow's button takes presses again, Done opening the flow's next page,
+  // and an action that opens a page opens it if the page that sent it is still open (D278).
   void accepted(std::string_view where, std::string_view words = {});
   // A form field's text as the view holds it (tests).
   std::string form_value(std::string_view field) const;
@@ -362,7 +374,8 @@ class PageView {
                                         part,    // a report preview's optional part's switch (D251)
                                         paging,  // Show more, or "New rows · Show", of rows read a page at a time (D254)
                                         drawer,    // a table's row, its drawer opened with Enter (D256)
-                                        share };   // a report preview's Copy or Save (D263)
+                                        share,     // a report preview's Copy or Save (D263)
+                                        flow };    // a flow's Back, Skip, Next or Done (D278)
   struct Focus {
     FocusKind kind;
     std::string id;     // an action's, tab's or section's id, a setting's key, a related page, a cell's topic/key, a
@@ -588,6 +601,21 @@ class PageView {
   std::set<std::string, std::less<>> advanced_open_;
   std::size_t page_ = 0;
   std::size_t tab_ = 0;
+  // A flow (D278): a button's press waiting for its answer, which one; an action that opens a page, by where its answer
+  // goes ("action:<id>", or a section action's "<section>/<id>"): the page that sent it and the page it opens.
+  bool flow_waiting_ = false;
+  std::string flow_go_;
+  struct Opening {
+    std::string from;
+    std::string to;
+  };
+  std::map<std::string, Opening, std::less<>> opens_;
+  std::size_t flow_step() const;                 // the open flow's step the space publishes, or its first
+  bool flow_optional(std::size_t step) const;    // a step the flow may skip (never its last)
+  std::string flow_blocked() const;              // the space's words for what Next waits for, or empty
+  bool flow_follow(std::string_view topic);      // a flow's state came: its step shown; whether it moved
+  Action flow_press(const Focus& f);
+  void flow_done();                              // Done answered: the flow's `then`, or the space's first page
   std::vector<RailEntry> rail_;
   RailContext context_;
   std::vector<Focus> focus_;

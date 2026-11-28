@@ -41,6 +41,14 @@ bool up_to(PageView& view, std::string_view id) {
   return view.focused() == id;
 }
 
+// Down to an element (a flow's buttons, D278); false if never reached.
+bool down_to(PageView& view, std::string_view id) {
+  for (int i = 0; i < 64 && view.focused() != id; ++i) {
+    press(view, Key::down);
+  }
+  return view.focused() == id;
+}
+
 void golden(const std::string& name, const std::string& text) {
   const std::string path = std::string(GRACE_VIEW_GOLDEN) + "/" + name;
   if (const char* update = std::getenv("GRACE_UPDATE_GOLDEN"); update != nullptr && update[0] == '1') {
@@ -401,6 +409,110 @@ TEST_CASE("a destructive action asks for its second press; any other key lets it
   CHECK(a.command.args == Json::object({{"confirm", true}}));  // its confirmation, which the server requires (D173)
 }
 
+TEST_CASE("a flow (D278): the step its space publishes, Back, Skip, Next and Done, each pressed once until answered") {
+  PageView view = loaded("demo", "demo.setup");
+  CHECK(view.page() == "demo.setup");
+  // Nothing published yet: the first step. Its only control is Next, focused; no tab and no Back is a focus stop.
+  CHECK(view.focused() == "flow:next");
+  CHECK(!up_to(view, "tab:welcome"));
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  std::string dump = list.dump();
+  CHECK(dump.find("\"Welcome\"") != std::string::npos);  // the strip's names
+  CHECK(dump.find("\"Ready\"") != std::string::npos);
+  CHECK(dump.find("\"Next\"") != std::string::npos);
+  REQUIRE(down_to(view, "flow:next"));
+  Action a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.name == "setup.step");
+  CHECK(a.command.args == Json::object({{"step", Json("welcome")}, {"go", Json("next")}}));
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // one press until its answer
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  CHECK(list.dump().find("Working") != std::string::npos);
+  view.accepted("flow:next");
+  CHECK(press(view, Key::activate).kind == Action::Kind::command);  // answered: it takes presses again
+  // The space moves it: the step it names, its first control focused, and Back now.
+  view.set_topic("lantern.setup", Json::object({{"step", Json("flame")}, {"done", Json::array({Json("welcome")})}}));
+  CHECK(view.focused() == "shortcut:lantern.colour");
+  CHECK(down_to(view, "flow:next"));
+  press(view, Key::up);
+  CHECK(view.focused() == "flow:back");
+  a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.args == Json::object({{"step", Json("flame")}, {"go", Json("back")}}));
+  view.refused("flow:back", "Not now: the lantern is busy.");
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  CHECK(list.dump().find("Not now: the lantern is busy.") != std::string::npos);  // above its buttons
+  // An optional step offers Skip; what Next waits for, in the space's words, and Next takes no press.
+  view.set_topic("lantern.setup", Json::object({{"step", Json("trim")}, {"blocked", Json("Trim the wick first.")}}));
+  REQUIRE(down_to(view, "flow:next"));
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);
+  press(view, Key::up);
+  CHECK(view.focused() == "flow:skip");
+  a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.args == Json::object({{"step", Json("trim")}, {"go", Json("skip")}}));
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  CHECK(list.dump().find("Trim the wick first.") != std::string::npos);
+  // Page Up and Down, Q and E do nothing on a flow: its step is its space's.
+  press(view, Key::next_page);
+  press(view, Key::next_tab);
+  CHECK(view.page() == "demo.setup");
+  // The last step: Done, by the flow's own label; answered, the flow's then.
+  view.set_topic("lantern.setup", Json::object({{"step", Json("ready")}}));
+  CHECK(view.focused() == "flow:done");
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  CHECK(list.dump().find("\"Light it\"") != std::string::npos);
+  a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.args == Json::object({{"step", Json("ready")}, {"go", Json("done")}}));
+  view.accepted("flow:done");
+  CHECK(view.page() == "demo.overview");
+  // An unknown step shows the first; a narrow page names the step in words.
+  REQUIRE(view.open("demo.setup"));
+  view.set_topic("lantern.setup", Json::object({{"step", Json("dusk")}}));
+  CHECK(view.focused() == "flow:next");
+  view.layout(Viewport{640, 360, 1.0f}, test::fonts(), list);
+  CHECK(list.dump().find("Step 1 of 4") != std::string::npos);
+}
+
+TEST_CASE("a flow asks to be shown; an action opens a page once its space answers (D278)") {
+  PageView view = loaded("demo", "demo.overview");
+  CHECK(view.flow_to_land().empty());
+  view.set_topic("lantern.setup", Json::object({{"step", Json("welcome")}, {"start", Json(false)}}));
+  CHECK(view.flow_to_land().empty());
+  view.set_topic("lantern.setup", Json::object({{"step", Json("welcome")}, {"start", Json(true)}}));
+  CHECK(view.flow_to_land() == "demo.setup");
+  // Overview's Set up again: its command, then the flow, once answered on the page that sent it.
+  REQUIRE(up_to(view, "action:setup"));
+  Action a = press(view, Key::activate);
+  REQUIRE(a.kind == Action::Kind::command);
+  CHECK(a.command.name == "setup.restart");
+  CHECK(view.page() == "demo.overview");
+  view.accepted("action:setup");
+  CHECK(view.page() == "demo.setup");
+  // Refused: its words under the header, and nothing opens.
+  REQUIRE(view.open("demo.overview"));
+  REQUIRE(up_to(view, "action:setup"));
+  press(view, Key::activate);
+  view.refused("action:setup", "The lantern is lit already.");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  CHECK(list.dump().find("The lantern is lit already.") != std::string::npos);
+  view.accepted("action:setup");  // a stray answer after the refusal opens nothing
+  CHECK(view.page() == "demo.overview");
+  // Answered after the player has moved on: it stays where they are.
+  REQUIRE(up_to(view, "action:setup"));
+  press(view, Key::activate);
+  REQUIRE(view.open("demo.behaviour"));
+  view.accepted("action:setup");
+  CHECK(view.page() == "demo.behaviour");
+  // The flow is outside the rail: on it, the rail's focus goes to its category's row.
+  REQUIRE(view.open("demo.setup"));
+  press(view, Key::back);
+  CHECK(view.focused() == "rail:lanterns");
+}
+
 TEST_CASE("a locked setting does not change; a refusal returns focus with its reason") {
   PageView view = loaded("demo", "demo.festival");
   for (int i = 0; i < 40 && view.focused() != "setting:lantern.festival"; ++i) {
@@ -616,8 +728,13 @@ TEST_CASE("every page's rows in their focus order, the golden the web view's par
       const std::size_t tabs = page.tabs ? page.tabs->size() : 1;
       for (std::size_t t = 0; t < tabs; ++t) {
         PageView view = loaded(id, page.id);
-        for (std::size_t i = 0; i < t; ++i) {
-          press(view, Key::next_tab);
+        if (page.flow && page.tabs) {
+          // A flow's step is its space's to choose (D278): published, as the space would.
+          view.set_topic(page.flow->topic, Json::object({{"step", Json((*page.tabs)[t].id)}}));
+        } else {
+          for (std::size_t i = 0; i < t; ++i) {
+            press(view, Key::next_tab);
+          }
         }
         const auto& sections = page.tabs ? (*page.tabs)[t].sections : page.sections.value();
         for (int i = 0; i < 400; ++i) {
@@ -1230,7 +1347,7 @@ TEST_CASE("a space's state components in game (D184): a key-value list, a check 
 
   // The demo's overview: tiles and a sentence from one topic; its streams' page shows them in the browser alone.
   PageView overview = loaded("demo", "demo.overview");
-  CHECK(overview.component_topics() == std::vector<std::string>{"lantern.status"});
+  CHECK(overview.component_topics() == std::vector<std::string>{"lantern.status", "lantern.setup"});  // and the flow's
   overview.set_topic("lantern.status",
                      Json{{"tiles", Json::array({{{"label", "Oil"}, {"value", 62}, {"unit", "%"}}})},
                           {"sentence", "The lantern burns steady."}});
@@ -1242,9 +1359,9 @@ TEST_CASE("a space's state components in game (D184): a key-value list, a check 
   CHECK(dump.find("\"The lantern burns steady.\"") != std::string::npos);
   PageView log = loaded("demo", "demo.log");
   // A live feed and a log tail, drawn in game since D257, and the lamp report's preview (D251). (And lantern.status on
-  // every page: the Quick switches' bell, D252.)
-  CHECK(log.component_topics() == std::vector<std::string>{"lantern.status", "lantern.log", "lantern.journal",
-                                                           "lantern.report"});
+  // every page, the Quick switches' bell, D252; and lantern.setup, the setup flow's state, D278.)
+  CHECK(log.component_topics() == std::vector<std::string>{"lantern.status", "lantern.setup", "lantern.log",
+                                                           "lantern.journal", "lantern.report"});
   log.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);
   CHECK(list.dump().find("Shown in the browser view.") == std::string::npos);
 }
@@ -1291,7 +1408,8 @@ TEST_CASE("space.state greys pages (D188): their words, inert controls; a page n
     pages["topics"].push_back(Json{{"id", "space.state"}, {"shape", "state"}});
   };
   PageView view = demo_edited(with_state, "demo.behaviour");
-  CHECK(view.component_topics() == std::vector<std::string>{"space.state", "lantern.status"});  // the bell's (D252)
+  // The bell's (D252) and the setup flow's (D278).
+  CHECK(view.component_topics() == std::vector<std::string>{"space.state", "lantern.status", "lantern.setup"});
   view.set_topic("space.state", Json{{"greyed", {{"demo.behaviour", "Load a lantern to see this."}}}});
   DisplayList list;
   view.layout(Viewport{1920, 1080, 1.25f}, test::fonts(), list);

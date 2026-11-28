@@ -140,6 +140,7 @@ constexpr float kStickFull = 29490.0f;   // nine tenths of a stick's travel: a s
 constexpr std::int64_t kRepeatDelayMs = 400;
 constexpr std::int64_t kRepeatEveryMs = 80;
 constexpr std::int64_t kRepeatFastMs = 40;
+constexpr std::int64_t kLandWithinMs = 1000;  // a flow lands on an opening only this soon after it (D278)
 
 // A space the menu shows (D79, D171): GraceUI's own, or a mod's that asked for the game's view.
 struct SpaceView {
@@ -178,6 +179,11 @@ struct State {
   std::map<std::uint64_t, std::string> command_names;  // a ticket: its command's name, for a slow one's sender (D216)
   std::set<std::uint64_t> captures;  // the tickets the capture's modal sent: their answers go back to it (D209)
   bool pairing = false;                 // Pair a device's sheet is open (G9)
+  // A flow that asks to be shown (D278): landed on once a session, at an opening the player has not moved in yet,
+  // within kLandWithinMs of it.
+  bool landed = false;
+  bool moved = true;
+  std::int64_t opened_ms = 0;
   bool away = false;                    // let go of input at an Alt+Tab, kept for the focus's return (G40)
   bool focus_shown = false;             // the focus ring drawn: after a key or the pad, until the mouse (G42)
   bool focus_drawn = false;             // the last published layout's, under g_view_lock (the tests')
@@ -761,6 +767,8 @@ void run(State& m, const grace::protocol::Cmd& command) {
                               : focused.rfind("secret:", 0) == 0         ? focused.substr(7)  // a row secret's (D194)
                               : focused.rfind("editor:", 0) == 0         ? focused  // an editor's, whole (D217)
                               : focused.rfind("share:", 0) == 0          ? focused.substr(6)  // a report's Save (D263)
+                              : focused.rfind("flow:", 0) == 0           ? focused  // a flow's button, whole (D278)
+                              : focused.rfind("action:", 0) == 0         ? focused  // a header action's (D278)
                                                                          : key_of(command);
     std::uint64_t ticket = 0;
     const bool capture = space.view.capture_open();
@@ -893,6 +901,7 @@ void take(State& m, const MenuInput& in, bool& dirty) {
   if (in.generation != m.generation) {
     return;  // pressed for an earlier holder
   }
+  m.moved = true;  // the player acts: no flow lands on them now (D278)
   grace::view::PageView& view = active_view(m);
   if (in.character != 0 && !view.editing() && in.character != U'/') {
     return;  // a menu key's own character (Q, E, Enter): nothing to type it into, nothing to lay out again
@@ -945,6 +954,9 @@ void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
   if (in.pointer.kind != grace::view::Pointer::Kind::leave) {
     m.focus_shown = false;  // the mouse: the ring goes, the focus stays (G42)
     m.pad_mode = false;     // and the key hints are the keyboard's (D242)
+  }
+  if (in.pointer.kind != grace::view::Pointer::Kind::leave && in.pointer.kind != grace::view::Pointer::Kind::move) {
+    m.moved = true;  // a press or the wheel: no flow lands on them now (D278)
   }
   const grace::view::Action action = active_view(m).pointer(in.pointer);
   if (in.pointer.kind != grace::view::Pointer::Kind::move) {
@@ -1179,6 +1191,8 @@ void serve_menu() {
     if (!m.away) {
       active_view(m).cancel_confirmation();
       m.focus_shown = false;  // a fresh open: no ring until a key or the pad is used (G42)
+      m.moved = false;        // and a flow that asks may still land on it (D278)
+      m.opened_ms = now;
     }
     m.away = false;  // back from an Alt+Tab: the page, row, confirmation, field and sheet as they were (G40)
     watch(m, true);
@@ -1207,6 +1221,17 @@ void serve_menu() {
   }
   if (send_page_requests(m)) {  // rows read a page at a time: "Loading…" until they come (D254)
     dirty = true;
+  }
+  if (!m.landed && !m.moved && now - m.opened_ms <= kLandWithinMs) {
+    // A flow whose state says start (D278): this opening lands on it, once a session. GraceUI never opens the menu for
+    // it (invariant 17); the space invites the player with a notice of its own.
+    if (const std::string flow = active_view(m).flow_to_land(); !flow.empty()) {
+      m.landed = true;
+      if (active_view(m).page() != flow && active_view(m).open(flow)) {
+        log_line("the menu opened on a flow its space asks to show, once this session");
+        dirty = true;
+      }
+    }
   }
   const std::uint32_t width = g_width.load(std::memory_order_relaxed);
   const std::uint32_t height = g_height.load(std::memory_order_relaxed);

@@ -411,7 +411,7 @@ TEST_CASE("the menu's side, with no server: the space listed, a watch, its state
   REQUIRE(listed.size() == 1);
   CHECK(listed[0].id == "demo");
   CHECK(listed[0].name == "Demo space");
-  CHECK(listed[0].pages->pages.size() == 9);
+  CHECK(listed[0].pages->pages.size() == 10);  // its setup flow among them (D278)
   CHECK(listed[0].settings->settings.size() == 13);
 
   registry.game_watch("demo", "settings", true);

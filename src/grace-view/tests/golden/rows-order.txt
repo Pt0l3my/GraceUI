@@ -17,3 +17,7 @@ demo demo.lamps#notes:
 demo demo.lamps#yours:
 demo demo.lightings:
 demo demo.handbook:
+demo demo.setup#welcome:
+demo demo.setup#flame: shortcut:lantern.colour shortcut:lantern.brightness
+demo demo.setup#trim:
+demo demo.setup#ready:
