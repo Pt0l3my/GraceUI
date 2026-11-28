@@ -6,7 +6,9 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
@@ -603,8 +605,16 @@ class PageView {
   std::size_t tab_ = 0;
   // A flow (D278): a button's press waiting for its answer, which one; an action that opens a page, by where its answer
   // goes ("action:<id>", or a section action's "<section>/<id>"): the page that sent it and the page it opens.
-  bool flow_waiting_ = false;
-  std::string flow_go_;
+  // A flow's presses not yet answered, oldest first (D278): the page and step each was sent from, and its go.
+  struct FlowPress {
+    std::string page;
+    std::string step;
+    std::string go;
+  };
+  std::deque<FlowPress> flow_sent_;
+  bool flow_waiting() const;                    // the newest press was on the step shown, and waits for its answer
+  std::optional<FlowPress> flow_answered(std::string_view where);  // the press an answer is for, by its button
+  void arrive();  // a page just opened: its flow's step, and what stayed with the last visit gone
   struct Opening {
     std::string from;
     std::string to;

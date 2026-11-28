@@ -445,6 +445,7 @@ export function PageView() {
   const wanted = route && page ? expected.value.get(`${route.space}/${page.id}`) : undefined;
   const current = master ? rowToShow(masterKeys, held, wanted) : null;
   useEffect(() => dropDrafts(), [route?.space, page?.id]);  // a draft lives while its page is open (D217)
+  useEffect(() => setNotice(null), [route?.space, page?.id]);  // a header action's refusal stays with its visit (D278)
   useEffect(() => release(), [route?.space, page?.id]);  // another page: what was held is drawn (D252)
   useEffect(() => {
     if (route && page && master && current !== null) {

@@ -284,7 +284,7 @@ category = "lanterns"
 name = "Overview"
 description = "The lantern at a glance: its flame, its oil and its last trim."
 increment = "0.2"
-related = ["demo.behaviour", "demo.log"]
+related = ["demo.behaviour", "demo.log", "demo.setup"]  # the setup flow by a Related link too (D278)
 help.purpose = "See how the north lantern is burning right now."
 help.steps = ["Read the tiles: flame, oil and the time since the last trim.", "Trim the wick from the header when the flame gutters.", "Adjust its brightness here, or everything else on Behaviour."]
 

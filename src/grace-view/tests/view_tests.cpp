@@ -513,6 +513,50 @@ TEST_CASE("a flow asks to be shown; an action opens a page once its space answer
   CHECK(view.focused() == "rail:lanterns");
 }
 
+TEST_CASE("a flow by a Related link, Done after a new step, an earlier answer, Live updates: the review's cases (D278)") {
+  // A Related link opens the flow at the step its space publishes, the state watched on every page already.
+  PageView view = loaded("demo", "demo.overview");
+  view.set_topic("lantern.setup", Json::object({{"step", Json("flame")}, {"done", Json::array({Json("welcome")})}}));
+  REQUIRE(down_to(view, "related:demo.setup"));
+  press(view, Key::activate);
+  CHECK(view.page() == "demo.setup");
+  CHECK(view.focused() == "shortcut:lantern.colour");  // The flame's first control, not Welcome's Next
+  // An answer to a press on an earlier step frees nothing on this one: the newest press still waits.
+  view.set_topic("lantern.setup", Json::object({{"step", Json("welcome")}}));
+  REQUIRE(down_to(view, "flow:next"));
+  REQUIRE(press(view, Key::activate).kind == Action::Kind::command);  // from Welcome
+  view.set_topic("lantern.setup", Json::object({{"step", Json("flame")}}));  // another view moved it meanwhile
+  REQUIRE(down_to(view, "flow:next"));
+  REQUIRE(press(view, Key::activate).kind == Action::Kind::command);  // from The flame
+  view.accepted("flow:next");  // Welcome's answer
+  CHECK(press(view, Key::activate).kind == Action::Kind::none);  // The flame's still waits
+  view.accepted("flow:next");
+  CHECK(press(view, Key::activate).kind == Action::Kind::command);
+  view.accepted("flow:next");
+  // Done, answered after the space has published another step (its flow started again): the flow's then all the same.
+  view.set_topic("lantern.setup", Json::object({{"step", Json("ready")}}));
+  REQUIRE(press(view, Key::activate).kind == Action::Kind::command);  // Done, focused on the last step
+  view.set_topic("lantern.setup", Json::object({{"step", Json("welcome")}, {"start", Json(false)}}));
+  view.accepted("flow:done");
+  CHECK(view.page() == "demo.overview");
+  // A header action's refusal stays with its page: Page Down leaves it there, and the latest alone is shown.
+  REQUIRE(up_to(view, "action:setup"));
+  press(view, Key::activate);
+  view.refused("action:setup", "The lantern is lit already.");
+  press(view, Key::next_page);
+  CHECK(view.page() == "demo.behaviour");
+  DisplayList list;
+  view.layout(Viewport{1920, 1080, 1.0f}, test::fonts(), list);
+  CHECK(list.dump().find("The lantern is lit already.") == std::string::npos);
+  // Live updates paused on a live page: a flow's state is applied, never held nor counted as new.
+  PageView live = loaded("demo", "demo.overview");
+  live.set_topic("lantern.setup", Json::object({{"step", Json("welcome")}, {"start", Json(false)}}));
+  live.set_live_mode(PageView::LiveMode::paused);
+  live.set_topic("lantern.setup", Json::object({{"step", Json("welcome")}, {"start", Json(true)}}));
+  CHECK(live.held_new() == 0);
+  CHECK(live.flow_to_land() == "demo.setup");
+}
+
 TEST_CASE("a locked setting does not change; a refusal returns focus with its reason") {
   PageView view = loaded("demo", "demo.festival");
   for (int i = 0; i < 40 && view.focused() != "setting:lantern.festival"; ++i) {

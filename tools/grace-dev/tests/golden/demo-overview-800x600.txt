@@ -82,8 +82,8 @@ text    ink.body      737, 245   19x14   clip1 glyphs 4 "0.80"
 fill    ground.well   578, 250  134x3    r2 clip1
 fill    gold          578, 250  107x3    r2 clip1
 circle  gold.hi       680, 247   10x10   clip1
-fill    ground.2      189, 301  589x98   r3 clip1
-stroke  rule          189, 301  589x98   r3 w1 clip1
+fill    ground.2      189, 301  589x129  r3 clip1
+stroke  rule          189, 301  589x129  r3 w1 clip1
 text    gold          203, 312   37x11   clip1 glyphs 7 "Related"
 line    rule          203, 329  561x1    clip1
 text    ink.hi        211, 337   47x15   clip1 glyphs 9 "Behaviour"
@@ -93,6 +93,10 @@ line    rule          203, 360  561x1    clip1
 text    ink.hi        211, 368   16x15   clip1 glyphs 3 "Log"
 text    ink.mute      390, 369  291x14   clip1 glyphs 52 "What the lantern did, as it happens, and the keeper's journal."
 text    gold          745, 368    5x15   clip1 glyphs 1 "→"
+line    rule          203, 391  561x1    clip1
+text    ink.hi        211, 399   94x15   clip1 glyphs 15 "Set up the lantern"
+text    ink.mute      390, 400  234x14   clip1 glyphs 43 "Four short steps before the lantern's first night."
+text    gold          745, 399    5x15   clip1 glyphs 1 "→"
 line    rule          167, 575  633x1   
 fill    ground.well   189, 580   29x15   r1
 stroke  edge          189, 580   29x15   r1 w1
@@ -110,4 +114,4 @@ stroke  edge          380, 580   23x15   r1 w1
 text    ink.body      384, 581   15x14   glyphs 3 "Esc"
 text    ink.faint     407, 581   19x14   glyphs 4 "Back"
 stroke  gold.hi       569, 241  196x21   r3 w1 clip1
-# 111 items, 3876 vertices, 10446 indices, 4 commands; check_draw_list: passes
+# 115 items, 4116 vertices, 10806 indices, 4 commands; check_draw_list: passes

@@ -44,7 +44,8 @@
       },
       "related": [
         "demo.behaviour",
-        "demo.log"
+        "demo.log",
+        "demo.setup"
       ],
       "increment": "0.2",
       "actions": [

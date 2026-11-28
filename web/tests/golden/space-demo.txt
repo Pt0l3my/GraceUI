@@ -24,6 +24,8 @@ page demo.overview:
   How the lantern burns, how often it flickers, and who keeps it.
   Log
   What the lantern did, as it happens, and the keeper's journal.
+  Set up the lantern
+  Four short steps before the lantern's first night.
 page demo.behaviour:
   Behaviour
   How the lantern burns, how often it flickers, and who keeps it.
@@ -288,6 +290,8 @@ page demo.overview:
   How the lantern burns, how often it flickers, and who keeps it.
   Log
   What the lantern did, as it happens, and the keeper's journal.
+  Set up the lantern
+  Four short steps before the lantern's first night.
 page demo.behaviour:
   Behaviour
   How the lantern burns, how often it flickers, and who keeps it.
@@ -630,6 +634,8 @@ page demo.overview:
   How the lantern burns, how often it flickers, and who keeps it.
   Log
   What the lantern did, as it happens, and the keeper's journal.
+  Set up the lantern
+  Four short steps before the lantern's first night.
 page demo.behaviour:
   Behaviour
   How the lantern burns, how often it flickers, and who keeps it.

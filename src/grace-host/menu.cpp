@@ -1215,16 +1215,10 @@ void serve_menu() {
   for (int i = 0; i < 64 && g_pointer.pop(pointer); ++i) {
     take_pointer(m, pointer, dirty);
   }
-  if (watch_topics(m)) {  // the page or the space changed: what its components need (D184)
-    take_from_spaces(m);
-    dirty = true;
-  }
-  if (send_page_requests(m)) {  // rows read a page at a time: "Loading…" until they come (D254)
-    dirty = true;
-  }
   if (!m.landed && !m.moved && now - m.opened_ms <= kLandWithinMs) {
-    // A flow whose state says start (D278): this opening lands on it, once a session. GraceUI never opens the menu for
-    // it (invariant 17); the space invites the player with a notice of its own.
+    // A flow whose state says start (D278): this opening lands on it, once a session, before the page's topics are
+    // watched below, so that the step's own come in this wake. GraceUI never opens the menu for it (invariant 17); the
+    // space invites the player with a notice of its own. Only the space the menu shows: its flows are the ones watched.
     if (const std::string flow = active_view(m).flow_to_land(); !flow.empty()) {
       m.landed = true;
       if (active_view(m).page() != flow && active_view(m).open(flow)) {
@@ -1232,6 +1226,13 @@ void serve_menu() {
         dirty = true;
       }
     }
+  }
+  if (watch_topics(m)) {  // the page or the space changed: what its components need (D184)
+    take_from_spaces(m);
+    dirty = true;
+  }
+  if (send_page_requests(m)) {  // rows read a page at a time: "Loading…" until they come (D254)
+    dirty = true;
   }
   const std::uint32_t width = g_width.load(std::memory_order_relaxed);
   const std::uint32_t height = g_height.load(std::memory_order_relaxed);

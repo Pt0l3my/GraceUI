@@ -5498,8 +5498,10 @@ void run_menu_flow(const std::wstring& dll) {
   const GraceUiStatus next_answered = table->answer(demo.answer.consumer, next_reply, ok.data(), ok.size());
   const GraceUiStatus moved = state(R"({"step":"flame","done":["welcome"],"start":true})");
   menu = until([](const GraceUiTestMenu& m) { return std::strcmp(m.focused, "shortcut:lantern.colour") == 0; });
+  float back[8] = {};
+  const bool back_drawn = grace.get_menu_bounds("flow:back", back) != 0;  // the button, not the hints' "Esc  Back"
   check(sent_next && next_answered == GRACEUI_OK && moved == GRACEUI_OK && std::strcmp(menu.page, "demo.setup") == 0 &&
-            std::strcmp(menu.focused, "shortcut:lantern.colour") == 0 && grace.menu_shows("Back") != 0,
+            std::strcmp(menu.focused, "shortcut:lantern.colour") == 0 && back_drawn,
         "menu flow: Next", "Enter: the mod polled %s, answered %s; its next step %s: page %s, focus %s",
         next.is_object() ? next.dump().c_str() : "NO COMMAND", status_name(next_answered), status_name(moved),
         menu.page, menu.focused);

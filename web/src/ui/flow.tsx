@@ -3,7 +3,7 @@
 // ordered list of numbered names that takes no focus, the step its space publishes, and Back, Skip, Next or Done under
 // it, each sending the flow's command once until its answer; Done, answered, opens the flow's next page. And the
 // landing: a flow whose state says start opens once a page load, while the view is still on the page it started on.
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { Json, Page } from "../protocol.ts";
 import { flowBlocked, flowDone, flowOptional, flowStarts, flowsOf, flowThen } from "../model/flow.ts";
 import { refusalWords } from "../model/session.ts";
@@ -44,10 +44,13 @@ export function FlowButtons({ space, page, step, body, inert }: {
   const session = useSession();
   const [waiting, setWaiting] = useState<Go | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
+  // The newest press on the step shown: an answer to any other (an earlier step's) frees nothing and says nothing.
+  const latest = useRef<object | null>(null);
   const steps = page.tabs ?? [];
   const id = steps[step]?.id ?? "";
   useEffect(() => {
-    setWaiting(null);  // a new step, the space's: its buttons take presses
+    latest.current = null;  // a new step, the space's: its buttons take presses
+    setWaiting(null);
     setRefusal(null);
   }, [page.id, id]);
   const flow = page.flow;
@@ -62,14 +65,22 @@ export function FlowButtons({ space, page, step, body, inert }: {
     if (off || ((to === "next" || to === "done") && blocked !== null)) {
       return;
     }
+    const press = {};
+    latest.current = press;
     setRefusal(null);
     setWaiting(to);
     const answer = await session.command(space, flow.command, { step: id, go: to });
-    setWaiting(null);
+    if (latest.current === press) {
+      latest.current = null;
+      setWaiting(null);
+      if (!answer.ok) {
+        setRefusal(refusalWords(answer));
+      }
+    }
     if (!answer.ok) {
-      setRefusal(refusalWords(answer));
       return;
     }
+    // Done, answered: the flow's next page if the player is still on the flow, whatever step its space published since.
     const now = session.route.value;
     const pages = session.space(space)?.pages.value;
     if (to === "done" && now && now.space === space && now.page === page.id && pages) {
