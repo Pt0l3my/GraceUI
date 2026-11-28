@@ -273,6 +273,11 @@ GRACEUI_API uint32_t GraceUI_Test_GetInputCosts(uint32_t kind, uint32_t* out, ui
  * GraceUI_RequestApi only; null keeps the real name. */
 GRACEUI_API void GraceUI_Test_SetAntiCheatNames(const wchar_t* module_prefix, const wchar_t* parent_name);
 
+/* Steam's floating keyboard (D275) is looked for in this module instead of steam_api64.dll: the harness's stand-in,
+ * which exports the flat API's names and records its calls, so that no file of the harness bears Steam's name. Before
+ * a pad's first text field; null keeps Steam's name. */
+GRACEUI_API void GraceUI_Test_SetSteamModule(const wchar_t* module_name);
+
 typedef struct GraceUiTestNotice {
   uint32_t size;          /* set by the caller to sizeof(GraceUiTestNotice) */
   uint32_t owner;         /* 0: GraceUI's own; else the mod's number (GraceUiTestConsumer.owner) */

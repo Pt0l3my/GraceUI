@@ -4,6 +4,7 @@
 # The ABI's rules are grace-abi's, pure (D131): session.cpp holds the session's mods and notices with them, and
 # anticheat.cpp gathers what the anti-cheat check matches (D133). From S10.4.c, surfaces.cpp holds the slots for
 # panels, draw lists, textures, faces, input and providers, and draw_atlas.cpp the shared atlas's faces and glyph tables.
+# steam.cpp opens Steam's floating keyboard through the already-loaded steam_api64.dll's flat exports (§5.6, D275).
 add_library(grace_host STATIC
   abi.cpp
   anticheat.cpp
@@ -19,6 +20,7 @@ add_library(grace_host STATIC
   menu.cpp
   session.cpp
   spaces.cpp
+  steam.cpp
   surfaces.cpp
   wake.cpp)
 target_include_directories(grace_host

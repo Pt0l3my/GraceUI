@@ -13,7 +13,7 @@ tree and not looked at; the web app's node_modules/ and dist/ are never walked):
   1. reinterpret_cast, const_cast and std::bit_cast appear only in grace-host's abi, hooks and draw files, the DLL's
      abi files (D110), graceui-sys's headers (a mod's side: GetProcAddress's answer made a function) and grace-serve's
      Winsock file (a SOCKET made the HANDLE SetHandleInformation takes, so that no socket is inherited, §7.2 item 24),
-     each with a "// SAFETY:" comment on its statement or in the three lines before it; a C file's pointer casts only in
+     and grace-host's steam.cpp (Steam's flat exports made functions, for its floating keyboard, D275), each with a "// SAFETY:" comment on its statement or in the three lines before it; a C file's pointer casts only in
      those files too.
   2. Each of those files that holds raw pointers from callers, casts or hook code carries a SAFETY comment.
   3. MinHook is included and called only in grace-host's hooks files, and so is any other way of hooking a window
@@ -56,7 +56,7 @@ ABI_BASELINE = "src/grace-abi/baseline/graceui-abi1-0.h"
 # side of the boundary, whose one cast turns GetProcAddress's answer into the export's type.
 ALLOWED = re.compile(
     r"^src/(grace-host/(abi|hooks|draw)[^/]*|graceui/abi[^/]*)\.(cpp|c|h)$|^src/graceui-sys/include/[^/]+\.(h|hpp)$"
-    r"|^src/grace-serve/io/platform_win32\.cpp$")
+    r"|^src/grace-serve/io/platform_win32\.cpp$|^src/grace-host/steam\.cpp$")
 HOOK_FILES = re.compile(r"^src/grace-host/hooks[^/]*\.(cpp|c|h)$")
 GRACE_HOST_FILES = re.compile(r"^src/grace-host/")
 DLL_ABI_FILES = re.compile(r"^src/graceui/abi[^/]*\.cpp$")

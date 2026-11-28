@@ -106,6 +106,9 @@ void set_keyboard_code_page(std::uint32_t code_page) noexcept;
 std::uint32_t code_page() noexcept;
 // Where the holder's text caret is, in client pixels, for the IME's composition window; false if no holder reported one.
 bool caret_in_client(std::int32_t& x, std::int32_t& y, std::int32_t& height) noexcept;
+// A rectangle in the back buffer's pixels in the window's client pixels, as the caret's is mapped (Steam's floating
+// keyboard beside a field, D275); unchanged before the sizes are known.
+void buffer_to_client(std::int32_t& x, std::int32_t& y, std::int32_t& w, std::int32_t& h) noexcept;
 
 // ---- The holder's side (S10.4.b's ABI; GraceUI 0.1 reaches it through test exports). Any thread.
 grace::input::Request request(std::uint16_t owner, grace::input::Kind kind, std::uint8_t wants) noexcept;

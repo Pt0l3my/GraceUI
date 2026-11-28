@@ -3823,6 +3823,7 @@ std::string PageView::secret_id(const protocol::PageBlock& block, const Json& ro
 void PageView::start_edit(EditKind kind, std::string id, std::string_view text, std::size_t max, bool masked,
                           const protocol::PageBlock* block, Json row_key) {
   end_edit();
+  ++edit_serial_;  // another edit, even of the same field (D275)
   edit_.kind = kind;
   edit_.id = std::move(id);
   edit_.field = TextField(text, max);

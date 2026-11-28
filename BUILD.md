@@ -250,8 +250,10 @@ python3 -I tools/check_safety.py --exports build-cl-rel/bin/graceui.dll
 ## The test build and the harness
 
 `-DGRACEUI_TEST_EXPORTS=ON` adds the test-only exports (`GraceUI_Test_*`, declared in
-`src/grace-abi/include/graceui_test.h`), the counters behind them, the harness and `grace-harness-shield.dll`, an
-empty DLL of ours that stands in for an anti-cheat's module. A release build never has them.
+`src/grace-abi/include/graceui_test.h`), the counters behind them, the harness, `grace-harness-shield.dll`, an
+empty DLL of ours that stands in for an anti-cheat's module, and `grace-harness-steam.dll`, a DLL of ours with the
+names of Steam's flat API that the menu-pad scenario's test build is told to use for Steam's floating keyboard
+(`GraceUI_Test_SetSteamModule`, D275), recording each call. A release build never has them.
 
 A test build also reads `GRACEUI_TEST_PORT` when its browser view starts (D234): `free` serves it on a loopback port
 the system has free (asked again, up to five times, if another program takes it first), a number from 1024 to 65535 on
@@ -314,7 +316,11 @@ passed all 35 suites, the MinGW build all 315 whole and the clang-cl build all b
 scenario then passed whole alone in one run of one; at 0.2.67 (D274's confirmation that waits, checked in the view's,
 the lint's and the browser's suites, with no new harness check) the three Linux trees passed all 35 suites and the MinGW
 build all 315 whole in both full runs, before and after the review's fixes, and the clang-cl build all but the menu's
-frame cost in both, whose scenario then passed whole alone in one run of one) at a load average
+frame cost in both, whose scenario then passed whole alone in one run of one; at 0.2.68 (D275's Steam keyboard, and
+a 316th check: the menu-pad scenario's) the three Linux trees passed all 35 suites, the clang-cl build all 316 whole and
+the MinGW build all 316 whole in a second harness run, its first having hung on objects a stopped build had left
+half-written (rebuilt, its input and menu-pad scenarios then passed whole alone), and clang-cl all but the menu's frame
+cost in that second run) at a load average
 of 1.3 to 10.5 on four cores, a frame-cost check taking a second window in 6 of the 80 checks run, a third in none.
 Wine 9.0's wineserver (Ubuntu's 9.0~repack-4build3) aborts as it starts, with "free(): invalid pointer", whenever
 `TMPDIR` is set, even to `/tmp`: it frees the variable's own string (a backtrace, 2026-11-20). Every Wine command
@@ -454,7 +460,7 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | an anti-cheat found later | (the anti-cheat-flag and anti-cheat-recheck scenarios, D183) With a mod's browser space the server runs; a world-state provider's anti-cheat flag, or a module re-check of 200 ms that finds this program's own module by a test name, stops it with its log line; the flag cleared, a second browser space and 60 frames later it is still stopped, and the menu still opens |
 | key caps | (every menu scenario, D246) Each check of a key hints line reads the footer's words (`GraceUiTestMenu.footer`), since the keys are drawn as caps apart from their labels; the view's key-cap case checks the caps themselves |
 | the links back | (the menu-space scenario, D245) A second mod's space whose Records category holds only pages of a later increment: with GraceUI's own page open, the links back to it show Lanterns and not Records, as its own rail does |
-| the menu by pad | (the menu-pad scenario, D242) At 900 by 1080, once F5 has opened the menu: LT walks back and RT on through every page Page Down walks, in the same order; the hints become the pad's ("D-pad ← →  Change    X  Reset    B  Back") with the ring shown; the D-pad's → changes Menu size and X resets it; Y opens search with its pad hints and B closes it; View hides the hints and shows them again; the right stick, held down then up, moves the page by several steps and back with focus kept; a key gives the keyboard's hints back; B goes to the rail and B again closes the menu, the game seeing neither B, nor the second while it is held after the close, and a new press after it |
+| the menu by pad | (the menu-pad scenario, D242) At 900 by 1080, once F5 has opened the menu: LT walks back and RT on through every page Page Down walks, in the same order; the hints become the pad's ("D-pad ← →  Change    X  Reset    B  Back") with the ring shown; the D-pad's → changes Menu size and X resets it; Y opens search with its pad hints and B closes it; Y's search field opens Steam's floating keyboard once (the stand-in's record: one line, inside the window, on the newest accessor), B closes it, and search opened from the keyboard opens none (D275); View hides the hints and shows them again; the right stick, held down then up, moves the page by several steps and back with focus kept; a key gives the keyboard's hints back; B goes to the rail and B again closes the menu, the game seeing neither B, nor the second while it is held after the close, and a new press after it |
 | the menu by mouse | (the menu-mouse scenario, D182) At 1920 by 1080, with the window's own mouse messages: a press on the theme's second segment chooses Grace Clear and focuses its row; a press at 20% of Menu size's column sets the value under it, the held button's move to 60% raises it, and after the release a move changes nothing; a click on Installed mods in the rail opens it; nothing refused, and none of the menu's mouse messages reaches the game's window |
 | quiet notices | (the quiet scenario, D181) Two invented mods post notices and the Mods page lists both, switches on, their versions and caps in words; Enter on one's switch in the menu quiets it: its notice goes, the other's stays, nothing refused; what it posts then is answered ok and kept in the page's list (one with a key replacing the one kept under it), never drawn, a bad tone still refused, a withdrawal accepted; GraceUI's own notice (a too-old mod) still shows; `user\settings.json` names the quiet mod's id alone; the next process keeps it quiet (its post kept, the log saying one was kept), and → on its switch shows it again, at once and in the file |
 | the italic face | (the display scenario, D241) `fonts\EBGaramond-Italic.ttf` beside graceui.dll, registered by an invented mod as a scaled face of 30 px: its glyph table answers, at least 95 glyphs baked at 20 px (720 lines) |
