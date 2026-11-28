@@ -316,7 +316,11 @@ passed all 35 suites, the MinGW build all 315 whole and the clang-cl build all b
 scenario then passed whole alone in one run of one; at 0.2.67 (D274's confirmation that waits, checked in the view's,
 the lint's and the browser's suites, with no new harness check) the three Linux trees passed all 35 suites and the MinGW
 build all 315 whole in both full runs, before and after the review's fixes, and the clang-cl build all but the menu's
-frame cost in both, whose scenario then passed whole alone in one run of one) at a load average
+frame cost in both, whose scenario then passed whole alone in one run of one; at 0.2.68 (D275's Steam keyboard, and
+a 316th check: the menu-pad scenario's) the three Linux trees passed all 35 suites, the clang-cl build all 316 whole and
+the MinGW build all 316 whole in a second harness run, its first having hung on objects a stopped build had left
+half-written (rebuilt, its input and menu-pad scenarios then passed whole alone), and clang-cl all but the menu's frame
+cost in that second run) at a load average
 of 1.3 to 10.5 on four cores, a frame-cost check taking a second window in 6 of the 80 checks run, a third in none.
 Wine 9.0's wineserver (Ubuntu's 9.0~repack-4build3) aborts as it starts, with "free(): invalid pointer", whenever
 `TMPDIR` is set, even to `/tmp`: it frees the variable's own string (a backtrace, 2026-11-20). Every Wine command
