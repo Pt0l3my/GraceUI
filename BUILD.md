@@ -337,7 +337,7 @@ scenario, 329 in all) one full run passed all 35 suites on the three Linux trees
 builds; at 0.2.74 (D282's log file, and its check in the bindings scenario, 330 in all) the first full run failed that
 check on both builds, the previous file held open by the harness's own GraceUI so that the write session's log was
 truncated; with the last session's log appended to instead, the second passed all 35 suites on the three Linux trees and
-all 330 checks whole on both builds, the held-file path taken in each) at a load average
+all 330 checks whole on both builds, the held-file path taken in each; after 0.2.74, with up to five windows a frame-cost check (D154 as amended, in the harness alone), the menu scenario run alone at a load average below 1 passed whole on both builds, MinGW's 640 by 360 window in its fourth) at a load average
 of 1.3 to 10.5 on four cores, a frame-cost check taking a second window in 6 of the 80 checks run, a third in none.
 Wine 9.0's wineserver (Ubuntu's 9.0~repack-4build3) aborts as it starts, with "free(): invalid pointer", whenever
 `TMPDIR` is set, even to `/tmp`: it frees the variable's own string (a backtrace, 2026-11-20). Every Wine command
@@ -412,7 +412,7 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | second request | A second `GraceUI_RequestApi(1)` answers the same table and starts nothing: one init thread, one install run |
 | second load | Loading the same file again gives the same module and table, and nothing starts |
 | second copy | A copy from another folder is another module; it answers null twice and idles (D72) with no hook to read (D240); the first keeps its hooks, each leading into its own detours, draws on, and names it once in a notice, drawn, by its name relative to the game's folder (`second-copy\graceui.dll`), never a path (D135) |
-| frame cost | With the panel drawn and the GPU idle before each frame, over 600 frames (in up to three windows, D154): GraceUI's own work in the detour within 1 ms at p99; the whole detour and the runtime's submission calls are printed too, and the same figures for 600 frames run as a game runs them |
+| frame cost | With the panel drawn and the GPU idle before each frame, over 600 frames (in up to five windows, D154): GraceUI's own work in the detour within 1 ms at p99; the whole detour and the runtime's submission calls are printed too, and the same figures for 600 frames run as a game runs them |
 | allocations | No allocation and no free on the present thread in the detours over those 1,200 frames, after warm-up |
 | idle cost | With nothing to draw: the detour's time, and again no allocation or free |
 | new swap chain | The game releases its swap chain and makes another on the same window: that succeeds, and the panel is drawn on it |
@@ -436,7 +436,7 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | no render | With no frame presented for 2 s, the holder ends while the game reads input on |
 | input allocations | No allocation and no free in the filter, the detours or on the present thread: over 1,000 reads and messages with no holder, and over 300 frames of a holder fed input as a player types; no event dropped |
 | input cost | GraceUI's own work per message in the filter and per read in each detour, the original's time left out, with and without a holder: within 50 µs at p99 each (EST) |
-| holder frame cost | With a holder fed input and its cursor drawn, the GPU idle before each frame, over 300 frames (in up to three windows, D154): GraceUI's own work in the detour within 1 ms at p99 |
+| holder frame cost | With a holder fed input and its cursor drawn, the GPU idle before each frame, over 300 frames (in up to five windows, D154): GraceUI's own work in the detour within 1 ms at p99 |
 | input path | The render path and input are still on after every check |
 | hotkeys | Through ABI 1, two mods (D155): the first's F11 (bound with no modifier) and Ctrl+K register bound, the second's F11 unbound with a log line; Escape, an action again and an action that is not an id refused, a pad chord not_yet; injected F11 fires once through `poll`, the other mod gets nothing, and neither DirectInput nor the window's messages show it to the game; Ctrl+K fires once with K hidden from DirectInput and its messages kept; K alone reaches the game and fires nothing; with a holder nothing fires; after the first mod's disconnect F11 reaches the game and its `poll` answers not_connected |
 | render off | Last, the render path turned off as a fault turns it off: input goes off with it, the holder ends (a fault), F5 reaches DirectInput and the window again, and a request is not now (D150) |
@@ -450,7 +450,7 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | disconnect | A handle after its disconnect names nobody, in every slot; the id connects again under a new handle |
 | not yet | The four slots still only declared (`register_pages`, `publish`, `answer`, `log`) answer not_yet to a connected mod, and all sixteen after `notice` not_connected to a handle of 0 |
 | notices | Shown, replaced in place by key, drawn in its tone, withdrawn by an empty text; a timed one goes when its time is up; four a mod, a fifth full; refused when it is not UTF-8, too long, empty without a key, of an unknown tone, null or too small; a long text three lines at most, on the Grace look's 22 px lines (D141); a mod's notices go with it |
-| notice allocations | As notices come, change and go over 300 frames after warm-up (in up to three windows, D154): no allocation or free on the present thread, and GraceUI's own work within 1 ms at p99 |
+| notice allocations | As notices come, change and go over 300 frames after warm-up (in up to five windows, D154): no allocation or free on the present thread, and GraceUI's own work within 1 ms at p99 |
 | before warm-up | (the panels scenario) `hello-panel.dll`, loaded before GraceUI, connects and registers its face, two textures and its panel; the harness's mod registers a texture and faces of 18 and 24 px, a third face full, a file that is not a font and a size of 2 px refused, the font's whole BMP at 128 px full (over the atlas's room, D148); `glyph_table` answers not_ready |
 | panels made | The harness's mod makes 16 panels (EST), the next full, GraceUI's menu layer refused; panels start hidden; a texture after the mod's first submit is too late |
 | atlas and faces | Warm-up bakes one atlas, generation 1, with four faces (GraceUI's notices' face from `bin\fonts\` and the mods' three) and uploads the three textures with it, in one upload; face 1's table: over 300 glyphs, 15 px, sorted, 'A' in it; the 24 px face's own size; face 999 refused; a face after warm-up too late |
@@ -464,7 +464,7 @@ answers `ERROR_DEVICE_NOT_CONNECTED`, which the checks require unchanged.
 | providers on threads | 3,000 claims of danger and clears from one provider's thread, 3,000 clears from another's and requests for input from a third, ending on danger: no holder is left, the combined claims say danger, and a request is not now (danger) (D145) |
 | hidden on a thread | 3,000 shows and hides of a modal on one thread while another asks for input with it, ending hidden: no holder is left (D153) |
 | providers | One provider's danger ends the holder and a request is not now (danger); another's game menu, the first clear: two providers, a request not now (game menu); an unknown flag refused; the second disconnected: its claims gone, a request granted |
-| panel frames | Over 300 frames with seven panels shown while the example publishes a list every 10 ms from its thread, the GPU idle before each (in up to three windows, D154): every frame draws panels, no allocation and no free on the present thread (nor over the 300 frames run as a game runs them), and GraceUI's own work within 1 ms at p99 |
+| panel frames | Over 300 frames with seven panels shown while the example publishes a list every 10 ms from its thread, the GPU idle before each (in up to five windows, D154): every frame draws panels, no allocation and no free on the present thread (nor over the 300 frames run as a game runs them), and GraceUI's own work within 1 ms at p99 |
 | disconnect | The harness's mod disconnects: its panels leave the frame, its textures are released after their last frame, the example's stay; its id connects again with a new budget and window |
 | two examples | (the examples and examples-reversed scenarios, D156) The example loaded before GraceUI finds it by name and starts the host; the other, loaded after the hooks, finds it at its first look; both connect, the debug view's banner shows its closed text |
 | both notices | The banner and `hello-notice`'s notice are drawn, in the order they connected, and nothing else: the debug view is hidden |
@@ -512,7 +512,7 @@ for frames run as a game runs them are printed beside it. Every Direct3D 12 call
 so all of them are upper bounds; S4 measures the cost in the game.
 
 The figures are wall time, and another process, or the host of a virtual machine, can only lengthen them: so each
-frame-cost check measures its frames in windows, each as long as its one window was, up to three, and holds its budget
+frame-cost check measures its frames in windows, each as long as its one window was, up to five (three before D154's amendment after 0.2.74), and holds its budget
 against the least p99 among them, stopping at the first within it (D154). A cost of GraceUI's own shows in every window,
 a busy spell of the machine's in one; every window's median and p99 are printed, and what a window must do besides
 (frames drawn, no allocation) holds in every one. Under Wine no clock measures the present thread's own time per frame:
