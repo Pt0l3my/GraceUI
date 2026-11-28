@@ -16,8 +16,9 @@ GraceUI itself, and the example mods with it, on Windows.
 `graceui_mock.h` and `graceui_mock.c` (`src/graceui-mock/`, MIT, pure C99 and its standard library) are a
 `GraceUiApi1` table that answers as GraceUI does for what a test needs, records every call, and gives `poll` the
 events the test queues. A mod's tests build `graceui_mock.c` with them, on any system, without the game, a window or
-`graceui.dll`; the mod itself never links it. Define `GRACEUI_MOCK_VERSION` as the GraceUI the mod is built against
-(GraceUI's own build does), or set it with `graceui_mock_set_version`.
+`graceui.dll`; the mod itself never links it. It answers the version of the GraceUI that brought its header's ABI
+minor, or `GRACEUI_MOCK_VERSION` if the build defines it (GraceUI's own build defines it as its version), or what
+`graceui_mock_set_version` sets.
 
 **The pattern.** The mod keeps `graceui_sys_find` in the thread it starts, and hands the table it found to the rest of
 its code. A test hands that code `graceui_mock_api()` instead, queues what a view or the player would send, and reads
@@ -81,25 +82,29 @@ and its test:
       graceui_mock_set_caps("notices");
       CHECK(c_mod_start(graceui_mock_api()) == GRACEUI_NOT_YET);  // a GraceUI without pages: the mod stays headless
 
-**What it answers.**
+**What it answers.** As GraceUI does, by its rules in `graceui.h` and its own code:
 
 | Calls | The mock |
 |---|---|
-| `connect` | Checks the request as GraceUI does (its size, id, name, caps and floor): `ok` with handles 1, 2 and on, `duplicate_id`, `too_old` naming both versions, `refused` with its reason; the display as 1920 by 1080 at a Menu size of 1 |
-| Every slot that names a mod | `not_connected` for a handle that names none; `inactive` after `graceui_mock_set_inactive`, but for `notice`, `log`, `poll` and `disconnect`, as in the anti-cheat's notice-only mode |
-| `register_pages`, `publish`, `answer` | A space registered once; `publish` `not_yet` before it; `answer` takes a reply that `graceui_mock_push_frame` gave, once. Frames and page data are recorded as given: the mock parses no JSON, so the page tool checks page data |
-| `poll` | The queued events in order, a frame into the mod's buffer, `full` with the size needed and the event kept; an event the mod's `GraceUiEvent` is too small for waits for a poll that can hold it, as with GraceUI |
-| Panels, textures, faces | Ids from 1, GraceUI's limits, the registration window closed by the first `submit` or `set_on_present`; a list's counts checked against GraceUI's bounds, not its contents; `glyph_table` `not_ready` until `graceui_mock_set_glyph_table` |
-| Input, hotkeys | One holder, every other mod's request refused naming it; `graceui_mock_set_input_answer` for the menu's or a danger's answer. A default another hotkey has already is `unbound`; `describe_hotkey` gives the defaults it registered; a pad chord from a mod built before ABI 1.3 is `not_yet` |
-| `wake_event` | `not_yet`: a test polls |
-| `set_on_present` | The callback kept; `graceui_mock_present` runs one frame of it |
+| `connect` | Checks the request (its size, id, name, caps and floor): `ok` with handles 1, 2 and on, `duplicate_id`, `too_old` naming both versions, `refused` with its reason; the display as 1920 by 1080 at a Menu size of 1 |
+| Every slot that names a mod | `not_connected` for a handle that names none; `refused` from inside an `on_present` callback; after `graceui_mock_set_inactive`, `inactive` for every slot but `disconnect`, and but `notice` with `GRACEUI_INACTIVE_ANTI_CHEAT`, as GraceUI's notice-only mode |
+| `log` | `not_yet`, as GraceUI's, which declares it and does not provide it yet; the line is kept for the test all the same |
+| `register_pages`, `publish`, `answer` | A space registered once, 16 at most; `publish` `not_yet` before it; `answer` takes a reply that `graceui_mock_push_frame` gave, once. Frames and page data are recorded as given: the mock parses no JSON, so the page tool checks page data |
+| `poll` | GraceUI's order: a holder's events, then the display, then hotkeys and their changes, then a space's frames. A frame goes into the mod's buffer, or `full` with the size needed and the event kept; an event the mod's `GraceUiEvent` is too small for waits for a poll that can hold it |
+| Panels, textures, faces | GraceUI's checks of each description, its limits and budgets; ids from 1 (faces from 16, after GraceUI's own); the registration window closed by a mod's first `submit` to its panel, taken or refused, or `set_on_present`; a list's shape checked against GraceUI's bounds, not its contents; `glyph_table` `not_ready` until `graceui_mock_set_glyph_table`, which stands for warm-up, after which `register_face` is `too_late` |
+| Input | GraceUI's checks (a panel of the mod's that may take input, on the modal layer for a modal holder, known wants and flags); `not_now` for a panel not shown, or while a provider claims danger, loading or a game menu; one holder, every other mod refused naming it; the holder ended by `release_input`, its panel hidden, a provider's danger or loading, or its mod's disconnect, with `GRACEUI_EVENT_INPUT_ENDED` and why to a mod that asked for its holder's events. `graceui_mock_set_input_answer` stands for the menu holding input, or a danger of the test's own |
+| Hotkeys | GraceUI's refusals (an action the mod has already, Escape, a modifier or a mouse button, Alt+F4, unknown modifiers, a chord not of two different buttons); `unbound` when it names no default or a default it names is taken, by another hotkey or the menu key (F5); a pad chord from a mod built before ABI 1.3 `not_yet`; `describe_hotkey` gives the defaults it bound; a disconnect frees them |
+| `wake_event` | `not_yet`, and `has_cap` does not name `wake`: a test polls |
+| `set_on_present` | The callback kept, four a mod and eight in all; `graceui_mock_present` runs one frame of it, its list drawn only if it fits the room the hook asked for |
 
-`graceui_mock_set_minor` cuts the table to an older ABI minor's size, so that `GRACEUI_API1_COVERS` is false for every
-later slot; `graceui_mock_set_caps` names the caps `has_cap` answers; `graceui_mock_fail_next` makes one slot's next call
-answer a status of the test's choosing. `graceui_mock_call`, `graceui_mock_count` and `graceui_mock_last` read what the
-mod called, each with what it answered and a copy of the text it carried. It is one mock in the process, for one test
-at a time, from one thread: `graceui_mock_reset` starts the next.
+`graceui_mock_set_minor` makes the mock the GraceUI that brought an older ABI minor: its table cut to that minor's size,
+so that `GRACEUI_API1_COVERS` is false for every later slot, that GraceUI's version and caps, and nothing read that the
+minor did not bring. `graceui_mock_set_caps` names the caps `has_cap` answers; `graceui_mock_fail_next` makes one slot's
+next call answer a status of the test's choosing. `graceui_mock_call`, `graceui_mock_count` and `graceui_mock_last` read
+what the mod called, each with what it answered and a copy of the text it carried, which hold until the next
+`graceui_mock_reset`; a text longer than its slot takes is not kept. It is one mock in the process, for one test at a
+time, from one thread: `graceui_mock_reset` starts the next.
 
-**What it does not do.** It draws nothing and runs no present thread, keeps no notices on a screen, and has no
-Hotkeys page, browser or server. Those are GraceUI's, tested by its harness on Windows; a mod's own panels and pages
+**What it does not do.** It draws nothing and runs no present thread, keeps no clock (a notice never times out, and
+the notices never fill), and has no Hotkeys page, browser or server. Those are GraceUI's, tested by its harness on Windows; a mod's own panels and pages
 are seen in game or with grace-dev.

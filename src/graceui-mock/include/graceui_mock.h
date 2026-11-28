@@ -17,9 +17,9 @@
  *
  * What it does not do, which GraceUI and its harness test: it draws nothing and runs no present thread (set_on_present
  * keeps the callback for graceui_mock_present); it parses no JSON, so page data and frames are recorded as given, and
- * the page tool's lint checks a space's page data (tools/pages/build.py); it checks a draw list's counts against
- * GraceUI's limits, not its contents; it has no wake event. It is one mock in the process, for one test at a time:
- * call it from one thread.
+ * the page tool's lint checks a space's page data (tools/pages/build.py); it checks a draw list's shape against
+ * GraceUI's bounds, not its contents; it keeps no clock, so a notice never times out and the notices never fill; it has
+ * no wake event and no Hotkeys page. It is one mock in the process, for one test at a time: call it from one thread.
  */
 #ifndef GRACEUI_MOCK_H
 #define GRACEUI_MOCK_H
@@ -61,10 +61,9 @@ extern "C" {
 #define GRACEUI_MOCK_SET_HOTKEY_ENABLED 26u /* ABI 1.11 */
 #define GRACEUI_MOCK_SLOTS 27u
 
-/* The GraceUI version it answers until graceui_mock_set_version: the GraceUI it was built with, if its build says so. */
-#ifndef GRACEUI_MOCK_VERSION
-#define GRACEUI_MOCK_VERSION GRACEUI_VERSION_PACK(0, 2, 0)
-#endif
+/* The GraceUI version it answers until graceui_mock_set_version or _set_minor: GRACEUI_MOCK_VERSION if the build defines
+ * it (GraceUI's own build defines it as its version, for the library and its users alike), or else the GraceUI that
+ * brought this header's GRACEUI_ABI1_MINOR. */
 
 /* One call to the table, as the mock recorded it. */
 typedef struct GraceUiMockCall {
@@ -89,20 +88,24 @@ void graceui_mock_reset(void);
 /* Its table, as graceui_sys_find gives GraceUI's: valid until the process ends. */
 const GraceUiApi1* graceui_mock_api(void);
 
-/* GraceUI's version, as the table and connect answer it (GRACEUI_MOCK_VERSION by default); connect answers
- * GRACEUI_TOO_OLD to a mod whose floor is above it. */
+/* GraceUI's version, as the table and connect answer it (above); connect answers GRACEUI_TOO_OLD to a mod whose floor
+ * is above it. */
 void graceui_mock_set_version(uint32_t version);
 
-/* The ABI minor it serves (GRACEUI_ABI1_MINOR by default, at most that): the table's size and abi_minor are that
- * minor's, so GRACEUI_API1_COVERS is false for every later slot, as an older GraceUI's table is. */
+/* The ABI minor it serves (GRACEUI_ABI1_MINOR by default, at most that), as the GraceUI that brought it: the table's
+ * size and abi_minor are that minor's, so GRACEUI_API1_COVERS is false for every later slot; its version becomes that
+ * GraceUI's (graceui_mock_set_version after it overrides that); has_cap names that minor's caps alone, unless the test
+ * named its own; and what the minor brought is not given (a pad chord before 1.3 is not read, hotkey_by before 1.7 is
+ * 0). */
 void graceui_mock_set_minor(uint32_t minor);
 
-/* The caps has_cap names, separated by spaces (every GRACEUI_CAP_* of this header by default; NULL for that). */
+/* The caps has_cap names, separated by spaces; NULL for the default, every GRACEUI_CAP_* of the minor's but "wake",
+ * since the mock has no wake event to give. */
 void graceui_mock_set_caps(const char* caps);
 
 /* connect answers GRACEUI_INACTIVE with this GRACEUI_INACTIVE_* reason and a handle, after which every slot answers
- * GRACEUI_INACTIVE but notice, log, poll and disconnect, as in GraceUI's notice-only mode (D88); 0, the default, for an
- * active GraceUI. */
+ * GRACEUI_INACTIVE but disconnect, and notice with GRACEUI_INACTIVE_ANTI_CHEAT alone, as GraceUI's notice-only mode
+ * (D88); 0, the default, for an active GraceUI. */
 void graceui_mock_set_inactive(uint32_t reason);
 
 /* The slot's next call answers `status` and does nothing else (a GRACEUI_FAULT, a full store, a GRACEUI_NOT_READY),
@@ -110,18 +113,23 @@ void graceui_mock_set_inactive(uint32_t reason);
 void graceui_mock_fail_next(uint32_t slot, GraceUiStatus status);
 
 /* What request_input answers while no mod holds input (GRACEUI_INPUT_GRANTED by default): GRACEUI_INPUT_REFUSED with
- * `holder` named (the menu is "graceui"), or GRACEUI_INPUT_NOT_NOW with `why` (a GRACEUI_NOT_NOW_*). A mod holding input
- * refuses every other mod's request, naming the holder, whatever this says. */
+ * `holder` named (the menu is "graceui"), or GRACEUI_INPUT_NOT_NOW with `why` (a GRACEUI_NOT_NOW_*). Whatever this says,
+ * a request for a panel not shown is not now (not ready); a mod holding input refuses every other mod's request, naming
+ * it; and a world-state provider's danger, loading or game menu makes it not now, as GraceUI's. The holder ends with
+ * release_input, its panel hidden, a provider's danger or loading, or its mod's disconnect, and its mod hears
+ * GRACEUI_EVENT_INPUT_ENDED, with why, if it asked with GRACEUI_INPUT_EVENTS. */
 void graceui_mock_set_input_answer(uint32_t answer, uint32_t why, const char* holder);
 
-/* glyph_table's answer for every face (GRACEUI_NOT_READY by default, as before GraceUI's warm-up); with `table` given,
- * GRACEUI_OK and that table, its glyphs and pixels the test's own, which must outlive the calls. */
+/* GraceUI's warm-up: with `table` given, glyph_table answers GRACEUI_OK and that table for every mod's face (its glyphs
+ * the test's own, which must outlive the calls), and register_face answers GRACEUI_TOO_LATE from now; NULL, the
+ * default, for before warm-up, when glyph_table is GRACEUI_NOT_READY. */
 void graceui_mock_set_glyph_table(const GraceUiGlyphTable* table);
 
 /* ---- Events for a mod's poll, in the order queued, at most 256 waiting for each mod. Each answers 0 if not queued (the
  * handle names no connected mod, or its queue is full). An event is given to a poll whose GraceUiEvent can hold it, as
  * GraceUI gives it (a protocol frame to an event of GraceUI 0.2's size or more, a holder's or the display's to one of
- * ABI 1.1's or 1.2's); a smaller event's poll passes it by and it waits. */
+ * ABI 1.1's or 1.2's); a smaller event's poll passes it by and it waits. Poll gives them in GraceUI's order: a
+ * holder's first, then the display, then hotkeys and their changes, then a space's frames, each in the order queued. */
 
 /* A hotkey's presses: `count` of them, 1 or more, by its key. Answers 1 if queued. */
 int graceui_mock_push_hotkey(GraceUiConsumer consumer, uint32_t hotkey_id, uint32_t count);
@@ -134,7 +142,7 @@ uint64_t graceui_mock_push_frame(GraceUiConsumer consumer, uint32_t kind, const 
  * bytes; its frame and file are not read. Answers 1 if queued. */
 int graceui_mock_push_event(GraceUiConsumer consumer, const GraceUiEvent* event);
 
-/* ---- What the mod did. */
+/* ---- What the mod did. A call's record, and the text it points to, hold until graceui_mock_reset. */
 
 size_t graceui_mock_call_count(void);                     /* calls recorded, in order */
 const GraceUiMockCall* graceui_mock_call(size_t index);   /* the index-th, NULL past the last */
@@ -148,8 +156,11 @@ uint32_t graceui_mock_hotkey_enabled(uint32_t hotkey_id); /* 1 if enabled (as re
 
 /* One frame of a panel's on_present callback, as GraceUI's present thread would call it: `list` zeroed but for its size
  * and command_size, then handed to the callback with `frame` (its panel set to `panel_id`; NULL for a frame of 1/60 s at
- * 1920 by 1080). Answers the callback's answer (GRACEUI_PRESENT_KEEP or _DRAW), or GRACEUI_PRESENT_KEEP if the panel
- * has none. The list's arrays are the callback's own, valid until it is called again. */
+ * 1920 by 1080, at the panel's place). Answers GRACEUI_PRESENT_DRAW if the callback did and its list fits the room the
+ * hook asked for and GraceUI's bounds, else GRACEUI_PRESENT_KEEP (GraceUI draws the submitted list then), and
+ * GRACEUI_PRESENT_KEEP if the panel has no callback. Every slot called from inside the callback answers GRACEUI_REFUSED,
+ * has_cap alone excepted, as GraceUI's do (D259). The list's arrays are the callback's own, valid until it is called
+ * again. */
 uint32_t graceui_mock_present(uint64_t panel_id, const GraceUiPresentFrame* frame, GraceUiDrawList* list);
 
 #ifdef __cplusplus
