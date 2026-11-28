@@ -332,7 +332,9 @@ Linux trees and all 323 checks but the menu's frame cost on both builds; the sec
 three Linux trees, all 323 checks on clang-cl and all but the menu's frame cost on MinGW, whose scenario then passed
 whole alone in one run of one; at 0.2.72 (D280's paused hotkeys, ABI 1.11, and the new hotkey-pause scenario's four
 checks and its process's, 328 in all) one full run, after the review's fixes, passed all 35 suites on the three Linux
-trees and all 328 checks whole on both builds) at a load average
+trees and all 328 checks whole on both builds; at 0.2.73 (D281's controls notice, and its check in the bindings
+scenario, 329 in all) one full run passed all 35 suites on the three Linux trees and all 329 checks whole on both
+builds) at a load average
 of 1.3 to 10.5 on four cores, a frame-cost check taking a second window in 6 of the 80 checks run, a third in none.
 Wine 9.0's wineserver (Ubuntu's 9.0~repack-4build3) aborts as it starts, with "free(): invalid pointer", whenever
 `TMPDIR` is set, even to `/tmp`: it frees the variable's own string (a backtrace, 2026-11-20). Every Wine command
