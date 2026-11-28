@@ -119,3 +119,18 @@ TEST_CASE("a name too long for its room keeps its end, from a character's start 
   CHECK(utf8_tail_start("", 0) == 0);
   CHECK(utf8_tail_start("\xE3\x81\x82", 2) == 3);  // nothing whole fits: empty
 }
+
+TEST_CASE("a log line that seems to name a place on the player's machine is caught (PV3, D282)") {
+  using grace::abi::names_a_path;
+  CHECK(names_a_path("could not read C:\\Games\\x"));
+  CHECK(names_a_path("at d:/steam/x"));
+  CHECK(names_a_path("share \\\\pc\\games"));
+  CHECK(names_a_path("in \\USERS\\someone"));
+  CHECK(names_a_path("in /home/someone"));
+  CHECK(names_a_path("in /Users/someone"));
+  CHECK_FALSE(names_a_path("the menu's key is F5"));
+  CHECK_FALSE(names_a_path("a second copy at second-copy\\graceui.dll idles"));  // a folder's tail, as the notice keeps
+  CHECK_FALSE(names_a_path("ratio 3:2 at 16:9"));
+  CHECK_FALSE(names_a_path("x:"));
+  CHECK_FALSE(names_a_path(""));
+}

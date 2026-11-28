@@ -137,4 +137,27 @@ std::size_t utf8_tail_start(std::string_view text, std::size_t room) noexcept {
   return start;
 }
 
+bool names_a_path(std::string_view text) noexcept {
+  const auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; };
+  const auto has = [&](std::string_view part) {
+    for (std::size_t at = 0; at + part.size() <= text.size(); ++at) {
+      std::size_t i = 0;
+      while (i < part.size() && lower(text[at + i]) == part[i]) {
+        ++i;
+      }
+      if (i == part.size()) {
+        return true;
+      }
+    }
+    return false;
+  };
+  for (std::size_t at = 0; at + 2 < text.size(); ++at) {
+    const char c = lower(text[at]);
+    if (c >= 'a' && c <= 'z' && text[at + 1] == ':' && (text[at + 2] == '\\' || text[at + 2] == '/')) {
+      return true;  // a drive
+    }
+  }
+  return has("\\\\") || has("\\users\\") || has("/users/") || has("/home/");
+}
+
 }  // namespace grace::abi
