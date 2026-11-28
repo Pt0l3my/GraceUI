@@ -10,8 +10,14 @@ before the game does, and what a bug report holds.
 GraceUI keeps its log in memory: the newest 64 lines, each at most 160 bytes and starting `GraceUI: `. GraceUI's own
 thread passes each line to the debugger with `OutputDebugString`, never the thread that wrote it, so a debugger or
 another listener of Windows' debug output shows them. Lines the ring overwrote before they were passed are counted in a
-line of their own: "‹n› lines were not passed to the debugger". The design gives GraceUI a scrubbed log in
-`Game\GraceUI\user\` (D84); for now the log goes to the debugger alone (D230).
+line of their own: "‹n› lines were not passed to the debugger".
+
+Since GraceUI 0.2.74 the same lines go to a file too (D84, D282): `Game\GraceUI\user\graceui.log`, this session's, and
+`graceui-previous.log`, the session before, kept for a report about a session that ended badly. The file is opened at
+GraceUI's first line of the session, the one before moved aside then, and holds at most 1 MiB (EST): past it, one line
+says so and later lines go to the debugger alone. A line that seems to name a place on the player's PC (a drive, a
+share, a home folder) is left out of the file, and a line says one was. The files stay in `user\` across GraceUI's
+updates, and are in no release.
 
 A line holds GraceUI's own words, numbers and mods' ids, never a path, a user or machine name, or game text (PV3,
 D230). The first says which GraceUI this is: "GraceUI ‹version› starting (ABI 1.‹minor›, a preview)".

@@ -30,4 +30,9 @@ bool valid_notice_text(std::string_view text) noexcept;
 // whole fits. A name too long for its notice keeps its end, the file's own name (L12).
 std::size_t utf8_tail_start(std::string_view text, std::size_t room) noexcept;
 
+// A line that seems to name a place on the player's machine (PV3, D282): a drive ("C:\", "d:/"), a share ("\\"), or a
+// home folder ("\Users\", "/home/", "/Users/", in any case). GraceUI's log lines name none by rule; this keeps one that
+// slipped out of the log file, which a player may send in a report.
+bool names_a_path(std::string_view text) noexcept;
+
 }  // namespace grace::abi

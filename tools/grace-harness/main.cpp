@@ -9479,6 +9479,21 @@ void run_bindings_read(const std::wstring& dll) {
         hotkey_cell(reset, "quiet-camp/pitch-tent", "state").c_str(), file.is_discarded() ? "NO FILE" : file.dump().c_str());
 }
 
+// A file beside the settings in GraceUI's user folder, whole, or empty if there is none.
+std::string user_file_of(const std::wstring& dll, const wchar_t* name) {
+  std::wstring path = settings_file_of(dll);
+  path = path.substr(0, path.find_last_of(L"\\") + 1) + name;
+  std::string out;
+  if (FILE* file = _wfopen(path.c_str(), L"rb")) {
+    char buffer[4096];
+    for (std::size_t got = 0; (got = std::fread(buffer, 1, sizeof buffer, file)) > 0;) {
+      out.append(buffer, got);
+    }
+    std::fclose(file);
+  }
+  return out;
+}
+
 void run_bindings(const std::wstring& dll) {
   DeleteFileW(settings_file_of(dll).c_str());
   for (const wchar_t* child : {L"bindings-write", L"bindings-read"}) {
@@ -9489,6 +9504,41 @@ void run_bindings(const std::wstring& dll) {
     check(status == 0, name, "its process ended with %d", status);
   }
   DeleteFileW(settings_file_of(dll).c_str());
+
+  // GraceUI's log file (D84, D282): the read session's in user\graceui.log, the write session's moved aside to
+  // graceui-previous.log; every line GraceUI's own, and none naming a drive, a share or a home folder (PV3).
+  const std::string now = user_file_of(dll, L"graceui.log");
+  const std::string before = user_file_of(dll, L"graceui-previous.log");
+  const auto lines_ok = [](const std::string& text, std::size_t& count) {
+    count = 0;
+    for (std::size_t at = 0; at < text.size();) {
+      const std::size_t end = text.find('\n', at);
+      const std::string line = text.substr(at, end == std::string::npos ? std::string::npos : end - at);
+      at = end == std::string::npos ? text.size() : end + 1;
+      if (line.rfind("GraceUI: ", 0) != 0 || line.find(":\\") != std::string::npos ||
+          line.find("\\\\") != std::string::npos || line.find("/home/") != std::string::npos) {
+        return false;
+      }
+      ++count;
+    }
+    return count > 0;
+  };
+  std::size_t now_lines = 0;
+  std::size_t before_lines = 0;
+  const bool now_ok = lines_ok(now, now_lines);
+  const bool before_ok = lines_ok(before, before_lines);
+  // The write session alone captured F8; the read session alone reset every hotkey.
+  const bool before_is_write = before.find("hotkey tide-table: key F8") != std::string::npos &&
+                               before.find("every hotkey is back") == std::string::npos;
+  const bool now_is_read = now.find("2 hotkey bindings kept") != std::string::npos &&
+                           now.find("every hotkey is back") != std::string::npos &&
+                           now.find("hotkey tide-table: key F8") == std::string::npos;
+  check(now_ok && before_ok && before_is_write && now_is_read, "bindings: GraceUI's log file",
+        "user\\graceui.log: %zu line(s), %s, %s; graceui-previous.log: %zu line(s), %s, %s", now_lines,
+        now_ok ? "each GraceUI's own and naming no place" : "NOT ALL GRACEUI'S OWN OR ONE NAMES A PLACE",
+        now_is_read ? "the read session's" : "NOT THE READ SESSION'S", before_lines,
+        before_ok ? "each GraceUI's own and naming no place" : "NOT ALL GRACEUI'S OWN OR ONE NAMES A PLACE",
+        before_is_write ? "the write session's" : "NOT THE WRITE SESSION'S");
 }
 
 // ---- A wait handle for each mod's events (D212, ABI 1.5): set once when asked for, then whenever something is kept for

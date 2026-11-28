@@ -7,7 +7,13 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <string>
+#include <string_view>
+#include <system_error>
 
+#include "draw_atlas.h"
+#include "grace/abi/text.h"
 #include "hooks.h"
 
 namespace grace::host {
@@ -25,6 +31,75 @@ struct Line {
 constinit Line g_lines[kLines]{};
 constinit std::atomic<std::uint64_t> g_next{0};
 constinit std::uint64_t g_drained = 0;  // GraceUI's own thread's: the next line to pass to the debugger
+
+// The log file (D84, D282): Game\GraceUI\user\graceui.log, beside settings.json, the last session's kept as
+// graceui-previous.log. GraceUI's own thread alone opens and writes it, in log_drain.
+constexpr std::uint64_t kLogFileMax = 1024 * 1024;  // bytes of a session's file, after which it says so and stops (EST)
+enum class FileState : std::uint8_t { unopened, open, off };
+constinit FileState g_file_state = FileState::unopened;
+HANDLE g_file = INVALID_HANDLE_VALUE;
+constinit std::uint64_t g_file_bytes = 0;
+
+void to_debugger_alone(const char* why) noexcept {
+  char line[128];
+  std::snprintf(line, sizeof line, "%sthe log file %s: lines go to the debugger alone\n", kPrefix, why);
+  OutputDebugStringA(line);
+}
+
+// Opens the session's file at the first drain, the last session's moved aside; off for the session if it cannot.
+void open_file() noexcept {
+  g_file_state = FileState::off;
+  try {
+    std::wstring folder;
+    if (!atlas::own_folder(folder)) {
+      to_debugger_alone("has no folder");
+      return;
+    }
+    const std::filesystem::path user = std::filesystem::path(folder) / L"user";
+    std::error_code error;
+    std::filesystem::create_directories(user, error);
+    const std::filesystem::path path = user / L"graceui.log";
+    // The last session's, for a report about it (a session that fell): kept once, the one before it replaced.
+    MoveFileExW(path.c_str(), (user / L"graceui-previous.log").c_str(), MOVEFILE_REPLACE_EXISTING);
+    g_file = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, CREATE_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (g_file == INVALID_HANDLE_VALUE) {
+      to_debugger_alone("could not be opened");
+      return;
+    }
+    g_file_state = FileState::open;
+  } catch (...) {
+    to_debugger_alone("could not be opened");
+  }
+}
+
+// One line to the file, as the debugger has it: a line that seems to name a place on the player's machine is left out,
+// and said to be (PV3); the file's bound reached, it says so once and takes no more.
+void to_file(std::string_view text) noexcept {
+  if (g_file_state == FileState::unopened) {
+    open_file();
+  }
+  if (g_file_state != FileState::open) {
+    return;
+  }
+  char scrubbed[96];
+  if (grace::abi::names_a_path(text)) {
+    std::snprintf(scrubbed, sizeof scrubbed, "%sa line that named a place on this PC was left out\n", kPrefix);
+    text = scrubbed;
+  }
+  char full[96];
+  if (g_file_bytes + text.size() > kLogFileMax) {
+    std::snprintf(full, sizeof full, "%sthe log file is full: later lines go to the debugger alone\n", kPrefix);
+    text = full;
+    g_file_state = FileState::off;
+  }
+  DWORD written = 0;
+  if (!WriteFile(g_file, text.data(), static_cast<DWORD>(text.size()), &written, nullptr)) {
+    g_file_state = FileState::off;  // a disk full or gone: the debugger alone from now on
+    return;
+  }
+  g_file_bytes += written;
+}
 
 }  // namespace
 
@@ -56,6 +131,7 @@ void log_drain() noexcept {
     std::snprintf(skipped, sizeof skipped, "%s%llu lines were not passed to the debugger\n", kPrefix,
                   static_cast<unsigned long long>(next - kLines - from));
     OutputDebugStringA(skipped);
+    to_file(skipped);
     from = next - kLines;
   }
   for (; from < next; ++from) {
@@ -75,6 +151,7 @@ void log_drain() noexcept {
       text[length + 1] = '\0';
     }
     OutputDebugStringA(text.data());
+    to_file(std::string_view(text.data(), std::strlen(text.data())));
   }
   g_drained = from;
 }
