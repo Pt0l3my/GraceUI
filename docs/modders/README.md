@@ -6,8 +6,7 @@ topics and commands) and GraceUI draws it, in the Grace theme, in both views. El
 
 **Status.** GraceUI 0.2 is a preview. The framework opens to other modders with GraceUI 1.1, after EldenNet v1.0
 (DESIGN G18): until then the C ABI (ABI 1) and the bridge protocol (protocol 1) are used by EldenNet and by GraceUI's
-own example mods, and they grow by minors that only add. This guide is written alongside them; the parts marked
-*to come* are not written yet.
+own example mods, and they grow by minors that only add. This guide is written alongside them.
 
 ## The parts
 
@@ -19,12 +18,12 @@ own example mods, and they grow by minors that only add. This guide is written a
 | [The settings description](settings.md) | Every setting type, its bounds, availability and effect; the settings topic and its commands | Written |
 | [The protocol](protocol.md) | Topics, commands, results and errors as the views and GraceUI send them | Written |
 | [The C ABI](abi.md) | `GraceUI_RequestApi`, `connect` and its answers, each slot | Written |
-| Panels and your own Dear ImGui | Draw lists, their checks and budgets; Dear ImGui's core without a backend | *To come* |
+| [Panels and your own Dear ImGui](panels.md) | Draw lists, their checks and budgets; Dear ImGui's core without a backend | Written |
 | [Input and focus](input.md) | The input holder, hotkeys and pad chords, the closing press, Steam's floating keyboard | Written |
 | [Threads and budgets](threads.md) | Which calls go on which thread; the present thread's budget | Written |
-| Secrets, privacy and spoilers | What a view may see; secrets write-only; projections only | *To come* |
-| Versions and distribution | One copy in `Game\GraceUI\`; requiring a version; what a mod ships | *To come* |
-| Troubleshooting and bug reports | GraceUI's log, its notices, what to put in a report | *To come* |
+| [Secrets, privacy and spoilers](privacy.md) | What a view may see; secrets write-only; projections only | Written |
+| [Versions and distribution](versions.md) | One copy in `Game\GraceUI\`; requiring a version; what a mod ships | Written |
+| [Troubleshooting and bug reports](troubleshooting.md) | GraceUI's log, its notices, what to put in a report | Written |
 
 ## Tools you can use now
 
