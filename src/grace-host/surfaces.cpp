@@ -28,6 +28,7 @@
 #include "session.h"
 #include "spaces.h"
 #include "state.h"
+#include "steam.h"
 #include "wake.h"
 
 namespace grace::host::abi1 {
@@ -534,6 +535,44 @@ GraceUiStatus set_caret(GraceUiConsumer consumer, std::uint64_t panel, float x, 
                        static_cast<std::int32_t>(std::lround(rect.y0 + y)),
                        static_cast<std::int32_t>(std::lround(height)));
   return GRACEUI_OK;
+}
+
+GraceUiStatus pad_keyboard(GraceUiConsumer consumer, bool open, std::uint32_t mode, std::uint64_t panel, float x,
+                           float y, float width, float height) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  const std::uint32_t owner = admitted(consumer, status);
+  if (owner == 0) {
+    return status;
+  }
+  if (!open) {
+    steam::dismiss_keyboard(owner);  // none open for it: nothing to close
+    return GRACEUI_OK;
+  }
+  grace::abi::PanelDesc desc;
+  std::uint32_t index = 0;
+  const auto fits = [](float v) { return std::isfinite(v) && std::fabs(v) < 1.0e6f; };
+  if (mode > GRACEUI_PAD_KEYBOARD_NUMERIC || !fits(x) || !fits(y) || !fits(width) || !fits(height) || width <= 0.0f ||
+      height <= 0.0f || session::panels().find(consumer, panel, desc, index) != grace::abi::PanelResult::ok) {
+    refused("pad_keyboard", "a mode, a field or a panel that is not the mod's");
+    return GRACEUI_REFUSED;
+  }
+  const grace::input::Holder holder = input::capture().holder();
+  if (!holder.holds() || holder.owner != owner || holder.kind == grace::input::Kind::menu) {
+    refused("pad_keyboard", "the mod does not hold input");
+    return GRACEUI_REFUSED;
+  }
+  std::uint32_t buffer_width = 0;
+  std::uint32_t buffer_height = 0;
+  input::buffer_size(buffer_width, buffer_height);
+  const grace::abi::Rect rect =
+      grace::abi::place(desc, static_cast<float>(buffer_width), static_cast<float>(buffer_height));
+  auto left = static_cast<std::int32_t>(std::lround(rect.x0 + x));
+  auto top = static_cast<std::int32_t>(std::lround(rect.y0 + y));
+  auto w = static_cast<std::int32_t>(std::lround(width));
+  auto h = static_cast<std::int32_t>(std::lround(height));
+  input::buffer_to_client(left, top, w, h);
+  return steam::show_keyboard(owner, static_cast<steam::KeyboardMode>(mode), left, top, w, h) ? GRACEUI_OK
+                                                                                               : GRACEUI_UNAVAILABLE;
 }
 
 GraceUiStatus set_world_state(GraceUiConsumer consumer, std::uint32_t flags) noexcept {

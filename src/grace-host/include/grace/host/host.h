@@ -106,6 +106,9 @@ GraceUiStatus poll(GraceUiConsumer consumer, GraceUiEvent& out, bool protocol, b
 void display_at_connect(GraceUiConnectAnswer& out) noexcept;
 // The caret of the mod's field in its panel (D176), for the IME.
 GraceUiStatus set_caret(GraceUiConsumer consumer, std::uint64_t panel, float x, float y, float height) noexcept;
+// Steam's floating keyboard beside the holder's field in its panel (ABI 1.10, D276); `open` false closes it.
+GraceUiStatus pad_keyboard(GraceUiConsumer consumer, bool open, std::uint32_t mode, std::uint64_t panel, float x,
+                           float y, float width, float height) noexcept;
 // The mod's space (D169): its JSON already copied or seen whole within the call.
 GraceUiStatus register_pages(GraceUiConsumer consumer, std::uint32_t views, std::uint32_t version,
                              std::string_view pages, std::string_view settings, std::string_view increment) noexcept;

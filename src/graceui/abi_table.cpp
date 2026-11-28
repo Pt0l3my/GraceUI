@@ -724,6 +724,30 @@ GraceUiStatus set_on_present(GraceUiConsumer consumer, std::uint64_t panel_id, c
   }
 }
 
+// ---- ABI 1.10's slot (D276).
+
+constexpr std::uint32_t kPadKeyboard110 = 32;  // GraceUiPadKeyboard as ABI 1.10 first gave it
+static_assert(sizeof(GraceUiPadKeyboard) >= kPadKeyboard110);
+
+GraceUiStatus pad_keyboard(GraceUiConsumer consumer, const GraceUiPadKeyboard* keyboard) noexcept {
+  try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("pad_keyboard");  // D259: no slot from inside a callback
+    }
+    if (keyboard == nullptr) {
+      return grace::host::abi1::pad_keyboard(consumer, false, 0, 0, 0, 0, 0, 0);  // closes the mod's
+    }
+    GraceUiPadKeyboard in{};
+    if (!read_in(keyboard, kPadKeyboard110, in)) {
+      return refused_argument(consumer, "pad_keyboard", "a keyboard below its first size");
+    }
+    return grace::host::abi1::pad_keyboard(consumer, true, in.mode, in.panel, in.x, in.y, in.width, in.height);
+  } catch (...) {
+    grace::host::abi1::fault("pad_keyboard");
+    return GRACEUI_FAULT;
+  }
+}
+
 constinit const GraceUiApi1 kTable = {
     sizeof(GraceUiApi1),
     GRACEUI_ABI1_MINOR,
@@ -753,6 +777,7 @@ constinit const GraceUiApi1 kTable = {
     &describe_hotkey,
     &wake_event,
     &set_on_present,
+    &pad_keyboard,
 };
 
 }  // namespace

@@ -36,6 +36,7 @@
 #include "menu.h"
 #include "spaces.h"
 #include "state.h"
+#include "steam.h"
 
 namespace grace::host::hooks {
 namespace {
@@ -936,6 +937,11 @@ void move_filter() noexcept {
     move_filter();
     spaces::serve();  // the spaces and the browser view's server (D169), before the menu reads GraceUI's settings
     menu::serve();    // the menu's layout and commands (D167)
+    {
+      // A mod's Steam keyboard closes once that mod no longer holds input, whatever ended it (D276, invariant 7).
+      const grace::input::Holder holder = input::capture().holder();
+      steam::follow_holder(holder.owner, holder.holds() && holder.kind != grace::input::Kind::menu);
+    }
     log_drain();
   }
 }

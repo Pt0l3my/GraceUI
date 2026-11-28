@@ -2566,6 +2566,7 @@ const char* status_name(GraceUiStatus status) {
     case GRACEUI_NOT_READY: return "not_ready";
     case GRACEUI_TOO_LATE: return "too_late";
     case GRACEUI_UNBOUND: return "unbound";
+    case GRACEUI_UNAVAILABLE: return "unavailable";
     default: return "UNKNOWN";
   }
 }
@@ -6173,6 +6174,75 @@ void run_holder_events(const std::wstring& dll) {
         "%ld,%ld; on a panel not its own %s; not finite %s",
         status_name(caret_status), placed.x, placed.y, status_name(others_status), after_others.x, after_others.y,
         status_name(not_its_panel), status_name(not_finite));
+
+  // 8b. Steam's floating keyboard for the holder's field (ABI 1.10, D276): with no Steam library, unavailable; with the
+  // harness's stand-in (as Steam's, D275), shown beside the field in the window's pixels, as the caret is placed; not
+  // for a mod that does not hold input, a mode not of the four, or a field of no size; a null keyboard closes it; and
+  // the holder's end closes it too, on GraceUI's thread.
+  const HMODULE steam = LoadLibraryW(L"grace-harness-steam.dll");
+  using SteamCalls = void (*)(LONG*);
+  // SAFETY: the stand-in's own export, of this type (steam.c).
+  const auto steam_calls = steam != nullptr ? reinterpret_cast<SteamCalls>(reinterpret_cast<void*>(
+                                                  GetProcAddress(steam, "GraceHarnessSteam_Calls")))
+                                            : nullptr;
+  if (steam_calls == nullptr) {
+    fatal("grace-harness-steam.dll did not load");
+  }
+  const auto calls = [&] {
+    std::array<LONG, 8> out{};
+    steam_calls(out.data());
+    return out;
+  };
+  hold();
+  poll_holder(table, mod.me);
+  GraceUiPadKeyboard keyboard{};
+  keyboard.size = sizeof keyboard;
+  keyboard.mode = GRACEUI_PAD_KEYBOARD_LINE;
+  keyboard.panel = field;
+  keyboard.x = 10;
+  keyboard.y = 20;
+  keyboard.width = 200;
+  keyboard.height = 24;
+  grace.set_steam_module(L"grace-harness-no-steam.dll");  // a name nothing has: no Steam library loaded
+  const GraceUiStatus no_steam = table->pad_keyboard(mod.me, &keyboard);
+  grace.set_steam_module(L"grace-harness-steam.dll");
+  const GraceUiStatus shown = table->pad_keyboard(mod.me, &keyboard);
+  const std::array<LONG, 8> at_show = calls();
+  GraceUiPadKeyboard other_mod = keyboard;
+  other_mod.panel = plain_field;
+  const GraceUiStatus not_holder = table->pad_keyboard(plain.me, &other_mod);
+  GraceUiPadKeyboard odd_mode = keyboard;
+  odd_mode.mode = 9;
+  const GraceUiStatus bad_mode = table->pad_keyboard(mod.me, &odd_mode);
+  GraceUiPadKeyboard no_size = keyboard;
+  no_size.width = 0;
+  const GraceUiStatus bad_size = table->pad_keyboard(mod.me, &no_size);
+  const GraceUiStatus closed = table->pad_keyboard(mod.me, nullptr);
+  const std::array<LONG, 8> at_close = calls();
+  keyboard.mode = GRACEUI_PAD_KEYBOARD_LINES;
+  const GraceUiStatus again = table->pad_keyboard(mod.me, &keyboard);
+  table->release_input(mod.me);
+  poll_holder(table, mod.me);
+  std::array<LONG, 8> at_end = calls();
+  for (int i = 0; i < 100 && at_end[1] < 2; ++i) {
+    Sleep(20);  // GraceUI's thread closes it, woken by the holder's end
+    at_end = calls();
+  }
+  const GraceUiStatus keyboard_after_end = table->pad_keyboard(mod.me, &keyboard);  // no longer the holder
+  check(no_steam == GRACEUI_UNAVAILABLE && shown == GRACEUI_OK && at_show[0] == 1 && at_show[2] == 0 &&
+            at_show[3] == 210 && at_show[4] == 120 && at_show[5] == 200 && at_show[6] == 24 && at_show[7] == 1 &&
+            not_holder == GRACEUI_REFUSED && bad_mode == GRACEUI_REFUSED && bad_size == GRACEUI_REFUSED &&
+            closed == GRACEUI_OK && at_close[1] == 1 && again == GRACEUI_OK && at_end[0] == 2 && at_end[2] == 1 &&
+            at_end[1] == 2 && keyboard_after_end == GRACEUI_REFUSED &&
+            table->has_cap(GRACEUI_CAP_PAD_KEYBOARD, std::strlen(GRACEUI_CAP_PAD_KEYBOARD)) != 0,
+        "holder events: Steam's floating keyboard",
+        "no Steam library: %s; the stand-in's: %s, shown %ld, mode %ld, at %ld,%ld %ldx%ld, newest accessor %s; "
+        "another mod's %s, mode 9 %s, no width %s; closed (%s): closed %ld; again, several lines (%s), then the "
+        "holder's end: shown %ld, mode %ld, closed %ld; after it %s",
+        status_name(no_steam), status_name(shown), at_show[0], at_show[2], at_show[3], at_show[4], at_show[5],
+        at_show[6], at_show[7] != 0 ? "yes" : "NO", status_name(not_holder), status_name(bad_mode),
+        status_name(bad_size), status_name(closed), at_close[1], status_name(again), at_end[0], at_end[2], at_end[1],
+        status_name(keyboard_after_end));
 
   // 9. A mod that polls too slowly: 300 characters, 256 kept and the rest counted on the first event it takes.
   hold();

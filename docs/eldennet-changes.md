@@ -1942,3 +1942,20 @@ and GraceUI's log says which in one line: "Steam's floating keyboard: ..." is th
 Nothing changes for EldenNet. If you would rather your chat box opened the keyboard through GraceUI than make the call
 itself (R2's one third-party call), GraceUI can offer the input holder an ABI slot for it (a mode and the field's
 rectangle in the mod's panel); say so and it is the next ABI minor.
+
+## 102. Steam's floating keyboard for your chat box (2026-11-28, D276; GraceUI 0.2.69, ABI 1.10)
+
+Built as you asked. While EldenNet holds input and the chat box's field begins editing from the pad (your holder's pad
+events say so), call `pad_keyboard(consumer, &keyboard)` with a `GraceUiPadKeyboard`: `size`, `mode`
+(`GRACEUI_PAD_KEYBOARD_LINE` for the chat line), `panel` (the box's panel) and the field's `x`, `y`, `width` and
+`height` in the panel, as you give `set_caret`. It answers:
+- `GRACEUI_OK`: shown.
+- `GRACEUI_UNAVAILABLE` (12, new): no keyboard to show here, the log saying why. It opens on a Deck or in Big Picture only.
+- `GRACEUI_REFUSED`: you do not hold input, a panel not yours, a mode not of the four, a field of no size, or a call
+  from inside a callback.
+
+Call it from your own thread: Steam's call may take a moment. `pad_keyboard(consumer, NULL)` closes it, and GraceUI
+closes it itself when your holder ends, whatever ends it. The keyboard types into the game's window as keys do, so
+your field takes its characters as your holder's key and character events, as now. Check
+`GRACEUI_API1_COVERS(api, pad_keyboard)` and `has_cap("pad-keyboard")`, and EldenNet then makes no Steam call of its
+own: R2's one third-party call can go. A mod built for ABI 1.9 sees nothing new.
