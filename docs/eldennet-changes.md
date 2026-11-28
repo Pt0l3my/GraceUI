@@ -2040,3 +2040,14 @@ game's own menu is open, and comes back without losing the player's binding.
 
 Roadmap line, if you take it: "Talk key paused while a game menu is open (GraceUI 0.2.72, ABI 1.11, D280;
 eldennet-changes §105): set_hotkey_enabled on menu open and close, after each connect; a press under way stays whole."
+
+## 106. The space check names your categories' icons (2026-11-28, D265 amended; GraceUI's tools after 0.2.72)
+
+As you asked (your WHY§712): `check:space`'s rail lines now name the icon the browser view draws for each category, by its
+name in GraceUI's set, as in `rail: Home (icon home): ...`. A category whose icon name the set lacks draws none, and its
+line names none. Nothing else in the dump changed.
+
+- **What to do.** At the pin that takes this, run `check:space` on your folder with `--update` once, and check that each
+  of the rail's lines names the icon the owner chose (O149). Your browser goldens then guard the icons as the in-game
+  goldens do.
+- **No change to GraceUI's version, the protocol or the ABI**: it is the check's own dump, from GraceUI's `web/tools`.
