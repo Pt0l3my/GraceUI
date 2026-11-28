@@ -2051,3 +2051,21 @@ line names none. Nothing else in the dump changed.
   of the rail's lines names the icon the owner chose (O149). Your browser goldens then guard the icons as the in-game
   goldens do.
 - **No change to GraceUI's version, the protocol or the ABI**: it is the check's own dump, from GraceUI's `web/tools`.
+
+## 107. The page tool compiles a mod's space (2026-11-28, D283; GraceUI 0.2.75)
+
+`tools/pages/build.py --build <space.toml> --out <folder>` now compiles any mod's space as GraceUI's own are compiled,
+once the page lint passes, with the `topics.json` beside the source as its fixtures: `pages.json` and `settings.json` in
+the folder, and with `--header FILE` a C header holding both as char arrays of ASCII JSON. `--minor N` names your
+floor's protocol minor in the page data (your `PROTOCOL_MINOR`), and `--check` fails on drift, as your CTest's does.
+`examples/hello-space` is a fourth example mod built this way, and the modders' guide says how
+(`docs/modders/pages.md`, "Compiling a mod's space").
+
+- **What to do.** Nothing at once. Your own `tools/pages/build.py` keeps working, since GraceUI's format did not change.
+  When it suits, it could call GraceUI's (from the pinned GraceUI) with `--minor 21` in place of its own conversion,
+  keeping your `space_data.cpp` or taking the header instead: one compiler of the format, the lint's own. Its
+  `settings.json` is as yours: the same schema hash, `synonyms` and `locked` filled in.
+- **One thing it shows:** GraceUI's server refuses a destructive action's command without `"confirm": true` itself,
+  from every view, before the space hears of it (it always has: serve::confirmed); a setting's type and bounds are the
+  space's alone to check.
+- **No change to the protocol or the ABI**; graceui.dll changes only in its version.

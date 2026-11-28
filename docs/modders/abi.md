@@ -209,6 +209,10 @@ frames ([The protocol](protocol.md)).
 - **`answer(consumer, reply, frame, length)`** takes the result of the command `reply` names
   ([Answers](protocol.md#answers)).
 
+`examples/hello-space` is a whole space in a few hundred lines: its page data from GraceUI's page tool
+([Compiling a mod's space](pages.md#compiling-a-mods-space)), `register_pages` for both views, a topic built only while
+`GRACEUI_EVENT_WATCHED` holds, each command checked and answered, and its thread waiting on `wake_event`.
+
 ### Events: poll and wake_event
 
 **`poll(consumer, &event)`** gives the mod's next event at once: `GRACEUI_OK` with one, `GRACEUI_EVENT_NONE` if nothing

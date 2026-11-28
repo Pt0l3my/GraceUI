@@ -30,8 +30,9 @@ own example mods, and they grow by minors that only add. This guide is written a
 - **grace-dev** (`tools/grace-dev/`): a fake host for any space. It serves a space's pages and fixtures to the browser
   view on loopback, plays a scenario of state changes and answers to commands, and dumps a page's in-game layout
   (`--dump`).
-- **The page lint**: `python3 -I tools/pages/build.py --lint <space.toml>...` checks a space's sources against this
-  GraceUI.
+- **The page tool**: `python3 -I tools/pages/build.py --lint <space.toml>...` checks a space's sources against this
+  GraceUI, and `--build <space.toml> --out <folder>` compiles one into the page data and settings description a mod
+  registers, with a C header of both if asked ([Compiling a mod's space](pages.md#compiling-a-mods-space)).
 - **The space check**: `npm run -s check:space -- <space folder> [--increment X.Y]` in `web/` opens the real browser
   view over a space's files and prints what it shows, for a golden of your own.
 - **The example mods** (`examples/`), each with invented content:
@@ -40,6 +41,9 @@ own example mods, and they grow by minors that only add. This guide is written a
   - `hello-panel` (C++): a panel drawn with Dear ImGui's core, headless, with no backend and no hook.
   - `hello-debug-view` (C++): a banner notice replaced in place, and a view toggled by a hotkey of GraceUI's, drawn by
     its own headless Dear ImGui.
+  - `hello-space` (C++): a space of its own, in game and in the browser: its page compiled from its `space.toml` at
+    its build, its topics built only while watched, its settings and commands checked by its one entry point and
+    answered, and its thread waiting on GraceUI's wake event.
 
 ## Rules every mod keeps
 

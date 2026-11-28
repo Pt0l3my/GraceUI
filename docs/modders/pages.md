@@ -11,7 +11,8 @@ GraceUI's own built-in spaces are written as TOML, `src/grace-pages/spaces/<id>/
     python3 -I tools/pages/build.py --lint path/to/space.toml
 
 The lint is the authority on what is allowed: the rules below are its rules, numbered as in its own header. A mod hands
-GraceUI the compiled page data and settings description with `register_pages` ([The C ABI](abi.md)).
+GraceUI the compiled page data and settings description with `register_pages` ([The C ABI](abi.md)); the same tool
+compiles them from the mod's own `space.toml` ([Compiling a mod's space](#compiling-a-mods-space)).
 
 ## The file's parts
 
@@ -113,7 +114,7 @@ A header action or a section action:
 |---|---|
 | `id`, `label` | Its id and its button's words |
 | `command` | The space's command it sends |
-| `tone` | `primary`, `secondary` or `destructive`; a destructive one has a confirmation and sends `"confirm": true` |
+| `tone` | `primary`, `secondary` or `destructive`; a destructive one has a confirmation and sends `"confirm": true`, and GraceUI refuses its command without it (`confirm_required`) before the space hears of it, from every view |
 | `confirm` | Words asked before it is sent |
 | `confirm_after_ms` | Its second press counts only this long after the first, 1 to 3000 ms (1.21) |
 | `state` | A header switch: a boolean member of a state topic of the space's, its command sent with `{on}` (1.15) |
@@ -145,6 +146,26 @@ publishes.
 
 When the state says `start`, the menu's next opening and the dashboard's first load land on the flow, once a session
 each. GraceUI never opens the menu for it: invite the player with a notice of your own.
+
+## Compiling a mod's space
+
+The page tool compiles a mod's `space.toml` as it does GraceUI's own spaces, after the lint passes (D283):
+
+    python3 -I tools/pages/build.py --build path/to/space.toml --out path/to/space [--minor N] [--header FILE] [--check]
+
+| Option | What it does |
+|---|---|
+| `--build FILE` | The mod's `space.toml`, linted with the `topics.json` beside it as its fixtures, if there is one. A space with the id of one of GraceUI's own is refused |
+| `--out DIR` | Writes `pages.json` (the page data) and `settings.json` (the settings description): a space folder, as grace-dev and the space check read it; add a `topics.json` of fixtures to it for them |
+| `--minor N` | The protocol minor the page data names: that of the GraceUI the mod names as its floor (§6.4), 0 to this GraceUI's; by default this GraceUI's own. GraceUI refuses page data above its own minor (D264) |
+| `--header FILE` | Also writes a C header (C89 or C++, any compiler) with both documents as arrays of ASCII JSON, `<ID>_PAGES` and `<ID>_SETTINGS`, with `<ID>_PAGES_LENGTH` and `<ID>_SETTINGS_LENGTH`: `<ID>` is the space's id in capitals, every other character an underscore. That is what the mod hands `register_pages` |
+| `--check` | Writes nothing, and fails if an output is not what the source builds: for a mod's CI, where the outputs are committed |
+
+The lint checks a space against the GraceUI the tool comes with. A space whose floor is older can be linted by the
+floor's own tool as well, for a component or a field newer than the floor.
+
+`examples/hello-space` runs it at its build: its `CMakeLists.txt` writes the space folder and the header into the build
+tree from `space/space.toml`, with `--minor 22` for its floor, GraceUI 0.2.70.
 
 ## The lint's rules, in short
 
