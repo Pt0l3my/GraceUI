@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""tools/guide/snippets.py: the modders' guide's code is the example mods' own (D85, D284).
+"""tools/guide/snippets.py: the modders' guide's code is the example mods' own, or the ABI mock's (D85, D284).
 
     python3 -I tools/guide/snippets.py           check every code block in docs/modders/
-    python3 -I tools/guide/snippets.py --find    print where each block's lines are found in examples/
+    python3 -I tools/guide/snippets.py --find    print where each block's lines are found in the sources
 
 Each indented code block in docs/modders/*.md has a marker on the line before the blank line that precedes it:
 
     <!-- snippet: examples/<mod>/<file> -->   the block's lines, in order and with their relative indentation, are a
                                               run of that file's lines: the example compiles in both Windows builds and
                                               runs in the harness, so the block does too
+    <!-- snippet: src/graceui-mock/<file> --> likewise, a file of the ABI mock's (D285), whose tests CTest runs
     <!-- snippet: shell -->                   a command, for a reader to type
     <!-- snippet: frame -->                   a protocol frame, its values elided
 
-A block without a marker, a marker with no block after it, a file that is not under examples/ or does not exist, or a
-block not found in its file fails the check. Standard library only; it reads nothing but docs/modders/ and examples/.
+A block without a marker, a marker with no block after it, a file that is not under examples/ or src/graceui-mock/ or
+does not exist, or a block not found in its file fails the check. Standard library only; it reads nothing but
+docs/modders/, examples/ and src/graceui-mock/.
 """
 import argparse
 import pathlib
@@ -24,6 +26,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 GUIDE = ROOT / "docs" / "modders"
 EXAMPLES = ROOT / "examples"
+MOCK = ROOT / "src" / "graceui-mock"
 MARKER = re.compile(r"^<!-- snippet: (\S+) -->$")
 KINDS = {"shell", "frame"}
 SOURCES = (".c", ".cpp", ".h", ".hpp", ".txt", ".toml", ".json")
@@ -81,8 +84,12 @@ def found_in(body, source_lines):
     return 0
 
 
+def roots():
+    return {"examples/": EXAMPLES, "src/graceui-mock/": MOCK}
+
+
 def sources():
-    return sorted(p for p in EXAMPLES.rglob("*") if p.is_file() and p.suffix in SOURCES)
+    return sorted(p for root in roots().values() for p in root.rglob("*") if p.is_file() and p.suffix in SOURCES)
 
 
 def check():
@@ -99,8 +106,10 @@ def check():
             if marker in KINDS:
                 continue
             source = (ROOT / marker).resolve()
-            if not marker.startswith("examples/") or EXAMPLES not in source.parents or not source.is_file():
-                failures.append(f"{name}:{line}: its marker names {marker}, which is no file of examples/")
+            if not any(marker.startswith(prefix) and root.resolve() in source.parents
+                       for prefix, root in roots().items()) or not source.is_file():
+                failures.append(f"{name}:{line}: its marker names {marker}, which is no file of examples/ or "
+                                "src/graceui-mock/")
                 continue
             if not found_in(body, source.read_text(encoding="utf-8").split("\n")):
                 failures.append(f"{name}:{line}: its {len(body)} line(s) are not a run of {marker}")
@@ -133,7 +142,7 @@ def run(argv):
     for failure in failures:
         print(f"snippets: {failure}", file=sys.stderr)
     if not failures:
-        print(f"snippets: ok ({checked} blocks found in the examples)")
+        print(f"snippets: ok ({checked} blocks found in their files)")
     return 1 if failures else 0
 
 

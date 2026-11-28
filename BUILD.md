@@ -180,11 +180,18 @@ python3 -I -m unittest discover -s tools/pages
 The Linux build's CTest runs `--check`, the lint's tests (each rule failing on a demo space seeded to break it) and
 `grace_pages_tests` (every built-in space decoded by grace-protocol's own decoders).
 
+## The mock of the ABI
+
+`src/graceui-mock/` (D285) is the C mock of ABI 1 that a mod's own tests use (`docs/modders/testing.md`). Every build
+compiles the library, `graceui_mock`; the Linux trees' CTest runs `graceui_mock_tests`, whose cases drive it as a mod
+would, one of them a mod's logic written in C.
+
 ## The modders' guide
 
-Every code block in `docs/modders/` is a run of an example mod's own file, named in a marker before it (D284):
-`tools/guide/snippets.py` checks them, and `--find` prints where each block's lines are found in `examples/`, for a
-new block's marker. The Linux build's CTest runs it and its tests.
+Every code block in `docs/modders/` is a run of an example mod's own file, or the ABI mock's, named in a marker before
+it (D284, D285):
+`tools/guide/snippets.py` checks them, and `--find` prints where each block's lines are found, for a new block's
+marker. The Linux build's CTest runs it and its tests.
 
 ```sh
 python3 -I tools/guide/snippets.py

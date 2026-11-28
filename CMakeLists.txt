@@ -85,6 +85,7 @@ add_subdirectory(src/grace-abi)
 add_subdirectory(src/grace-serve)
 add_subdirectory(src/grace-spaces)
 add_subdirectory(src/grace-guard)
+add_subdirectory(src/graceui-mock)  # the C mock of ABI 1, for a mod's own tests (D285): pure, built everywhere
 
 # grace-dev, the fake host (§9.2, D168): a developer's tool, on Linux and in the Windows test builds; never in a release
 # build, and not in the fuzzing build, whose grace-serve core carries the fuzzers' instrumentation.

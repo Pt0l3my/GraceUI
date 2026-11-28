@@ -24,10 +24,11 @@ own example mods, and they grow by minors that only add. This guide is written a
 | [Secrets, privacy and spoilers](privacy.md) | What a view may see; secrets write-only; projections only | Written |
 | [Versions and distribution](versions.md) | One copy in `Game\GraceUI\`; requiring a version; what a mod ships | Written |
 | [Troubleshooting and bug reports](troubleshooting.md) | GraceUI's log, its notices, what to put in a report | Written |
+| [Testing a mod](testing.md) | The page tool, the space check and grace-dev for pages; the mock of the ABI for a mod's own code | Written |
 
-The code in this guide is the example mods' own. Each block is a run of lines from one of `examples/`, named in a
-comment beside it in this guide's source, and a check keeps them the same (`tools/guide/snippets.py`, D284): what you
-read here compiles in both Windows builds and runs in GraceUI's harness.
+The code in this guide is the example mods' own, or the ABI mock's tests'. Each block is a run of lines from a file of
+`examples/` or `src/graceui-mock/`, named in a comment beside it in this guide's source, and a check keeps them the same
+(`tools/guide/snippets.py`, D284): what you read here compiles, and runs in GraceUI's harness or its unit tests.
 
 ## Tools you can use now
 
@@ -39,6 +40,9 @@ read here compiles in both Windows builds and runs in GraceUI's harness.
   registers, with a C header of both if asked ([Compiling a mod's space](pages.md#compiling-a-mods-space)).
 - **The space check**: `npm run -s check:space -- <space folder> [--increment X.Y]` in `web/` opens the real browser
   view over a space's files and prints what it shows, for a golden of your own.
+- **The mock of the ABI** (`src/graceui-mock/`): a `GraceUiApi1` table in pure C that answers as GraceUI does, records
+  every call and gives `poll` the events a test queues, for a mod's own unit tests on any system
+  ([Testing a mod](testing.md)).
 - **The example mods** (`examples/`), each with invented content:
   - `hello-notice` (C): finds GraceUI, connects and shows one notice; with GraceUI absent or too old its UI is simply
     off.
