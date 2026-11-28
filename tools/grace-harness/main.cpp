@@ -1158,10 +1158,11 @@ Costs frame_costs(const GraceUi& grace) {
 // time per frame (QueryThreadCycleTime fails, GetThreadTimes counts in 10 ms ticks, and the kernel's per-thread
 // schedstat updates its runtime a tick late and cannot see a virtual machine's stolen time). Interference, from other
 // processes or from the host, can only lengthen a frame's wall time, never shorten it: so a budget is held against the
-// least p99 of up to three windows of the same frames, each as long as the one window was. A cost of GraceUI's own shows
-// in every window, a busy spell of the machine's in one; the budget and the percentile are unchanged, every window's
-// figures are printed, and what a window must do besides (frames drawn, no allocation) holds in every one.
-constexpr int kCostWindows = 3;
+// least p99 of up to five windows (three before D154's amendment) of the same frames, each as long as the one window
+// was. A cost of GraceUI's own shows in every window, a busy spell of the machine's in one; the budget and the
+// percentile are unchanged, every window's figures are printed, and what a window must do besides (frames drawn, no
+// allocation) holds in every one.
+constexpr int kCostWindows = 5;  // D154 as amended after 0.2.74: five (EST)
 
 struct CostWindow {
   Costs costs;
