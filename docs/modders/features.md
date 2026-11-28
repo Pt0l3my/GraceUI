@@ -56,6 +56,7 @@ Both majors are 1. The decision named in each row is in `docs/DESIGN.md` §13.
 | 1.8 | 0.2.52 | D259 | `on-present` | `set_on_present`: a panel drawn in each frame by its mod's callback, timed by GraceUI |
 | 1.9 | 0.2.61 | D268 | `plain-text` | Whether Plain text is on, at connect and in `GRACEUI_EVENT_DISPLAY` |
 | 1.10 | 0.2.69 | D276 | `pad-keyboard` | `pad_keyboard`: Steam's floating keyboard for the holder's field |
+| 1.11 | 0.2.72 | D280 | `hotkey-pause` | `set_hotkey_enabled`: one of the mod's own hotkeys paused and resumed, a press under way kept whole |
 
 A cap names what a mod may rely on; GraceUI's version does not. A mod that finds a cap missing goes without the
 feature, and says so in its own words if the player would notice.

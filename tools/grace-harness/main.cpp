@@ -10455,6 +10455,200 @@ void run_chords(const std::wstring& dll) {
         gone.buttons, second_presses);
 }
 
+// ---- A mod's own hotkey paused and resumed (ABI 1.11, D280): paused, F11 and its pad chord are the game's and fire
+// nothing, and the Hotkeys page says so; resumed, they are the hotkey's again; a press under way stays whole on the side
+// that saw it begin, in DirectInput's reads, the window's messages and the pad.
+void run_hotkey_pause(const std::wstring& dll) {
+  Game game(false);
+  const HWND window = game.window();
+  cursor_into(window);
+  pump_messages();
+  GameInput reads;
+  reads.open(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = grace.table();
+  if (table == nullptr) {
+    fatal("no table");
+  }
+  constexpr std::uint32_t kUp = XINPUT_GAMEPAD_DPAD_UP;
+  constexpr std::uint32_t kView = XINPUT_GAMEPAD_BACK;
+  constexpr std::uint32_t kPacket = 40;
+  const Connected mod = connect(table, request_for("pause-mod", GRACEUI_VERSION_PACK(0, 2, 72), "Pause mod",
+                                                   "hotkeys pad-chords hotkey-pause"));
+  const Connected other = connect(table, request_for("pause-other", GRACEUI_VERSION_PACK(0, 2, 72), "Pause other",
+                                                     "hotkeys"));
+  GraceUiHotkeyDesc desc{};
+  desc.size = sizeof desc;
+  desc.key = VK_F11;
+  desc.pad_chord = GRACEUI_PAD_CHORD(kUp, kView);
+  desc.action = "talk";
+  desc.action_length = 4;
+  desc.name = "Talk";
+  desc.name_length = 4;
+  std::uint32_t talk = 0;
+  const GraceUiStatus added = table->register_hotkey(mod.answer.consumer, &desc, &talk);
+  const bool cap = table->has_cap(GRACEUI_CAP_HOTKEY_PAUSE, std::strlen(GRACEUI_CAP_HOTKEY_PAUSE)) != 0;
+  const bool covers = GRACEUI_API1_COVERS(table, set_hotkey_enabled);
+  const GraceUiStatus foreign = covers ? table->set_hotkey_enabled(other.answer.consumer, talk, 0) : GRACEUI_FAULT;
+  const GraceUiStatus no_id = covers ? table->set_hotkey_enabled(mod.answer.consumer, 0, 0) : GRACEUI_FAULT;
+  const GraceUiStatus no_mod = covers ? table->set_hotkey_enabled(0, talk, 0) : GRACEUI_FAULT;
+  check(mod.status == GRACEUI_OK && other.status == GRACEUI_OK && added == GRACEUI_OK && cap && covers &&
+            table->abi_minor >= 11u && foreign == GRACEUI_REFUSED && no_id == GRACEUI_REFUSED && no_mod != GRACEUI_OK,
+        "hotkey pause: the slot",
+        "has_cap(\"%s\") %s, the table's minor %u, its size covers the slot: %s; F11 with D-pad Up then View %s; "
+        "another mod's id %s; id 0 %s; no mod %s",
+        GRACEUI_CAP_HOTKEY_PAUSE, cap ? "yes" : "NO", table->abi_minor, covers ? "yes" : "NO", status_name(added),
+        status_name(foreign), status_name(no_id), status_name(no_mod));
+  if (!covers) {
+    return;
+  }
+
+  start_host(game, grace);
+  frames(game, 30);
+  until_atlas(game, grace);
+  using grace::protocol::Json;
+  const auto talk_state = [&](const char* want) {
+    const Json body = own_topic(game, grace, "graceui.hotkeys", [&](const Json& b) {
+      return hotkey_cell(b, "pause-mod/talk", "state") == want;
+    });
+    return hotkey_cell(body, "pause-mod/talk", "state");
+  };
+  const auto events = [&]() {
+    std::uint32_t count = 0;
+    GraceUiEvent event{};
+    event.size = sizeof event;
+    for (int i = 0; i < 16 && table->poll(mod.answer.consumer, &event) == GRACEUI_OK &&
+                    event.kind != GRACEUI_EVENT_NONE;
+         ++i) {
+      if (event.kind == GRACEUI_EVENT_HOTKEY && event.hotkey_id == talk) {
+        count += event.count;
+      }
+    }
+    return count;
+  };
+  const auto pad = [&](std::uint32_t buttons) {
+    game.frame(kInputColour, PresentWith::present);
+    std::uint32_t packet = kPacket;
+    return grace.pad_read(0, buttons, &packet);
+  };
+  const auto wait = [&](DWORD ms) {
+    const DWORD start = GetTickCount();
+    while (GetTickCount() - start < ms) {
+      game.frame(kInputColour, PresentWith::present);
+      Sleep(10);
+    }
+  };
+  const auto f11_down = [&]() { return (reads.keys()[DIK_F11] & 0x80) != 0; };
+  events();
+
+  // 1. Paused: F11 reaches the game, by DirectInput and as messages; its chord's View is not held back; nothing fires.
+  const GraceUiStatus paused = table->set_hotkey_enabled(mod.answer.consumer, talk, 0);
+  const GraceUiStatus again = table->set_hotkey_enabled(mod.answer.consumer, talk, 0);
+  const std::string paused_state = talk_state("Paused by its mod for now");
+  cursor_into(window);
+  reads.keys();
+  g_seen = Seen{};
+  inject_key(VK_F11, 0x57, true);
+  settle();
+  const bool paused_read = f11_down();
+  inject_key(VK_F11, 0x57, false);
+  settle();
+  reads.keys();
+  const int paused_messages = g_seen.key_down[VK_F11] + g_seen.key_up[VK_F11];
+  pad(0);
+  pad(kUp);
+  wait(250);
+  const std::uint32_t chord_held = pad(kUp | kView);
+  wait(700);
+  const std::uint32_t chord_later = pad(kUp | kView);
+  pad(0);
+  const std::uint32_t paused_events = events();
+  check(paused == GRACEUI_OK && again == GRACEUI_OK && paused_state == "Paused by its mod for now" && paused_read &&
+            paused_messages == 2 && chord_held == (kUp | kView) && chord_later == (kUp | kView) && paused_events == 0,
+        "hotkey pause: paused",
+        "paused %s, again %s; the Hotkeys page: \"%s\"; F11: DirectInput %s it, %d of its 2 messages reached the "
+        "game; D-pad Up then View: the game saw %#x, then %#x; %u press(es) counted",
+        status_name(paused), status_name(again), paused_state.c_str(), paused_read ? "read" : "DID NOT READ",
+        paused_messages, chord_held, chord_later, paused_events);
+
+  // 2. Resumed: F11 and its chord are the hotkey's again, kept from the game.
+  const GraceUiStatus resumed = table->set_hotkey_enabled(mod.answer.consumer, talk, 1);
+  const std::string resumed_state = talk_state("Bound");
+  g_seen = Seen{};
+  inject_key(VK_F11, 0x57, true);
+  settle();
+  const bool resumed_read = f11_down();
+  inject_key(VK_F11, 0x57, false);
+  settle();
+  reads.keys();
+  const int resumed_messages = g_seen.key_down[VK_F11] + g_seen.key_up[VK_F11];
+  const std::uint32_t by_key = events();
+  pad(0);
+  pad(kUp);
+  wait(250);
+  const std::uint32_t chord_back = pad(kUp | kView);
+  wait(700);
+  const std::uint32_t chord_fired = pad(kUp | kView);
+  pad(0);
+  const std::uint32_t by_chord = events();
+  check(resumed == GRACEUI_OK && resumed_state == "Bound" && !resumed_read && resumed_messages == 0 && by_key == 1 &&
+            chord_back == kUp && chord_fired == 0 && by_chord == 1,
+        "hotkey pause: resumed",
+        "resumed %s; the Hotkeys page: \"%s\"; F11: DirectInput %s it, %d message(s) reached the game, %u press(es) "
+        "counted; D-pad Up then View: the game saw %#x, then %#x, %u press(es) counted",
+        status_name(resumed), resumed_state.c_str(), resumed_read ? "READ" : "did not read", resumed_messages, by_key,
+        chord_back, chord_fired, by_chord);
+
+  // 3. Under way. The hotkey's press, paused while held: hidden from the game to its release, counted once. The game's
+  // press, resumed while held: the game's to its release, by DirectInput and as messages, and fires nothing.
+  g_seen = Seen{};
+  inject_key(VK_F11, 0x57, true);
+  settle();
+  const GraceUiStatus pause_held = table->set_hotkey_enabled(mod.answer.consumer, talk, 0);
+  frames(game, 2);
+  const bool hotkeys_held = f11_down();
+  inject_key(VK_F11, 0x57, false);
+  settle();
+  reads.keys();
+  const int hotkeys_messages = g_seen.key_down[VK_F11] + g_seen.key_up[VK_F11];
+  const std::uint32_t hotkeys_press = events();
+  g_seen = Seen{};
+  inject_key(VK_F11, 0x57, true);
+  settle();
+  const bool games_before = f11_down();
+  const GraceUiStatus resume_held = table->set_hotkey_enabled(mod.answer.consumer, talk, 1);
+  frames(game, 2);
+  const bool games_held = f11_down();
+  inject_key(VK_F11, 0x57, false);
+  settle();
+  const bool games_after = f11_down();
+  const int games_messages = g_seen.key_down[VK_F11] + g_seen.key_up[VK_F11];
+  const std::uint32_t games_press = events();
+  g_seen = Seen{};
+  inject_key(VK_F11, 0x57, true);
+  settle();
+  const bool fresh_read = f11_down();
+  inject_key(VK_F11, 0x57, false);
+  settle();
+  reads.keys();
+  const std::uint32_t fresh_press = events();
+  check(pause_held == GRACEUI_OK && !hotkeys_held && hotkeys_messages == 0 && hotkeys_press == 1 &&
+            resume_held == GRACEUI_OK && games_before && games_held && !games_after && games_messages == 2 &&
+            games_press == 0 && !fresh_read && fresh_press == 1,
+        "hotkey pause: a press under way kept whole",
+        "the hotkey's press, paused while held: DirectInput %s it, %d message(s) reached the game, %u press(es) "
+        "counted; the game's press, resumed while held: DirectInput %s it before, %s it after, %s it released, %d of "
+        "its 2 messages reached the game, %u press(es) counted; a fresh press then: DirectInput %s it, %u counted",
+        hotkeys_held ? "READ" : "did not read", hotkeys_messages, hotkeys_press, games_before ? "read" : "DID NOT READ",
+        games_held ? "read" : "DID NOT READ", games_after ? "STILL READ" : "no longer read", games_messages,
+        games_press, fresh_read ? "READ" : "did not read", fresh_press);
+  table->disconnect(other.answer.consumer);
+  table->disconnect(mod.answer.consumer);
+}
+
 void run_display(const std::wstring& dll) {
   Game game(false, 1280, 720);
   const HWND window = game.window();
@@ -11169,6 +11363,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"quiet-read") {
     std::printf("-- scenario: the next session keeps the switch (D181)\n");
     run_quiet_read(dll);
+  } else if (scenario == L"hotkey-pause") {
+    std::printf("-- scenario: a mod's own hotkey paused and resumed through ABI 1.11 (D280)\n");
+    run_hotkey_pause(dll);
   } else if (scenario == L"bindings") {
     std::printf("-- scenario: hotkeys rebound in the menu and kept, in two processes of their own (G37, D208 to D210)\n");
     run_bindings(dll);
@@ -11218,7 +11415,7 @@ int wmain(int argc, wchar_t** argv) {
             L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
             L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-focus-ring", L"menu-pad", L"menu-away", L"menu-space", L"menu-flow", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
-            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake", L"on-present", L"heap-guard", L"heap-guard-off"}) {
+            L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"hotkey-pause", L"wake", L"on-present", L"heap-guard", L"heap-guard-off"}) {
         run(child_scenario, dll, this_program());
         if (std::wstring_view(child_scenario) == L"copy-beside-mod-reversed") {
           DeleteFileW((folder_of_this_program() + L"GraceUI\\graceui.dll").c_str());  // its GraceUI\ copy (D244)

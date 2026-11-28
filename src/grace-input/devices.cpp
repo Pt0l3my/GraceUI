@@ -37,6 +37,11 @@ void KeyboardLedger::filter(std::uint8_t (&state)[256], const Capture& capture, 
 
 void KeyboardLedger::filter(std::uint8_t (&state)[256], const Capture& capture, const KeyBits& hidden,
                             std::int64_t now_ms) noexcept {
+  filter(state, capture, hidden, KeyBits{}, now_ms);
+}
+
+void KeyboardLedger::filter(std::uint8_t (&state)[256], const Capture& capture, const KeyBits& hidden,
+                            const KeyBits& fresh, std::int64_t now_ms) noexcept {
   KeyBits real;
   for (int key = 0; key < 256; ++key) {
     if ((state[key] & 0x80u) != 0) {
@@ -51,12 +56,18 @@ void KeyboardLedger::filter(std::uint8_t (&state)[256], const Capture& capture, 
     masked_.or_with(arm);
   }
   masked_.and_with(real);  // a masked key seen up is the game's again
-  const KeyBits hide = capturing ? KeyBits::all() : (masked_.load() & real) | hidden;
+  // A key the game was shown held, and holds still, stays the game's until released, whatever was bound meanwhile; as
+  // long as reads went on (a read long ago tells nothing of what was released since).
+  const bool recent = now_ms - shown_at_.load(std::memory_order_acquire) <= kShownForMs;
+  const KeyBits game_holds = recent ? shown_.load() & real : KeyBits{};
+  const KeyBits hide = capturing ? KeyBits::all() : (masked_.load() & real) | hidden | (fresh & ~game_holds);
   for (int key = 0; key < 256; ++key) {
     if (hide.test(static_cast<Key>(key))) {
       state[key] = 0;
     }
   }
+  shown_.store(real & ~hide);
+  shown_at_.store(now_ms, std::memory_order_release);
 }
 
 void MouseLedger::filter(MouseState& state, const Capture& capture, std::int64_t now_ms) noexcept {

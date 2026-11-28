@@ -37,8 +37,9 @@ grace::input::Hotkeys& hotkeys() noexcept;  // the mods' hotkeys (D155)
 grace::input::PadChords& chords() noexcept;  // their pad chords, in XInput's reads (D204)
 // Whether chords stand aside now: a holder has input, or request_input would answer not_now (D204).
 grace::input::Aside chord_aside() noexcept;
-// What DirectInput's readers hide from the game besides a holder's capture: the menu key, every key bound with no
-// modifier, and a hotkey's press with modifiers until its release.
+// What DirectInput's readers hide from the game besides a holder's capture: the menu key, and a hotkey's press until its
+// release. The keys bound with no modifier are hidden too, from a press the game did not see begin (hotkeys().bare(),
+// as KeyboardLedger's `fresh`, D280).
 grace::input::KeyBits hidden_keys() noexcept;
 
 // ---- What the window procedure hands the holder, in order: pushed on the window's thread, popped on the present thread.

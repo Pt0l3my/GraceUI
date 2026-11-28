@@ -351,3 +351,68 @@ TEST_CASE("devices read on two threads while holders come and go (ThreadSanitize
   viewer.join();
   CHECK(capture.closes() == 2000);
 }
+
+TEST_CASE("DirectInput keyboard: a fresh-only key is hidden from a fresh press, never from one the game was shown "
+          "(D280)") {
+  Capture capture;
+  KeyboardLedger ledger;
+  KeyBits hidden;
+  hidden.set(kF5);
+  KeyBits fresh;
+  std::int64_t now = kStart;
+  const auto read_with = [&](Keyboard real) {
+    ledger.filter(real.bytes, capture, hidden, fresh, now);
+    return real;
+  };
+  // W is the game's while nothing binds it, and stays the game's while held once something does.
+  CHECK(read_with(Keyboard{}.down(kW)).bytes[kW] == 0x80);
+  fresh.set(kW);
+  CHECK(read_with(Keyboard{}.down(kW)).bytes[kW] == 0x80);
+  CHECK(read_with(Keyboard{}.down(kW).down(kA)).bytes[kW] == 0x80);
+  // Released, then pressed afresh: hidden, and hidden while held.
+  CHECK(none_down(read_with(Keyboard{})));
+  CHECK(read_with(Keyboard{}.down(kW)).bytes[kW] == 0);
+  CHECK(read_with(Keyboard{}.down(kW)).bytes[kW] == 0);
+  // No longer fresh-only while held: shown from the next read, as it is the game's now.
+  fresh.clear(kW);
+  CHECK(read_with(Keyboard{}.down(kW)).bytes[kW] == 0x80);
+  // `hidden` always wins, whatever the game was shown: the menu key, and a hotkey's press under way.
+  hidden.set(kW);
+  CHECK(read_with(Keyboard{}.down(kW)).bytes[kW] == 0);
+  // A fresh-only key never shown held is hidden from its press.
+  hidden.clear(kW);
+  fresh.set(kA);
+  CHECK(read_with(Keyboard{}.down(kA)).bytes[kA] == 0);
+  // A key shown held at a read long ago tells nothing (reads stopped: it may have been released meanwhile): hidden.
+  CHECK(none_down(read_with(Keyboard{})));
+  fresh.clear(kA);
+  CHECK(read_with(Keyboard{}.down(kA)).bytes[kA] == 0x80);
+  fresh.set(kA);
+  now += 16;
+  CHECK(read_with(Keyboard{}.down(kA)).bytes[kA] == 0x80);  // reads go on each frame: still the game's
+  now += KeyboardLedger::kShownForMs + 1;
+  CHECK(read_with(Keyboard{}.down(kA)).bytes[kA] == 0);
+}
+
+TEST_CASE("DirectInput keyboard: a key the game was shown before a holder took the keyboard is not the game's after "
+          "it, if fresh-only (D280)") {
+  Capture capture;
+  KeyboardLedger ledger;
+  KeyBits hidden;
+  hidden.set(kF5);
+  KeyBits fresh;
+  const auto read_with = [&](Keyboard real, std::int64_t now) {
+    ledger.filter(real.bytes, capture, hidden, fresh, now);
+    return real;
+  };
+  CHECK(read_with(Keyboard{}.down(kW), kStart).bytes[kW] == 0x80);
+  // A holder takes the keyboard: nothing is shown while it has it, so nothing is the game's by having been shown.
+  REQUIRE(capture.request(1, Kind::menu, want_all, kReady, kStart + 16).answer == Answer::granted);
+  CHECK(none_down(read_with(Keyboard{}.down(kW), kStart + 32)));
+  capture.close(Closed::released, kStart + 48);
+  fresh.set(kW);
+  // W held through the close is masked until released; released and pressed again, a fresh-only key is hidden.
+  CHECK(none_down(read_with(Keyboard{}.down(kW), kStart + 64)));
+  CHECK(none_down(read_with(Keyboard{}, kStart + 80)));
+  CHECK(none_down(read_with(Keyboard{}.down(kW), kStart + 96)));
+}

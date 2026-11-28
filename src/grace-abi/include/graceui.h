@@ -49,14 +49,15 @@ extern "C" {
 
 /* The ABI major this header describes, and its minor: the number of the newest appends (0: the first table). */
 #define GRACEUI_ABI_MAJOR 1u
-#define GRACEUI_ABI1_MINOR 10u /* 1: a holder's events and set_caret (GraceUI 0.2.1, D176); 2: the display and scaled
+#define GRACEUI_ABI1_MINOR 11u /* 1: a holder's events and set_caret (GraceUI 0.2.1, D176); 2: the display and scaled
                                  faces (GraceUI 0.2.2, D180); 3: pad chords (GraceUI 0.2.14, D204); 4: a hotkey's
                                  binding as the player set it (GraceUI 0.2.16, D210); 5: a wait handle for the mod's
                                  events (GraceUI 0.2.17, D212); 6: an uploaded file with its command (GraceUI 0.2.26,
                                  D226); 7: what pressed a hotkey, its key or its pad chord (GraceUI 0.2.38, D243); 8: a
                                  panel's drawing each frame, on the present thread (GraceUI 0.2.52, D259); 9: Plain
                                  text, at connect and with the display (GraceUI 0.2.61, D268); 10: Steam's floating
-                                 keyboard for the holder's field (GraceUI 0.2.69, D276) */
+                                 keyboard for the holder's field (GraceUI 0.2.69, D276); 11: a mod's own hotkey paused
+                                 and resumed (GraceUI 0.2.72, D280) */
 
 /*
  * GraceUI's own version (GRACEUI_VERSION_PACK). Needs no start: callable from any thread, at any time after the DLL is
@@ -168,6 +169,7 @@ typedef uint32_t GraceUiStatus;
 #define GRACEUI_CAP_PLAIN_TEXT "plain-text" /* connect's and GRACEUI_EVENT_DISPLAY's plain_text: since 0.2.61, ABI 1.9
                                                (D268) */
 #define GRACEUI_CAP_PAD_KEYBOARD "pad-keyboard" /* pad_keyboard: since 0.2.69, ABI 1.10 (D276) */
+#define GRACEUI_CAP_HOTKEY_PAUSE "hotkey-pause" /* set_hotkey_enabled: since 0.2.72, ABI 1.11 (D280) */
 
 /* A connected mod's handle, which every slot after connect takes; 0 is none. */
 typedef uint64_t GraceUiConsumer;
@@ -833,6 +835,18 @@ typedef struct GraceUiApi1 {
    * callback). It may take a moment, as Steam's call does: call it from the mod's own thread. Since GraceUI 0.2.69
    * (GRACEUI_CAP_PAD_KEYBOARD). */
   GraceUiStatus (*pad_keyboard)(GraceUiConsumer consumer, const GraceUiPadKeyboard* keyboard);
+
+  /* ---- ABI 1.11 (GraceUI 0.2.72, D280). */
+
+  /* Pauses (enabled 0) or resumes (any other) one of the mod's own hotkeys, such as while the game's own menu is
+   * open: GRACEUI_OK, also when it was so already; _REFUSED (a hotkey id that is not the mod's, or called from inside a
+   * callback). Paused, the hotkey neither fires nor keeps its key or pad chord from the game; the player's binding
+   * stays, held against other hotkeys, and the Hotkeys page says it is paused. A press under way stays whole on the
+   * side that saw it begin: one the hotkey took stays hidden from the game until released, and one the game saw begin
+   * reaches the game until released and fires nothing. No GRACEUI_EVENT_HOTKEY_CHANGED; a reconnect starts every
+   * hotkey live. It never waits on the game: call it from any of the mod's threads. Since GraceUI 0.2.72
+   * (GRACEUI_CAP_HOTKEY_PAUSE). */
+  GraceUiStatus (*set_hotkey_enabled)(GraceUiConsumer consumer, uint32_t hotkey_id, uint32_t enabled);
 } GraceUiApi1;
 
 /* Whether `api`'s size covers `slot` (a member of GraceUiApi1): call a slot only then. */

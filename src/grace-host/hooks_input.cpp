@@ -616,7 +616,7 @@ void filter_device_state(IDirectInputDevice8W* device, DWORD size, void* data) n
         std::uint8_t before[256];
         std::memcpy(before, keys, sizeof before);
 #endif
-        input::keyboard().filter(keys, input::capture(), input::hidden_keys(), now);
+        input::keyboard().filter(keys, input::capture(), input::hidden_keys(), input::hotkeys().bare(), now);
 #if defined(GRACEUI_TEST_EXPORTS)
         if (std::memcmp(before, keys, sizeof before) != 0) {
           counters::count_masked(counters::dinput_keyboard, input::capture().holder().holds());

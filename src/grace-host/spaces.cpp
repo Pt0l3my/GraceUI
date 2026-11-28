@@ -560,6 +560,10 @@ protocol::Json hotkeys_body() {
         state = (has_key ? "Chord unbound: " : "Unbound: ") + chord_words;
       }
     }
+    if (one.paused && (has_key || has_chord)) {
+      // Paused by its mod (ABI 1.11, D280): neither fires nor keeps its key or chord, whatever else is said of them.
+      state = state == "Bound" ? std::string("Paused by its mod for now") : "Paused by its mod for now; " + state;
+    }
     grace::abi::ConsumerInfo info;
     const std::string row_id = session::consumers().info_of(one.owner, info)
                                    ? std::string(info.id) + "/" + std::string(one.action()) : std::string();

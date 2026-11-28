@@ -385,7 +385,9 @@ grace::input::Aside chord_aside() noexcept {
 }
 
 grace::input::KeyBits hidden_keys() noexcept {
-  grace::input::KeyBits hidden = g_hotkeys.bare() | g_hotkeys.held();
+  // A hotkey's press under way, and the menu's key; a key bound with no modifier is hidden from a fresh press alone, as
+  // KeyboardLedger's `fresh` (D280).
+  grace::input::KeyBits hidden = g_hotkeys.held();
   hidden.set(menu_key());
   return hidden;
 }

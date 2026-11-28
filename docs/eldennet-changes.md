@@ -2018,3 +2018,25 @@ First light (your PAGES §4.6.10) is the first one it is for. What to do:
 Roadmap line, if you take it: "First light as a flow (GraceUI 0.2.71, protocol 1.23, D278; eldennet-changes §104): its
 steps as a flow page's tabs, its state and step command EldenNet's, start for the first run with a notice of its own,
 Run setup again by an action's opens."
+
+## 105. Pausing your own hotkeys (2026-11-28, D280; GraceUI 0.2.72, ABI 1.11)
+
+What you asked for (your WHY§706): a hotkey of yours that does nothing for a while, such as the talk key while the
+game's own menu is open, and comes back without losing the player's binding.
+
+- **The call.** `table->set_hotkey_enabled(consumer, hotkey_id, 0)` pauses it; any other `enabled` resumes it.
+  Check `GRACEUI_API1_COVERS(table, set_hotkey_enabled)` and the cap `"hotkey-pause"` first. It answers GRACEUI_OK, also
+  when it was so already, and _REFUSED for an id that is not yours. It takes only the store's short lock and never
+  waits on the game, so call it from any of your threads, never from inside an `on_present` callback.
+- **Paused.** The hotkey neither fires nor keeps its key or pad chord from the game: V reaches the game's menu as
+  typed. The player's binding stays and is still held against other hotkeys, and presses already counted stay for you
+  to take. Nothing is kept across sessions and no HOTKEY_CHANGED is sent: it is your state, not the player's. A
+  reconnect starts every hotkey live, so pause again after one. The Hotkeys page says "Paused by its mod for now".
+- **A press under way stays whole on the side that saw it begin.** If the player holds V when you pause, that press is
+  still yours: hidden from the game to its release, counted once. If the player holds V when you resume, that press is
+  the game's to its release, by DirectInput and as messages, and fires nothing; the next press is yours. The same holds
+  for a pad chord: one held back as you pause goes to the game as a tap.
+- **What GraceUI does not do.** It does not read whether a game menu is open; you decide when to pause.
+
+Roadmap line, if you take it: "Talk key paused while a game menu is open (GraceUI 0.2.72, ABI 1.11, D280;
+eldennet-changes §105): set_hotkey_enabled on menu open and close, after each connect; a press under way stays whole."

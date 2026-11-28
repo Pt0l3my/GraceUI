@@ -85,6 +85,8 @@ GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::
                               std::uint32_t& id) noexcept;
 // One of the mod's hotkeys as the player has bound it (ABI 1.4, D210): GRACEUI_OK, or _REFUSED for an id not the mod's.
 GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t id, GraceUiHotkeyBinding& out) noexcept;
+// One of the mod's own hotkeys paused or resumed (ABI 1.11, D280): GRACEUI_OK, or _REFUSED for an id not the mod's.
+GraceUiStatus set_hotkey_enabled(GraceUiConsumer consumer, std::uint32_t id, bool enabled) noexcept;
 // The mod's wait handle (ABI 1.5, D212): GRACEUI_OK with a handle of its own in `event`, or _FAULT.
 GraceUiStatus wake_event(GraceUiConsumer consumer, void*& event) noexcept;
 // A panel's on_present callback set, replaced or cleared (ABI 1.8, D259): `hook`'s callback null clears it.
