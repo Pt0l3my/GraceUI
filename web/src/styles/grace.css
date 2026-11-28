@@ -329,6 +329,11 @@ ul, ol {
   color: var(--gold-hi);
 }
 
+.tree--icons .tree__page {
+  /* after the icon's place, where the categories' names start (D277): the rail's padding, the icon's 18, its 12 */
+  padding-left: calc(var(--size-rail-padding) + 18px + var(--space-12));
+}
+
 .tree__page {
   min-height: var(--size-rail-page);
   padding-left: var(--space-48);

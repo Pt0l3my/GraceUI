@@ -226,7 +226,7 @@ TEST_CASE("a segment: a quad along it and a disc at each end, level, upright or 
     segment.width = 2;
     abi::DrawListData out;
     draw::tessellate(one(segment), tokens::kGrace.colour, kAtlas, out);
-    REQUIRE(out.vertices.size() == 2 * 4 + 2 * 2 * 12);  // the quad and two discs, each with its clear fringe
+    REQUIRE(out.vertices.size() == 2 * 4 + 2 * 2 * 8);  // the quad and two discs of 8 (a small end), with fringes
     // Every solid vertex lies within half the width of the line between its ends: nothing reaches past it.
     const float dx = c.x1 - c.x0;
     const float dy = c.y1 - c.y0;
@@ -244,6 +244,29 @@ TEST_CASE("a segment: a quad along it and a disc at each end, level, upright or 
     }
     CHECK(near_start);
     CHECK(near_end);
+    // Joined to the segment before it, it leaves its start's disc to that one.
+    segment.radius = 1;
+    abi::DrawListData joined;
+    draw::tessellate(one(segment), tokens::kGrace.colour, kAtlas, joined);
+    CHECK(joined.vertices.size() == 2 * 4 + 2 * 8);
+  }
+}
+
+TEST_CASE("a ring's outline has no point twice, so no vertex is offset twice over (D277's review)") {
+  Item ring;
+  ring.shape = Shape::stroke;
+  ring.colour = tokens::Colour::ink_faint;
+  ring.rect = Rect{10, 10, 8, 8};
+  ring.radius = 4;  // half its side: a circle
+  ring.width = 2;
+  abi::DrawListData out;
+  draw::tessellate(one(ring), tokens::kGrace.colour, kAtlas, out);
+  REQUIRE(!out.vertices.empty());
+  // Every vertex stays near the ring: the outer clear edge within a pixel outside it, the inner never past the centre.
+  for (const GraceUiDrawVert& v : out.vertices) {
+    const float d = std::hypot(v.x - 14, v.y - 14);
+    CHECK(d <= 4 + 1.01f);
+    CHECK(d >= 4 - 2 - 1.01f);
   }
 }
 

@@ -186,9 +186,6 @@ class Seeded(unittest.TestCase):
                 self.assertTrue(any(f.startswith(expected) for f in found), (expected, found))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class Icons(unittest.TestCase):
     """The line icons (D277): drawn from tokens/icons.toml, checked against protocol 1.22's names."""
@@ -231,3 +228,6 @@ class Icons(unittest.TestCase):
         self.assertEqual(build.icon_float(18), "18.0f")
         self.assertEqual(build.icon_float(2.5), "2.5f")
         self.assertEqual(build.icon_float(-0.0001), "0.0f")
+
+if __name__ == "__main__":
+    unittest.main()

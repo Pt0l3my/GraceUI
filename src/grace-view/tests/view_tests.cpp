@@ -3780,7 +3780,23 @@ TEST_CASE("a category's line icon on the rail in game, its name after it; withou
   CHECK(segments == 0);
   REQUIRE(x_with > 0);
   REQUIRE(x_without > 0);
-  CHECK(x_with - x_without == doctest::Approx(28).epsilon(0.01));  // the icon's place, at scale 1
+  CHECK(x_with - x_without == doctest::Approx(30).epsilon(0.01));  // the icon's place, at scale 1
+  // GraceUI's own link at the foot of a space without icons: its rail stays as it was, no icon drawn (the browser's
+  // tree of that space has none either).
+  RailContext context;
+  RailLink grace{"GraceUI", "graceui", "graceui.menu", true, true};
+  grace.icon = grace::protocol::Icon::grace;
+  context.foot.push_back(grace);
+  without.set_rail(context);
+  float x_linked = 0;
+  rail_of(without, x_linked, segments, gold);
+  CHECK(segments == 0);
+  CHECK(x_linked == doctest::Approx(x_without));
+  // With icons of its own, the link shows its icon too.
+  with.set_rail(context);
+  std::size_t with_segments = 0;
+  rail_of(with, x_with, with_segments, gold);
+  CHECK(with_segments > segments);
 }
 
 TEST_CASE("a header or row action's confirmation that waits (D274): inert until then, at most 3 s, any other key lets it go") {

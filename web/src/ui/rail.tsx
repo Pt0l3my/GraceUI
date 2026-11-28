@@ -57,8 +57,6 @@ function RailTree({ view, label, part = "all" }: { view: SpaceView; label: strin
   const route = session.route.value;
   const open = expanded.value;
   const items: Item[] = [];
-  // Once any of the space's categories has an icon, every category row keeps its place, so that the names line up (D277).
-  const withIcons = pages.categories.some((category) => category.icon !== undefined);
   const categories = pages.categories.filter((category) => inPart(category, part));
   categories.forEach((category, c) => {
     items.push({ key: `category:${category.id}`, kind: "category", category, level: 1, posinset: c + 1,
@@ -69,6 +67,9 @@ function RailTree({ view, label, part = "all" }: { view: SpaceView; label: strin
                                              posinset: p + 1, setsize: list.length }));
     }
   });
+  // Once a category shown here has an icon, every category row keeps the icon's place and the pages start after it, so
+  // that the names line up, as in game (D277); a category with no page shown here counts for nothing.
+  const withIcons = items.some((item) => item.kind === "category" && item.category.icon !== undefined);
   const current = route && route.space === space ? `page:${route.page}` : null;
   // The tab stop: the item last focused, the page shown, its category, or the first, among this tree's own items.
   const routeCategory = route && route.space === space ? `category:${pageById(pages, route.page)?.category ?? ""}` : null;
@@ -101,7 +102,7 @@ function RailTree({ view, label, part = "all" }: { view: SpaceView; label: strin
     }
   };
   return (
-    <div ref={tree} role="tree" class="tree" aria-label={label}>
+    <div ref={tree} role="tree" class={withIcons ? "tree tree--icons" : "tree"} aria-label={label}>
       {items.map((item, i) => {
         const isCurrentPage = item.key === current;
         const isCurrentCategory = item.kind === "category" && route?.space === space &&

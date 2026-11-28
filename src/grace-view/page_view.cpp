@@ -71,8 +71,10 @@ struct Cursor {
     item.radius = radius;
     out.items.push_back(item);
   }
-  // A line from (x0, y0) to (x1, y1), `width` wide with round ends (D277).
-  void segment(float x0, float y0, float x1, float y1, Colour c, float width, std::uint8_t alpha = 255) {
+  // A line from (x0, y0) to (x1, y1), `width` wide with round ends (D277); `joined`: it starts where the segment drawn
+  // before it ends, whose end's disc it shares.
+  void segment(float x0, float y0, float x1, float y1, Colour c, float width, std::uint8_t alpha = 255,
+               bool joined = false) {
     Item item;
     item.shape = Shape::segment;
     item.colour = c;
@@ -87,6 +89,7 @@ struct Cursor {
     item.rect = Rect{lx, std::min(ly, ry), rx - lx, std::fabs(ry - ly)};
     item.facing = ry >= ly ? Facing::down : Facing::up;
     item.width = width;
+    item.radius = joined ? 1.0f : 0.0f;
     out.items.push_back(item);
   }
   // One of GraceUI's line icons (tokens/icons.toml, D277), `size` square at (x, y): its segments and rings, the stroke
@@ -102,7 +105,10 @@ struct Cursor {
     const float width = icons::kStroke * k;
     for (std::size_t i = icon.segment_first; i < icon.segment_first + icon.segment_count; ++i) {
       const icons::Segment& seg = icons::kSegments[i];
-      segment(x + seg.x0 * k, y + seg.y0 * k, x + seg.x1 * k, y + seg.y1 * k, c, width, alpha);
+      // A polyline's or an arc's next segment starts where the last ended: one disc at the joint, not two.
+      const bool joined = i > icon.segment_first && icons::kSegments[i - 1].x1 == seg.x0 &&
+                          icons::kSegments[i - 1].y1 == seg.y0;
+      segment(x + seg.x0 * k, y + seg.y0 * k, x + seg.x1 * k, y + seg.y1 * k, c, width, alpha, joined);
     }
     for (std::size_t i = icon.ring_first; i < icon.ring_first + icon.ring_count; ++i) {
       const icons::Ring& ring = icons::kRings[i];
@@ -5486,17 +5492,14 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     for (std::size_t i = first_foot; i < rail_.size(); ++i) {
       foot_y -= entry_h(rail_[i]);
     }
-    // Whether any category on this rail has an icon (D277): then the names all start after its place.
+    // Whether any of this space's own categories on the rail has an icon (D277): then the names all start after its
+    // place, and the other spaces' category links show theirs too. A space without icons keeps its rail as it was,
+    // GraceUI's own link at its foot included, as the browser's tree of that space does.
     bool rail_icons = false;
-    for (const protocol::Category& category : pages_.categories) {
-      rail_icons = rail_icons || category.icon.has_value();
+    for (const RailEntry& entry : rail_) {
+      rail_icons = rail_icons || (entry.category() && pages_.categories[entry.index].icon.has_value());
     }
-    for (const auto* links : {&context_.head, &context_.foot}) {
-      for (const RailLink& link : *links) {
-        rail_icons = rail_icons || (link.category && link.icon.has_value());
-      }
-    }
-    const float icon_slot = std::round(28 * s);
+    const float icon_slot = std::round(30 * s);  // the icon's 18 and the browser's 12 after it
     for (std::size_t i = 0; i < rail_.size(); ++i) {
       const RailEntry& e = rail_[i];
       const bool link = e.kind == RailEntry::Kind::head || e.kind == RailEntry::Kind::foot;
@@ -5540,9 +5543,11 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       const TypeRole role = is_page ? TypeRole::ui_sm : TypeRole::rail;
       // A category's line icon before its name (§3.8, D277), in ink.faint, gold.hi for the open page's; once any has
       // one, every category's name and every page's start after the icon's place, so that the names line up.
-      const std::optional<protocol::Icon> icon = other != nullptr ? (other->category ? other->icon : std::nullopt)
-                                                 : e.category()   ? pages_.categories[e.index].icon
-                                                                  : std::nullopt;
+      const std::optional<protocol::Icon> icon =
+          !rail_icons    ? std::nullopt
+          : other != nullptr ? (other->category ? other->icon : std::nullopt)
+          : e.category()     ? pages_.categories[e.index].icon
+                             : std::nullopt;
       const float indent = rail_icons ? icon_slot : (is_page ? std::round(16 * s) : 0);
       if (icon) {
         const float size = std::round(18 * s);

@@ -1982,4 +1982,5 @@ this is what I would choose:
 | Settings | `gear` |
 
 The rest of the set: `grace` (GraceUI's own), `lamp`, `book`, `chat`, `cube` and `shield`. Give all ten or none: once
-one category has an icon, every name moves after the icon's place, so that they line up.
+one category has an icon, every name moves after the icon's place, so that they line up. Without any, your rail stays
+as it is in both views, GraceUI's own link at its foot included.

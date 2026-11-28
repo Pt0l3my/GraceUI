@@ -31,7 +31,8 @@ enum class Shape : std::uint8_t {
   diamond, // the lozenge: a hollow diamond filling the rectangle, `width` wide
   triangle,  // filled, in the rectangle: its base along one side, its point at the middle of the side `facing` names
   segment,   // a line `width` wide with round ends, between two corners of the rectangle: its top-left and bottom-right
-             // with `facing` down, its bottom-left and top-right with `facing` up (a line icon's stroke, D277)
+             // with `facing` down, its bottom-left and top-right with `facing` up (a line icon's stroke, D277); with
+             // `radius` 1 it is joined to the segment before it, whose end's disc is its start's
 };
 
 // Where a triangle points (D247).
