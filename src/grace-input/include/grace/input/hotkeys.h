@@ -235,7 +235,8 @@ class Hotkeys {
 
   void lock() const noexcept;
   void unlock() const noexcept { lock_.clear(std::memory_order_release); }
-  void update_bare() noexcept;  // under the lock
+  struct Slot;
+  void update_bare(const Slot* pausing = nullptr) noexcept;  // under the lock; `pausing` counted as paused (D280)
 
   // A hotkey's chord word: bits 0-31 its chord, bit 32 set while bound, bits 33-51 the hotkey's generation.
   static constexpr std::uint64_t pack_chord(std::uint32_t chord, bool bound, std::uint32_t generation) noexcept {

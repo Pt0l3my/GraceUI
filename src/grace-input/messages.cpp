@@ -36,17 +36,27 @@ bool MessageRules::hotkey_key(Key key, bool down, bool repeat, const Holder& hol
   if (game_down_.test(key)) {
     return false;  // a press the game saw begin reaches it to its release
   }
-  if (down && !repeat && !holder.holds()) {
-    const std::uint32_t id = hotkeys_->match(key, modifiers);
-    if (id != 0 && hotkeys_->pressed(id)) {
-      hotkey_down_.set(key);
-      hotkeys_->hold(key);  // hidden from DirectInput's readers too, until its release
-      decision.route = Route::consume;
-      decision.hotkey = id;
-      return true;
+  const auto fire = [&](std::uint8_t with) {
+    const std::uint32_t id = hotkeys_->match(key, with);
+    if (id == 0 || !hotkeys_->pressed(id)) {
+      return false;
     }
+    hotkey_down_.set(key);
+    hotkeys_->hold(key);  // hidden from DirectInput's readers too, until its release
+    decision.route = Route::consume;
+    decision.hotkey = id;
+    return true;
+  };
+  const bool fresh = down && !repeat && !holder.holds();
+  if (fresh && fire(modifiers)) {
+    return true;
   }
   if (hotkeys_->bare().test(key) && !holder.takes(want_keyboard)) {
+    // A key bound with no modifier, pressed alone yet unmatched a moment ago: a hotkey resumed meanwhile (D280), whose
+    // press it is. Matched once more, so that the press fires rather than being kept from the game for nothing.
+    if (fresh && (modifiers & kModAll) == 0 && fire(0)) {
+      return true;
+    }
     decision.route = Route::consume;  // a key bound with no modifier is never the game's while bound
     return true;
   }

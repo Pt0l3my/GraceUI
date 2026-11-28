@@ -35,7 +35,9 @@ class KeyboardLedger {
   void filter(std::uint8_t (&state)[256], const Capture& capture, const KeyBits& hidden, std::int64_t now_ms) noexcept;
   // The same, also hiding each key of `fresh` but one the game was shown held at the last read and holds still, until
   // it is released: the keys bound with no modifier, so that a hotkey resumed while the game holds its key leaves that
-  // press whole (D280).
+  // press whole (D280). A last read more than kShownForMs ago (reads stopped: focus lost, a load, GraceUI off) counts
+  // as none, so a key released meanwhile is hidden from its next press.
+  static constexpr std::int64_t kShownForMs = 1000;
   void filter(std::uint8_t (&state)[256], const Capture& capture, const KeyBits& hidden, const KeyBits& fresh,
               std::int64_t now_ms) noexcept;
 
@@ -46,6 +48,7 @@ class KeyboardLedger {
   AtomicKeyBits latest_;
   AtomicKeyBits masked_;
   AtomicKeyBits shown_;  // the keys the game was shown held at the last read (D280)
+  std::atomic<std::int64_t> shown_at_{0};  // ... and when
   std::atomic<std::uint64_t> armed_for_{0};  // the close count the masks were last armed for
 };
 

@@ -30,13 +30,13 @@ void Hotkeys::lock() const noexcept {
   }
 }
 
-void Hotkeys::update_bare() noexcept {
+void Hotkeys::update_bare(const Slot* pausing) noexcept {
   KeyBits bare;
   KeyBits keys;
   std::uint16_t chord_keys = 0;
   for (const Slot& slot : slots_) {
-    if (slot.paused.load(std::memory_order_relaxed)) {
-      continue;  // paused by its mod (D280): neither its key nor its chord kept from the game
+    if (&slot == pausing || slot.paused.load(std::memory_order_relaxed)) {
+      continue;  // paused by its mod, or about to be (D280): neither its key nor its chord kept from the game
     }
     const std::uint64_t chord = slot.chord.load(std::memory_order_relaxed);
     if ((chord >> 32 & 1u) != 0) {
@@ -466,8 +466,17 @@ bool Hotkeys::set_enabled(std::uint16_t owner, std::uint32_t id, bool enabled) n
     unlock();
     return false;
   }
-  slot->paused.store(!enabled, std::memory_order_release);
-  update_bare();
+  // In the order that leaves the window's messages a whole press at every moment between (D280). Pausing: its key and
+  // chord leave the sets first, so a press that still matches it is its own, whole, and one that no longer does is the
+  // game's. Resuming: it matches first, then its key and chord join the sets, so a press is never kept from the game
+  // without firing it (MessageRules matches once more for a bare key found in the set).
+  if (enabled) {
+    slot->paused.store(false, std::memory_order_seq_cst);
+    update_bare();
+  } else {
+    update_bare(slot);
+    slot->paused.store(true, std::memory_order_seq_cst);
+  }
   unlock();
   return true;
 }

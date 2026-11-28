@@ -547,7 +547,7 @@ protocol::Json hotkeys_body() {
     if (!has_key && !has_chord) {
       state = "Unbound: no key or pad chord";
     } else if (!key_lost && !chord_lost) {
-      state = one.paused ? "Paused by its mod for now" : "Bound";  // ABI 1.11 (D280): neither fires nor keeps its key
+      state = "Bound";
     } else {
       // A default another took first; with both named and one lost, the other still fires it.
       const std::string key_words = one.key == menu ? key + " opens the menu" : key_holder(one) + " took " + key + " first";
@@ -559,6 +559,10 @@ protocol::Json hotkeys_body() {
       } else {
         state = (has_key ? "Chord unbound: " : "Unbound: ") + chord_words;
       }
+    }
+    if (one.paused && (has_key || has_chord)) {
+      // Paused by its mod (ABI 1.11, D280): neither fires nor keeps its key or chord, whatever else is said of them.
+      state = state == "Bound" ? std::string("Paused by its mod for now") : "Paused by its mod for now; " + state;
     }
     grace::abi::ConsumerInfo info;
     const std::string row_id = session::consumers().info_of(one.owner, info)
