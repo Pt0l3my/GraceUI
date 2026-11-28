@@ -45,6 +45,8 @@ A panel's bounds are in the display's pixels. A mod sizes its content by its con
 
 `hello-panel` makes its panel and shows it:
 
+<!-- snippet: examples/hello-panel/hello_panel.cpp -->
+
     GraceUiPanelDesc panel_desc{};
     panel_desc.size = sizeof panel_desc;
     panel_desc.layer = GRACEUI_LAYER_PANEL;
@@ -163,6 +165,8 @@ Cap `notices`. A notice is a short text GraceUI draws above everything else, the
 
 `hello-debug-view` keeps one banner under its own key, its text replaced as its view opens and closes:
 
+<!-- snippet: examples/hello-debug-view/hello_debug_view.cpp -->
+
     void banner(const graceui::Api& api, GraceUiConsumer me, const char* text) {
       api.notice(me, text, GRACEUI_TONE_NORMAL, HELLO_DEBUG_BANNER_KEY, 0);
     }
@@ -191,6 +195,8 @@ is drawn by its id as Dear ImGui's `ImTextureID`, and glyphs of the shared atlas
 
 `hello-panel` (`examples/hello-panel/hello_panel.cpp`) sets up its Dear ImGui:
 
+<!-- snippet: examples/hello-panel/hello_panel.cpp -->
+
     // Its own Dear ImGui, headless: no backend, no platform; its atlas built once and registered as its own texture.
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -202,6 +208,8 @@ is drawn by its id as Dear ImGui's `ImTextureID`, and glyphs of the shared atlas
 
 begins each frame in the panel's pixels:
 
+<!-- snippet: examples/hello-panel/hello_panel.cpp -->
+
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(kWidth, kHeight);  // the panel's own pixels: GraceUI puts it where its anchor says
     io.DeltaTime = 0.01f;
@@ -209,9 +217,13 @@ begins each frame in the panel's pixels:
 
 ends it with one list of GraceUI's:
 
+<!-- snippet: examples/hello-panel/hello_panel.cpp -->
+
     frame.build(*ImGui::GetDrawData(), kWidth, kHeight, glyphs != nullptr ? glyphs->generation : 0);
 
 and submits a frame every 10 ms, from its own thread:
+
+<!-- snippet: examples/hello-panel/hello_panel.cpp -->
 
     // Its frames, from this thread: the first submit ends its registration window.
     GraceUiGlyphTable glyphs{};
@@ -230,6 +242,8 @@ and submits a frame every 10 ms, from its own thread:
 
 `hello-debug-view` keeps its panel hidden until its hotkey, and gives it a list before it shows, so it never shows
 empty; it submits only a list that was built:
+
+<!-- snippet: examples/hello-debug-view/hello_debug_view.cpp -->
 
     build(list, ++frames, toggles);
     api.submit(me, panel, list.view());  // its first list before it shows, so it never shows empty

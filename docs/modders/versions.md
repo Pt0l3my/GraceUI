@@ -54,6 +54,8 @@ own loader, which starts nothing until a mod asks (§2.7). It is never unloaded,
 
 `hello-panel` names its floor, the caps it uses, and checks the one it cannot go without:
 
+<!-- snippet: examples/hello-panel/hello_panel.cpp -->
+
     GraceUiSysFound found{};
     found.size = sizeof found;
     const graceui::Api api = graceui::Api::find(GRACEUI_SYS_LOAD, GRACEUI_SYS_TIMEOUT_MS, &found);
@@ -137,6 +139,8 @@ session (D81). The other reasons for `GRACEUI_INACTIVE`, an overlay that could n
 leave a mod's calls doing nothing, `notice` included ([connect](abi.md#connect)).
 
 `hello-debug-view` shows its banner in the notice-only mode and nothing else:
+
+<!-- snippet: examples/hello-debug-view/hello_debug_view.cpp -->
 
     if (!api || api.connect(mod, answer) != GRACEUI_OK) {
       // No GraceUI, or nothing can be drawn this session. In the anti-cheat's notice-only mode (inactive, with a handle)
