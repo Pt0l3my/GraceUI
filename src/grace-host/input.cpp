@@ -661,9 +661,9 @@ void closed(const Holder& holder) noexcept {
   const grace::input::LastClose last = g_capture.last_close();
   log_line("%s no longer holds input: %s", kind_name(holder.kind),
            last.holder.generation == holder.generation ? closed_name(last.why) : "closed");
-  if (holder.kind == Kind::menu || steam::open_for_a_mod()) {
+  if (holder.kind == Kind::menu || steam::keyboard_open()) {
     hooks::wake();  // the menu's part of the close routine runs on GraceUI's thread: it stops watching mods' topics,
-                    // and a mod's Steam keyboard closes there (D276)
+                    // and a Steam keyboard opened for the holder closes there (D276)
   }
   if (grace::input::HolderMail* mail = g_mail.load(std::memory_order_acquire); mail != nullptr) {
     // Its mod hears why, after its other events (D176): the reason recorded for this holder, else released.

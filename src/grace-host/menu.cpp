@@ -963,7 +963,7 @@ void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
 // present thread never waits.
 void keyboard_let_go(State& m) {
   if (m.keyboard_asked) {
-    steam::dismiss_keyboard(steam::kMenu);
+    steam::dismiss_owner(steam::kMenu);
   }
   m.keyboard_wanted = false;
   m.keyboard_asked = false;
@@ -994,7 +994,7 @@ void follow_keyboard(State& m) {
   auto w = static_cast<std::int32_t>(box.w);
   auto h = static_cast<std::int32_t>(box.h);
   input::buffer_to_client(x, y, w, h);
-  steam::show_keyboard(steam::kMenu, steam::KeyboardMode::single_line, x, y, w, h);
+  steam::show_keyboard(steam::kMenu, m.generation, steam::KeyboardMode::single_line, x, y, w, h);
 }
 
 void publish(State& m) {
@@ -1797,7 +1797,7 @@ void serve() noexcept {
     serve_menu();
   } catch (...) {
     g_off.store(true, std::memory_order_release);
-    steam::dismiss_keyboard(steam::kMenu);  // Steam's floating keyboard closes with the menu, a fault too (D275)
+    steam::dismiss_owner(steam::kMenu);  // Steam's floating keyboard closes with the menu, a fault too (D275)
     log_line("the menu is off for this session: an exception in its layout or its commands");
     const grace::input::Holder holder = input::capture().holder();
     if (ours(holder)) {

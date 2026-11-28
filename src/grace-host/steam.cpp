@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdio>
 
+#include "input.h"
 #include "log.h"
 
 namespace grace::host::steam {
@@ -30,14 +31,20 @@ struct Exports {
   Dismiss dismiss = nullptr;
 };
 
-constexpr std::uint32_t kNobody = 0xFFFFFFFFu;
+constexpr std::uint64_t kNobody = ~std::uint64_t{0};
+
+std::uint64_t who(std::uint32_t owner, std::uint32_t generation) noexcept {
+  return (std::uint64_t{owner} << 32) | generation;
+}
+std::uint32_t owner_of(std::uint64_t holder) noexcept { return static_cast<std::uint32_t>(holder >> 32); }
+std::uint32_t generation_of(std::uint64_t holder) noexcept { return static_cast<std::uint32_t>(holder); }
 
 SRWLOCK g_lock = SRWLOCK_INIT;
 constinit std::array<wchar_t, 64> g_module_name{};  // a test build's stand-in; empty: Steam's own
 constinit Exports g_exports{};
 constinit bool g_resolved = false;
 constinit std::uint32_t g_said = 0;  // the log lines already written, one each (bits)
-constinit std::atomic<std::uint32_t> g_owner{kNobody};  // whom GraceUI opened the keyboard for, and has not closed it
+constinit std::atomic<std::uint64_t> g_for{kNobody};  // the holder GraceUI opened the keyboard for, and has not closed it
 
 // Under the lock.
 class Locked {
@@ -89,9 +96,17 @@ void resolve() noexcept {
   g_exports.dismiss = reinterpret_cast<Dismiss>(reinterpret_cast<void*>(dismiss));
 }
 
+// Whether holder `generation` of `owner` (kMenu: GraceUI's menu) still holds input, active.
+bool still_holds(std::uint32_t owner, std::uint32_t generation) noexcept {
+  const grace::input::Holder holder = input::capture().holder();
+  const bool menu = holder.kind == grace::input::Kind::menu;
+  return holder.phase == grace::input::Phase::active && holder.generation == generation && holder.owner == owner &&
+         menu == (owner == kMenu);
+}
+
 // Under the lock: closes the keyboard GraceUI opened, whoever for.
 void close_locked() noexcept {
-  if (g_owner.exchange(kNobody, std::memory_order_acq_rel) == kNobody) {
+  if (g_for.exchange(kNobody, std::memory_order_seq_cst) == kNobody) {
     return;
   }
   if (g_exports.dismiss != nullptr) {
@@ -103,51 +118,75 @@ void close_locked() noexcept {
 
 }  // namespace
 
-bool show_keyboard(std::uint32_t owner, KeyboardMode mode, std::int32_t x, std::int32_t y, std::int32_t w,
-                   std::int32_t h) noexcept {
+Outcome show_keyboard(std::uint32_t owner, std::uint32_t generation, KeyboardMode mode, std::int32_t x, std::int32_t y,
+                      std::int32_t w, std::int32_t h) noexcept {
   const Locked locked;
   resolve();
   if (g_exports.show == nullptr) {
-    return false;
+    return Outcome::unavailable;
   }
-  close_locked();  // one keyboard at a time: another owner's goes first
+  if (!still_holds(owner, generation)) {
+    return Outcome::gone;  // its holder ended before the lock was taken: nothing shown, nothing of another's closed
+  }
+  close_locked();  // one keyboard at a time: another holder's goes first
   void* const utils = g_exports.utils();
   if (utils == nullptr) {
     say_once(4, "Steam's floating keyboard: Steam is not started in this game, so a pad's text fields have none");
-    return false;
+    return Outcome::unavailable;
   }
-  const bool shown = g_exports.show(utils, static_cast<int>(mode), x, y, w, h);
-  if (shown) {
-    g_owner.store(owner, std::memory_order_release);
-    say_once(8, owner == kMenu ? "Steam's floating keyboard opened for a text field of the menu's on a pad"
-                               : "Steam's floating keyboard opened for a mod's field on a pad");
-  } else {
+  if (!g_exports.show(utils, static_cast<int>(mode), x, y, w, h)) {
     say_once(16, "Steam's floating keyboard: Steam declined it (it opens on a Steam Deck or in Big Picture)");
+    return Outcome::unavailable;
   }
-  return shown;
+  // Recorded, then the holder read again: a holder that ended during Steam's call either is seen here, or its close
+  // (input.cpp's closed, which fences before it reads keyboard_open) sees the record and wakes GraceUI's thread.
+  g_for.store(who(owner, generation), std::memory_order_seq_cst);
+  std::atomic_thread_fence(std::memory_order_seq_cst);
+  if (!still_holds(owner, generation)) {
+    close_locked();
+    return Outcome::gone;
+  }
+  say_once(8, owner == kMenu ? "Steam's floating keyboard opened for a text field of the menu's on a pad"
+                             : "Steam's floating keyboard opened for a mod's field on a pad");
+  return Outcome::shown;
 }
 
-void dismiss_keyboard(std::uint32_t owner) noexcept {
-  if (g_owner.load(std::memory_order_acquire) != owner) {
-    return;  // none, or another owner's
+void dismiss_keyboard(std::uint32_t owner, std::uint32_t generation) noexcept {
+  if (g_for.load(std::memory_order_acquire) != who(owner, generation)) {
+    return;  // none, or another holder's
   }
   const Locked locked;
-  if (g_owner.load(std::memory_order_acquire) == owner) {
+  if (g_for.load(std::memory_order_acquire) == who(owner, generation)) {
     close_locked();
   }
 }
 
-bool open_for_a_mod() noexcept {
-  const std::uint32_t owner = g_owner.load(std::memory_order_acquire);
-  return owner != kNobody && owner != kMenu;
+void dismiss_owner(std::uint32_t owner) noexcept {
+  const std::uint64_t now = g_for.load(std::memory_order_acquire);
+  if (now == kNobody || owner_of(now) != owner) {
+    return;
+  }
+  const Locked locked;
+  if (const std::uint64_t again = g_for.load(std::memory_order_acquire); again != kNobody && owner_of(again) == owner) {
+    close_locked();
+  }
 }
 
-void follow_holder(std::uint32_t holder_owner, bool mod_holds) noexcept {
-  const std::uint32_t owner = g_owner.load(std::memory_order_acquire);
-  if (owner == kNobody || owner == kMenu || (mod_holds && holder_owner == owner)) {
-    return;  // none, the menu's (its own thread closes it), or its mod still holds input
+bool keyboard_open() noexcept { return g_for.load(std::memory_order_seq_cst) != kNobody; }
+
+void follow_holder() noexcept {
+  const std::uint64_t now = g_for.load(std::memory_order_acquire);
+  if (now == kNobody || still_holds(owner_of(now), generation_of(now))) {
+    return;
   }
-  dismiss_keyboard(owner);
+  if (TryAcquireSRWLockExclusive(&g_lock) == 0) {
+    return;  // a call is in Steam: its own reading of the holder after it, or the next wake, closes it
+  }
+  if (const std::uint64_t again = g_for.load(std::memory_order_acquire);
+      again != kNobody && !still_holds(owner_of(again), generation_of(again))) {
+    close_locked();
+  }
+  ReleaseSRWLockExclusive(&g_lock);
 }
 
 #if defined(GRACEUI_TEST_EXPORTS)

@@ -545,20 +545,22 @@ GraceUiStatus pad_keyboard(GraceUiConsumer consumer, bool open, std::uint32_t mo
     return status;
   }
   if (!open) {
-    steam::dismiss_keyboard(owner);  // none open for it: nothing to close
+    steam::dismiss_owner(owner);  // none open for it: nothing to close
     return GRACEUI_OK;
   }
   grace::abi::PanelDesc desc;
   std::uint32_t index = 0;
   const auto fits = [](float v) { return std::isfinite(v) && std::fabs(v) < 1.0e6f; };
-  if (mode > GRACEUI_PAD_KEYBOARD_NUMERIC || !fits(x) || !fits(y) || !fits(width) || !fits(height) || width <= 0.0f ||
-      height <= 0.0f || session::panels().find(consumer, panel, desc, index) != grace::abi::PanelResult::ok) {
+  if (mode > GRACEUI_PAD_KEYBOARD_NUMERIC || !fits(x) || !fits(y) || !fits(width) || !fits(height) || width < 1.0f ||
+      height < 1.0f || session::panels().find(consumer, panel, desc, index) != grace::abi::PanelResult::ok) {
     refused("pad_keyboard", "a mode, a field or a panel that is not the mod's");
     return GRACEUI_REFUSED;
   }
   const grace::input::Holder holder = input::capture().holder();
-  if (!holder.holds() || holder.owner != owner || holder.kind == grace::input::Kind::menu) {
-    refused("pad_keyboard", "the mod does not hold input");
+  if (holder.phase != grace::input::Phase::active || holder.owner != owner || holder.kind == grace::input::Kind::menu ||
+      !holder.takes(grace::input::want_keyboard)) {
+    // Steam's keyboard types as keys do: a holder that does not take the keyboard would let them reach the game.
+    refused("pad_keyboard", "the mod does not hold input with the keyboard");
     return GRACEUI_REFUSED;
   }
   std::uint32_t buffer_width = 0;
@@ -571,8 +573,16 @@ GraceUiStatus pad_keyboard(GraceUiConsumer consumer, bool open, std::uint32_t mo
   auto w = static_cast<std::int32_t>(std::lround(width));
   auto h = static_cast<std::int32_t>(std::lround(height));
   input::buffer_to_client(left, top, w, h);
-  return steam::show_keyboard(owner, static_cast<steam::KeyboardMode>(mode), left, top, w, h) ? GRACEUI_OK
-                                                                                               : GRACEUI_UNAVAILABLE;
+  switch (steam::show_keyboard(owner, holder.generation, static_cast<steam::KeyboardMode>(mode), left, top, w, h)) {
+    case steam::Outcome::shown:
+      return GRACEUI_OK;
+    case steam::Outcome::unavailable:
+      return GRACEUI_UNAVAILABLE;
+    case steam::Outcome::gone:
+      break;
+  }
+  refused("pad_keyboard", "the mod's holder ended during the call");
+  return GRACEUI_REFUSED;
 }
 
 GraceUiStatus set_world_state(GraceUiConsumer consumer, std::uint32_t flags) noexcept {
@@ -950,6 +960,7 @@ void forget(GraceUiConsumer consumer, std::uint32_t owner) noexcept {
   if (holder.holds() && holder.owner == owner && holder.kind != grace::input::Kind::menu) {
     input::close_holder(grace::input::Closed::released, holder.generation);
   }
+  steam::dismiss_owner(owner);  // its Steam keyboard, whatever holder it was for, before its number is another's (D276)
   session::registry().retire_owner(consumer);
   spaces::registry().remove_owner(consumer);  // its space leaves the browser view, its commands' replies dropped
   input::hotkeys().remove_owner(static_cast<std::uint16_t>(owner));

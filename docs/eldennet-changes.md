@@ -1951,8 +1951,9 @@ events say so), call `pad_keyboard(consumer, &keyboard)` with a `GraceUiPadKeybo
 `height` in the panel, as you give `set_caret`. It answers:
 - `GRACEUI_OK`: shown.
 - `GRACEUI_UNAVAILABLE` (12, new): no keyboard to show here, the log saying why. It opens on a Deck or in Big Picture only.
-- `GRACEUI_REFUSED`: you do not hold input, a panel not yours, a mode not of the four, a field of no size, or a call
-  from inside a callback.
+- `GRACEUI_REFUSED`: you do not hold input with the keyboard (the chat box's holder asks for
+  `GRACEUI_WANT_KEYBOARD`, since Steam's keyboard types as keys do), a panel not yours, a mode not of the four, a field
+  of no size, a call from inside a callback, or your holder ending during the call.
 
 Call it from your own thread: Steam's call may take a moment. `pad_keyboard(consumer, NULL)` closes it, and GraceUI
 closes it itself when your holder ends, whatever ends it. The keyboard types into the game's window as keys do, so

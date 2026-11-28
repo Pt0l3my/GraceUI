@@ -3,9 +3,10 @@
 // ShowFloatingGamepadTextInput in the steam_api64.dll the game has already loaded, by the flat API's C exports, and
 // never loads Steam's library itself, links no Steamworks SDK and calls no game code (read-only, R2). Where the library
 // is not loaded, lacks the exports or Steam declines (not a Steam Deck or Big Picture), nothing is shown and one log
-// line says why. One keyboard at a time, for one owner: GraceUI's menu (0) or a mod (its owner id). GraceUI's own thread
-// and a mod's thread may call these (a lock keeps them apart), never the present thread: Steam's call may take a while,
-// and the present thread never waits (invariant 10).
+// line says why. One keyboard at a time, for one holder of input: GraceUI's menu's (owner 0) or a mod's, by the holder's
+// generation, so that it never outlives the holder it was opened for (invariant 7). GraceUI's own thread and a mod's
+// thread may call these (a lock keeps them apart), never the present thread or the window procedure: Steam's call may
+// take a while, and the present thread never waits (invariant 10).
 #pragma once
 
 #include <cstdint>
@@ -17,17 +18,26 @@ enum class KeyboardMode : int { single_line = 0, multiple_lines = 1, email = 2, 
 
 inline constexpr std::uint32_t kMenu = 0;  // GraceUI's menu, as an owner
 
-// Opens the floating keyboard for `owner` beside a field at (x, y, w, h) in the game window's client pixels, closing
-// another owner's first; whether Steam showed it.
-bool show_keyboard(std::uint32_t owner, KeyboardMode mode, std::int32_t x, std::int32_t y, std::int32_t w,
-                   std::int32_t h) noexcept;
-// Closes it, if GraceUI opened it for `owner`.
-void dismiss_keyboard(std::uint32_t owner) noexcept;
-// Whether a keyboard GraceUI opened for a mod is open now (any thread, lock-free): a holder's end then wakes GraceUI's
-// thread, which closes it (follow_holder).
-bool open_for_a_mod() noexcept;
-// GraceUI's own thread, at each wake: a mod's keyboard closes once that mod no longer holds input (invariant 7).
-void follow_holder(std::uint32_t holder_owner, bool mod_holds) noexcept;
+enum class Outcome : std::uint8_t {
+  shown,        // Steam showed it
+  unavailable,  // no keyboard here: no library, no exports, Steam not started, or Steam declining
+  gone,         // the holder it was asked for no longer holds input, before or during Steam's call: none left open
+};
+
+// Opens the floating keyboard for the active holder `generation` of `owner` beside a field at (x, y, w, h) in the game
+// window's client pixels, closing another holder's first.
+Outcome show_keyboard(std::uint32_t owner, std::uint32_t generation, KeyboardMode mode, std::int32_t x, std::int32_t y,
+                      std::int32_t w, std::int32_t h) noexcept;
+// Closes it, if GraceUI opened it for that holder.
+void dismiss_keyboard(std::uint32_t owner, std::uint32_t generation) noexcept;
+// Closes it, if GraceUI opened it for any holder of `owner`'s (a mod's disconnect, the menu's fault).
+void dismiss_owner(std::uint32_t owner) noexcept;
+// Whether a keyboard GraceUI opened is open now (any thread, lock-free): a holder's end then wakes GraceUI's thread,
+// which closes it (follow_holder).
+bool keyboard_open() noexcept;
+// GraceUI's own thread, at each wake: a keyboard closes once the holder it was opened for no longer holds input,
+// whatever ended it; if a mod's call holds the lock, the next wake tries again (it never waits for Steam).
+void follow_holder() noexcept;
 
 #if defined(GRACEUI_TEST_EXPORTS)
 // A test build looks for this module instead of steam_api64.dll (the harness's stand-in, which records its calls), so
