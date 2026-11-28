@@ -863,7 +863,8 @@ struct GraceUi {
            reset_counters != nullptr && frame_costs != nullptr && log_line != nullptr && hook_name != nullptr &&
            request_input != nullptr && release_input != nullptr && set_world != nullptr && set_caret != nullptr &&
            set_code_page != nullptr && pad != nullptr && pad_read != nullptr && get_input != nullptr && get_chars != nullptr && input_costs != nullptr &&
-           set_anti_cheat_names != nullptr && get_notice != nullptr && clear_notices != nullptr &&
+           set_anti_cheat_names != nullptr && set_steam_module != nullptr && get_notice != nullptr &&
+           clear_notices != nullptr &&
            get_consumer != nullptr;
   }
 

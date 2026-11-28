@@ -61,7 +61,8 @@ void resolve() noexcept {
   }
   const FARPROC show = GetProcAddress(module, "SteamAPI_ISteamUtils_ShowFloatingGamepadTextInput");
   const FARPROC dismiss = GetProcAddress(module, "SteamAPI_ISteamUtils_DismissFloatingGamepadTextInput");
-  if (accessor == nullptr || show == nullptr) {
+  if (accessor == nullptr || show == nullptr || dismiss == nullptr) {
+    // Without Dismiss GraceUI could open a keyboard it could not close when the field or the menu goes.
     say_once(2, "Steam's floating keyboard: this Steam library has none, so a pad's text fields have none");
     return;
   }
@@ -69,8 +70,8 @@ void resolve() noexcept {
   g_exports.utils = reinterpret_cast<Accessor>(reinterpret_cast<void*>(accessor));
   // SAFETY: as above.
   g_exports.show = reinterpret_cast<Show>(reinterpret_cast<void*>(show));
-  // SAFETY: as above; an older library may lack it (null), and then Steam closes its keyboard itself.
-  g_exports.dismiss = dismiss != nullptr ? reinterpret_cast<Dismiss>(reinterpret_cast<void*>(dismiss)) : nullptr;
+  // SAFETY: as above.
+  g_exports.dismiss = reinterpret_cast<Dismiss>(reinterpret_cast<void*>(dismiss));
 }
 
 }  // namespace
@@ -100,10 +101,8 @@ void dismiss_keyboard() noexcept {
     return;
   }
   g_shown = false;
-  if (g_exports.dismiss != nullptr) {
-    if (void* const utils = g_exports.utils(); utils != nullptr) {
-      g_exports.dismiss(utils);
-    }
+  if (void* const utils = g_exports.utils(); utils != nullptr) {
+    g_exports.dismiss(utils);
   }
 }
 

@@ -182,9 +182,12 @@ struct State {
   bool focus_shown = false;             // the focus ring drawn: after a key or the pad, until the mouse (G42)
   bool focus_drawn = false;             // the last published layout's, under g_view_lock (the tests')
   bool pad_mode = false;                // the key hints as the pad's: the last device used (D242)
-  bool was_editing = false;             // a field was edited at the last layout (D275)
-  bool keyboard_wanted = false;         // and its edit began from a pad: Steam's floating keyboard, once laid out
-  bool keyboard_asked = false;          // asked for this edit: closed when the field is let go
+  const grace::view::PageView* edit_view = nullptr;  // the view, and its edit, the keyboard last followed (D275)
+  std::uint64_t edit_seen = 0;                       // by the view's edit_serial; 0, none
+  const grace::view::PageView* pad_view = nullptr;   // the last edit a pad's press began, likewise
+  std::uint64_t pad_edit = 0;
+  bool keyboard_wanted = false;         // the edit seen began from a pad: Steam's floating keyboard, once laid out
+  bool keyboard_asked = false;          // asked for that edit: closed when the field is let go
   bool hints_shown = true;              // the key hints drawn: View on a pad turns them off and on (D242)
   bool pad_drawn = false;               // the last published layout's, under g_view_lock (the tests')
   bool hints_drawn = true;
@@ -892,6 +895,7 @@ void take(State& m, const MenuInput& in, bool& dirty) {
   if (in.character != 0 && !view.editing() && in.character != U'/') {
     return;  // a menu key's own character (Q, E, Enter): nothing to type it into, nothing to lay out again
   }
+  const std::uint64_t edits_before = view.edit_serial();
   if (!m.focus_shown) {
     m.focus_shown = true;  // a key or the pad: the ring shows where they act (G42)
     dirty = true;
@@ -924,6 +928,10 @@ void take(State& m, const MenuInput& in, bool& dirty) {
   if (std::string copied; active_view(m).take_clipboard(copied)) {
     put_on_clipboard(copied);
   }
+  if (in.pad && view.editing() && view.edit_serial() != edits_before) {
+    m.pad_view = &view;  // this press, the pad's, began the edit: Steam's floating keyboard for it (D275)
+    m.pad_edit = view.edit_serial();
+  }
   g_awaiting_key.store(active_view(m).awaiting_key(), std::memory_order_release);
   g_editing.store(active_view(m).editing(), std::memory_order_release);
 }
@@ -947,31 +955,34 @@ void take_pointer(State& m, const MenuPointer& in, bool& dirty) {
   }
 }
 
-// Steam's floating keyboard (§5.6, D275): a field whose edit began from a pad's press opens it once, beside the field's
-// box as this layout drew it (one line, or several for a prose well); the field let go, or the menu closed, closes it.
-// GraceUI's own thread, after the layout: Steam's call may take a while, and the present thread never waits.
+// Steam's floating keyboard (§5.6, D275): an edit begun by a pad's press (take_input records which, input by input)
+// opens it once, beside the field's box as this layout drew it, one line: every field of GraceUI's ends at Enter, a
+// prose well's too. Another edit, the field let go, or the menu closed or gone away closes it; an edit that outlives
+// an Alt+Tab does not open it again on the return, so that a keyboard that took the window's focus could never open
+// and close it in turn. GraceUI's own thread, before the list is published: Steam's call may take a while, and the
+// present thread never waits.
 void keyboard_let_go(State& m) {
   if (m.keyboard_asked) {
     steam::dismiss_keyboard();
   }
-  m.was_editing = false;
   m.keyboard_wanted = false;
   m.keyboard_asked = false;
 }
 
 void follow_keyboard(State& m) {
   const grace::view::PageView& view = active_view(m);
-  const bool editing = view.editing();
-  if (!editing) {
-    if (m.was_editing) {
-      keyboard_let_go(m);
-    }
+  if (!view.editing()) {
+    keyboard_let_go(m);
+    m.edit_view = nullptr;
+    m.edit_seen = 0;
     return;
   }
-  if (!m.was_editing) {
-    m.keyboard_wanted = m.pad_mode;  // the press that began the edit was the pad's
+  if (&view != m.edit_view || view.edit_serial() != m.edit_seen) {
+    keyboard_let_go(m);  // another edit: the last one's keyboard goes, and this one's is its own
+    m.edit_view = &view;
+    m.edit_seen = view.edit_serial();
+    m.keyboard_wanted = m.pad_view == m.edit_view && m.pad_edit == m.edit_seen;
   }
-  m.was_editing = true;
   const grace::view::Rect box = view.edit_box();
   if (!m.keyboard_wanted || box.w <= 0 || box.h <= 0) {
     return;
@@ -983,8 +994,7 @@ void follow_keyboard(State& m) {
   auto w = static_cast<std::int32_t>(box.w);
   auto h = static_cast<std::int32_t>(box.h);
   input::buffer_to_client(x, y, w, h);
-  steam::show_keyboard(view.edit_prose() ? steam::KeyboardMode::multiple_lines : steam::KeyboardMode::single_line, x,
-                       y, w, h);
+  steam::show_keyboard(steam::KeyboardMode::single_line, x, y, w, h);
 }
 
 void publish(State& m) {
@@ -1000,6 +1010,7 @@ void publish(State& m) {
   active_view(m).set_hints_shown(m.hints_shown);
   active_view(m).layout(grace::view::Viewport{static_cast<float>(m.width), static_cast<float>(m.height), scale},
                         *fonts, m.list);
+  follow_keyboard(m);  // the field's box as just laid out, before the list is published (D275)
   grace::draw::Atlas atlas{grace::abi::kAtlasTexture, 0.0f, 0.0f};
   atlas::white_pixel(atlas.white_u, atlas.white_v);
   const grace::tokens::Palette& palette = m.clear ? grace::tokens::kClear.colour : grace::tokens::kGrace.colour;
@@ -1041,7 +1052,6 @@ void publish(State& m) {
   } else {
     input::set_caret(0, 0, 0);
   }
-  follow_keyboard(m);
   g_view_lock.lock();
   m.page.assign(active_view(m).page());
   m.focused = active_view(m).focused();
@@ -1787,6 +1797,7 @@ void serve() noexcept {
     serve_menu();
   } catch (...) {
     g_off.store(true, std::memory_order_release);
+    steam::dismiss_keyboard();  // Steam's floating keyboard closes with the menu, a fault too (D275)
     log_line("the menu is off for this session: an exception in its layout or its commands");
     const grace::input::Holder holder = input::capture().holder();
     if (ours(holder)) {

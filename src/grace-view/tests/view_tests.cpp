@@ -3726,6 +3726,26 @@ std::size_t count_shape(const DisplayList& l, Shape shape) {
 
 }  // namespace
 
+TEST_CASE("each edit has its own number, and its field's box once laid out (D275: Steam's keyboard follows it)") {
+  PageView view = loaded("graceui", "graceui.menu");
+  CHECK_FALSE(view.editing());
+  const std::uint64_t first = view.edit_serial();
+  press(view, Key::search);
+  REQUIRE(view.editing());
+  CHECK(view.edit_serial() == first + 1);
+  CHECK(view.edit_box().w == 0);  // not laid out yet
+  DisplayList list;
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(view.edit_box().w > 0);
+  CHECK(view.edit_box().h > 0);
+  view.edit(PageView::EditInput{PageView::EditKey::escape});
+  CHECK_FALSE(view.editing());
+  view.layout(Viewport{}, test::fonts(), list);
+  CHECK(view.edit_box().w == 0);
+  press(view, Key::search);  // the same field again: another edit
+  CHECK(view.edit_serial() == first + 2);
+}
+
 TEST_CASE("a header or row action's confirmation that waits (D274): inert until then, at most 3 s, any other key lets it go") {
   // The log's Clear asks 60 s, past the limit: it waits 3 s (the lint refuses it in the author's build).
   PageView log = loaded_changed("demo", "demo.log", [](Json& pages) {
