@@ -15,7 +15,7 @@ own example mods, and they grow by minors that only add. This guide is written a
 |---|---|---|
 | [Features by version](features.md) | Every protocol minor and ABI minor, the GraceUI version that brought it, and the caps a mod asks for | Written |
 | [The space and its pages](pages.md) | `space.toml`, the page data a space registers: categories, pages, tabs, sections, blocks, actions, flows | Written |
-| Components | Every block kind and component, the topic body each draws, in game and in the browser | *To come* |
+| [Components](components.md) | Every component, the topic body each draws, in game and in the browser | Written |
 | The settings description | Every setting type, its bounds, availability and effect | *To come* |
 | The protocol | Topics, commands, results and errors as the views and GraceUI send them | *To come* |
 | The C ABI | `GraceUI_RequestApi`, `connect` and its answers, each slot | *To come* |
