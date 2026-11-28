@@ -180,6 +180,18 @@ python3 -I -m unittest discover -s tools/pages
 The Linux build's CTest runs `--check`, the lint's tests (each rule failing on a demo space seeded to break it) and
 `grace_pages_tests` (every built-in space decoded by grace-protocol's own decoders).
 
+## The modders' guide
+
+Every code block in `docs/modders/` is a run of an example mod's own file, named in a marker before it (D284):
+`tools/guide/snippets.py` checks them, and `--find` prints where each block's lines are found in `examples/`, for a
+new block's marker. The Linux build's CTest runs it and its tests.
+
+```sh
+python3 -I tools/guide/snippets.py
+python3 -I tools/guide/snippets.py --find
+python3 -I -m unittest discover -s tools/guide
+```
+
 ## The in-game views
 
 `grace_view_tests` (D162) drive GraceUI's own space and the demo space with keys and buttons as §5.3 and §5.4 give them

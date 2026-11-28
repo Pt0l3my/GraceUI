@@ -25,6 +25,10 @@ own example mods, and they grow by minors that only add. This guide is written a
 | [Versions and distribution](versions.md) | One copy in `Game\GraceUI\`; requiring a version; what a mod ships | Written |
 | [Troubleshooting and bug reports](troubleshooting.md) | GraceUI's log, its notices, what to put in a report | Written |
 
+The code in this guide is the example mods' own. Each block is a run of lines from one of `examples/`, named in a
+comment beside it in this guide's source, and a check keeps them the same (`tools/guide/snippets.py`, D284): what you
+read here compiles in both Windows builds and runs in GraceUI's harness.
+
 ## Tools you can use now
 
 - **grace-dev** (`tools/grace-dev/`): a fake host for any space. It serves a space's pages and fixtures to the browser

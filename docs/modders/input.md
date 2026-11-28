@@ -128,6 +128,8 @@ text field has focus (§5.2); a holder that takes the keyboard gets the key as a
 `hello-debug-view` (`examples/hello-debug-view/hello_debug_view.cpp`) registers F11 through `graceui_sys.hpp` and
 toggles its view on each press:
 
+<!-- snippet: examples/hello-debug-view/hello_debug_view.cpp -->
+
     while ((status = api.poll(me, event)) == GRACEUI_OK && event.kind != GRACEUI_EVENT_NONE) {
       if (event.kind == GRACEUI_EVENT_HOTKEY && event.hotkey_id == hotkey) {
         toggles += event.count;

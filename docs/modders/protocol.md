@@ -57,6 +57,8 @@ words and the in-game view formats nothing (§6.1). Words are always text: a vie
 `publish` takes one `state` or `rows` frame of the mod's own space, at most 256 KiB, and copies it before it returns.
 GraceUI parses it there, on the publisher's thread, and both views draw the newest (§2.4).
 
+<!-- snippet: frame -->
+
     {"v":1,"t":"state","space":…,"topic":…,"rev":…,"body":{…}}
 
 - **A state** carries `rev`, its revision, and `body`, an object: the whole body, replacing the one before. The
@@ -98,6 +100,8 @@ as its wording or a log line (D224).
 ## Answers
 
 `answer` takes the result frame of the command `reply` names:
+
+<!-- snippet: frame -->
 
     {"v":1,"t":"result","space":…,"id":…,"ok":true}
 

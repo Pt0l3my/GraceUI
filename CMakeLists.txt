@@ -118,5 +118,9 @@ if(GRACEUI_UNIT_TESTS)
     # The in-game spikes' reader (D175): its pass rules, on invented reports.
     add_test(NAME spike_reader_tests
              COMMAND ${Python3_EXECUTABLE} -I -m unittest discover -s ${CMAKE_SOURCE_DIR}/tools/grace-spike)
+    # The modders' guide's code is the example mods' own (D284): every block a run of the file its marker names.
+    add_test(NAME guide_snippets COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/guide/snippets.py)
+    add_test(NAME guide_snippets_tests
+             COMMAND ${Python3_EXECUTABLE} -I -m unittest discover -s ${CMAKE_SOURCE_DIR}/tools/guide)
   endif()
 endif()

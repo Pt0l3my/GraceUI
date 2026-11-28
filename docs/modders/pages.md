@@ -8,6 +8,8 @@ component is described in [Components](components.md).
 GraceUI's own built-in spaces are written as TOML, `src/grace-pages/spaces/<id>/space.toml`, and compiled by
 `tools/pages/build.py`. The same file format is checked for any space by the page lint:
 
+<!-- snippet: shell -->
+
     python3 -I tools/pages/build.py --lint path/to/space.toml
 
 The lint is the authority on what is allowed: the rules below are its rules, numbered as in its own header. A mod hands
@@ -150,6 +152,8 @@ each. GraceUI never opens the menu for it: invite the player with a notice of yo
 ## Compiling a mod's space
 
 The page tool compiles a mod's `space.toml` as it does GraceUI's own spaces, after the lint passes (D283):
+
+<!-- snippet: shell -->
 
     python3 -I tools/pages/build.py --build path/to/space.toml --out path/to/space [--minor N] [--header FILE] [--check]
 

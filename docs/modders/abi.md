@@ -44,6 +44,8 @@ how it was found (`GRACEUI_SYS_BY_NAME`, `_BY_SCAN` or `_BY_PATH`), its version,
 
 `hello-notice` (`examples/hello-notice/hello_notice.c`) starts its thread in `DllMain`:
 
+<!-- snippet: examples/hello-notice/hello_notice.c -->
+
     BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID unused) {
       (void)unused;
       if (reason == DLL_PROCESS_ATTACH) {
@@ -58,6 +60,8 @@ how it was found (`GRACEUI_SYS_BY_NAME`, `_BY_SCAN` or `_BY_PATH`), its version,
     }
 
 and on that thread finds GraceUI and connects:
+
+<!-- snippet: examples/hello-notice/hello_notice.c -->
 
     memset(&found, 0, sizeof found);
     found.size = sizeof found;
