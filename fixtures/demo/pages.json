@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 22,
+  "minor": 23,
   "categories": [
     {
       "id": "lanterns",
@@ -44,7 +44,8 @@
       },
       "related": [
         "demo.behaviour",
-        "demo.log"
+        "demo.log",
+        "demo.setup"
       ],
       "increment": "0.2",
       "actions": [
@@ -63,6 +64,13 @@
             "topic": "lantern.status",
             "field": "hushed"
           }
+        },
+        {
+          "id": "setup",
+          "label": "Set up again",
+          "command": "setup.restart",
+          "tone": "secondary",
+          "opens": "demo.setup"
         }
       ],
       "sections": [
@@ -806,6 +814,122 @@
       },
       "ribbon": "Raw readings",
       "pc_only": true
+    },
+    {
+      "id": "demo.setup",
+      "category": "lanterns",
+      "name": "Set up the lantern",
+      "description": "Four short steps before the lantern's first night.",
+      "help": {
+        "purpose": "Make the lantern ready for its first night, a step at a time.",
+        "steps": [
+          "Read each step, and change what it offers.",
+          "Next moves on; Back returns a step; Skip passes over a step that can wait.",
+          "Light it on the last step, or come back from Overview's Set up again."
+        ]
+      },
+      "related": [
+        "demo.overview",
+        "demo.behaviour"
+      ],
+      "increment": "0.2",
+      "tabs": [
+        {
+          "id": "welcome",
+          "name": "Welcome",
+          "sections": [
+            {
+              "id": "before",
+              "title": "Before you begin",
+              "description": "Nothing here is final: every choice can be changed later on its own page.",
+              "blocks": [
+                {
+                  "kind": "component",
+                  "component": "computed_sentence",
+                  "topic": "lantern.setup",
+                  "props": {
+                    "field": "welcome"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "flame",
+          "name": "The flame",
+          "sections": [
+            {
+              "id": "flame",
+              "title": "Its colour and brightness",
+              "blocks": [
+                {
+                  "kind": "shortcuts",
+                  "keys": [
+                    "lantern.colour",
+                    "lantern.brightness"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "trim",
+          "name": "A first trim",
+          "sections": [
+            {
+              "id": "trim",
+              "title": "Trim the wick",
+              "description": "A trimmed wick burns steadier. It can wait for the first evening.",
+              "blocks": [
+                {
+                  "kind": "component",
+                  "component": "stat_tiles",
+                  "topic": "lantern.status"
+                }
+              ],
+              "actions": [
+                {
+                  "id": "trim",
+                  "label": "Trim the wick",
+                  "command": "lantern.trim",
+                  "tone": "secondary"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ready",
+          "name": "Ready",
+          "sections": [
+            {
+              "id": "ready",
+              "title": "Ready to light",
+              "blocks": [
+                {
+                  "kind": "component",
+                  "component": "check_list",
+                  "topic": "lantern.setup",
+                  "props": {
+                    "field": "ready"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "flow": {
+        "topic": "lantern.setup",
+        "command": "setup.step",
+        "optional": [
+          "trim"
+        ],
+        "done": "Light it",
+        "then": "demo.overview"
+      }
     }
   ],
   "topics": [
@@ -872,6 +996,10 @@
       "family": true
     },
     {
+      "id": "lantern.setup",
+      "shape": "state"
+    },
+    {
       "id": "lantern.log",
       "shape": "stream",
       "ring": 200
@@ -902,7 +1030,9 @@
     "report.part",
     "report.save",
     "bell.hush",
-    "lightings.page"
+    "lightings.page",
+    "setup.step",
+    "setup.restart"
   ],
   "slow_commands": [
     "oil.order",

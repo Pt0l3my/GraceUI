@@ -467,6 +467,66 @@ TEST_CASE("a reaction's answer may carry a body: the demo's page of lightings (D
   CHECK_FALSE((*answer)["body"].contains("next"));
 }
 
+TEST_CASE("a flow's command moves the flow as a space would, with no scenario of its own (D278)") {
+  HostOptions options = options_of({"demo"});
+  options.no_scenario = true;
+  auto dev = serve(options);
+  View view(dev->port());
+  view.sub("demo", "lantern.setup");
+  const std::optional<Json> first = view.state("lantern.setup");
+  REQUIRE(first.has_value());
+  CHECK((*first)["body"]["step"] == "welcome");
+  // A press, and what came of it: its answer, and the flow's new state if it moved (either may come first).
+  struct Moved {
+    Json answer;
+    std::optional<Json> body;
+  };
+  const auto go = [&](const char* step, const char* where) {
+    const std::uint32_t id = view.cmd("demo", "setup.step", Json::object({{"step", step}, {"go", where}}));
+    Moved out;
+    std::optional<Json> answer;
+    for (int i = 0; i < 2 && !(answer && ((*answer)["ok"] != true || out.body)); ++i) {
+      const std::optional<Json> next = view.wait([&](const Json& j) {
+        return (j["t"] == "result" && j["id"] == id) || (j["t"] == "state" && j["topic"] == "lantern.setup");
+      });
+      REQUIRE(next.has_value());
+      if ((*next)["t"] == "result") {
+        answer = next;
+      } else {
+        out.body = (*next)["body"];
+      }
+    }
+    REQUIRE(answer.has_value());
+    out.answer = *answer;
+    return out;
+  };
+  Moved m = go("welcome", "next");
+  CHECK(m.answer["ok"] == true);
+  REQUIRE(m.body.has_value());
+  CHECK((*m.body)["step"] == "flame");
+  CHECK((*m.body)["done"] == Json::array({"welcome"}));
+  // A view that showed another step: conflict, nothing moved.
+  m = go("welcome", "next");
+  CHECK(m.answer["error"] == "conflict");
+  CHECK_FALSE(m.body.has_value());
+  m = go("flame", "back");
+  REQUIRE(m.body.has_value());
+  CHECK((*m.body)["step"] == "welcome");
+  CHECK((*m.body)["done"] == Json::array({"welcome"}));
+  CHECK(go("welcome", "next").answer["ok"] == true);
+  CHECK(go("flame", "next").answer["ok"] == true);
+  m = go("trim", "skip");  // skipped: left undone
+  REQUIRE(m.body.has_value());
+  CHECK((*m.body)["step"] == "ready");
+  CHECK((*m.body)["done"] == Json::array({"welcome", "flame"}));
+  CHECK(go("ready", "next").answer["error"] == "not_now");  // the last step's button is Done
+  m = go("ready", "done");
+  REQUIRE(m.body.has_value());
+  CHECK((*m.body)["start"] == false);
+  CHECK((*m.body)["done"] == Json::array({"welcome", "flame", "ready"}));
+  CHECK(go("dusk", "next").answer["error"] == "invalid_value");
+}
+
 TEST_CASE("with no scenario a space's own command is answered ok, and nothing changes") {
   HostOptions options = options_of({"demo"});
   options.no_scenario = true;

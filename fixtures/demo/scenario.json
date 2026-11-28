@@ -61,6 +61,17 @@
     {"on": "lantern.clear_log", "do": [
       {"clear": "lantern.log"},
       {"rows": "lantern.log", "add": [{"time": "Just now", "line": "The log was cleared. The journal is kept."}]}
+    ]},
+    {"on": "setup.restart", "do": [
+      {"state": "lantern.setup", "body": {
+        "step": "welcome", "done": [], "start": false,
+        "welcome": {"sentence": "The north lantern is set up again from its first step. Nothing chosen before is lost."},
+        "ready": {"checks": [
+          {"label": "A flame colour is chosen", "state": "pass"},
+          {"label": "The wick is trimmed", "state": "wait", "detail": "It can wait for the first evening."},
+          {"label": "Oil for the night", "state": "pass", "detail": "About three hours."}
+        ]}
+      }}
     ]}
   ]
 }

@@ -5428,6 +5428,157 @@ void run_menu_space(const std::wstring& dll) {
   grace.print_log();
 }
 
+// ---- A flow in game (D278), end to end in graceui.dll under Wine: the demo's setup flow, outside the rail. The mod's
+// flow state says start, and the menu's opening lands on the flow; Next sends the flow's command with its step, which
+// the mod answers and moves; Done, answered, opens the flow's next page; Set up again, refused, shows its words under
+// the header and opens nothing, and answered opens the flow; and the landing is once a session.
+
+void run_menu_flow(const std::wstring& dll) {
+  using grace::protocol::Json;
+  Game game(false, 1920, 1080);
+  const HWND window = game.window();
+  cursor_into(window);
+  GraceUi grace;
+  if (!grace.load(dll)) {
+    fatal("graceui.dll did not load, or lacks the test exports");
+  }
+  const GraceUiApi1* table = start_host(game, grace);
+  until_atlas(game, grace);
+  const Connected demo = connect(table, request_for("demo", GRACEUI_VERSION_PACK(0, 1, 0), "The demo space", "notices"));
+  const grace::pages::BuiltinSpace& space = grace::pages::builtin_spaces()[1];
+  const GraceUiSpaceDesc desc = game_space(space.pages, space.settings);
+  const GraceUiStatus registered = table->register_pages(demo.answer.consumer, &desc);
+  frames(game, 5);
+  std::uint64_t rev = 0;
+  const auto state = [&](const std::string& body) {  // the flow's state, as the mod publishes it
+    const std::string frame = R"({"v":1,"t":"state","space":"demo","topic":"lantern.setup","rev":)" +
+                              std::to_string(++rev) + R"(,"body":)" + body + "}";
+    return table->publish(demo.answer.consumer, frame.data(), frame.size());
+  };
+  const auto until = [&](auto&& done) {  // frames until the menu shows what `done` asks, at most 3 s
+    for (int i = 0; i < 150 && !done(grace.menu()); ++i) {
+      frames(game, 1);
+      Sleep(20);
+    }
+    return menu_after(game, grace, grace.menu().lists);
+  };
+  const auto command = [&]() {  // the mod's next command, parsed, with its reply handle
+    const SpaceEvent event = wait_kind(game, table, demo.answer.consumer, GRACEUI_EVENT_COMMAND);
+    Json cmd = event.kind == GRACEUI_EVENT_COMMAND ? Json::parse(event.frame) : Json();
+    return std::pair<Json, std::uint64_t>{cmd, event.reply};
+  };
+  const std::string ok = R"({"v":1,"t":"result","space":"demo","id":0,"ok":true})";
+
+  // 1. F5 opens the menu on the mod's first page, which watches the flow's state with it; the state says start, and the
+  // opening lands on the flow's first step, Next focused.
+  press(window, VK_F5, kScanF5);
+  GraceUiTestMenu menu = menu_after(game, grace, 0);
+  const std::string opened_on = menu.page;
+  bool watching = false;
+  for (int i = 0; i < 6 && !watching; ++i) {
+    const SpaceEvent w = wait_kind(game, table, demo.answer.consumer, GRACEUI_EVENT_WATCHED);
+    if (w.kind != GRACEUI_EVENT_WATCHED) {
+      break;
+    }
+    watching = w.frame.find("\"lantern.setup\"") != std::string::npos;
+  }
+  const GraceUiStatus asked = state(R"({"step":"welcome","done":[],"start":true})");
+  menu = until([](const GraceUiTestMenu& m) { return std::strcmp(m.page, "demo.setup") == 0; });
+  check(registered == GRACEUI_OK && opened_on == "demo.overview" && watching && asked == GRACEUI_OK &&
+            std::strcmp(menu.page, "demo.setup") == 0 && std::strcmp(menu.focused, "flow:next") == 0,
+        "menu flow: lands at the opening", "F5 opened %s; the flow's state %s, published %s; then %s, focus %s",
+        opened_on.c_str(), watching ? "watched" : "NOT WATCHED", status_name(asked), menu.page, menu.focused);
+
+  // 2. Enter on Next: the flow's command with its step; the mod answers and publishes the next step, whose first
+  // control takes focus.
+  press(window, VK_RETURN, 0x1C);
+  const auto [next, next_reply] = command();
+  const bool sent_next = next.is_object() && next["name"] == "setup.step" && next["args"]["step"] == "welcome" &&
+                         next["args"]["go"] == "next";
+  const GraceUiStatus next_answered = table->answer(demo.answer.consumer, next_reply, ok.data(), ok.size());
+  const GraceUiStatus moved = state(R"({"step":"flame","done":["welcome"],"start":true})");
+  menu = until([](const GraceUiTestMenu& m) { return std::strcmp(m.focused, "shortcut:lantern.colour") == 0; });
+  float back[8] = {};
+  const bool back_drawn = grace.get_menu_bounds("flow:back", back) != 0;  // the button, not the hints' "Esc  Back"
+  check(sent_next && next_answered == GRACEUI_OK && moved == GRACEUI_OK && std::strcmp(menu.page, "demo.setup") == 0 &&
+            std::strcmp(menu.focused, "shortcut:lantern.colour") == 0 && back_drawn,
+        "menu flow: Next", "Enter: the mod polled %s, answered %s; its next step %s: page %s, focus %s",
+        next.is_object() ? next.dump().c_str() : "NO COMMAND", status_name(next_answered), status_name(moved),
+        menu.page, menu.focused);
+
+  // 3. The last step: Done, by the flow's own label; answered, the flow's then (Overview).
+  const GraceUiStatus last = state(R"({"step":"ready","done":["welcome","flame"],"start":true})");
+  menu = until([](const GraceUiTestMenu& m) { return std::strcmp(m.focused, "flow:done") == 0; });
+  const bool labelled = grace.menu_shows("Light it") != 0;
+  press(window, VK_RETURN, 0x1C);
+  const auto [done, done_reply] = command();
+  const bool sent_done = done.is_object() && done["args"]["step"] == "ready" && done["args"]["go"] == "done";
+  const GraceUiStatus done_answered = table->answer(demo.answer.consumer, done_reply, ok.data(), ok.size());
+  menu = until([](const GraceUiTestMenu& m) { return std::strcmp(m.page, "demo.overview") == 0; });
+  check(last == GRACEUI_OK && labelled && sent_done && done_answered == GRACEUI_OK &&
+            std::strcmp(menu.page, "demo.overview") == 0,
+        "menu flow: Done opens its next page", "the last step %s (Light it %s); Enter: %s, answered %s; then %s",
+        status_name(last), labelled ? "shown" : "NOT SHOWN", done.is_object() ? done.dump().c_str() : "NO COMMAND",
+        status_name(done_answered), menu.page);
+
+  // 4. Set up again, the header's action: refused, its words under the header and nothing opens; answered, the flow.
+  for (int i = 0; i < 10 && std::strcmp(grace.menu().focused, "action:setup") != 0; ++i) {
+    press(window, VK_UP, 0x48);
+    menu = menu_after(game, grace, grace.menu().lists);
+  }
+  const std::string on_action = grace.menu().focused;
+  const std::uint32_t refusals_before = grace.menu().refusals;
+  press(window, VK_RETURN, 0x1C);
+  const auto [restart, restart_reply] = command();
+  const std::string refusal =
+      R"({"v":1,"t":"result","space":"demo","id":0,"error":"not_now","detail":"The lantern is lit already."})";
+  const GraceUiStatus refused = table->answer(demo.answer.consumer, restart_reply, refusal.data(), refusal.size());
+  menu = until([&](const GraceUiTestMenu& m) { return m.refusals > refusals_before; });
+  const bool words_shown = grace.menu_shows("The lantern is lit already.") != 0;
+  const std::string after_refusal = menu.page;
+  press(window, VK_RETURN, 0x1C);
+  const auto [again, again_reply] = command();
+  const GraceUiStatus again_answered = table->answer(demo.answer.consumer, again_reply, ok.data(), ok.size());
+  menu = until([](const GraceUiTestMenu& m) { return std::strcmp(m.page, "demo.setup") == 0; });
+  check(on_action == "action:setup" && restart.is_object() && restart["name"] == "setup.restart" &&
+            refused == GRACEUI_OK && words_shown && after_refusal == "demo.overview" && again.is_object() &&
+            again_answered == GRACEUI_OK && std::strcmp(menu.page, "demo.setup") == 0,
+        "menu flow: Set up again", "focus %s; Enter: %s, refused (%s, %s), still %s; again: answered %s, then %s",
+        on_action.c_str(), restart.is_object() ? restart.dump().c_str() : "NO COMMAND", status_name(refused),
+        words_shown ? "its words shown" : "NO WORDS", after_refusal.c_str(), status_name(again_answered), menu.page);
+
+  // 5. Once a session: the player goes to Overview by the rail and closes the menu; opened again, though the state
+  // still says start, it opens where it was left.
+  press(window, VK_ESCAPE, kScanEscape);  // to the rail: the flow's category's row
+  menu = menu_after(game, grace, grace.menu().lists);
+  const std::string rail_row = menu.focused;
+  press(window, VK_DOWN, 0x50);
+  menu = menu_after(game, grace, grace.menu().lists);
+  press(window, VK_RETURN, 0x1C);
+  menu = until([](const GraceUiTestMenu& m) { return std::strcmp(m.page, "demo.overview") == 0; });
+  const std::string left_for = menu.page;
+  press(window, VK_F5, kScanF5);
+  for (int i = 0; i < 50 && grace.menu().open != 0; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  faded_out(game, grace);
+  press(window, VK_F5, kScanF5);
+  menu = menu_after(game, grace, grace.menu().lists);
+  state(R"({"step":"welcome","done":[],"start":true})");
+  for (int i = 0; i < 30; ++i) {
+    frames(game, 1);
+    Sleep(20);
+  }
+  menu = menu_after(game, grace, grace.menu().lists);
+  check(rail_row == "rail:lanterns" && left_for == "demo.overview" && menu.open == 1 &&
+            std::strcmp(menu.page, "demo.overview") == 0,
+        "menu flow: lands once a session", "Esc: %s; Overview by the rail: %s; F5 twice: %s, the state asking still",
+        rail_row.c_str(), left_for.c_str(), menu.page);
+  press(window, VK_F5, kScanF5);
+  frames(game, 5);
+}
+
 // ---- The in-game spikes' tools (D175): grace-spike.dll, the observer EldenNet's launcher loads in a spike run, and
 // grace-standin.dll, a stand-in for another overlay that patches Present's vtable slot with its own code. "spike" loads
 // both before GraceUI (the stand-in's patch first, so GraceUI hooks the stand-in's Present), opens the typing test with
@@ -10957,6 +11108,9 @@ int wmain(int argc, wchar_t** argv) {
   } else if (scenario == L"menu-space") {
     std::printf("-- scenario: the in-game menu on mods' spaces, with GraceUI's at the rail's foot (D171)\n");
     run_menu_space(dll);
+  } else if (scenario == L"menu-flow") {
+    std::printf("-- scenario: a mod's flow in game, landed on once at the opening (D278)\n");
+    run_menu_flow(dll);
   } else if (scenario == L"spike") {
     std::printf("-- scenario: the spike observer and the stand-in overlay, loaded before GraceUI (D175)\n");
     run_spike(dll, true);
@@ -11063,7 +11217,7 @@ int wmain(int argc, wchar_t** argv) {
            {L"two-queues", L"input", L"input-ansi", L"abi", L"panels", L"copies", L"copy-beside-mod", L"copy-beside-mod-reversed",
             L"found-by-scan", L"anti-cheat",
             L"anti-cheat-parent", L"decoy-window", L"atlas-full", L"slow-first", L"long-name", L"device-change",
-            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-focus-ring", L"menu-pad", L"menu-away", L"menu-space", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
+            L"examples", L"examples-reversed", L"absent", L"menu", L"menu-mouse", L"menu-recentred", L"menu-focus-ring", L"menu-pad", L"menu-away", L"menu-space", L"menu-flow", L"typing", L"master", L"slow", L"editor", L"spike", L"spike-after",
             L"holder-events", L"settings", L"display", L"quiet", L"chords", L"bindings", L"wake", L"on-present", L"heap-guard", L"heap-guard-off"}) {
         run(child_scenario, dll, this_program());
         if (std::wstring_view(child_scenario) == L"copy-beside-mod-reversed") {

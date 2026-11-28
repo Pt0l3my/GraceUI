@@ -503,6 +503,65 @@ class Seeded(unittest.TestCase):
         del sp["categories"][0]["icon"]
         self.assertEqual(failures(sp, desc, fx), [])  # optional: the rail draws its initial
 
+    def test_a_flow(self):  # D278
+        sp, desc, fx = demo()
+        self.assertEqual(failures(sp, desc, fx), [])  # the demo's setup flow, outside the rail
+        flow = page(sp, "demo.setup")
+        self.assertEqual([t["id"] for t in flow["tabs"]], ["welcome", "flame", "trim", "ready"])
+        sp["categories"][0]["pages"].append("demo.setup")
+        self.expect("page demo.setup is a flow, outside the rail: no category lists it", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.setup")["category"] = "nowhere"
+        self.expect("flow demo.setup names category nowhere, which is not one of the space's", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.setup")["tabs"] = page(sp, "demo.setup")["tabs"][:1]
+        self.expect("a flow's steps are its tabs, two to twelve", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.setup")["live"] = True
+        self.expect("a flow has no master list and is neither live nor scoped", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.setup")["flow"]["topic"] = "lantern.journal"  # a stream, and private
+        self.expect("its state is a state topic of the space's own, neither a family nor private", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.setup")["flow"]["command"] = "keepers.import"
+        self.expect("it sends a command of the space's own, neither a settings nor a file command", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.setup")["flow"]["optional"] = ["trim", "ready"]
+        self.expect("its last step is never optional: its button is Done", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.setup")["flow"]["optional"] = ["dusk"]
+        self.expect("optional step dusk is not one of its steps", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.setup")["flow"]["then"] = "demo.workbench"
+        self.expect("then names a page of the space's rail, in game too, not a flow", sp, desc, fx)
+        sp, desc, fx = demo()
+        setting(desc, "lantern.colour")["home"] = "demo.setup"
+        self.expect("a flow is no setting's home", sp, desc, fx)
+        sp, desc, fx = demo()
+        fx["lantern.setup"]["step"] = "dusk"
+        self.expect("a flow's state names its own steps", sp, desc, fx)
+        sp, desc, fx = demo()
+        fx["lantern.setup"]["start"] = "yes"
+        self.expect("start a boolean", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["sections"][0]["blocks"].append({"kind": "component", "component": "wizard_steps",
+                                                                    "topic": "lantern.setup"})
+        self.expect("wizard_steps is no block of its own", sp, desc, fx)
+
+    def test_an_action_that_opens_a_page(self):  # D278
+        sp, desc, fx = demo()
+        actions = page(sp, "demo.overview")["actions"]
+        self.assertEqual(actions[2]["opens"], "demo.setup")
+        actions[2]["opens"] = "demo.overview"
+        self.expect("opens demo.overview, which is not another page of the space's", sp, desc, fx)
+        sp, desc, fx = demo()
+        page(sp, "demo.overview")["actions"][1]["opens"] = "demo.setup"  # the bell's header switch
+        self.expect("a switch opens no page", sp, desc, fx)
+        sp, desc, fx = demo()
+        section = page(sp, "demo.setup")["tabs"][2]["sections"][0]
+        section["actions"][0]["opens"] = "demo.lamps"
+        self.assertEqual(failures(sp, desc, fx), [])  # a section's action may open one too
+
     def test_a_private_topic(self):  # D274
         sp, desc, fx = demo()
         self.assertEqual(failures(sp, desc, fx), [])  # the journal is private, drawn in its log tail alone

@@ -109,6 +109,9 @@ export function refusalWords(answer: Answer, setting?: Setting): string {
   return "Something went wrong; the log has the details.";
 }
 
+/** A flow lands on the view only this soon after the page it starts on (D278), as the menu's opening in game. */
+export const LAND_WITHIN_MS = 2000;
+
 export class Session {
   readonly spaces = signal<SpaceView[]>([]);
   readonly connection = signal<Connection>("connecting");
@@ -124,6 +127,10 @@ export class Session {
   readonly railSpace = signal<string | null>(null);
   /** A notice for the whole page (a reload needed, the page out of date). */
   readonly notice = signal<string | null>(null);
+  /** Whether a flow whose state says start may still land the view on it (D278): from the page the view starts on,
+   * for LAND_WITHIN_MS, until the player opens a page or a tab; once a page load. */
+  readonly landing = signal(false);
+  private landed = false;
 
   private readonly options: SessionOptions;
   private transport: Transport | null = null;
@@ -428,14 +435,36 @@ export class Session {
       const pages = view.pages.value;
       const first = pages ? railOrder(pages)[0] : undefined;
       if (pages && first) {
-        this.open(view.info.id, first.id);
+        this.show(view.info.id, first.id);
+        if (!this.landed) {
+          this.landing.value = true;  // a flow that asks may still land on it (D278)
+          setTimeout(() => {
+            this.landing.value = false;
+          }, LAND_WITHIN_MS);
+        }
         return;
       }
     }
   }
 
-  /** Opens a page of a space (its first tab, or `tab`); false for a page the space does not have. */
+  /** Lands the view on a flow whose state says start (D278), if the view may still: false otherwise. */
+  land(space: string, page: string): boolean {
+    if (!this.landing.value || this.landed) {
+      return false;
+    }
+    this.landed = true;
+    this.landing.value = false;
+    return this.show(space, page);
+  }
+
+  /** Opens a page of a space (its first tab, or `tab`); false for a page the space does not have. The player's: no
+   * flow lands on the view after it (D278). */
   open(space: string, page: string, tab = 0): boolean {
+    this.landing.value = false;
+    return this.show(space, page, tab);
+  }
+
+  private show(space: string, page: string, tab = 0): boolean {
     const pages = this.view(space)?.pages.value;
     const target = pages ? pageById(pages, page) : undefined;
     if (!target) {
@@ -453,6 +482,7 @@ export class Session {
   }
 
   setTab(tab: number): void {
+    this.landing.value = false;
     const route = this.route.value;
     if (route) {
       this.route.value = { ...route, tab };
@@ -468,6 +498,9 @@ export class Session {
     }
     const order = railOrder(pages);
     const at = order.findIndex((p) => p.id === route.page);
+    if (at < 0) {
+      return false;  // a flow, outside the rail's order (D278): its own buttons move it
+    }
     const next = order[at + direction];
     return next !== undefined && this.open(route.space, next.id);
   }

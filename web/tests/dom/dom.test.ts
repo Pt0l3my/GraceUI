@@ -21,11 +21,32 @@ import type { FixtureSpaceData } from "../../src/transport/fixture-space.ts";
 const built = existsSync(join(DIST, "index.html"));
 
 
-function allPages(): { space: string; category: string; page: string; name: string; tabs: number }[] {
+function allPages(): { space: string; category: string; page: string; name: string; tabs: number; steps: string[] }[] {
   // Every page in game too: a browser-only one (D258) has no line in grace-view's golden, and opens behind its gate.
+  // A flow (D278) is outside the rail: its steps, which its space chooses, in place of tabs.
   return builtinSpaces().flatMap((s) => s.pages.pages.filter((p) => p.browser_only !== true).map((p) => ({
-    space: s.pages.space, category: p.category, page: p.id, name: p.name, tabs: p.tabs?.length ?? 0,
+    space: s.pages.space, category: p.category, page: p.id, name: p.name, tabs: p.flow ? 0 : p.tabs?.length ?? 0,
+    steps: p.flow ? (p.tabs ?? []).map((t) => t.id) : [],
   })));
+}
+
+/** The demo's setup flow (D278), outside the rail: opened by Overview's Set up again, which the fake host answers;
+ * back once the page has asked for its state, which the fake host pushes only to a page that has. */
+async function openFlow(page: PwPage, host: FakeHost): Promise<void> {
+  const subs = () => host.received.filter((f) => f.t === "sub" && f.topic === "lantern.setup").length;
+  await openFromRail(page, "lanterns", "demo.overview");
+  const before = subs();
+  await page.locator(".page__actions [data-action='setup']").click();
+  await page.locator("main.page[data-page='demo.setup']").waitFor();
+  for (let i = 0; i < 100 && subs() === before; ++i) {
+    await page.waitForTimeout(20);
+  }
+}
+
+/** A flow's step, as its space publishes it, drawn. */
+async function stepTo(page: PwPage, host: FakeHost, step: string, body: { [key: string]: unknown } = {}): Promise<void> {
+  host.push("demo", "lantern.setup", { step, ...body } as never);
+  await page.locator(`.flow-step.is-current[data-step="${step}"]`).waitFor();
 }
 
 /** Both spaces as an increment would show them in which every page has shipped (0.6), for the tests that visit every
@@ -75,6 +96,15 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
           await page.waitForFunction(() => document.documentElement.dataset.theme === "clear");
         }
         for (const p of allPages()) {
+          if (p.steps.length > 0) {
+            await openFlow(page, host);
+            for (const step of p.steps) {
+              await stepTo(page, host, step);
+              await unfoldAll(page);
+              assert.deepEqual(await lowContrast(page), [], `${theme} ${p.page} step ${step}`);
+            }
+            continue;
+          }
           await openFromRail(page, p.category, p.page);
           assert.equal((await page.locator("#page-title").textContent())?.trim(), p.name);
           for (let tab = 0; tab < Math.max(p.tabs, 1); ++tab) {
@@ -132,6 +162,16 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       const golden = goldenLines("rows-order.txt");
       const ours: string[] = [];
       for (const p of allPages()) {
+        if (p.steps.length > 0) {
+          await openFlow(page, host);
+          for (const step of p.steps) {
+            await stepTo(page, host, step);
+            await unfoldAll(page);
+            const rows = await page.locator("main [data-row]").evaluateAll((els) => els.map((e) => e.getAttribute("data-row")));
+            ours.push(`${p.space} ${p.page}#${step}:${rows.map((r) => ` ${r}`).join("")}`);
+          }
+          continue;
+        }
         await openFromRail(page, p.category, p.page);
         if (await page.locator(".master").count() > 0) {
           // A master page's detail, its tabs among it, once its first row is chosen (D215).
@@ -1530,6 +1570,96 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       await page.waitForFunction(() => document.querySelector("[data-rail='page:demo.workbench']") === null);
     } finally {
       await close();
+    }
+  });
+
+  test("a flow: its steps, the space's step, Back, Skip, Next and Done, one press at a time; an action opens it (D278)",
+       async () => {
+    const { page, close } = await fresh();
+    try {
+      await openFlow(page, host);
+      assert.equal(await page.locator("[data-rail='page:demo.setup']").count(), 0, "outside the rail");
+      assert.equal(await page.locator("[data-rail='category:lanterns'][aria-expanded='true']").count(), 1,
+                   "its category open on the rail");
+      assert.deepEqual(await page.locator(".flow-step__name").evaluateAll((els) => els.map((e) => e.textContent)),
+                       ["Welcome", "The flame", "A first trim", "Ready"]);
+      assert.equal(await page.locator(".flow-step[aria-current='step']").getAttribute("data-step"), "welcome");
+      assert.equal(await page.locator("[role=tab]").count(), 0, "no tabs: its steps are its space's");
+      assert.equal(await page.locator("[data-flow-go='back']").count(), 0, "no Back on the first step");
+      await page.locator("[data-flow-go='next']").click();
+      await page.waitForFunction(() => document.querySelector("[data-flow-go='next']")?.textContent === "Next");
+      let sent = host.received.filter((f) => f.t === "cmd" && f.name === "setup.step").at(-1);
+      assert.deepEqual(sent?.args, { step: "welcome", go: "next" });
+      // The space moves it: its step drawn, the one before checked, Back now.
+      await stepTo(page, host, "flame", { done: ["welcome"] });
+      assert.equal(await page.locator(".flow-step.is-done").getAttribute("data-step"), "welcome");
+      assert.match((await page.locator(".flow-step.is-done").textContent()) ?? "", /\(done\)/);
+      assert.deepEqual(await page.locator("main [data-row]").evaluateAll((els) => els.map((e) => e.getAttribute("data-row"))),
+                       ["shortcut:lantern.colour", "shortcut:lantern.brightness"]);
+      assert.equal(await page.locator("[data-flow-go='back']").count(), 1);
+      // An optional step: Skip; what Next waits for, in the space's words, and Next sends nothing.
+      await stepTo(page, host, "trim", { blocked: "Trim the wick first." });
+      assert.equal(await page.locator("[data-flow-go='skip']").count(), 1);
+      assert.equal(await page.locator("[data-flow-go='next']").getAttribute("aria-disabled"), "true");
+      assert.match((await page.locator(".flow-foot__note").textContent()) ?? "", /Trim the wick first\./);
+      const before = host.received.length;
+      await page.locator("[data-flow-go='next']").click({ force: true });  // aria-disabled: a press does nothing
+      await page.waitForTimeout(100);
+      assert.equal(host.received.filter((f, i) => i >= before && f.t === "cmd").length, 0, "Next waits");
+      // A refusal: its words above the buttons.
+      host.refuse.set("setup.step", "not_now");
+      await page.locator("[data-flow-go='skip']").click();
+      await page.locator(".flow-foot__note--refused").waitFor();
+      assert.match((await page.locator(".flow-foot__note--refused").textContent()) ?? "", /Not possible right now\./);
+      sent = host.received.filter((f) => f.t === "cmd" && f.name === "setup.step").at(-1);
+      assert.deepEqual(sent?.args, { step: "trim", go: "skip" });
+      host.refuse.delete("setup.step");
+      // Page Up and Down leave a flow alone: outside the rail's order.
+      await page.locator("#page-title").focus();
+      await page.keyboard.press("PageDown");
+      assert.equal(await page.locator("main.page").getAttribute("data-page"), "demo.setup");
+      // The last step: Done, by the flow's own label; answered, the flow's then.
+      await stepTo(page, host, "ready");
+      assert.equal((await page.locator("[data-flow-go='done']").textContent())?.trim(), "Light it");
+      await page.locator("[data-flow-go='done']").click();
+      await page.locator("main.page[data-page='demo.overview']").waitFor();
+      sent = host.received.filter((f) => f.t === "cmd" && f.name === "setup.step").at(-1);
+      assert.deepEqual(sent?.args, { step: "ready", go: "done" });
+      // Set up again, refused: its words under the header, and nothing opens.
+      host.refuse.set("setup.restart", "not_now");
+      await page.locator(".page__actions [data-action='setup']").click();
+      await page.locator(".page__notice").waitFor();
+      assert.equal(await page.locator("main.page").getAttribute("data-page"), "demo.overview");
+      assert.deepEqual(await violations(page), []);
+    } finally {
+      await close();
+    }
+  });
+
+  test("a flow whose state says start lands the dashboard on it at load, once; the player's move first, never (D278)",
+       async () => {
+    const asking = () => builtinSpaces().map((s) => s.pages.space !== "demo" ? s : {
+      ...s, topics: { ...s.topics, "lantern.setup": { ...(s.topics?.["lantern.setup"] as object), start: true } },
+    });
+    const first = await fresh(asking());
+    try {
+      await first.page.locator("main.page[data-page='demo.setup']").waitFor();
+      assert.equal(await first.page.locator(".flow-step[aria-current='step']").getAttribute("data-step"), "welcome");
+      // Once a page load: the player leaves it, and it stays left though its state still asks.
+      await openFromRail(first.page, "lanterns", "demo.behaviour");
+      await first.page.waitForTimeout(300);
+      assert.equal(await first.page.locator("main.page").getAttribute("data-page"), "demo.behaviour");
+    } finally {
+      await first.close();
+    }
+    // A state that does not ask: the dashboard starts where it always does.
+    const second = await fresh();
+    try {
+      await second.page.locator("main.page[data-page='demo.overview']").waitFor();
+      await second.page.waitForTimeout(300);
+      assert.equal(await second.page.locator("main.page").getAttribute("data-page"), "demo.overview");
+    } finally {
+      await second.close();
     }
   });
 

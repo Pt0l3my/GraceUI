@@ -80,6 +80,15 @@ export function Cross() {
   );
 }
 
+/** A step done (D278): the check the in-game strip draws, on the same 18-unit grid. */
+export function Check() {
+  return (
+    <svg {...common}>
+      <path d="M5 9.5 8 12.5 13 6" />
+    </svg>
+  );
+}
+
 export function Warning() {
   return (
     <svg {...common}>

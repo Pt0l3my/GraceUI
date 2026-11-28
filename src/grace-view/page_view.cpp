@@ -1136,7 +1136,7 @@ bool PageView::open(std::string_view page_id) {
       paged_.clear();  // nothing a page answered is kept past leaving it (D254)
   drawer_open_.clear();  // nor an open row drawer (D256)
       page_ = i;
-      tab_ = 0;
+      arrive();
       page_focus_ = 0;
       scroll_ = 0;
       confirming_.clear();
@@ -1250,8 +1250,13 @@ void PageView::set_topic(std::string_view topic, const Json& body) {
       at = refusals_.erase(at);  // a new body answers what was refused of its rows
     }
   }
+  const bool stepped = flow_follow(topic);  // the open flow's step, as its space publishes it (D278)
   rebuild();
-  if (scope_ == Scope::page) {  // the same element, wherever it now is, as rows come and go (D181, D192)
+  if (stepped) {
+    if (scope_ == Scope::page) {
+      focus_first_control();  // a new step: its first control, as a page's
+    }
+  } else if (scope_ == Scope::page) {  // the same element, wherever it now is, as rows come and go (D181, D192)
     // Or the one a new row's choice took focus from, once the new member draws it (D218).
     const std::string want = refocus_name_.empty() ? was : refocus_name_;
     for (std::size_t i = 0; i < focus_.size(); ++i) {
@@ -1588,12 +1593,162 @@ Action PageView::section_action(const Focus& f) {
   }
   confirming_.clear();
   refusals_.erase(f.id);
+  if (a.opens) {
+    opens_[f.id] = Opening{current().id, *a.opens};  // opened once the space answers it ok (D278)
+  }
   Action action;
   action.kind = Action::Kind::command;
   action.command.space = pages_.space;
   action.command.name = a.command;
   action.command.args = a.tone == protocol::ActionTone::destructive ? Json::object({{"confirm", true}}) : Json::object();
   return action;
+}
+
+// ---- Flows (D278).
+
+void PageView::arrive() {
+  // A page opened, by open() or by the rail, Page Up and Down, a Related link, a search hit or a shortcut: a flow's
+  // step is the one its space publishes, any other page's its first tab; a header action's or a flow's refusal, and a
+  // flow's press waiting for its answer, stay with the visit they belonged to.
+  tab_ = flow_step();
+  flow_sent_.clear();  // an answer to a press of the last visit frees nothing, says nothing and opens nothing here
+  for (const char* prefix : {"action:", "flow:"}) {
+    for (auto at = refusals_.lower_bound(prefix); at != refusals_.end() && at->first.rfind(prefix, 0) == 0;) {
+      at = refusals_.erase(at);
+    }
+  }
+}
+
+namespace {
+
+// A flow's state topic's body, or null.
+const Json* flow_state(const std::map<std::string, Json, std::less<>>& topics, const protocol::Page& page) {
+  if (!page.flow) {
+    return nullptr;
+  }
+  const auto at = topics.find(page.flow->topic);
+  return at != topics.end() && at->second.is_object() ? &at->second : nullptr;
+}
+
+}  // namespace
+
+std::size_t PageView::flow_step() const {
+  const protocol::Page& page = current();
+  const Json* state = flow_state(topics_, page);
+  if (state == nullptr || !page.tabs || !state->contains("step") || !(*state)["step"].is_string()) {
+    return 0;
+  }
+  const std::string& step = (*state)["step"].get_ref<const std::string&>();
+  for (std::size_t i = 0; i < page.tabs->size(); ++i) {
+    if ((*page.tabs)[i].id == step) {
+      return i;
+    }
+  }
+  return 0;  // an unknown step: the first
+}
+
+bool PageView::flow_waiting() const {
+  // The newest press not yet answered was on the step shown: its buttons wait for it.
+  const protocol::Page& page = current();
+  return !flow_sent_.empty() && page.flow && page.tabs && tab_ < page.tabs->size() &&
+         flow_sent_.back().page == page.id && flow_sent_.back().step == (*page.tabs)[tab_].id;
+}
+
+std::optional<PageView::FlowPress> PageView::flow_answered(std::string_view where) {
+  // An answer names its button ("flow:next"): it is for the oldest press of that button still waiting.
+  const std::string_view go = where.substr(5);
+  for (auto at = flow_sent_.begin(); at != flow_sent_.end(); ++at) {
+    if (at->go == go) {
+      FlowPress press = *at;
+      flow_sent_.erase(at);
+      return press;
+    }
+  }
+  return std::nullopt;
+}
+
+bool PageView::flow_optional(std::size_t step) const {
+  const protocol::Page& page = current();
+  if (!page.flow || !page.flow->optional || !page.tabs || step + 1 >= page.tabs->size()) {
+    return false;  // the last step is never skipped: its button is Done
+  }
+  const auto& optional = *page.flow->optional;
+  return std::find(optional.begin(), optional.end(), (*page.tabs)[step].id) != optional.end();
+}
+
+std::string PageView::flow_blocked() const {
+  const Json* state = flow_state(topics_, current());
+  if (state == nullptr || !state->contains("blocked") || !(*state)["blocked"].is_string()) {
+    return std::string();
+  }
+  const std::string& words = (*state)["blocked"].get_ref<const std::string&>();
+  return words.size() <= 160 ? words : std::string();  // the space's words, as the lint holds them
+}
+
+bool PageView::flow_follow(std::string_view topic) {
+  const protocol::Page& page = current();
+  if (!page.flow || page.flow->topic != topic) {
+    return false;
+  }
+  const std::size_t step = flow_step();
+  if (step == tab_) {
+    return false;
+  }
+  tab_ = step;  // the space moved it: its answer, or another view's press; a press on the last step waits no more
+  scroll_ = 0;
+  confirming_.clear();
+  for (auto at = refusals_.lower_bound("flow:"); at != refusals_.end() && at->first.rfind("flow:", 0) == 0;) {
+    at = refusals_.erase(at);
+  }
+  return true;
+}
+
+Action PageView::flow_press(const Focus& f) {
+  const protocol::Page& page = current();
+  if (!page.flow || !page.tabs || tab_ >= page.tabs->size() || flow_waiting() || !greyed_words(page.id).empty()) {
+    return {};  // one press at a time; a greyed flow is inert (D188)
+  }
+  if (f.index == 2 && !flow_blocked().empty()) {
+    return {};  // Next waits for what the space's words say
+  }
+  for (auto at = refusals_.lower_bound("flow:"); at != refusals_.end() && at->first.rfind("flow:", 0) == 0;) {
+    at = refusals_.erase(at);  // a new try: the last refusal's words go
+  }
+  flow_sent_.push_back(FlowPress{page.id, (*page.tabs)[tab_].id, f.id});
+  Action action;
+  action.kind = Action::Kind::command;
+  action.command.space = pages_.space;
+  action.command.name = page.flow->command;
+  action.command.args = Json::object({{"step", Json((*page.tabs)[tab_].id)}, {"go", Json(f.id)}});
+  return action;
+}
+
+void PageView::flow_done() {
+  const protocol::Page& page = current();
+  if (page.flow && page.flow->then && present(*page.flow->then) && open(*page.flow->then)) {
+    return;
+  }
+  for (const protocol::Category& category : pages_.categories) {
+    for (const std::string& id : category.pages) {
+      if (present(id) && open(id)) {
+        return;  // the space's first page on the rail
+      }
+    }
+  }
+}
+
+std::string PageView::flow_to_land() const {
+  for (const protocol::Page& p : pages_.pages) {
+    if (!p.flow || !present(p.id)) {
+      continue;
+    }
+    const auto at = topics_.find(p.flow->topic);
+    if (at != topics_.end() && at->second.is_object() && at->second.contains("start") &&
+        at->second["start"].is_boolean() && at->second["start"].get<bool>()) {
+      return p.id;
+    }
+  }
+  return std::string();
 }
 
 std::pair<std::string, std::string> PageView::section_status(const protocol::PageSection& section) const {
@@ -1675,6 +1830,11 @@ std::vector<std::string> PageView::component_topics() const {
   for (const protocol::PageAction& a : current().actions.value_or(std::vector<protocol::PageAction>{})) {
     if (a.state && std::find(out.begin(), out.end(), a.state->topic) == out.end()) {
       out.push_back(a.state->topic);  // a header switch's state (D256)
+    }
+  }
+  for (const protocol::Page& p : pages_.pages) {
+    if (p.flow && present(p.id) && std::find(out.begin(), out.end(), p.flow->topic) == out.end()) {
+      out.push_back(p.flow->topic);  // a flow's state, on every page: its step, and whether it asks to be shown (D278)
     }
   }
   const auto want = [&](const std::string& topic) {
@@ -2245,8 +2405,8 @@ void PageView::rebuild() {
   }
   // A master page with no row chosen draws no detail: its tabs and sections are no focus stops then (D215).
   const bool detail = master() == nullptr || !chosen().empty();
-  for (std::size_t t = 0; detail && page.tabs && t < page.tabs->size(); ++t) {
-    focus_.push_back({FocusKind::tab, (*page.tabs)[t].id, t});
+  for (std::size_t t = 0; detail && !page.flow && page.tabs && t < page.tabs->size(); ++t) {
+    focus_.push_back({FocusKind::tab, (*page.tabs)[t].id, t});  // a flow's steps take no focus: its buttons move it
   }
   const auto& list = detail ? sections() : no_sections_;
   for (std::size_t i = 0; i < list.size(); ++i) {
@@ -2411,6 +2571,17 @@ void PageView::rebuild() {
       }
     }
   }
+  if (page.flow && page.tabs && !page.tabs->empty()) {
+    // A flow's buttons (D278), under its step: Back but on its first step, Skip on an optional one, then Next, or Done on
+    // its last.
+    if (tab_ > 0) {
+      focus_.push_back({FocusKind::flow, "back", 0});
+    }
+    if (flow_optional(tab_)) {
+      focus_.push_back({FocusKind::flow, "skip", 1});
+    }
+    focus_.push_back({FocusKind::flow, tab_ + 1 >= page.tabs->size() ? "done" : "next", 2});
+  }
   for (std::size_t r = 0; r < page.related.size(); ++r) {
     if (!present(page.related[r])) {
       continue;
@@ -2427,9 +2598,11 @@ void PageView::focus_first_control() {
   // come with a topic, or that has none), its first section label or tab, at its top, rather than the Related card at
   // its foot (D256), and never a header action, where focus would stay once the controls came; a header action only
   // on a page with no other stop above Related.
+  // On a flow (D278), a step with no control of its own focuses its Next or Done, never Back.
   page_focus_ = 0;
   std::size_t first_action = focus_.size();
   std::size_t first_label = focus_.size();
+  std::size_t forward = focus_.size();
   for (std::size_t i = 0; i < focus_.size(); ++i) {
     if (focus_[i].kind == FocusKind::related) {
       break;
@@ -2438,13 +2611,21 @@ void PageView::focus_first_control() {
       first_action = std::min(first_action, i);
       continue;
     }
+    if (focus_[i].kind == FocusKind::flow) {
+      if (focus_[i].index == 2) {
+        forward = i;
+      }
+      continue;
+    }
     if (focus_[i].kind != FocusKind::section && focus_[i].kind != FocusKind::tab) {
       page_focus_ = i;
       return;
     }
     first_label = std::min(first_label, i);
   }
-  if (first_label < focus_.size()) {
+  if (forward < focus_.size()) {
+    page_focus_ = forward;
+  } else if (first_label < focus_.size()) {
     page_focus_ = first_label;
   } else if (first_action < focus_.size()) {
     page_focus_ = first_action;
@@ -2455,6 +2636,11 @@ std::size_t PageView::rail_index_of_page() const {
   for (std::size_t i = 0; i < rail_.size(); ++i) {
     if (rail_[i].own_page() && rail_[i].index == page_) {
       return i;
+    }
+  }
+  for (std::size_t i = 0; i < rail_.size(); ++i) {
+    if (rail_[i].category() && pages_.categories[rail_[i].index].id == current().category) {
+      return i;  // a flow, outside the rail (D278): its category's row
     }
   }
   return 0;
@@ -2490,7 +2676,7 @@ std::string PageView::name_of(Scope scope, std::size_t index) const {
   }
   static constexpr const char* kKind[] = {"action", "tab", "section", "advanced", "setting", "shortcut", "related",
                                           "cell", "row", "section-action", "field", "submit", "secret", "item", "editor",
-                                          "filter", "link", "part", "paging", "drawer", "share"};
+                                          "filter", "link", "part", "paging", "drawer", "share", "flow"};
   const Focus& f = focus_[index];
   return std::string(kKind[static_cast<int>(f.kind)]) + ":" + f.id;
 }
@@ -2872,6 +3058,11 @@ Action PageView::pointer_body(const Pointer& in) {
 }
 
 void PageView::refused(std::string_view key, std::string_view reason) {
+  if (key.rfind("action:", 0) == 0) {
+    for (auto at = refusals_.lower_bound("action:"); at != refusals_.end() && at->first.rfind("action:", 0) == 0;) {
+      at = refusals_.erase(at);  // the header shows its latest refusal alone (D278)
+    }
+  }
   refusals_[std::string(key)] = std::string(reason);
   if (const auto busy = share_busy_.find(key); busy != share_busy_.end()) {
     share_busy_.erase(busy);  // a report's Save refused: its words under it until the next press (D263)
@@ -2887,6 +3078,19 @@ void PageView::refused(std::string_view key, std::string_view reason) {
       scope_ = Scope::page;
       page_focus_ = i;
     }
+  }
+  if (key.rfind("flow:", 0) == 0) {
+    // A flow's press refused (D278): its words above the buttons, which take presses again, if it was on the step shown;
+    // a refusal of an earlier step's press says nothing here.
+    const std::optional<FlowPress> press = flow_answered(key);
+    const protocol::Page& page = current();
+    if (!press || !page.flow || !page.tabs || tab_ >= page.tabs->size() || press->page != page.id ||
+        press->step != (*page.tabs)[tab_].id) {
+      refusals_.erase(std::string(key));
+    }
+  }
+  if (const auto opening = opens_.find(key); opening != opens_.end()) {
+    opens_.erase(opening);  // a refused action opens nothing
   }
 }
 
@@ -4244,6 +4448,21 @@ void PageView::accepted(std::string_view where, std::string_view words) {
     at = form_values_.erase(at);  // the form the space took: its fields empty again (D195)
   }
   refusals_.erase(std::string(where));
+  if (where.rfind("flow:", 0) == 0) {
+    // A flow's button (D278): it takes presses again; Done, answered, leaves the flow for its next page if the player is
+    // still on the flow that sent it, whatever step its space published meanwhile.
+    const std::optional<FlowPress> press = flow_answered(where);
+    if (press && press->go == "done" && where == "flow:done" && current().flow && current().id == press->page) {
+      flow_done();
+    }
+  }
+  if (const auto opening = opens_.find(where); opening != opens_.end()) {
+    const Opening o = opening->second;
+    opens_.erase(opening);
+    if (o.from == current().id && present(o.to)) {
+      open(o.to);  // the page an action opens (D278), if the player is where it was pressed
+    }
+  }
 }
 
 std::string PageView::form_value(std::string_view field) const {
@@ -4339,6 +4558,11 @@ bool PageView::hold(std::string_view topic) {
   const std::vector<std::string> mine = component_topics();
   if (topic == "space.state" || std::find(mine.begin(), mine.end(), topic) == mine.end()) {
     return false;
+  }
+  for (const protocol::Page& p : pages_.pages) {
+    if (p.flow && p.flow->topic == topic) {
+      return false;  // a flow's state: never the live page's to hold, nor counted as new (D278)
+    }
   }
   if (live_mode_ == LiveMode::every_5s && pending_.empty() && now_ms_ - applied_ms_ >= 5000) {
     applied_ms_ = now_ms_;  // five seconds since the last: this one is drawn now, the next ones wait
@@ -4754,7 +4978,7 @@ Action PageView::open_index(std::size_t index, Scope scope) {
   paged_.clear();  // nothing a page answered is kept past leaving it (D254)
   drawer_open_.clear();  // nor an open row drawer (D256)
   page_ = index;
-  tab_ = 0;
+  arrive();
   page_focus_ = 0;
   scroll_ = 0;
   confirming_.clear();
@@ -4846,6 +5070,10 @@ Action PageView::input_body(const Input& in) {
     }
   }
   const auto at_in_order = std::find(order.begin(), order.end(), page_) - order.begin();
+  if (current().flow && (in.key == Key::previous_page || in.key == Key::next_page || in.key == Key::previous_tab ||
+                         in.key == Key::next_tab)) {
+    return {};  // a flow is outside the rail's order, and its step is its space's: its own buttons move it (D278)
+  }
   switch (in.key) {
     case Key::previous_page:
       if (at_in_order > 0) {
@@ -5168,6 +5396,7 @@ Action PageView::input_body(const Input& in) {
             if (!on) {
               return {};
             }
+            refusals_.erase("action:" + a.id);  // a new try: the last refusal's words go (D278)
             Action action;
             action.kind = Action::Kind::command;
             action.command.space = pages_.space;
@@ -5183,6 +5412,10 @@ Action PageView::input_body(const Input& in) {
             return {};  // its confirmation waits (D274): a press before it counts does nothing
           }
           confirming_.clear();
+          refusals_.erase("action:" + a.id);
+          if (a.opens) {
+            opens_["action:" + a.id] = Opening{current().id, *a.opens};  // opened once answered ok (D278)
+          }
           Action action;
           action.kind = Action::Kind::command;
           action.command.space = pages_.space;
@@ -5196,6 +5429,8 @@ Action PageView::input_body(const Input& in) {
           tab_ = f.index;
           rebuild();
           return {};
+        case FocusKind::flow:
+          return flow_press(f);
         case FocusKind::section: {
           const std::string id = current().id + "/" + f.id;
           if (!collapsed_.erase(id)) {
@@ -5945,6 +6180,15 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
     // Its description, wrapped to the page's width (D261).
     y += std::max(draw_wrapped(page.description, TypeRole::ui_sm, x0, y, content_w, Colour::ink_mute),
                   std::round(line_height(TypeRole::ui_sm, s)));
+    // A header action the space refused: its words under the description, as the browser's notice (D278).
+    std::string action_said;
+    for (auto at = refusals_.lower_bound("action:"); at != refusals_.end() && at->first.rfind("action:", 0) == 0; ++at) {
+      action_said = at->second;
+    }
+    if (!action_said.empty()) {
+      y += std::round(4 * s);
+      y += draw_wrapped(action_said, TypeRole::ui_sm, x0, y, content_w, Colour::rot);
+    }
     y += std::round(12 * s);
     c.line(x0, y, content_w, Colour::rule_strong);
     c.diamond(Rect{x0, y - std::round(4 * s), std::round(9 * s), std::round(9 * s)}, Colour::gold_deep);
@@ -6076,8 +6320,79 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
              Colour::ink_mute);
       y += card.h + std::round(16 * s);
     }
+    // A flow's steps (D278): a strip of numbered names that takes no focus, the step shown in gold, each one done
+    // checked; "Step 3 of 8 · Its name" where the strip would not fit.
+    if (show_detail && page.flow && page.tabs && !page.tabs->empty()) {
+      const std::size_t steps = page.tabs->size();
+      const Json* state = nullptr;
+      if (const auto at = topics_.find(page.flow->topic); at != topics_.end() && at->second.is_object()) {
+        state = &at->second;
+      }
+      const auto done = [&](const std::string& id) {
+        if (state == nullptr || !state->contains("done") || !(*state)["done"].is_array()) {
+          return false;
+        }
+        for (const Json& d : (*state)["done"]) {
+          if (d.is_string() && d.get_ref<const std::string&>() == id) {
+            return true;
+          }
+        }
+        return false;
+      };
+      const float mark = std::round(22 * s);
+      const float lh = line_height(TypeRole::tab, s);
+      const float gap = std::round(8 * s);
+      const float between = std::round(24 * s);
+      float whole = 0;
+      for (std::size_t t = 0; t < steps; ++t) {
+        whole += mark + gap + c.width((*page.tabs)[t].name, TypeRole::tab) + (t + 1 < steps ? between : 0.0f);
+      }
+      const float my = y + std::round((lh - mark) / 2);
+      if (whole <= content_w) {
+        float tx = x0;
+        for (std::size_t t = 0; t < steps; ++t) {
+          const protocol::PageTab& tab = (*page.tabs)[t];
+          const bool now = t == tab_;
+          const bool was = !now && done(tab.id);
+          const Rect ring{tx, my, mark, mark};
+          if (now) {
+            c.circle(ring, Colour::gold);
+          } else {
+            c.stroke(ring, was ? Colour::gold_deep : Colour::edge, std::max(1.0f, std::round(1.5f * s)), mark / 2);
+          }
+          if (was) {
+            // A check, of two strokes joined (the segment shape, D277).
+            const float k = mark / 18.0f;
+            c.segment(tx + 5 * k, my + 9.5f * k, tx + 8 * k, my + 12.5f * k, Colour::gold, 1.5f * k);
+            c.segment(tx + 8 * k, my + 12.5f * k, tx + 13 * k, my + 6 * k, Colour::gold, 1.5f * k, 255, true);
+          } else {
+            const std::string number = std::to_string(t + 1);
+            const float nw = c.width(number, TypeRole::ui_sm);
+            c.text(number, TypeRole::ui_sm, tx + std::round((mark - nw) / 2),
+                   my + std::round((mark - line_height(TypeRole::ui_sm, s)) / 2), nw + 1,
+                   now ? Colour::on_gold : Colour::ink_faint);
+          }
+          const float nx = tx + mark + gap;
+          const float w = c.width(tab.name, TypeRole::tab);
+          c.text(tab.name, TypeRole::tab, nx, y, w + 1, now ? Colour::gold_hi : was ? Colour::ink_mute : Colour::ink_faint);
+          if (now) {
+            c.fill(Rect{nx, y + lh + std::round(6 * s), w, std::round(2 * s)}, Colour::gold);
+          }
+          tx = nx + w + between;
+        }
+      } else {
+        const std::string words = "Step " + std::to_string(tab_ + 1) + " of " + std::to_string(steps) + "  \u00B7  " +
+                                  (*page.tabs)[std::min(tab_, steps - 1)].name;
+        const float w = std::min(c.width(words, TypeRole::tab), content_w);
+        c.text(words, TypeRole::tab, x0, y, content_w, Colour::gold_hi);
+        c.fill(Rect{x0, y + lh + std::round(6 * s), w, std::round(2 * s)}, Colour::gold);
+      }
+      y += std::round(lh + 9 * s);
+      c.line(x0, y, content_w, Colour::rule);
+      y += std::round(20 * s);
+    }
     // Tabs.
-    if (show_detail && page.tabs && !page.tabs->empty()) {
+    if (show_detail && !page.flow && page.tabs && !page.tabs->empty()) {
       float tx = x0;
       for (std::size_t t = 0; t < page.tabs->size(); ++t) {
         const protocol::PageTab& tab = (*page.tabs)[t];
@@ -7697,6 +8012,59 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
       out.items.insert(out.items.begin() + static_cast<std::ptrdiff_t>(card_at), {ground, border});
       y += std::round(16 * s);
     }
+    // A flow's buttons (D278): Back at the left; Skip and Next, or Done, at the right. Above them the space's refusal
+    // of the last press, or what Next waits for; the pressed one reads "Working…" until its answer or a new step.
+    if (show_detail && page.flow && page.tabs && !page.tabs->empty()) {
+      std::string said;
+      for (auto at = refusals_.lower_bound("flow:"); at != refusals_.end() && at->first.rfind("flow:", 0) == 0; ++at) {
+        said = at->second;
+      }
+      const std::string blocked = flow_blocked();
+      if (!said.empty()) {
+        y += draw_wrapped(said, TypeRole::ui_sm, x0, y, content_w, Colour::rot) + std::round(8 * s);
+      } else if (!blocked.empty()) {
+        y += draw_wrapped(blocked, TypeRole::ui_sm, x0, y, content_w, Colour::ink_body) + std::round(8 * s);
+      }
+      const float bh = std::round(36 * s);
+      const float r = std::round(tokens::radius::control * s);
+      const bool inert = !greyed_words(page.id).empty();
+      const bool waiting = flow_waiting();
+      const auto button = [&](const std::string& id, const std::string& label, float bx, bool primary, bool off) {
+        const std::string words = waiting && flow_sent_.back().go == id ? std::string("Working\u2026") : label;
+        const float w = c.width(words, TypeRole::ui) + std::round(32 * s);
+        const Rect b{primary || id == "skip" ? bx - w : bx, y, w, bh};
+        const std::uint8_t alpha = off ? 128 : 255;
+        hit(b, Scope::page, focus_index(FocusKind::flow, id));
+        Colour ink = Colour::ink_hi;
+        if (primary) {
+          c.fill(b, Colour::gold, r, alpha);
+          ink = Colour::on_gold;
+        } else {
+          if (hovered(b) && !off) {
+            c.fill(b, Colour::tint_hover, r);
+          }
+          c.stroke(b, Colour::edge, std::round(tokens::kGrace.size.edge_width * s), r, alpha);
+        }
+        c.text(words, TypeRole::ui, b.x + std::round(16 * s), b.y + std::round((bh - line_height(TypeRole::ui, s)) / 2), w,
+               ink, alpha);
+        if (page_focus(FocusKind::flow, id)) {
+          c.focused(b);
+        }
+        return b;
+      };
+      const bool last = tab_ + 1 >= page.tabs->size();
+      const bool off = inert || waiting;
+      if (tab_ > 0) {
+        button("back", "Back", x0, false, off);
+      }
+      const std::string forward = last ? "done" : "next";
+      const Rect next = button(forward, last ? page.flow->done.value_or("Done") : std::string("Next"), x0 + content_w, true,
+                               off || !blocked.empty());
+      if (flow_optional(tab_)) {
+        button("skip", "Skip", next.x - std::round(12 * s), false, off);
+      }
+      y += bh + std::round(24 * s);
+    }
     // The Related card at the foot.
     if (std::any_of(page.related.begin(), page.related.end(), [&](const std::string& id) { return present(id); })) {
       const float top = y;
@@ -7815,6 +8183,8 @@ void PageView::layout(const Viewport& viewport, const Fonts& fonts, DisplayList&
         hints = confirming_ == "section:" + f.id ? "Enter  Confirm    Esc  Back" : "Enter  Press    Esc  Back";
       } else if (f.kind == FocusKind::share) {
         hints = f.index == 0 ? "Enter  Copy    Esc  Back" : "Enter  Save    Esc  Back";
+      } else if (f.kind == FocusKind::flow) {
+        hints = "Enter  Press    Esc  Back";  // a flow's Back, Skip, Next or Done (D278)
       } else if (f.kind == FocusKind::row_action) {
         hints = confirming_ == "row:" + f.id ? "Enter  Confirm    Esc  Back" : "Enter  Press    Esc  Back";
       } else if (f.kind == FocusKind::filter) {

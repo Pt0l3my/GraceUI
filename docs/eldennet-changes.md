@@ -1984,3 +1984,37 @@ this is what I would choose:
 The rest of the set: `grace` (GraceUI's own), `lamp`, `book`, `chat`, `cube` and `shield`. Give all ten or none: once
 one category has an icon, every name moves after the icon's place, so that they line up. Without any, your rail stays
 as it is in both views, GraceUI's own link at its foot included.
+
+## 104. First light as a flow (2026-11-28, D278; GraceUI 0.2.71, protocol 1.23)
+
+GraceUI now draws a setup flow for any space, in both views: a page with `flow`, outside the rail, its tabs its steps.
+First light (your PAGES §4.6.10) is the first one it is for. What to do:
+
+- **The page.** One page with `flow = { topic = "wizard", command = "wizard.step", optional = [...], done = "...",
+  then = "home" }` and a tab per step: notices, status, provider, model preset, self-test, prepared lines, text size and
+  the browser view, done. List it in no category (the lint refuses that); its `category` is the rail row left open while
+  it shows, `home` say. It homes no setting: a step shows one of yours with a shortcut row, editable in place. No
+  sections of its own, no master list, not live, not scoped.
+- **Its state.** Publish `wizard` as `{step, done, blocked, start}`. `step` is the step shown; GraceUI shows the first
+  while you publish none. `done` is the steps to check. `blocked` is your words for what Next waits for (at most 160
+  characters), for example "Run the test first, or skip it."; Next is greyed and takes no press until you drop it.
+  `start: true` asks for the flow to be shown.
+- **Its command.** Back, Skip, Next and Done send `wizard.step` with `{step, go}`, `go` one of back, skip, next and done,
+  and `step` the step the view showed. Answer `conflict` if that is not your current step, then publish the step you
+  moved to. The view follows what you publish; Done, once answered, opens `then`. Skip appears only on the steps you
+  list as optional, never the last.
+- **The first run.** GraceUI never opens the menu for a flow. With `start: true` it lands the next menu opening on First
+  light (within 2 s of it, before the player's first key) and the dashboard's first load, once a session each. So, to
+  invite the player at the title screen, post a notice of your own (in words the owner approves), and clear `start` at
+  Done. PAGES §4.6.10's "it opens at the title screen on first run" becomes "the menu opens on it".
+- **Run setup again.** On Home › Setup and Settings, an action with `opens = "<First light's id>"`: its command (yours,
+  a reset of the flow's state) is sent, and once you answer ok the page opens. A refusal's words show under the header
+  in game now too.
+- **GraceUI's own settings.** Text size and the browser view are GraceUI's settings, so a shortcut row cannot reach
+  them; link those steps to `graceui/graceui.menu` and `graceui/graceui.browser` with Related.
+- **Minor 23** in your page data. grace-dev moves your flow as you would, and the space check now opens it as a player
+  meets it and dumps each step, so run `check:space` on your folder after you add it.
+
+Roadmap line, if you take it: "First light as a flow (GraceUI 0.2.71, protocol 1.23, D278; eldennet-changes §104): its
+steps as a flow page's tabs, its state and step command EldenNet's, start for the first run with a notice of its own,
+Run setup again by an action's opens."

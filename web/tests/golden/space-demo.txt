@@ -1,4 +1,4 @@
-# demo: the browser view, by GraceUI's space check (D265)
+# demo: the browser view at increment 0.2, by GraceUI's space check (D265)
 == this PC's browser
 rail: Lanterns: demo.overview, demo.behaviour, demo.keepers
 rail: Records: demo.log, demo.festival, demo.lamps, demo.lightings, demo.handbook, demo.workbench
@@ -6,6 +6,7 @@ page demo.overview:
   Overview
   Trim the wick
   Hush the bell
+  Set up again
   The lantern at a glance: its flame, its oil and its last trim.
   NOW
   FLAME
@@ -23,6 +24,8 @@ page demo.overview:
   How the lantern burns, how often it flickers, and who keeps it.
   Log
   What the lantern did, as it happens, and the keeper's journal.
+  Set up the lantern
+  Four short steps before the lantern's first night.
 page demo.behaviour:
   Behaviour
   How the lantern burns, how often it flickers, and who keeps it.
@@ -269,6 +272,7 @@ page demo.overview:
   Overview
   Trim the wick
   Hush the bell
+  Set up again
   The lantern at a glance: its flame, its oil and its last trim.
   NOW
   FLAME
@@ -286,6 +290,8 @@ page demo.overview:
   How the lantern burns, how often it flickers, and who keeps it.
   Log
   What the lantern did, as it happens, and the keeper's journal.
+  Set up the lantern
+  Four short steps before the lantern's first night.
 page demo.behaviour:
   Behaviour
   How the lantern burns, how often it flickers, and who keeps it.
@@ -500,6 +506,109 @@ page demo.handbook:
   Log
   What the lantern did, as it happens, and the keeper's journal.
 page demo.workbench: absent
+== this PC's browser, its flows
+page demo.setup#welcome:
+  Set up the lantern
+  Four short steps before the lantern's first night.
+  1
+  WELCOME
+  2
+  THE FLAME
+  3
+  A FIRST TRIM
+  4
+  READY
+  BEFORE YOU BEGIN
+  Nothing here is final: every choice can be changed later on its own page.
+  The north lantern has not been lit yet. These steps choose its flame, offer a first trim and light it.
+  Next
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+page demo.setup#flame:
+  Set up the lantern
+  Four short steps before the lantern's first night.
+  1
+  WELCOME
+  2
+  THE FLAME
+  3
+  A FIRST TRIM
+  4
+  READY
+  ITS COLOUR AND BRIGHTNESS
+  Flame colour
+  Lives in Behaviour
+  Amber
+  White
+  Blue
+  Brightness
+  Lives in Behaviour
+  0.80
+  Back
+  Next
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+page demo.setup#trim:
+  Set up the lantern
+  Four short steps before the lantern's first night.
+  1
+  WELCOME
+  2
+  THE FLAME
+  3
+  A FIRST TRIM
+  4
+  READY
+  TRIM THE WICK
+  Trim the wick
+  A trimmed wick burns steadier. It can wait for the first evening.
+  FLAME
+  Steady
+  OIL
+  62%
+  SINCE THE LAST TRIM
+  14 min
+  Back
+  Skip
+  Next
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
+page demo.setup#ready:
+  Set up the lantern
+  Four short steps before the lantern's first night.
+  1
+  WELCOME
+  2
+  THE FLAME
+  3
+  A FIRST TRIM
+  4
+  READY
+  READY TO LIGHT
+  Passed
+  A flame colour is chosen
+  Waiting
+  The wick is trimmed
+  It can wait for the first evening.
+  Passed
+  Oil for the night
+  About three hours.
+  Back
+  Light it
+  RELATED
+  Overview
+  The lantern at a glance: its flame, its oil and its last trim.
+  Behaviour
+  How the lantern burns, how often it flickers, and who keeps it.
 == this PC's browser, lantern.enabled off
 rail: Lanterns: demo.overview, demo.behaviour, demo.keepers
 rail: Records: demo.log, demo.festival, demo.lamps, demo.lightings, demo.handbook
@@ -507,6 +616,7 @@ page demo.overview:
   Overview
   Trim the wick
   Hush the bell
+  Set up again
   The lantern at a glance: its flame, its oil and its last trim.
   NOW
   FLAME
@@ -524,6 +634,8 @@ page demo.overview:
   How the lantern burns, how often it flickers, and who keeps it.
   Log
   What the lantern did, as it happens, and the keeper's journal.
+  Set up the lantern
+  Four short steps before the lantern's first night.
 page demo.behaviour:
   Behaviour
   How the lantern burns, how often it flickers, and who keeps it.
