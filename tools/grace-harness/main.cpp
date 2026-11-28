@@ -9484,12 +9484,15 @@ std::string user_file_of(const std::wstring& dll, const wchar_t* name) {
   std::wstring path = settings_file_of(dll);
   path = path.substr(0, path.find_last_of(L"\\") + 1) + name;
   std::string out;
-  if (FILE* file = _wfopen(path.c_str(), L"rb")) {
+  const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file != INVALID_HANDLE_VALUE) {
     char buffer[4096];
-    for (std::size_t got = 0; (got = std::fread(buffer, 1, sizeof buffer, file)) > 0;) {
+    DWORD got = 0;
+    while (ReadFile(file, buffer, sizeof buffer, &got, nullptr) && got > 0) {
       out.append(buffer, got);
     }
-    std::fclose(file);
+    CloseHandle(file);
   }
   return out;
 }
