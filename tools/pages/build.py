@@ -31,7 +31,12 @@ are checked against the protocol's schema as grace-protocol's decoders check the
   7. Actions: each command one the space declares; a destructive action has a confirmation; an action's
      confirm_after_ms (D274) 1 to 3000 on one that asks first, never on a header switch.
   8. Fixtures, where fixtures/<id>/topics.json exists: every declared topic but `settings` has one, a state topic's an
-     object and a stream topic's a list of rows with rising sequence numbers.
+     object and a stream topic's a list of rows with rising sequence numbers; a flow's state names its own steps.
+  9. Flows (D278): a flow page is listed in no category (it is outside the rail) and names one of the space's; its
+     steps are its tabs, two to twelve, with no sections of its own, no master list, no setting homed on it, neither
+     live nor scoped; its state a state topic of the space's own, neither a family nor private; its command the
+     space's, neither a settings nor a file command; its optional steps its own, never the last; its `then` a page of
+     the rail's, in game too. An action's `opens` names another page of the space's and is no switch's.
 Exit status 0 when every space passes (and, with --check, nothing has drifted).
 """
 import argparse
@@ -58,7 +63,7 @@ NUMERIC = {"integer", "number", "duration_s"}
 TRI_THIRDS = ("auto", "inherit")
 AVAILABILITY = re.compile(r"live|later|inert|check:[a-z0-9._-]{1,48}|version:\d+\.\d+|requires:[a-z0-9._/-]{1,64}")
 PAGE_FIELDS = ("id", "category", "name", "description", "help", "related", "increment", "tag", "actions", "tabs",
-               "sections", "master", "live", "scoped", "browser_only", "shown_with", "gate", "ribbon", "pc_only")
+               "sections", "master", "live", "scoped", "browser_only", "shown_with", "gate", "ribbon", "pc_only", "flow")
 SETTING_FIELDS = ("key", "type", "default", "min", "max", "step", "unit", "choices", "choices_from", "third", "label", "help", "synonyms",
                   "home", "effect", "availability", "locked", "sensitive")
 
@@ -281,8 +286,16 @@ def lint(space_pages, description, fixtures, known_spaces):
             elif p in placed:
                 failures.append(f"{space}: page {p} in two categories")
             placed[p] = c["id"]
+    category_ids = {c["id"] for c in space_pages["categories"]}
     for pid, p in pages.items():
-        if placed.get(pid) != p["category"]:
+        if "flow" in p:
+            # A flow (D278) is outside the rail: no category lists it, and its own names the one open while it is.
+            if pid in placed:
+                failures.append(f"{space}: page {pid} is a flow, outside the rail: no category lists it (D278)")
+            elif p["category"] not in category_ids:
+                failures.append(f"{space}: flow {pid} names category {p['category']}, which is not one of the "
+                                "space's (D278)")
+        elif placed.get(pid) != p["category"]:
             failures.append(f"{space}: page {pid} names category {p['category']}, but is not listed in it")
     foot = None
     for c in space_pages["categories"]:
@@ -404,6 +417,43 @@ def lint(space_pages, description, fixtures, known_spaces):
             for words in ("empty", "none"):
                 if words in master and not 1 <= len(master[words]) <= 160:
                     failures.append(f"{where}: its master list's {words} is 1 to 160 characters")
+        flow = p.get("flow")
+        if flow is not None:
+            # A flow (D278): its tabs its steps, the space's state topic saying which is shown and its command moving it.
+            fwhere = f"{where}: its flow"
+            steps = [t["id"] for t in p.get("tabs", [])]
+            if not 2 <= len(steps) <= 12 or "sections" in p:
+                failures.append(f"{where}: a flow's steps are its tabs, two to twelve, and it has no sections of its "
+                                "own (D278)")
+            if master is not None or p.get("live") or p.get("scoped"):
+                failures.append(f"{where}: a flow has no master list and is neither live nor scoped: its steps follow "
+                                "the space at once (D278)")
+            ft = flow.get("topic")
+            if (ft not in topics or topics[ft]["shape"] != "state" or ft in ("settings", SPACE_STATE) or
+                    ft in families or topics[ft].get("private")):
+                failures.append(f"{fwhere}: its state is a state topic of the space's own, neither a family nor "
+                                "private (D278)")
+            name = flow.get("command")
+            if name not in commands or name in ("settings.set", "settings.reset") or name in files:
+                failures.append(f"{fwhere}: it sends a command of the space's own, neither a settings nor a file "
+                                "command (D278)")
+            optional = flow.get("optional", [])
+            unique("optional step", optional, fwhere)
+            for step in optional:
+                if step not in steps:
+                    failures.append(f"{fwhere}: optional step {step} is not one of its steps (D278)")
+            if steps and steps[-1] in optional:
+                failures.append(f"{fwhere}: its last step is never optional: its button is Done (D278)")
+            if "done" in flow and not 1 <= len(flow["done"]) <= 32:
+                failures.append(f"{fwhere}: its done label is 1 to 32 characters")
+            then = flow.get("then")
+            if then is not None and (then not in pages or "flow" in pages[then] or
+                                     pages[then].get("browser_only")):
+                failures.append(f"{fwhere}: then names a page of the space's rail, in game too, not a flow (D278)")
+            homed_here = [k for k, st in settings.items() if st.get("home") == pid]
+            if homed_here:
+                failures.append(f"{where}: a flow is no setting's home, for every setting's is on the rail "
+                                f"({homed_here[0]}); a step links to it with a shortcut (invariant 12, D278)")
         # (A block may draw any family on a page with a master list: the chosen row's key names its member, D215.)
         unique("tab", [t["id"] for t in p.get("tabs", [])], where)
         unique("section", [s["id"] for s in sections], where)
@@ -439,6 +489,7 @@ def lint(space_pages, description, fixtures, known_spaces):
                     failures.append(f"{swhere}: its status field is a name (a-z, 0-9, _; 1 to 32)")
             unique("section action", [a["id"] for a in section.get("actions", [])], swhere)
             for action in section.get("actions", []):
+                lint_opens(f"{swhere}: action {action['id']}", action, pid, pages, failures)
                 if "state" in action:
                     failures.append(f"{swhere}: action {action['id']} has a state; a switch is a header action's "
                                     "alone (D256)")
@@ -448,6 +499,7 @@ def lint(space_pages, description, fixtures, known_spaces):
                     failures.append(f"{swhere}: destructive action {action['id']} has no confirmation")
                 lint_confirm_after(f"{swhere}: action {action['id']}", action, failures)
         for action in p.get("actions", []):
+            lint_opens(f"{where}: action {action['id']}", action, pid, pages, failures)
             if action["command"] not in commands:
                 failures.append(f"{where}: action {action['id']} sends {action['command']}, not a command of the space")
             if action["tone"] == "destructive" and not action.get("confirm"):
@@ -559,6 +611,9 @@ def lint(space_pages, description, fixtures, known_spaces):
                     filter_bar(block["filter_bar"], bwhere, paged="page" in block)
                 if "page" in block and (kind != "component" or block.get("component") != "table"):
                     failures.append(f"{bwhere}: a page source belongs to a table block (D254)")
+                if kind == "component" and block.get("component") == "wizard_steps":
+                    failures.append(f"{bwhere}: a flow's steps are drawn from its tabs, by its flow; wizard_steps is "
+                                    "no block of its own (D278)")
                 if kind == "component" and block.get("component") == "filter_bar":
                     failures.append(f"{bwhere}: a filter bar is a table's own field, filter_bar, not a block of its own "
                                     "(D250)")
@@ -675,6 +730,20 @@ def lint(space_pages, description, fixtures, known_spaces):
         for tid in fixtures:
             if tid not in topics and tid.rpartition("/")[0] not in families:
                 failures.append(f"{space}: fixture {tid} is for no declared topic or family")
+        for pid, p in pages.items():
+            # A flow's state (D278): the step it shows one of its own, the steps done its own, its blocked words at
+            # most 160 characters and start a boolean.
+            body = fixtures.get(p.get("flow", {}).get("topic", ""))
+            if "flow" not in p or not isinstance(body, dict):
+                continue
+            steps = [t["id"] for t in p.get("tabs", [])]
+            done = body.get("done", [])
+            if ("step" in body and body["step"] not in steps) or not isinstance(done, list) or \
+                    any(d not in steps for d in done) or \
+                    ("blocked" in body and (not isinstance(body["blocked"], str) or len(body["blocked"]) > 160)) or \
+                    ("start" in body and not isinstance(body["start"], bool)):
+                failures.append(f"{space}: fixture {p['flow']['topic']}: a flow's state names its own steps, its "
+                                "blocked words at most 160 characters and start a boolean (D278)")
     lint_pc_only(space, space_pages, description, failures)
     lint_private(space, space_pages, description, failures)
     return failures
@@ -712,6 +781,18 @@ def keys_named(node):
 
 # protocol.toml's limits.confirm_after_max_ms (test_build checks that they agree).
 CONFIRM_AFTER_MAX_MS = 3000
+
+
+def lint_opens(where, action, pid, pages, failures):
+    # An action that opens a page once its command is answered ok (D278): another page of the space's; a switch opens
+    # nothing.
+    opens = action.get("opens")
+    if opens is None:
+        return
+    if opens not in pages or opens == pid:
+        failures.append(f"{where}: opens {opens}, which is not another page of the space's (D278)")
+    if "state" in action:
+        failures.append(f"{where}: a switch opens no page (D278)")
 
 
 def lint_confirm_after(where, action, failures):

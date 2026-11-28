@@ -17,8 +17,8 @@
 namespace grace::protocol {
 
 inline constexpr std::uint32_t kProtocolMajor = 1;
-inline constexpr std::uint32_t kProtocolMinor = 22;
-inline constexpr std::string_view kProtocolVersion = "1.22";
+inline constexpr std::uint32_t kProtocolMinor = 23;
+inline constexpr std::string_view kProtocolVersion = "1.23";
 
 inline constexpr std::size_t kFrameFromPage = 16384;
 inline constexpr std::size_t kFrameToPage = 262144;
@@ -325,6 +325,7 @@ struct PageAction {
   std::optional<std::string> confirm{};
   std::optional<QuickState> state{};
   std::optional<std::uint32_t> confirm_after_ms{};
+  std::optional<std::string> opens{};
   bool operator==(const PageAction&) const = default;
 };
 bool decode(const Json& in, PageAction& out, const std::string& path, DecodeError& e);
@@ -561,6 +562,18 @@ struct PageGate {
 bool decode(const Json& in, PageGate& out, const std::string& path, DecodeError& e);
 Json encode(const PageGate& in);
 
+// A page's flow (1.23, D278): a setup flow outside the rail (EldenNet's First light), its tabs its steps in order. The space owns where it is: its state topic holds {step, done, blocked, start}, and the view shows the step it names; Back, Skip, Next and Done send its command with {step, go}, go one of back, skip, next and done.
+struct PageFlow {
+  std::string topic{};
+  std::string command{};
+  std::optional<std::vector<std::string>> optional{};
+  std::optional<std::string> done{};
+  std::optional<std::string> then{};
+  bool operator==(const PageFlow&) const = default;
+};
+bool decode(const Json& in, PageFlow& out, const std::string& path, DecodeError& e);
+Json encode(const PageFlow& in);
+
 // A page: its place, its header, its help, its Related links, and its tabs or its sections; a master list, its tabs and sections then its detail (1.5).
 struct Page {
   std::string id{};
@@ -582,6 +595,7 @@ struct Page {
   std::optional<PageGate> gate{};
   std::optional<std::string> ribbon{};
   std::optional<bool> pc_only{};
+  std::optional<PageFlow> flow{};
   bool operator==(const Page&) const = default;
 };
 bool decode(const Json& in, Page& out, const std::string& path, DecodeError& e);

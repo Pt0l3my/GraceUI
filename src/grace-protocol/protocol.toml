@@ -11,7 +11,7 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 22 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 23 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
@@ -39,6 +39,8 @@ protocol = { major = 1, minor = 22 }  # 1.1 (D172): result.detail; a stream clea
                                      # 1.21: an action's confirmation that waits before its second press counts, and
                                      # a private topic (D274)
                                      # 1.22: a category's icon, one of GraceUI's own line icons (D277)
+                                     # 1.23: a page that is a flow, its tabs its steps (EldenNet's First light), and
+                                     # a header action that opens a page once it is answered (D278)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -211,6 +213,8 @@ fields = [
   { name = "state", type = "type.quick_state", optional = true },  # 1.15 (D256): a header switch
   # 1.21 (D274): its second press counts only this long after the first, 1 to 3000 ms (PAGES §4.6.5's Forget: 1000)
   { name = "confirm_after_ms", type = "u32", optional = true },
+  # 1.23 (D278): a page of the space's, opened once its command is answered ok (EldenNet's "Run setup again")
+  { name = "opens", type = "id", optional = true },
 ]
 
 [types.row_action]
@@ -427,6 +431,17 @@ fields = [
   { name = "gate", type = "type.page_gate", optional = true },  # 1.17 (D258): asked once a session before it opens
   { name = "ribbon", type = "string", max = 32, optional = true },  # 1.17 (D258): a band at its top while it is open
   { name = "pc_only", type = "bool", optional = true },  # 1.20 (D264): never in a paired device's view
+  { name = "flow", type = "type.page_flow", optional = true },  # 1.23 (D278): a flow, outside the rail
+]
+
+[types.page_flow]
+doc = "A page's flow (1.23, D278): a setup flow outside the rail (EldenNet's First light), its tabs its steps in order. The space owns where it is: its state topic holds {step, done, blocked, start}, and the view shows the step it names; Back, Skip, Next and Done send its command with {step, go}, go one of back, skip, next and done"
+fields = [
+  { name = "topic", type = "id" },  # a state topic of the space's
+  { name = "command", type = "id" },  # a command of the space's
+  { name = "optional", type = "list.id", max = 12, optional = true },  # the steps that may be skipped, never the last
+  { name = "done", type = "string", max = 32, optional = true },  # the last step's button; "Done" without it
+  { name = "then", type = "id", optional = true },  # the page opened once Done is answered; the space's first without it
 ]
 
 [types.page_gate]

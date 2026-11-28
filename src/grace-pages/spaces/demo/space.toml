@@ -3,8 +3,8 @@
 # It uses every setting type, tabs, an Advanced disclosure, state and stream topics, a locked setting, a setting waiting
 # on a check, a later-version page and a destructive action, a table with row actions and a row secret, a form and a
 # setting whose choices come from a topic (G34), sections with a chip, a live status and their own actions (G36), a
-# page with a master list whose detail is a topic family (G38, D215), and an upload block for a roster file (G28, D226),
-# so the views, the page lint and the fake host are
+# page with a master list whose detail is a topic family (G38, D215), an upload block for a roster file (G28, D226),
+# and a flow outside the rail, its tabs its steps (D278), so the views, the page lint and the fake host are
 # tested against it. Its fixtures are fixtures/demo/topics.json.
 # tools/pages/build.py compiles it into grace-pages.
 
@@ -14,7 +14,8 @@ name = "Demo space"
 settings_schema = 1
 commands = ["settings.set", "settings.reset", "lantern.trim", "lantern.clear_log", "keepers.dismiss", "keepers.ward",
             "keepers.hire", "keepers.dismiss_all", "oil.order", "note.check", "note.save", "note.reset", "note.restore",
-            "note.draft", "keepers.import", "report.part", "report.save", "bell.hush", "lightings.page"]
+            "note.draft", "keepers.import", "report.part", "report.save", "bell.hush", "lightings.page", "setup.step",
+            "setup.restart"]
 slow_commands = ["oil.order", "note.draft"]  # the harbour store's oil and a drafted note: within 90 s (D216)
 file_commands = ["keepers.import"]  # a roster file, by the upload route from this PC alone (D226)
 sensitive_commands = ["keepers.import", "report.save"]  # report.save: the lamp report written to a file (D263)
@@ -86,6 +87,10 @@ family = true
 id = "lantern.lighting"  # one lighting, a member per row of the Lightings list (D254)
 shape = "state"
 family = true
+
+[[topic]]
+id = "lantern.setup"  # the setup flow's state: its step, the steps done, what Next waits for, and start (D278)
+shape = "state"
 
 [[topic]]
 id = "lantern.log"
@@ -296,6 +301,13 @@ command = "bell.hush"
 tone = "secondary"
 state = { topic = "lantern.status", field = "hushed" }  # a header switch (D256), beside its quick switch
 
+[[page.actions]]
+id = "setup"
+label = "Set up again"
+command = "setup.restart"
+tone = "secondary"
+opens = "demo.setup"  # the setup flow, from its first step, once the space has answered (D278)
+
 [[page.sections]]
 id = "now"
 title = "Now"
@@ -502,3 +514,35 @@ id = "readings"
 title = "Readings"
 blocks = [{ kind = "component", component = "stat_tiles", topic = "lantern.status" }, { kind = "component", component = "key_value_list", topic = "lantern.readings" }]
 
+# ---- The setup flow (D278): outside the rail, its tabs its steps; the space's lantern.setup says which is shown.
+
+[[page]]
+id = "demo.setup"
+category = "lanterns"
+name = "Set up the lantern"
+description = "Four short steps before the lantern's first night."
+increment = "0.2"
+related = ["demo.overview", "demo.behaviour"]
+help.purpose = "Make the lantern ready for its first night, a step at a time."
+help.steps = ["Read each step, and change what it offers.", "Next moves on; Back returns a step; Skip passes over a step that can wait.", "Light it on the last step, or come back from Overview's Set up again."]
+flow = { topic = "lantern.setup", command = "setup.step", optional = ["trim"], done = "Light it", then = "demo.overview" }
+
+[[page.tabs]]
+id = "welcome"
+name = "Welcome"
+sections = [{ id = "before", title = "Before you begin", description = "Nothing here is final: every choice can be changed later on its own page.", blocks = [{ kind = "component", component = "computed_sentence", topic = "lantern.setup", props = { field = "welcome" } }] }]
+
+[[page.tabs]]
+id = "flame"
+name = "The flame"
+sections = [{ id = "flame", title = "Its colour and brightness", blocks = [{ kind = "shortcuts", keys = ["lantern.colour", "lantern.brightness"] }] }]
+
+[[page.tabs]]
+id = "trim"
+name = "A first trim"
+sections = [{ id = "trim", title = "Trim the wick", description = "A trimmed wick burns steadier. It can wait for the first evening.", blocks = [{ kind = "component", component = "stat_tiles", topic = "lantern.status" }], actions = [{ id = "trim", label = "Trim the wick", command = "lantern.trim", tone = "secondary" }] }]
+
+[[page.tabs]]
+id = "ready"
+name = "Ready"
+sections = [{ id = "ready", title = "Ready to light", blocks = [{ kind = "component", component = "check_list", topic = "lantern.setup", props = { field = "ready" } }] }]

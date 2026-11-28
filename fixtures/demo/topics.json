@@ -662,6 +662,32 @@
       "file": "lamp-report-2026-11-25.txt"
     }
   },
+  "lantern.setup": {
+    "step": "welcome",
+    "done": [],
+    "start": false,
+    "welcome": {
+      "sentence": "The north lantern has not been lit yet. These steps choose its flame, offer a first trim and light it."
+    },
+    "ready": {
+      "checks": [
+        {
+          "label": "A flame colour is chosen",
+          "state": "pass"
+        },
+        {
+          "label": "The wick is trimmed",
+          "state": "wait",
+          "detail": "It can wait for the first evening."
+        },
+        {
+          "label": "Oil for the night",
+          "state": "pass",
+          "detail": "About three hours."
+        }
+      ]
+    }
+  },
   "lantern.seasons": {
     "choices": [
       {
