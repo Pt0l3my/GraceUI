@@ -67,9 +67,11 @@ function RailTree({ view, label, part = "all" }: { view: SpaceView; label: strin
                                              posinset: p + 1, setsize: list.length }));
     }
   });
-  // Once a category shown here has an icon, every category row keeps the icon's place and the pages start after it, so
-  // that the names line up, as in game (D277); a category with no page shown here counts for nothing.
-  const withIcons = items.some((item) => item.kind === "category" && item.category.icon !== undefined);
+  // Once any of the space's categories shown on the rail (in any part: its foot's too) has an icon, every category row
+  // keeps the icon's place and the pages start after it, so that the names line up, as in game (D277); a category with
+  // no page shown counts for nothing.
+  const withIcons = pages.categories.some((category) => category.icon !== undefined &&
+                                                         categoryPages(view, category).length > 0);
   const current = route && route.space === space ? `page:${route.page}` : null;
   // The tab stop: the item last focused, the page shown, its category, or the first, among this tree's own items.
   const routeCategory = route && route.space === space ? `category:${pageById(pages, route.page)?.category ?? ""}` : null;

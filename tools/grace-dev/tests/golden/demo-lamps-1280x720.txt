@@ -3,16 +3,44 @@ fill    scrim           0,   0 1280x720
 fill    ground.1        0,   0 1280x720 
 fill    ground.0        0,   0  200x720 
 text    gold           20,  20   95x23   glyphs 9 "Demo space"
-text    ink.mute       20,  64   57x20   glyphs 8 "Lanterns"
+segment ink.faint      25,  70    5x0    w1 v
+segment ink.faint      25,  70    1x8    w1 ^
+segment ink.faint      30,  70    1x8    w1 v
+segment ink.faint      24,  78    7x0    w1 v
+segment ink.faint      25,  79    4x0    w1 v
+segment ink.faint      28,  73    1x2    w1 v
+segment ink.faint      28,  74    1x2    r1 w1 ^
+segment ink.faint      27,  74    1x2    r1 w1 v
+segment ink.faint      27,  73    1x2    r1 w1 ^
+segment ink.faint      26,  69    0x0    w1 ^
+segment ink.faint      26,  68    0x0    r1 w1 ^
+segment ink.faint      26,  68    0x0    r1 w1 ^
+segment ink.faint      26,  68    0x0    r1 w1 ^
+segment ink.faint      27,  68    0x0    r1 w1 ^
+segment ink.faint      27,  68    0x0    r1 w1 ^
+segment ink.faint      28,  68    0x0    r1 w1 v
+segment ink.faint      28,  68    0x0    r1 w1 v
+segment ink.faint      28,  68    0x0    r1 w1 v
+segment ink.faint      29,  68    0x0    r1 w1 v
+segment ink.faint      29,  68    0x0    r1 w1 v
+segment ink.faint      29,  69    0x0    r1 w1 v
+text    ink.mute       45,  64   57x20   glyphs 8 "Lanterns"
 line    rule           20, 532  160x1   
-text    ink.hi         20, 539   50x20   glyphs 7 "Records"
-text    ink.mute       33, 570   17x17   glyphs 3 "Log"
-text    ink.mute       33, 597   45x17   glyphs 8 "Festival"
+segment gold.hi        22, 544    6x1    w1 v
+segment gold.hi        28, 544    6x1    r1 w1 ^
+segment gold.hi        33, 544    0x9    r1 w1 v
+segment gold.hi        28, 553    6x1    r1 w1 ^
+segment gold.hi        22, 553    6x1    r1 w1 v
+segment gold.hi        22, 544    0x9    r1 w1 ^
+segment gold.hi        28, 545    0x9    w1 v
+text    ink.hi         45, 539   50x20   glyphs 7 "Records"
+text    ink.mute       45, 570   17x17   glyphs 3 "Log"
+text    ink.mute       45, 597   45x17   glyphs 8 "Festival"
 fill    tint.select     0, 619  200x27  
 fill    gold            0, 619    2x27  
-text    gold.hi        33, 624   28x17   glyphs 5 "Lamps"
-text    ink.mute       33, 651   51x17   glyphs 9 "Lightings"
-text    ink.mute       33, 678   45x17   glyphs 8 "Handbook"
+text    gold.hi        45, 624   28x17   glyphs 5 "Lamps"
+text    ink.mute       45, 651   51x17   glyphs 9 "Lightings"
+text    ink.mute       45, 678   45x17   glyphs 8 "Handbook"
 fill    ground.well   227,   7  233x24   r2
 text    ink.faint     235,  11   34x17   glyphs 6 "Search"
 text    ink.faint    1202,  10   51x17   glyphs 7 "F5  Close"
@@ -96,4 +124,4 @@ stroke  edge          381, 696   28x18   r2 w1
 text    ink.body      386, 697   18x17   glyphs 3 "Esc"
 text    ink.faint     414, 697   22x17   glyphs 4 "Back"
 stroke  gold.hi       232, 226  340x51   r3 w2 clip1
-# 97 items, 2812 vertices, 6546 indices, 4 commands; check_draw_list: passes
+# 125 items, 3628 vertices, 9828 indices, 4 commands; check_draw_list: passes

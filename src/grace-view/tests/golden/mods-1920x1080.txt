@@ -3,21 +3,21 @@ fill    ground.1        0,   0 1920x1080
 fill    ground.0        0,   0  300x1080
 text    gold           30,  30  100x35   glyphs 7 "GraceUI"
 segment gold.hi        42, 102    8x9    w2 v
-segment gold.hi        42, 110    8x9    w2 ^
-segment gold.hi        34, 110    8x9    w2 v
-segment gold.hi        34, 102    8x9    w2 ^
+segment gold.hi        42, 110    8x9    r1 w2 ^
+segment gold.hi        34, 110    8x9    r1 w2 v
+segment gold.hi        34, 102    8x9    r1 w2 ^
 segment gold.hi        42, 107    4x4    w2 v
-segment gold.hi        42, 110    4x4    w2 ^
-segment gold.hi        38, 110    4x4    w2 v
-segment gold.hi        38, 107    4x4    w2 ^
-text    ink.hi         65,  95   74x30   glyphs 7 "GraceUI"
-text    ink.mute       65, 143   34x25   glyphs 4 "Menu"
-text    ink.mute       65, 183   59x25   glyphs 7 "Hotkeys"
-text    ink.mute       65, 223  101x25   glyphs 11 "Browser view"
+segment gold.hi        42, 110    4x4    r1 w2 ^
+segment gold.hi        38, 110    4x4    r1 w2 v
+segment gold.hi        38, 107    4x4    r1 w2 ^
+text    ink.hi         68,  95   74x30   glyphs 7 "GraceUI"
+text    ink.mute       68, 143   34x25   glyphs 4 "Menu"
+text    ink.mute       68, 183   59x25   glyphs 7 "Hotkeys"
+text    ink.mute       68, 223  101x25   glyphs 11 "Browser view"
 fill    tint.select     0, 255  300x40  
 fill    gold            0, 255    3x40  
-text    gold.hi        65, 263  118x25   glyphs 13 "Installed mods"
-text    ink.mute       65, 303   42x25   glyphs 5 "About"
+text    gold.hi        68, 263  118x25   glyphs 13 "Installed mods"
+text    ink.mute       68, 303   42x25   glyphs 5 "About"
 fill    ground.well   340,  10  350x35   r3
 text    ink.faint     353,  15   51x25   glyphs 6 "Search"
 text    ink.faint    1804,  15   76x25   glyphs 7 "F5  Close"

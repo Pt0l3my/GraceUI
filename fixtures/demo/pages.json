@@ -6,17 +6,16 @@
     {
       "id": "lanterns",
       "name": "Lanterns",
-      "icon": "lamp",
       "pages": [
         "demo.overview",
         "demo.behaviour",
         "demo.keepers"
-      ]
+      ],
+      "icon": "lamp"
     },
     {
       "id": "records",
       "name": "Records",
-      "icon": "book",
       "pages": [
         "demo.log",
         "demo.festival",
@@ -25,7 +24,8 @@
         "demo.handbook",
         "demo.workbench"
       ],
-      "foot": true
+      "foot": true,
+      "icon": "book"
     }
   ],
   "pages": [
