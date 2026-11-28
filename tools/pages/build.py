@@ -15,7 +15,7 @@ A mod's space is linted as --lint does, with the topics.json beside its space.to
 --minor names in its page data the protocol minor of the GraceUI it names as its floor (§6.4, D264), 0 to this
 GraceUI's; by default this GraceUI's own. The header (C89 or C++, any compiler) defines <ID>_PAGES and <ID>_SETTINGS
 as char arrays of ASCII JSON, with <ID>_PAGES_LENGTH and <ID>_SETTINGS_LENGTH, <ID> the space's id in capitals with
-every other character an underscore: what the mod hands register_pages.
+every other character an underscore, after SPACE_ if it starts with a digit: what the mod hands register_pages.
 
 Each space is one TOML file, src/grace-pages/spaces/<id>/space.toml: its rail, pages, topics, commands and settings.
 Its outputs: fixtures/<id>/pages.json (the protocol's space_pages), fixtures/<id>/settings.json (its settings
@@ -930,7 +930,8 @@ def build_builtin(spaces):
 
 
 def c_name(space_id):
-    return re.sub(r"[^A-Z0-9]", "_", space_id.upper())
+    name = re.sub(r"[^A-Z0-9]", "_", space_id.upper())
+    return "SPACE_" + name if name[:1].isdigit() else name  # an identifier never starts with a digit
 
 
 def build_header(space_pages, description, source_name):
@@ -1001,11 +1002,11 @@ def run(argv):
     parser.add_argument("--minor", type=int, help="with --build: the protocol minor of the mod's floor GraceUI")
     parser.add_argument("--header", metavar="FILE", help="with --build: a C header holding both documents too")
     args = parser.parse_args(argv)
-    if args.build and (args.lint or not args.out):
-        parser.error("--build takes --out, and not --lint")
-    if not args.build and (args.out or args.minor is not None or args.header):
+    if args.build is not None and (args.lint or not args.out or not args.build):
+        parser.error("--build takes a file and --out, and not --lint")
+    if args.build is None and (args.out is not None or args.minor is not None or args.header is not None):
         parser.error("--out, --minor and --header go with --build")
-    if args.build:
+    if args.build is not None:
         return run_build(args)
     try:
         schema = protocol.load()
@@ -1052,7 +1053,7 @@ def run_build(args):
         schema = protocol.load()
         failures, outputs = build_one(args, schema, load_all(schema))
     except (PagesError, protocol.SchemaError, tomllib.TOMLDecodeError, KeyError, TypeError, OSError,
-            json.JSONDecodeError) as error:
+            json.JSONDecodeError, UnicodeDecodeError) as error:
         print(f"pages: {error}", file=sys.stderr)
         return 1
     if failures:

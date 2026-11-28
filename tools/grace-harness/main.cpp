@@ -11211,67 +11211,69 @@ void run_hello_space(const std::wstring& dll) {
   const std::string ticket = cookie.empty() ? std::string() : io::fetch_ticket(port, cookie);
   io::WsClient view;
   const bool joined = !ticket.empty() && view.join(port, cookie, ticket);
-  const auto sentence_of = [&](std::string_view want) {
-    std::string last;
+  // One reader for both: until the result of command `id` (none for 0) and the status sentence `want` (none for "")
+  // have come, at most 5 s. The mod publishes its status before it answers, so a state may come before its result.
+  std::string sentence;  // the newest status sentence the view was sent
+  const auto await = [&](int id, std::string_view want) {
+    Json result;
     const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (std::chrono::steady_clock::now() < end) {
-      const std::optional<Json> state = view.next_of("state", std::chrono::milliseconds(500));
-      if (state && (*state)["topic"] == HELLO_SPACE_STATUS && (*state)["body"]["sentence"].is_string()) {
-        last = (*state)["body"]["sentence"].get<std::string>();
-        if (last == want) {
-          break;
-        }
+    while (std::chrono::steady_clock::now() < end && ((id != 0 && result.is_null()) || (!want.empty() && sentence != want))) {
+      const std::optional<Json> frame = view.next_json(std::chrono::milliseconds(500));
+      if (!frame || !frame->is_object()) {
+        continue;
+      }
+      const std::string kind = frame->value("t", "");
+      if (kind == "result" && frame->value("id", -1) == id) {
+        result = *frame;
+      } else if (kind == "state" && frame->value("topic", "") == HELLO_SPACE_STATUS && frame->contains("body") &&
+                 (*frame)["body"].is_object() && (*frame)["body"].value("sentence", Json()).is_string()) {
+        sentence = (*frame)["body"]["sentence"].get<std::string>();
       }
     }
-    return last;
+    return result;
   };
-  const auto result_of = [&](int id) {
-    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (std::chrono::steady_clock::now() < end) {
-      const std::optional<Json> result = view.next_of("result", std::chrono::milliseconds(500));
-      if (result && (*result)["id"] == id) {
-        return *result;
-      }
-    }
-    return Json();
+  const auto member = [](const Json& result, const char* name) {  // "" for a result that never came, or has none
+    return result.is_object() && result.contains(name) && result[name].is_string() ? result[name].get<std::string>()
+                                                                                    : std::string();
   };
+  const auto ok = [](const Json& result) { return result.is_object() && result.value("ok", false); };
+  const auto said = [](const Json& result) { return result.is_null() ? std::string("NOTHING") : result.dump(); };
   if (joined) {
     view.send_json({{"v", 1}, {"t", "sub"}, {"space", HELLO_SPACE_ID}, {"id", 1}, {"topic", HELLO_SPACE_STATUS}});
   }
   const std::string want_first = "The count is 0, and nothing has changed it yet. Add puts 2 on it.";
-  const std::string as_left = joined ? sentence_of(want_first) : std::string();
+  await(0, want_first);
+  const std::string as_left = sentence;
   view.send_json({{"v", 1}, {"t", "cmd"}, {"space", HELLO_SPACE_ID}, {"id", 2}, {"name", HELLO_SPACE_ADD},
                   {"args", Json::object()}});
-  const Json added = result_of(2);
   const std::string want_added = "The count is 2, last changed in the browser. Add puts 2 on it.";
-  const std::string after_add = sentence_of(want_added);
-  check(joined && as_left == want_first && added.value("ok", false) && after_add == want_added,
+  const Json added = await(2, want_added);
+  const std::string after_add = sentence;
+  check(joined && as_left == want_first && ok(added) && after_add == want_added,
         "hello-space: its command from the browser",
         "the WebSocket %s; its status \"%s\"; Add answered %s, then \"%s\"", joined ? "joined" : "REFUSED",
-        as_left.c_str(), added.is_null() ? "NOTHING" : added.dump().c_str(), after_add.c_str());
+        as_left.c_str(), said(added).c_str(), after_add.c_str());
 
   // 5. Its own refusal: a step of 11 from the browser, which GraceUI passes on, since a setting's bounds are the space's
   // to check; refused in the mod's words, the step kept. Reset with no confirm: refused by GraceUI itself, the mod never
   // hearing of it, as the page marks Reset destructive; confirmed, done.
   view.send_json({{"v", 1}, {"t", "cmd"}, {"space", HELLO_SPACE_ID}, {"id", 3}, {"name", "settings.set"},
                   {"args", {{"key", HELLO_SPACE_STEP}, {"value", 11}}}});
-  const Json too_big = result_of(3);
+  const Json too_big = await(3, "");
   view.send_json({{"v", 1}, {"t", "cmd"}, {"space", HELLO_SPACE_ID}, {"id", 4}, {"name", HELLO_SPACE_RESET},
                   {"args", Json::object()}});
-  const Json unconfirmed = result_of(4);
+  const Json unconfirmed = await(4, "");
   view.send_json({{"v", 1}, {"t", "cmd"}, {"space", HELLO_SPACE_ID}, {"id", 5}, {"name", HELLO_SPACE_RESET},
                   {"args", {{"confirm", true}}}});
-  const Json reset = result_of(5);
   const std::string want_reset = "The count is 0, last changed in the browser. Add puts 2 on it.";
-  const std::string after_reset = sentence_of(want_reset);
-  check(too_big.value("error", "") == "invalid_value" && too_big.value("detail", "") == HELLO_SPACE_STEP_REFUSED &&
-            unconfirmed.value("error", "") == "confirm_required" && !unconfirmed.contains("detail") &&
-            reset.value("ok", false) && after_reset == want_reset,
+  const Json reset = await(5, want_reset);
+  const std::string after_reset = sentence;
+  check(member(too_big, "error") == "invalid_value" && member(too_big, "detail") == HELLO_SPACE_STEP_REFUSED &&
+            member(unconfirmed, "error") == "confirm_required" && unconfirmed.is_object() &&
+            !unconfirmed.contains("detail") && ok(reset) && after_reset == want_reset,
         "hello-space: its own refusal, GraceUI's, then a confirmed reset",
-        "a step of 11: %s; Reset with no confirm: %s; confirmed: %s, then \"%s\"",
-        too_big.is_null() ? "NOTHING" : too_big.dump().c_str(),
-        unconfirmed.is_null() ? "NOTHING" : unconfirmed.dump().c_str(), reset.is_null() ? "NOTHING" : reset.dump().c_str(),
-        after_reset.c_str());
+        "a step of 11: %s; Reset with no confirm: %s; confirmed: %s, then \"%s\"", said(too_big).c_str(),
+        said(unconfirmed).c_str(), said(reset).c_str(), after_reset.c_str());
 
   // 6. Its log, watched from the start: a line for each change, the mod's own words, as rows of its stream.
   view.send_json({{"v", 1}, {"t", "sub"}, {"space", HELLO_SPACE_ID}, {"id", 6}, {"topic", HELLO_SPACE_LOG}, {"since", 0}});

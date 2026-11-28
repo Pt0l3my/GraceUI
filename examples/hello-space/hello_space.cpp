@@ -8,7 +8,8 @@
 //     register_pages takes. The mod writes no HTML, no script and no stylesheet.
 //   - Nothing in DllMain but starting a thread of its own; GraceUI is found and called from that thread (D70).
 //   - It builds a topic only while a view watches it (GRACEUI_EVENT_WATCHED to _UNWATCHED), and publishes each change
-//     as a whole state, or as new rows of its stream (§2.4).
+//     as a whole state, or as new rows of its stream (§2.4). When its stream is first watched it sends the rows it
+//     keeps, in batches of at most 100; GraceUI's server keeps them from then on for every browser that comes later.
 //   - Its one entry point checks every command, whichever view sent it: the name one of its own, the arguments of
 //     their types and in their bounds, a destructive one confirmed; anything else is refused with its reason in words
 //     (invariant 3). GraceUI refuses some first (a command the space does not declare, a destructive action's without
@@ -39,7 +40,21 @@ constexpr std::int64_t kStepMin = 1;
 constexpr std::int64_t kStepMax = 10;
 constexpr std::int64_t kStepDefault = 1;
 constexpr bool kLogDefault = true;
-constexpr std::size_t kRowsKept = 50;  // the log's ring in space.toml
+constexpr std::size_t kRowsPerBatch = 100;  // the protocol's most rows in one frame
+
+// The rows the log keeps: its topic's ring in the page data, so that space.toml stays its one source.
+std::size_t log_ring() {
+  const Json pages = Json::parse(std::string_view(HELLO_SPACE_PAGES, HELLO_SPACE_PAGES_LENGTH), nullptr, false);
+  if (pages.is_object() && pages.contains("topics") && pages["topics"].is_array()) {
+    for (const Json& topic : pages["topics"]) {
+      if (topic.is_object() && topic.value("id", std::string()) == HELLO_SPACE_LOG && topic.contains("ring") &&
+          topic["ring"].is_number_unsigned() && topic["ring"].get<std::uint64_t>() > 0) {
+        return static_cast<std::size_t>(topic["ring"].get<std::uint64_t>());
+      }
+    }
+  }
+  return 50;
+}
 
 std::string text_of(const Json& value) {
   return value.dump(-1, ' ', false, Json::error_handler_t::replace);
@@ -63,6 +78,7 @@ class Space {
       settings_ = description.value("settings", Json::array());
     }
     started_ = GetTickCount64();
+    ring_ = log_ring();
   }
 
   // One event from poll: a watch, an unwatch or a command.
@@ -77,9 +93,7 @@ class Space {
     if (event.kind == GRACEUI_EVENT_WATCHED) {
       watched(topic, true);
       if (topic == HELLO_SPACE_LOG) {
-        const std::uint64_t since =
-            frame.contains("since") && frame["since"].is_number_unsigned() ? frame["since"].get<std::uint64_t>() : 0;
-        publish_rows(since);
+        publish_kept();  // the first view's watch: every row it keeps, whatever that view has seen already
       } else {
         publish(topic);
       }
@@ -174,12 +188,12 @@ class Space {
     std::snprintf(time, sizeof time, "%llu:%02llu", static_cast<unsigned long long>(seconds / 60),
                   static_cast<unsigned long long>(seconds % 60));
     rows_.push_back({{"seq", ++seq_}, {"time", time}, {"line", line}});
-    if (rows_.size() > kRowsKept) {
+    if (rows_.size() > ring_) {
       rows_.pop_front();
       ++dropped_;
     }
     if (log_watched_) {
-      publish_rows(seq_ - 1);
+      send_rows(Json::array({rows_.back()}), 0);  // appended: nothing lost between it and the rows before
     }
   }
 
@@ -212,24 +226,39 @@ class Space {
     }
     const Json frame = {{"v", 1}, {"t", "state"}, {"space", HELLO_SPACE_ID}, {"topic", topic}, {"rev", ++rev_},
                         {"body", body}};
-    api_.publish(me_, text_of(frame));
+    published(api_.publish(me_, text_of(frame)));
   }
 
-  // The log's rows after `since`, in batches of at most 100, with the rows its ring has lost.
-  void publish_rows(std::uint64_t since) {
-    Json rows = Json::array();
+  // Every row the log keeps, in batches of at most 100: the first batch says how many rows before it the ring lost.
+  void publish_kept() {
+    Json batch = Json::array();
+    bool first = true;
     for (const Json& row : rows_) {
-      if (row["seq"].get<std::uint64_t>() > since) {
-        rows.push_back(row);
+      batch.push_back(row);
+      if (batch.size() == kRowsPerBatch) {
+        send_rows(batch, first ? dropped_ : 0);
+        batch = Json::array();
+        first = false;
       }
     }
-    if (rows.empty()) {
-      return;
+    if (!batch.empty()) {
+      send_rows(batch, first ? dropped_ : 0);
     }
-    const Json frame = {{"v", 1},          {"t", "rows"},    {"space", HELLO_SPACE_ID},
-                        {"topic", HELLO_SPACE_LOG}, {"from_seq", rows.front()["seq"]}, {"rows", rows},
-                        {"dropped", dropped_}};
-    api_.publish(me_, text_of(frame));
+  }
+
+  void send_rows(const Json& rows, std::uint64_t dropped) {
+    const Json frame = {{"v", 1},           {"t", "rows"},   {"space", HELLO_SPACE_ID}, {"topic", HELLO_SPACE_LOG},
+                        {"from_seq", rows.front()["seq"]}, {"rows", rows}, {"dropped", dropped}};
+    published(api_.publish(me_, text_of(frame)));
+  }
+
+  // A frame GraceUI refused is a fault of the mod's: said once in GraceUI's log, never to the player.
+  void published(GraceUiStatus status) {
+    if (status == GRACEUI_REFUSED && !refusal_logged_ && GRACEUI_API1_COVERS(api_.table(), log)) {
+      static constexpr std::string_view kSaid = "hello-space: GraceUI refused a frame of its space";
+      api_.table()->log(me_, GRACEUI_LOG_ERROR, kSaid.data(), kSaid.size());
+      refusal_logged_ = true;
+    }
   }
 
   const graceui::Api& api_;
@@ -243,8 +272,10 @@ class Space {
   bool log_ = kLogDefault;
   std::uint64_t rev_ = 0;
   std::uint64_t seq_ = 0;
-  std::uint64_t dropped_ = 0;
+  std::uint64_t dropped_ = 0;  // rows the ring has lost
+  std::size_t ring_ = 50;
   std::deque<Json> rows_;
+  bool refusal_logged_ = false;
   bool settings_watched_ = false;
   bool status_watched_ = false;
   bool log_watched_ = false;
@@ -280,20 +311,25 @@ DWORD WINAPI hello_worker(LPVOID) {
   }
   Space space(api, me);
   for (;;) {
+    // Set whenever GraceUI keeps something for this mod's poll; a second's timeout to see a disconnect all the same.
     if (wake != nullptr) {
-      WaitForSingleObject(wake, INFINITE);  // set whenever GraceUI keeps something for this mod's poll
+      WaitForSingleObject(wake, 1000);
     } else {
       Sleep(10);
     }
-    for (;;) {
-      GraceUiEvent event{};
-      if (api.poll(me, event, g_frame, sizeof g_frame) != GRACEUI_OK || event.kind == GRACEUI_EVENT_NONE) {
-        break;
-      }
+    GraceUiStatus status = GRACEUI_OK;
+    GraceUiEvent event{};
+    while ((status = api.poll(me, event, g_frame, sizeof g_frame)) == GRACEUI_OK && event.kind != GRACEUI_EVENT_NONE) {
       if (event.kind == GRACEUI_EVENT_WATCHED || event.kind == GRACEUI_EVENT_UNWATCHED ||
           event.kind == GRACEUI_EVENT_COMMAND) {
         space.handle(event);
       }
+    }
+    if (status == GRACEUI_NOT_CONNECTED) {
+      if (wake != nullptr) {
+        CloseHandle(wake);
+      }
+      return 0;  // disconnected: nothing more to show
     }
   }
 }

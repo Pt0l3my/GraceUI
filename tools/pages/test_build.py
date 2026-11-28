@@ -781,9 +781,31 @@ class BuildOne(unittest.TestCase):  # D283: --build, a mod's space compiled
 
     def test_its_options_go_together(self):
         for argv in (["--build", str(EXAMPLE / "space.toml")], ["--out", str(self.dir)], ["--minor", "3"],
-                     ["--build", str(EXAMPLE / "space.toml"), "--out", str(self.dir), "--lint", "x.toml"]):
-            with self.assertRaises(SystemExit):
+                     ["--build", str(EXAMPLE / "space.toml"), "--out", str(self.dir), "--lint", "x.toml"],
+                     ["--build", ""], ["--build", "", "--out", str(self.dir)], ["--out", ""], ["--header", ""]):
+            with self.assertRaises(SystemExit, msg=argv):  # never the built-in spaces' outputs rewritten instead
                 run_quietly(argv)
+
+    def test_a_header_name_never_starts_with_a_digit(self):
+        self.assertEqual(build.c_name("hello-space"), "HELLO_SPACE")
+        self.assertEqual(build.c_name("3d-map"), "SPACE_3D_MAP")
+        source = self.copy_example()
+        text = (source / "space.toml").read_text(encoding="utf-8")
+        (source / "space.toml").write_text(text.replace('id = "hello-space"', 'id = "3d-map"'), "utf-8")
+        header = self.dir / "map.h"
+        status, printed = run_quietly(["--build", str(source / "space.toml"), "--out", str(self.dir / "space"),
+                                       "--header", str(header)])
+        self.assertEqual(status, 0, printed)
+        self.assertEqual(set(header_arrays(header.read_text(encoding="ascii"))), {"SPACE_3D_MAP_PAGES",
+                                                                                  "SPACE_3D_MAP_SETTINGS"})
+        self.assertIn("#ifndef SPACE_3D_MAP_SPACE_DATA_H", header.read_text(encoding="ascii"))
+
+    def test_a_source_not_in_utf8_is_an_error_not_a_traceback(self):
+        source = self.copy_example()
+        (source / "topics.json").write_bytes(b'{"hello.status": "\xff"}')
+        status, printed = run_quietly(["--build", str(source / "space.toml"), "--out", str(self.dir / "space")])
+        self.assertEqual(status, 1)
+        self.assertIn("pages:", printed)
 
 
 if __name__ == "__main__":

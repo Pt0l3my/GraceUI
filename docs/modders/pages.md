@@ -158,7 +158,7 @@ The page tool compiles a mod's `space.toml` as it does GraceUI's own spaces, aft
 | `--build FILE` | The mod's `space.toml`, linted with the `topics.json` beside it as its fixtures, if there is one. A space with the id of one of GraceUI's own is refused |
 | `--out DIR` | Writes `pages.json` (the page data) and `settings.json` (the settings description): a space folder, as grace-dev and the space check read it; add a `topics.json` of fixtures to it for them |
 | `--minor N` | The protocol minor the page data names: that of the GraceUI the mod names as its floor (§6.4), 0 to this GraceUI's; by default this GraceUI's own. GraceUI refuses page data above its own minor (D264) |
-| `--header FILE` | Also writes a C header (C89 or C++, any compiler) with both documents as arrays of ASCII JSON, `<ID>_PAGES` and `<ID>_SETTINGS`, with `<ID>_PAGES_LENGTH` and `<ID>_SETTINGS_LENGTH`: `<ID>` is the space's id in capitals, every other character an underscore. That is what the mod hands `register_pages` |
+| `--header FILE` | Also writes a C header (C89 or C++, any compiler) with both documents as arrays of ASCII JSON, `<ID>_PAGES` and `<ID>_SETTINGS`, with `<ID>_PAGES_LENGTH` and `<ID>_SETTINGS_LENGTH`: `<ID>` is the space's id in capitals, every other character an underscore, after `SPACE_` if it starts with a digit. That is what the mod hands `register_pages` |
 | `--check` | Writes nothing, and fails if an output is not what the source builds: for a mod's CI, where the outputs are committed |
 
 The lint checks a space against the GraceUI the tool comes with. A space whose floor is older can be linted by the
