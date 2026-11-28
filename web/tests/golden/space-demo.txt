@@ -1,7 +1,7 @@
 # demo: the browser view at increment 0.2, by GraceUI's space check (D265)
 == this PC's browser
-rail: Lanterns: demo.overview, demo.behaviour, demo.keepers
-rail: Records: demo.log, demo.festival, demo.lamps, demo.lightings, demo.handbook, demo.workbench
+rail: Lanterns (icon lamp): demo.overview, demo.behaviour, demo.keepers
+rail: Records (icon book): demo.log, demo.festival, demo.lamps, demo.lightings, demo.handbook, demo.workbench
 page demo.overview:
   Overview
   Trim the wick
@@ -266,8 +266,8 @@ page demo.workbench:
   Log
   What the lantern did, as it happens, and the keeper's journal.
 == a paired device
-rail: Lanterns: demo.overview, demo.behaviour, demo.keepers
-rail: Records: demo.log, demo.festival, demo.lamps, demo.lightings, demo.handbook
+rail: Lanterns (icon lamp): demo.overview, demo.behaviour, demo.keepers
+rail: Records (icon book): demo.log, demo.festival, demo.lamps, demo.lightings, demo.handbook
 page demo.overview:
   Overview
   Trim the wick
@@ -610,8 +610,8 @@ page demo.setup#ready:
   Behaviour
   How the lantern burns, how often it flickers, and who keeps it.
 == this PC's browser, lantern.enabled off
-rail: Lanterns: demo.overview, demo.behaviour, demo.keepers
-rail: Records: demo.log, demo.festival, demo.lamps, demo.lightings, demo.handbook
+rail: Lanterns (icon lamp): demo.overview, demo.behaviour, demo.keepers
+rail: Records (icon book): demo.log, demo.festival, demo.lamps, demo.lightings, demo.handbook
 page demo.overview:
   Overview
   Trim the wick

@@ -2,7 +2,8 @@
 // check-space.ts: a space's pages in the real browser view, over a space folder (D265). The folder holds what
 // grace-dev takes: pages.json and settings.json, and optionally topics.json and paged.json. The check opens GraceUI's
 // built browser view (npm run build first) over GraceUI's fake host with the folder's fixtures. For this PC's browser
-// and a paired device, and for each switch a page is shown with, it prints what the view shows: the rail, and each
+// and a paired device, and for each switch a page is shown with, it prints what the view shows: the rail (each
+// category with the icon it draws, by its name), and each
 // page as its text reads (its gate first, then the page behind it), in both themes for the contrast check; and each
 // flow (D278) as the player meets it, a load whose state says start landing on it, step by step. It fails,
 // naming each, on a console error, a CSP violation, a request outside the page's origin or a text under 4.5:1. The
@@ -106,7 +107,8 @@ function flipped(data: FixtureSpaceData, key: string): FixtureSpaceData {
 
 const squash = (words: string) => words.replace(/\s+/g, " ").trim();
 
-/** What the rail lists of the space: each category's pages, in order, each category opened to list them. */
+/** What the rail lists of the space: each category with the icon it draws, if any (by its name in GraceUI's set, D277),
+ * and its pages, in order, each category opened to list them. */
 async function rail(page: PwPage, pages: SpacePages): Promise<string[]> {
   const out: string[] = [];
   for (const category of pages.categories) {
@@ -125,7 +127,11 @@ async function rail(page: PwPage, pages: SpacePages): Promise<string[]> {
         listed.push(id);
       }
     }
-    out.push(`rail: ${category.name}: ${listed.length > 0 ? listed.join(", ") : "nothing"}`);
+    // The icon the view draws, not the one the data names: a name GraceUI's set lacks draws none, and says none here.
+    const drawn = button.first().locator("svg[data-icon]");
+    const icon = (await drawn.count()) > 0 ? await drawn.first().getAttribute("data-icon") : null;
+    const name = icon !== null && icon !== "" ? `${category.name} (icon ${icon})` : category.name;
+    out.push(`rail: ${name}: ${listed.length > 0 ? listed.join(", ") : "nothing"}`);
   }
   return out;
 }
