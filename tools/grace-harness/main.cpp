@@ -9436,6 +9436,30 @@ void run_bindings_read(const std::wstring& dll) {
         status_name(tide_first), tide_now.key_text, tide_told.size(), status_name(camp_second), camp_now.key,
         f5_opens ? "OPENED the menu" : "opened nothing", menu.open != 0 ? "opened the menu" : "DID NOT OPEN IT");
 
+  // With F6 the menu's key, a mod's holder: F6's first press says "‹Mod› has the controls. Press F6 again", naming the
+  // key the player chose, not F5's default; the second ends the holder (0.2.73).
+  press(window, VK_F6, 0x40);
+  menu = menu_after(game, grace, menu.lists);
+  const bool menu_closed = grace.menu().open == 0;
+  const bool held = take(grace, game, 1, kPanelKind);
+  press(window, VK_F6, 0x40);
+  frames(game, 2);
+  std::string controls;
+  for (const GraceUiTestNotice& notice : grace.notices()) {
+    if (notice.owner == 0 && std::strstr(notice.text, "has the controls") != nullptr) {
+      controls = notice.text;
+    }
+  }
+  press(window, VK_F6, 0x40);
+  frames(game, 2);
+  const GraceUiTestInput exited = grace.input();
+  check(menu_closed && held && controls.find(" has the controls. Press F6 again to take them back.") != std::string::npos &&
+            exited.holder_owner == 0 && exited.last_close_reason == GRACEUI_TEST_CLOSED_PLAYER,
+        "bindings: the controls notice names the menu's key",
+        "the menu %s; a holder %s; F6's first press shows \"%s\"; the second %s",
+        menu_closed ? "closed" : "STILL OPEN", held ? "granted" : "NOT GRANTED", controls.c_str(),
+        exited.holder_owner == 0 ? "ended it" : "DID NOT END IT");
+
   // Reset every hotkey, from the page's action and its second press: the mods' defaults where free, nothing kept.
   menu = to_hotkeys(game, grace, window, "action:reset-all", VK_F6, 0x40);
   press(window, VK_RETURN, 0x1C);
