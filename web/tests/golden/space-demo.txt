@@ -1,4 +1,4 @@
-# demo: the browser view, by GraceUI's space check (D265)
+# demo: the browser view at increment 0.2, by GraceUI's space check (D265)
 == this PC's browser
 rail: Lanterns: demo.overview, demo.behaviour, demo.keepers
 rail: Records: demo.log, demo.festival, demo.lamps, demo.lightings, demo.handbook, demo.workbench

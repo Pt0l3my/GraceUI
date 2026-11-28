@@ -9,7 +9,10 @@
 // printed dump is a consumer's golden: --golden <file> compares with it and --update writes it. Nothing it prints names
 // the folder or any path (PV3).
 //
-//   npm run -s check:space -- <space folder> [--golden <file>] [--update]
+// The space is welcomed at increment 0.2 unless --increment says another, as grace-dev's --increment does: a page of a
+// later increment is absent, as in the menu (D173).
+//
+//   npm run -s check:space -- <space folder> [--increment X.Y] [--golden <file>] [--update]
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import process from "node:process";
@@ -19,20 +22,32 @@ import type { PwBrowser, PwPage } from "../tests/support/browser.ts";
 import type { FakeHost } from "../tests/support/fake-host.ts";
 import { DIST, launch, lowContrast, openPage, violations } from "../tests/support/browser.ts";
 import { startHost } from "../tests/support/fake-host.ts";
+import { withinIncrement, withShown } from "../src/model/layout.ts";
 import { space as builtin } from "../tests/support/fixtures.ts";
 
 interface Options {
   folder: string;
   golden?: string;
   update: boolean;
+  increment: string;
 }
 
+/** A version's major and minor, such as 0.2, as grace-dev takes it. */
+const INCREMENT = /^\d{1,7}\.\d{1,7}$/;
+const USAGE = "usage: check:space -- <space folder> [--increment X.Y] [--golden <file>] [--update]";
+
 function options(argv: string[]): Options {
-  const out: Options = { folder: "", update: false };
+  const out: Options = { folder: "", update: false, increment: "0.2" };
   for (let i = 0; i < argv.length; ++i) {
     const arg = argv[i]!;
     if (arg === "--golden") {
       out.golden = argv[++i];
+    } else if (arg === "--increment") {
+      const increment = argv[++i] ?? "";
+      if (!INCREMENT.test(increment)) {
+        throw new Error("--increment is a version's major and minor, such as 0.2");
+      }
+      out.increment = increment;
     } else if (arg === "--update") {
       out.update = true;
     } else if (out.folder === "") {
@@ -42,7 +57,7 @@ function options(argv: string[]): Options {
     }
   }
   if (out.folder === "") {
-    throw new Error("usage: check:space -- <space folder> [--golden <file>] [--update]");
+    throw new Error(USAGE);
   }
   return out;
 }
@@ -131,8 +146,12 @@ async function settled(page: PwPage, host: FakeHost): Promise<void> {
 /** A page's text as the view shows it: its gate's words first, if it has one, then the page behind it. */
 async function pageText(page: PwPage, host: FakeHost, category: string, id: string): Promise<string[]> {
   const item = page.locator(`[data-rail="page:${id}"]`);
+  const row = page.locator(`[data-rail="category:${category}"]`);
+  if ((await item.count()) === 0 && (await row.count()) === 0) {
+    return [`page ${id}: absent`];  // its whole category is (a later increment's, D173)
+  }
   if ((await item.count()) === 0) {
-    await page.locator(`[data-rail="category:${category}"]`).first().click();
+    await row.first().click();
   }
   if ((await page.locator(`[data-rail="page:${id}"]`).count()) === 0) {
     return [`page ${id}: absent`];
@@ -174,8 +193,15 @@ async function textOf(page: PwPage, host: FakeHost, id: string): Promise<string[
  * steps as the space would publish it, its text and, in both themes, its contrast. */
 async function flows(browser: PwBrowser, data: FixtureSpaceData, problems: string[]): Promise<string[]> {
   const out: string[] = [];
+  // Present as the view shows the space: in its increment, and its shown_with switch on by default (D173, D258).
+  const defaults = Object.fromEntries(data.settings.settings.map((s) => [s.key, s.default]));
+  const present = withShown(withinIncrement(data.pages, data.increment ?? "0.2"), defaults).pages;
   for (const flow of data.pages.pages) {
     if (flow.flow === undefined) {
+      continue;
+    }
+    if (!present.some((p) => p.id === flow.id)) {
+      out.push(`page ${flow.id}: absent`);
       continue;
     }
     const topic = flow.flow.topic;
@@ -291,12 +317,12 @@ async function main(): Promise<number> {
     process.stderr.write("check:space: build the browser view first (npm run build)\n");
     return 2;
   }
-  const data = load(resolve(opts.folder));
+  const data = { ...load(resolve(opts.folder)), increment: opts.increment };
   const id = data.pages.space;
   const switches = [...new Set(data.pages.pages.map((p) => p.shown_with).filter((k): k is string => k !== undefined))];
   const browser = await launch();
   const problems: string[] = [];
-  const dump: string[] = [`# ${id}: the browser view, by GraceUI's space check (D265)`];
+  const dump: string[] = [`# ${id}: the browser view at increment ${opts.increment}, by GraceUI's space check (D265)`];
   try {
     dump.push(...await view(browser, data, "browser", "this PC's browser", problems));
     dump.push(...await view(browser, data, "device", "a paired device", problems));
