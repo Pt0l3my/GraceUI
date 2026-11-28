@@ -11,6 +11,7 @@
 #include "display.h"
 #include "grace/abi/text.h"
 #include "grace/host/host.h"
+#include "grace/input/keys.h"
 #include "hooks.h"
 #include "input.h"
 #include "log.h"
@@ -191,7 +192,11 @@ void controls_notice(std::uint32_t owner) noexcept {
   } else {
     append(owner == 0 ? "GraceUI's menu" : "A mod's panel");
   }
-  append(" has the controls. Press F5 again to take them back.");
+  // The menu's own key, as the player set it (hotkeys.menu, live since D208): its name, which allocates nothing.
+  const std::string_view key = grace::input::key_name(input::menu_key());
+  append(" has the controls. Press ");
+  append(key.empty() ? std::string_view("the menu key") : key);
+  append(" again to take them back.");
   own_notice_text(kOwnKeyControls, GRACEUI_TONE_NORMAL, kControlsNoticeMs, std::string_view(text, length));
 }
 
