@@ -36,6 +36,7 @@
 #include "menu.h"
 #include "spaces.h"
 #include "state.h"
+#include "steam.h"
 
 namespace grace::host::hooks {
 namespace {
@@ -936,6 +937,7 @@ void move_filter() noexcept {
     move_filter();
     spaces::serve();  // the spaces and the browser view's server (D169), before the menu reads GraceUI's settings
     menu::serve();    // the menu's layout and commands (D167)
+    steam::follow_holder();  // a Steam keyboard closes once its holder no longer holds input (D276, invariant 7)
     log_drain();
   }
 }

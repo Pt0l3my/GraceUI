@@ -15,6 +15,7 @@
 #include "menu.h"
 #include "session.h"
 #include "state.h"
+#include "steam.h"
 #include "wake.h"
 
 // Dear ImGui's Win32 backend maps a key message to an ImGuiKey with this function, which it leaves non-static for
@@ -660,8 +661,9 @@ void closed(const Holder& holder) noexcept {
   const grace::input::LastClose last = g_capture.last_close();
   log_line("%s no longer holds input: %s", kind_name(holder.kind),
            last.holder.generation == holder.generation ? closed_name(last.why) : "closed");
-  if (holder.kind == Kind::menu) {
-    hooks::wake();  // the menu's part of the close routine runs on GraceUI's thread: it stops watching mods' topics
+  if (holder.kind == Kind::menu || steam::keyboard_open()) {
+    hooks::wake();  // the menu's part of the close routine runs on GraceUI's thread: it stops watching mods' topics,
+                    // and a Steam keyboard opened for the holder closes there (D276)
   }
   if (grace::input::HolderMail* mail = g_mail.load(std::memory_order_acquire); mail != nullptr) {
     // Its mod hears why, after its other events (D176): the reason recorded for this holder, else released.
