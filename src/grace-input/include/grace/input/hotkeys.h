@@ -83,6 +83,7 @@ struct Listed {
   std::uint32_t chord = 0;
   bool key_bound = false;
   bool chord_bound = false;
+  bool paused = false;  // its mod has paused it for now (ABI 1.11, D280)
   Chosen defaults{};  // its mod's, which a reset restores
   std::string_view action() const noexcept { return {action_bytes, action_length}; }
   std::string_view name() const noexcept { return {name_bytes, name_length}; }
@@ -141,6 +142,13 @@ class Hotkeys {
   bool take_changed(std::uint16_t owner, std::uint32_t& id) noexcept;
   // The owners with a change waiting, one bit each (bit `owner`, owners 1 to 63): their wait handles are set (D212).
   std::uint64_t changed_owners() const noexcept;
+  // The mod's own hotkey `id` paused (`enabled` false) or resumed (ABI 1.11, D280), such as while the game's own menu
+  // is open. Paused, it neither fires nor keeps its key or chord from the game; its binding stays, held against other
+  // hotkeys as before, and presses already counted stay to be taken. A press under way is kept whole by the side that
+  // saw it begin: a press the hotkey took stays hidden from the game until released, and a press the game saw begin
+  // reaches the game until released and fires nothing. Not the player's change: no HOTKEY_CHANGED. False if `id`
+  // names no hotkey of `owner`'s now.
+  bool set_enabled(std::uint16_t owner, std::uint32_t id, bool enabled) noexcept;
 
   // ---- GraceUI's thread.
 
@@ -171,16 +179,16 @@ class Hotkeys {
 
   // ---- The game's window thread.
 
-  // The bound hotkey whose key and modifiers these are exactly, or 0.
+  // The bound hotkey whose key and modifiers these are exactly, or 0; a paused one is none (D280).
   std::uint32_t match(Key key, std::uint8_t modifiers) const noexcept;
   // The owner of hotkey `id`, or 0 if no hotkey has it now: read without the lock, to set its mod's wait handle (D212).
   std::uint16_t owner_of(std::uint32_t id) const noexcept;
-  // Counts a press of `id`, by its key or its chord (kByKey, kByChord); false if it was removed meanwhile.
+  // Counts a press of `id`, by its key or its chord (kByKey, kByChord); false if it was removed or paused meanwhile.
   bool pressed(std::uint32_t id, std::uint8_t by = kByKey) noexcept;
 
   // ---- XInput's readers.
 
-  // The hotkey whose bound chord is `anchor` then `key` (one button each), or 0.
+  // The hotkey whose bound chord is `anchor` then `key` (one button each), or 0; a paused one is none (D280).
   std::uint32_t match_chord(std::uint16_t anchor, std::uint16_t key) const noexcept;
   // The key buttons of every bound chord: a fresh press of any other starts no chord, so no table need be searched.
   std::uint16_t chord_keys() const noexcept { return chord_keys_.load(std::memory_order_acquire); }
@@ -191,7 +199,8 @@ class Hotkeys {
 
   // ---- Any thread.
 
-  // The keys bound with no modifier: never the game's while bound (the window's messages and DirectInput).
+  // The keys bound with no modifier to a hotkey not paused: never the game's while bound, but for a press the game saw
+  // begin (the window's messages and DirectInput).
   KeyBits bare() const noexcept { return bare_.load(); }
   // Every bound key, whatever its modifiers: a press of any other fires nothing, so its modifiers need not be read.
   KeyBits bound_keys() const noexcept { return bound_.load(); }
@@ -244,6 +253,7 @@ class Hotkeys {
     Chosen defaults{};                  // under the lock: its mod's, for a reset
     std::atomic<std::uint16_t> owner_now{0};  // `owner`, readable without the lock (D212)
     std::atomic<bool> changed{false};   // the player changed it since its mod last asked
+    std::atomic<bool> paused{false};    // its mod paused it (D280): set under the lock, read without it
   };
 
   // Under the lock: the slot's key and modifiers, bound or not, its generation and presses kept.

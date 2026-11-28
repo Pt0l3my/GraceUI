@@ -234,8 +234,9 @@ GU_AT(GraceUiWorldState, size, 0);
 GU_AT(GraceUiWorldState, flags, 4);
 
 /* The table: its four numbers, then D73's twenty slots in D73's order, 8 bytes each, then ABI 1.1's one (D176). */
-GU_SIZE(GraceUiApi1, 216); /* 184 in ABI 1.1 to 1.3; describe_hotkey in 1.4 (D210); wake_event in 1.5 (D212);
-                               set_on_present in 1.8 (D259); pad_keyboard in 1.10 (D276) */
+GU_SIZE(GraceUiApi1, 224); /* 184 in ABI 1.1 to 1.3; describe_hotkey in 1.4 (D210); wake_event in 1.5 (D212);
+                               set_on_present in 1.8 (D259); pad_keyboard in 1.10 (D276); set_hotkey_enabled in 1.11
+                               (D280) */
 GU_AT(GraceUiApi1, size, 0);
 GU_AT(GraceUiApi1, abi_minor, 4);
 GU_AT(GraceUiApi1, graceui_version, 8);
@@ -265,6 +266,7 @@ GU_AT(GraceUiApi1, describe_hotkey, 184);
 GU_AT(GraceUiApi1, wake_event, 192);
 GU_AT(GraceUiApi1, set_on_present, 200);
 GU_AT(GraceUiApi1, pad_keyboard, 208);
+GU_AT(GraceUiApi1, set_hotkey_enabled, 216);
 
 GU_SIZE(GraceUiPadKeyboard, 32); /* ABI 1.10 (D276) */
 GU_AT(GraceUiPadKeyboard, size, 0);
@@ -301,7 +303,7 @@ GU_AT(GraceUiPresentHook, callback, 16);
 GU_AT(GraceUiPresentHook, user, 24);
 
 /* The numbers a mod compiles in. */
-GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 10u, "ABI 1.10");
+GU_ASSERT(GRACEUI_ABI_MAJOR == 1u && GRACEUI_ABI1_MINOR == 11u, "ABI 1.11");
 GU_ASSERT(GRACEUI_UNAVAILABLE == 12u && GRACEUI_PAD_KEYBOARD_NUMERIC == 3u, "pad_keyboard's numbers (D276)");
 GU_ASSERT(GRACEUI_UPLOAD_MAX == 32u * 1024u * 1024u, "an upload's 32 MiB (D226)");
 GU_SIZE(GraceUiHotkeyBinding, 104); /* ABI 1.4 (D210) */

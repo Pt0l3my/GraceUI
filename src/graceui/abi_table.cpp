@@ -748,6 +748,20 @@ GraceUiStatus pad_keyboard(GraceUiConsumer consumer, const GraceUiPadKeyboard* k
   }
 }
 
+// ---- ABI 1.11's slot (D280).
+
+GraceUiStatus set_hotkey_enabled(GraceUiConsumer consumer, std::uint32_t hotkey_id, std::uint32_t enabled) noexcept {
+  try {
+    if (grace::host::abi1::in_present_callback()) {
+      return grace::host::abi1::refused_in_callback("set_hotkey_enabled");  // D259: no slot from inside a callback
+    }
+    return grace::host::abi1::set_hotkey_enabled(consumer, hotkey_id, enabled != 0);
+  } catch (...) {
+    grace::host::abi1::fault("set_hotkey_enabled");
+    return GRACEUI_FAULT;
+  }
+}
+
 constinit const GraceUiApi1 kTable = {
     sizeof(GraceUiApi1),
     GRACEUI_ABI1_MINOR,
@@ -778,6 +792,7 @@ constinit const GraceUiApi1 kTable = {
     &wake_event,
     &set_on_present,
     &pad_keyboard,
+    &set_hotkey_enabled,
 };
 
 }  // namespace

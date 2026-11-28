@@ -102,6 +102,14 @@ class KeyBits {
     return out;
   }
 
+  constexpr KeyBits operator~() const noexcept {
+    KeyBits out;
+    for (int i = 0; i < 4; ++i) {
+      out.words_[i] = ~words_[i];
+    }
+    return out;
+  }
+
   constexpr bool operator==(const KeyBits&) const noexcept = default;
 
   constexpr std::uint64_t word(int index) const noexcept { return words_[index]; }

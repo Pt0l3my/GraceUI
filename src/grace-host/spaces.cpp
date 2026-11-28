@@ -547,7 +547,7 @@ protocol::Json hotkeys_body() {
     if (!has_key && !has_chord) {
       state = "Unbound: no key or pad chord";
     } else if (!key_lost && !chord_lost) {
-      state = "Bound";
+      state = one.paused ? "Paused by its mod for now" : "Bound";  // ABI 1.11 (D280): neither fires nor keeps its key
     } else {
       // A default another took first; with both named and one lost, the other still fires it.
       const std::string key_words = one.key == menu ? key + " opens the menu" : key_holder(one) + " took " + key + " first";

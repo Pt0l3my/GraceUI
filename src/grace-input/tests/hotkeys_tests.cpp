@@ -43,17 +43,22 @@ struct World {
   Decision release(Key key, std::uint32_t vk, std::uint8_t modifiers = 0) {
     return rules.key(key, vk, false, false, false, kStart, modifiers);
   }
-  // DirectInput's view of a state with `keys` down.
+  // DirectInput's view of a state with `key` down, as GraceUI's host filters it: the menu key and a hotkey's press under
+  // way hidden, a key bound with no modifier hidden from a press the game was not shown begin (D280).
   bool game_reads(Key key) {
     std::uint8_t state[256] = {};
     state[key] = 0x80;
-    keyboard.filter(state, capture, rules.menu_key(), kStart);
-    KeyBits hidden;
+    KeyBits hidden = hotkeys.held();
     hidden.set(rules.menu_key());
-    std::uint8_t again[256] = {};
-    again[key] = 0x80;
-    keyboard.filter(again, capture, hidden | hotkeys.bare() | hotkeys.held(), kStart);
-    return (again[key] & 0x80u) != 0;
+    keyboard.filter(state, capture, hidden, hotkeys.bare(), kStart);
+    return (state[key] & 0x80u) != 0;
+  }
+  // DirectInput's read with every key up.
+  void game_reads_none() {
+    std::uint8_t state[256] = {};
+    KeyBits hidden = hotkeys.held();
+    hidden.set(rules.menu_key());
+    keyboard.filter(state, capture, hidden, hotkeys.bare(), kStart);
   }
 };
 
@@ -552,4 +557,114 @@ TEST_CASE("a hotkey's owner without the lock, and the owners with a change waiti
   hotkeys.remove(b);
   CHECK(hotkeys.owner_of(b) == 0);
   CHECK(hotkeys.changed_owners() == 0);
+}
+
+TEST_CASE("a hotkey its mod pauses neither fires nor keeps its key or chord; resumed, it does again (D280)") {
+  World world;
+  std::uint32_t id = 0;
+  std::uint32_t other = 0;
+  Binding binding;
+  REQUIRE(world.hotkeys.add(1, "debug-view", kF11, 0, 0x00010020u, kF5, id, &binding, "Debug view") == Added::bound);
+  REQUIRE(world.hotkeys.add(2, "chat", kK, kModCtrl, kF5, other) == Added::bound);
+  CHECK_FALSE(world.hotkeys.set_enabled(2, id, false));  // another mod's
+  CHECK_FALSE(world.hotkeys.set_enabled(1, 0, false));
+  CHECK_FALSE(world.hotkeys.set_enabled(1, id + 1, false));
+  REQUIRE(world.hotkeys.set_enabled(1, id, false));
+  CHECK(world.hotkeys.set_enabled(1, id, false));  // so already: taken
+  CHECK_FALSE(world.hotkeys.bare().test(kF11));
+  CHECK_FALSE(world.hotkeys.bound_keys().test(kF11));
+  CHECK(world.hotkeys.bound_keys().test(kK));
+  CHECK(world.hotkeys.chord_keys() == 0);
+  CHECK(world.hotkeys.match(kF11, 0) == 0);
+  CHECK(world.hotkeys.match_chord(0x0001, 0x0020) == 0);
+  CHECK_FALSE(world.hotkeys.pressed(id, kByChord));  // a chord held back meanwhile is no press of it
+  Listed listed;
+  REQUIRE(world.hotkeys.find(id, listed));
+  CHECK(listed.paused);
+  CHECK(listed.key_bound);  // its binding stays, held against others
+  std::uint32_t late = 0;
+  CHECK(world.hotkeys.add(2, "late", kF11, 0, kF5, late) == Added::unbound);
+  // F11 is the game's: its press, its repeats, its character and its release; nothing counted.
+  Decision decision = world.press(kF11, kVkF11);
+  CHECK(decision.route == Route::game);
+  CHECK(decision.hotkey == 0);
+  CHECK(world.game_reads(kF11));
+  CHECK(world.rules.character(kF11).route == Route::game);
+  CHECK(world.release(kF11, kVkF11).route == Route::game);
+  world.game_reads_none();
+  Press press;
+  CHECK_FALSE(world.hotkeys.take(1, press));
+  // Resumed: the next press is the hotkey's, as before.
+  REQUIRE(world.hotkeys.set_enabled(1, id, true));
+  CHECK(world.hotkeys.bare().test(kF11));
+  CHECK(world.hotkeys.chord_keys() == 0x0020);
+  REQUIRE(world.hotkeys.find(id, listed));
+  CHECK_FALSE(listed.paused);
+  decision = world.press(kF11, kVkF11);
+  CHECK(decision.route == Route::consume);
+  CHECK(decision.hotkey == id);
+  CHECK_FALSE(world.game_reads(kF11));
+  CHECK(world.release(kF11, kVkF11).route == Route::consume);
+  REQUIRE(world.hotkeys.take(1, press));
+  CHECK(press.count == 1);
+}
+
+TEST_CASE("a press under way when its hotkey is paused or resumed stays whole on the side that saw it begin (D280)") {
+  World world;
+  std::uint32_t id = 0;
+  REQUIRE(world.hotkeys.add(1, "debug-view", kF11, 0, kF5, id) == Added::bound);
+  // The hotkey's press, paused while held: its repeats and release stay the hotkey's, hidden from the game, and the
+  // press counted stays to be taken.
+  Decision decision = world.press(kF11, kVkF11);
+  REQUIRE(decision.hotkey == id);
+  REQUIRE(world.hotkeys.set_enabled(1, id, false));
+  CHECK(world.press(kF11, kVkF11, 0, true).route == Route::consume);
+  CHECK(world.rules.character(kF11).route == Route::consume);
+  CHECK_FALSE(world.game_reads(kF11));
+  CHECK(world.release(kF11, kVkF11).route == Route::consume);
+  world.game_reads_none();
+  Press press;
+  REQUIRE(world.hotkeys.take(1, press));
+  CHECK(press.count == 1);
+  // The game's press, resumed while held: the game keeps it to its release, in DirectInput and in messages, and it
+  // fires nothing.
+  decision = world.press(kF11, kVkF11);
+  CHECK(decision.route == Route::game);
+  CHECK(world.game_reads(kF11));
+  REQUIRE(world.hotkeys.set_enabled(1, id, true));
+  CHECK(world.game_reads(kF11));
+  decision = world.press(kF11, kVkF11, 0, true);
+  CHECK(decision.route == Route::game);
+  CHECK(decision.hotkey == 0);
+  CHECK(world.rules.character(kF11).route == Route::game);
+  CHECK(world.game_reads(kF11));
+  CHECK(world.release(kF11, kVkF11).route == Route::game);
+  world.game_reads_none();
+  CHECK_FALSE(world.hotkeys.take(1, press));
+  // Released and pressed again: the hotkey's, hidden from the game.
+  decision = world.press(kF11, kVkF11);
+  CHECK(decision.route == Route::consume);
+  CHECK(decision.hotkey == id);
+  CHECK_FALSE(world.game_reads(kF11));
+  world.release(kF11, kVkF11);
+}
+
+TEST_CASE("a slot a paused hotkey left starts live for the next one (D280)") {
+  Hotkeys hotkeys;
+  std::uint32_t id = 0;
+  REQUIRE(hotkeys.add(1, "debug-view", kF11, 0, kF5, id) == Added::bound);
+  REQUIRE(hotkeys.set_enabled(1, id, false));
+  hotkeys.remove(id);
+  CHECK_FALSE(hotkeys.set_enabled(1, id, true));  // gone
+  std::uint32_t next = 0;
+  REQUIRE(hotkeys.add(3, "map", kF11, 0, kF5, next) == Added::bound);
+  CHECK(next != id);
+  CHECK(hotkeys.match(kF11, 0) == next);
+  CHECK(hotkeys.bare().test(kF11));
+  hotkeys.remove_owner(3);
+  REQUIRE(hotkeys.add(1, "debug-view", kF11, 0, kF5, id) == Added::bound);
+  REQUIRE(hotkeys.set_enabled(1, id, false));
+  hotkeys.remove_owner(1);  // the mod went: its paused hotkey with it
+  CHECK(hotkeys.count() == 0);
+  CHECK_FALSE(hotkeys.bare().test(kF11));
 }

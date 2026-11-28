@@ -351,3 +351,35 @@ TEST_CASE("devices read on two threads while holders come and go (ThreadSanitize
   viewer.join();
   CHECK(capture.closes() == 2000);
 }
+
+TEST_CASE("DirectInput keyboard: a fresh-only key is hidden from a fresh press, never from one the game was shown "
+          "(D280)") {
+  Capture capture;
+  KeyboardLedger ledger;
+  KeyBits hidden;
+  hidden.set(kF5);
+  KeyBits fresh;
+  const auto read_with = [&](Keyboard real) {
+    ledger.filter(real.bytes, capture, hidden, fresh, kStart);
+    return real;
+  };
+  // W is the game's while nothing binds it, and stays the game's while held once something does.
+  CHECK(read_with(Keyboard{}.down(kW)).bytes[kW] == 0x80);
+  fresh.set(kW);
+  CHECK(read_with(Keyboard{}.down(kW)).bytes[kW] == 0x80);
+  CHECK(read_with(Keyboard{}.down(kW).down(kA)).bytes[kW] == 0x80);
+  // Released, then pressed afresh: hidden, and hidden while held.
+  CHECK(none_down(read_with(Keyboard{})));
+  CHECK(read_with(Keyboard{}.down(kW)).bytes[kW] == 0);
+  CHECK(read_with(Keyboard{}.down(kW)).bytes[kW] == 0);
+  // No longer fresh-only while held: shown from the next read, as it is the game's now.
+  fresh.clear(kW);
+  CHECK(read_with(Keyboard{}.down(kW)).bytes[kW] == 0x80);
+  // `hidden` always wins, whatever the game was shown: the menu key, and a hotkey's press under way.
+  hidden.set(kW);
+  CHECK(read_with(Keyboard{}.down(kW)).bytes[kW] == 0);
+  // A holder's capture hides everything and leaves nothing shown: after it, a fresh-only key is hidden from its press.
+  hidden.clear(kW);
+  fresh.set(kA);
+  CHECK(read_with(Keyboard{}.down(kA)).bytes[kA] == 0);
+}

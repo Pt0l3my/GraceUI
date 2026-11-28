@@ -33,6 +33,11 @@ class KeyboardLedger {
   void filter(std::uint8_t (&state)[256], const Capture& capture, Key menu_key, std::int64_t now_ms) noexcept;
   // The same, hiding every key of `hidden` as the menu key is hidden: the menu key and the mods' hotkeys' (D155).
   void filter(std::uint8_t (&state)[256], const Capture& capture, const KeyBits& hidden, std::int64_t now_ms) noexcept;
+  // The same, also hiding each key of `fresh` but one the game was shown held at the last read and holds still, until
+  // it is released: the keys bound with no modifier, so that a hotkey resumed while the game holds its key leaves that
+  // press whole (D280).
+  void filter(std::uint8_t (&state)[256], const Capture& capture, const KeyBits& hidden, const KeyBits& fresh,
+              std::int64_t now_ms) noexcept;
 
   KeyBits latest() const noexcept { return latest_.load(); }   // the newest real state read
   KeyBits masked() const noexcept { return masked_.load(); }
@@ -40,6 +45,7 @@ class KeyboardLedger {
  private:
   AtomicKeyBits latest_;
   AtomicKeyBits masked_;
+  AtomicKeyBits shown_;  // the keys the game was shown held at the last read (D280)
   std::atomic<std::uint64_t> armed_for_{0};  // the close count the masks were last armed for
 };
 

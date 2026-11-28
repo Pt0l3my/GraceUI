@@ -693,6 +693,20 @@ GraceUiStatus describe_hotkey(GraceUiConsumer consumer, std::uint32_t id, GraceU
   }
 }
 
+GraceUiStatus set_hotkey_enabled(GraceUiConsumer consumer, std::uint32_t id, bool enabled) noexcept {
+  GraceUiStatus status = GRACEUI_OK;
+  const std::uint32_t owner = admitted(consumer, status);
+  if (owner == 0) {
+    return status;
+  }
+  if (!input::hotkeys().set_enabled(static_cast<std::uint16_t>(owner), id, enabled)) {
+    refused("set_hotkey_enabled", "a hotkey id that is not the mod's");
+    return GRACEUI_REFUSED;
+  }
+  hooks::wake();  // the Hotkeys page says it is paused, or no longer (D280)
+  return GRACEUI_OK;
+}
+
 GraceUiStatus register_hotkey(GraceUiConsumer consumer, std::uint32_t key, std::uint32_t modifiers,
                               std::uint32_t pad_chord, std::string_view action, std::string_view name,
                               std::uint32_t& id) noexcept {
