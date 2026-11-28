@@ -1,7 +1,7 @@
 {
   "space": "graceui",
   "name": "GraceUI",
-  "minor": 21,
+  "minor": 22,
   "categories": [
     {
       "id": "graceui",
@@ -13,7 +13,8 @@
         "graceui.mods",
         "graceui.compatibility",
         "graceui.about"
-      ]
+      ],
+      "icon": "grace"
     }
   ],
   "pages": [

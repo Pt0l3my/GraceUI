@@ -3,14 +3,42 @@ fill    scrim           0,   0  800x600
 fill    ground.1        0,   0  800x600 
 fill    ground.0        0,   0  167x600 
 text    gold           17,  17   79x19   glyphs 9 "Demo space"
-text    ink.hi         17,  54   47x17   glyphs 8 "Lanterns"
+segment gold.hi        21,  60    4x0    w1 v
+segment gold.hi        21,  60    1x7    w1 ^
+segment gold.hi        25,  60    1x7    w1 v
+segment gold.hi        21,  66    6x0    w1 v
+segment gold.hi        22,  68    4x0    w1 v
+segment gold.hi        24,  62    1x1    w1 v
+segment gold.hi        24,  63    1x1    r1 w1 ^
+segment gold.hi        23,  63    1x1    r1 w1 v
+segment gold.hi        23,  62    1x1    r1 w1 ^
+segment gold.hi        22,  59    0x0    w1 ^
+segment gold.hi        22,  58    0x0    r1 w1 ^
+segment gold.hi        22,  58    0x0    r1 w1 ^
+segment gold.hi        22,  58    0x0    r1 w1 ^
+segment gold.hi        23,  57    0x0    r1 w1 ^
+segment gold.hi        23,  57    0x0    r1 w1 ^
+segment gold.hi        24,  57    0x0    r1 w1 v
+segment gold.hi        24,  57    0x0    r1 w1 v
+segment gold.hi        24,  58    0x0    r1 w1 v
+segment gold.hi        25,  58    0x0    r1 w1 v
+segment gold.hi        25,  58    0x0    r1 w1 v
+segment gold.hi        25,  59    0x0    r1 w1 v
+text    ink.hi         38,  54   47x17   glyphs 8 "Lanterns"
 fill    tint.select     0,  76  167x22  
 fill    gold            0,  76    1x22  
-text    gold.hi        28,  80   38x14   glyphs 8 "Overview"
-text    ink.mute       28, 102   42x14   glyphs 9 "Behaviour"
-text    ink.mute       28, 124   33x14   glyphs 7 "Keepers"
+text    gold.hi        38,  80   38x14   glyphs 8 "Overview"
+text    ink.mute       38, 102   42x14   glyphs 9 "Behaviour"
+text    ink.mute       38, 124   33x14   glyphs 7 "Keepers"
 line    rule           17, 555  133x1   
-text    ink.mute       17, 561   41x17   glyphs 7 "Records"
+segment ink.faint      18, 566    5x1    w1 v
+segment ink.faint      24, 566    5x1    r1 w1 ^
+segment ink.faint      29, 566    0x8    r1 w1 v
+segment ink.faint      24, 573    5x1    r1 w1 ^
+segment ink.faint      18, 573    5x1    r1 w1 v
+segment ink.faint      18, 566    0x8    r1 w1 ^
+segment ink.faint      24, 567    0x8    w1 v
+text    ink.mute       38, 561   41x17   glyphs 7 "Records"
 fill    ground.well   189,   6  194x20   r1
 text    ink.faint     196,   9   28x14   glyphs 6 "Search"
 text    ink.faint     736,   9   42x14   glyphs 7 "F5  Close"
@@ -80,4 +108,4 @@ stroke  edge          380, 580   23x15   r1 w1
 text    ink.body      384, 581   15x14   glyphs 3 "Esc"
 text    ink.faint     407, 581   19x14   glyphs 4 "Back"
 stroke  gold.hi       569, 241  196x21   r3 w1 clip1
-# 81 items, 2992 vertices, 6978 indices, 4 commands; check_draw_list: passes
+# 109 items, 3788 vertices, 10170 indices, 4 commands; check_draw_list: passes

@@ -84,6 +84,7 @@ struct RailLink {
   std::string page;
   bool category = true;
   bool foot = false;  // a category of the space's own foot (D248): GraceUI's rail keeps it at its foot too
+  std::optional<protocol::Icon> icon{};  // a category's line icon, as its space gave it (D277)
 };
 
 // The other spaces around this one on the rail (D79, D171): the content space's wordmark, its categories before

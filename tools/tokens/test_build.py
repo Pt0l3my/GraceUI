@@ -186,5 +186,48 @@ class Seeded(unittest.TestCase):
                 self.assertTrue(any(f.startswith(expected) for f in found), (expected, found))
 
 
+
+class Icons(unittest.TestCase):
+    """The line icons (D277): drawn from tokens/icons.toml, checked against protocol 1.22's names."""
+
+    PROTOCOL = '[enums.icon]\nvalues = ["home", "ring"]\n'
+
+    def load(self, body):
+        return build.load_icons("stroke = 1.5\nsize = 18\n" + body, self.PROTOCOL)
+
+    def test_the_icons_pass_and_follow_the_protocol(self):
+        icons, failures = build.load_icons()
+        self.assertEqual(failures, [])
+        names = [name for name, _, _ in icons["icons"]]
+        self.assertEqual(names[:3], ["home", "spark", "voice"])
+        self.assertIn("lamp", names)
+        self.assertNotIn("lantern", names)  # the release bundle carries no word of the demo's (its bundle scan)
+
+    def test_lines_rings_and_arcs(self):
+        icons, failures = self.load("[icon.home]\nlines = [[2, 9, 9, 2.5, 16, 9]]\n"
+                                    "[icon.ring]\nrings = [[9, 9, 5]]\narcs = [[9, 9, 5, 0, 90]]\n")
+        self.assertEqual(failures, [])
+        home, ring = icons["icons"]
+        self.assertEqual(home[1], [(2.0, 9.0, 9.0, 2.5), (9.0, 2.5, 16.0, 9.0)])  # a polyline, segment by segment
+        self.assertEqual(ring[2], [(9.0, 9.0, 5.0)])
+        self.assertEqual(len(ring[1]), 6)  # 90 degrees in steps of 15
+        self.assertEqual(ring[1][0][:2], (14.0, 9.0))
+        self.assertEqual(ring[1][-1][2:], (9.0, 14.0))  # clockwise on the display: from the right, down
+
+    def test_what_fails(self):
+        self.assertIn("outside 1.5 to 16.5", self.load("[icon.home]\nlines = [[1, 9, 9, 9]]\n[icon.ring]\n"
+                                                        "rings = [[9, 9, 2]]\n")[1][0])
+        self.assertIn("not within the margin", self.load("[icon.home]\nlines = [[2, 9, 9, 9]]\n[icon.ring]\n"
+                                                         "rings = [[9, 9, 9]]\n")[1][0])
+        self.assertIn("two points or more", self.load("[icon.home]\nlines = [[2, 9]]\n[icon.ring]\n"
+                                                      "rings = [[9, 9, 2]]\n")[1][0])
+        self.assertIn("not protocol 1.22's", self.load("[icon.ring]\nrings = [[9, 9, 2]]\n[icon.home]\n"
+                                                       "lines = [[2, 9, 9, 9]]\n")[1][0])
+
+    def test_numbers_for_cpp_have_a_point(self):
+        self.assertEqual(build.icon_float(18), "18.0f")
+        self.assertEqual(build.icon_float(2.5), "2.5f")
+        self.assertEqual(build.icon_float(-0.0001), "0.0f")
+
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,7 @@
 # list.<type> with max items. `optional = true` lets a field be absent.
 
 schema = 1
-protocol = { major = 1, minor = 21 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
+protocol = { major = 1, minor = 22 }  # 1.1 (D172): result.detail; a stream cleared by an empty batch past a gap.
                                      # 1.2 (G34): row actions, row secrets, form blocks, choices_from (D192 to D195).
                                      # 1.3 (G36): a section's chip, live status and actions (D202).
                                      # 1.4 (G37): a row action that captures a key or a pad chord first (D209)
@@ -38,6 +38,7 @@ protocol = { major = 1, minor = 21 }  # 1.1 (D172): result.detail; a stream clea
                                      # 1.20: a page and a topic on this PC alone, never on a paired device (D264)
                                      # 1.21: an action's confirmation that waits before its second press counts, and
                                      # a private topic (D274)
+                                     # 1.22: a category's icon, one of GraceUI's own line icons (D277)
 
 [limits]
 frame_from_page = 16384       # bytes of a frame from a page (§6.8)
@@ -75,6 +76,11 @@ values = ["key", "page", "all"]
 
 [enums.command_view]  # 1.8 (D224, §7.3): the in-game menu, a browser on this PC, or a paired device at home
 values = ["game", "browser", "device"]
+
+# A category's icon (1.22, D277): one of GraceUI's own line icons, tokens/icons.toml, the same names in the same order.
+[enums.icon]
+values = ["home", "spark", "voice", "people", "map", "history", "sliders", "pulse", "tools", "gear", "grace", "lamp",
+          "book", "chat", "cube", "shield"]
 
 [enums.topic_shape]
 values = ["state", "stream"]
@@ -437,6 +443,7 @@ fields = [
   { name = "name", type = "string", max = 64 },
   { name = "pages", type = "list.id", max = 32 },
   { name = "foot", type = "bool", optional = true },  # 1.10 (D248): after every other category, as the lint requires
+  { name = "icon", type = "enum.icon", optional = true },  # 1.22 (D277): its line icon on the rail; none, its initial
 ]
 
 [types.space_pages]

@@ -90,13 +90,22 @@ int outline(const Rect& r, float radius, std::array<Point, 4 * (kMaxArc + 1)>& p
                             {r.x + radius, r.bottom() - radius},
                             {r.x + radius, r.y + radius}};
   int count = 0;
+  // A point on the last one is left out: where the radius is half the side, two corners' arcs meet in one point, and
+  // an edge of no length would give its neighbours a doubled offset (a ring, a pill, D277's review).
+  const auto near = [](Point a, Point b) { return std::fabs(a.x - b.x) < 0.01f && std::fabs(a.y - b.y) < 0.01f; };
   for (int corner = 0; corner < 4; ++corner) {
     const float start = -kPi / 2 + static_cast<float>(corner) * kPi / 2;
     for (int i = 0; i <= n; ++i) {
       const float a = start + (kPi / 2) * static_cast<float>(i) / static_cast<float>(n);
-      points[static_cast<std::size_t>(count++)] = {centres[corner].x + radius * std::cos(a),
-                                                   centres[corner].y + radius * std::sin(a)};
+      const Point p{centres[corner].x + radius * std::cos(a), centres[corner].y + radius * std::sin(a)};
+      if (count > 0 && near(points[static_cast<std::size_t>(count - 1)], p)) {
+        continue;
+      }
+      points[static_cast<std::size_t>(count++)] = p;
     }
+  }
+  if (count > 1 && near(points[static_cast<std::size_t>(count - 1)], points[0])) {
+    --count;
   }
   return count;
 }
@@ -232,7 +241,8 @@ Stats tessellate(const view::DisplayList& list, const tokens::Palette& palette, 
     ++index;
     const Rect& clip = item.clip < list.clips.size() ? list.clips[item.clip] : kNoClip;
     const std::uint32_t colour = pack(tokens::colour(palette, item.colour), item.alpha);
-    if ((colour >> 24) == 0 || item.rect.w <= 0 || item.rect.h <= 0) {
+    // A segment's rectangle is its bounding box, flat for a level or upright one (D277).
+    if ((colour >> 24) == 0 || (item.shape != Shape::segment && (item.rect.w <= 0 || item.rect.h <= 0))) {
       continue;  // nothing to draw
     }
     // Wholly outside its clip (a long page's rows above or below the view): nothing of it would show, so no vertex is
@@ -311,6 +321,37 @@ Stats tessellate(const view::DisplayList& list, const tokens::Palette& palette, 
             break;
         }
         fill_convex(w, points, 3, colour, clip);
+        break;
+      }
+      case Shape::segment: {
+        // A line `width` wide between two corners of its rectangle, with a disc at each end for its round ends and
+        // joins (D277): the quad clockwise on the display, as fill_convex's normals need.
+        const Point a = item.facing == view::Facing::up ? Point{r.x, r.bottom()} : Point{r.x, r.y};
+        const Point b = item.facing == view::Facing::up ? Point{r.right(), r.y} : Point{r.right(), r.bottom()};
+        const float half = std::max(item.width, 1.0f) / 2;  // at least a pixel, as a stroke is
+        const float dx = b.x - a.x;
+        const float dy = b.y - a.y;
+        const float length = std::sqrt(dx * dx + dy * dy);
+        if (length > 0.01f) {
+          const float nx = -dy / length * half;
+          const float ny = dx / length * half;
+          points[0] = {a.x - nx, a.y - ny};
+          points[1] = {b.x - nx, b.y - ny};
+          points[2] = {b.x + nx, b.y + ny};
+          points[3] = {a.x + nx, a.y + ny};
+          fill_convex(w, points, 4, colour, clip);
+        }
+        // A segment joined to the one before it (`radius` 1, D277) leaves its start's disc to that one's end.
+        const bool joined = item.radius >= 0.5f;
+        const int sides = half < 2.0f ? 8 : 12;  // a small end needs few
+        for (int e = joined ? 1 : 0; e < 2; ++e) {
+          const Point end = e == 0 ? a : b;
+          for (int i = 0; i < sides; ++i) {
+            const float t = 2 * kPi * static_cast<float>(i) / static_cast<float>(sides);
+            points[static_cast<std::size_t>(i)] = {end.x + half * std::cos(t), end.y + half * std::sin(t)};
+          }
+          fill_convex(w, points, sides, colour, clip);
+        }
         break;
       }
       case Shape::text: {

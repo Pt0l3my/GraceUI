@@ -9,7 +9,7 @@ import type { Category, Page } from "../protocol.ts";
 import { pageById, railOrder } from "../model/layout.ts";
 import type { SpaceView } from "../model/session.ts";
 import { useSession } from "./context.ts";
-import { ChevronSide } from "./icons.tsx";
+import { CategoryIcon, ChevronSide } from "./icons.tsx";
 import { focusHeading } from "./navigate.ts";
 import { domId, expanded, railCollapsed, railManual } from "./view-state.ts";
 
@@ -67,6 +67,11 @@ function RailTree({ view, label, part = "all" }: { view: SpaceView; label: strin
                                              posinset: p + 1, setsize: list.length }));
     }
   });
+  // Once any of the space's categories shown on the rail (in any part: its foot's too) has an icon, every category row
+  // keeps the icon's place and the pages start after it, so that the names line up, as in game (D277); a category with
+  // no page shown counts for nothing.
+  const withIcons = pages.categories.some((category) => category.icon !== undefined &&
+                                                         categoryPages(view, category).length > 0);
   const current = route && route.space === space ? `page:${route.page}` : null;
   // The tab stop: the item last focused, the page shown, its category, or the first, among this tree's own items.
   const routeCategory = route && route.space === space ? `category:${pageById(pages, route.page)?.category ?? ""}` : null;
@@ -99,7 +104,7 @@ function RailTree({ view, label, part = "all" }: { view: SpaceView; label: strin
     }
   };
   return (
-    <div ref={tree} role="tree" class="tree" aria-label={label}>
+    <div ref={tree} role="tree" class={withIcons ? "tree tree--icons" : "tree"} aria-label={label}>
       {items.map((item, i) => {
         const isCurrentPage = item.key === current;
         const isCurrentCategory = item.kind === "category" && route?.space === space &&
@@ -156,6 +161,9 @@ function RailTree({ view, label, part = "all" }: { view: SpaceView; label: strin
                    e.preventDefault();
                  }
                }}>
+            {item.kind === "category" && withIcons && (
+              <span class="tree__icon">{item.category.icon && <CategoryIcon icon={item.category.icon} />}</span>
+            )}
             <span class="tree__label">{item.kind === "category" ? item.category.name : item.page?.name}</span>
             {item.page?.tag && <span class="tag" title="Arrives in a later version">
               {item.page.tag === "wip" ? "WIP" : "Later"}
@@ -212,7 +220,9 @@ function RailMarks({ view, label, part = "all" }: { view: SpaceView; label: stri
                         setFlyout(null);
                       }
                     }}>
-              <span class="mark__glyph" aria-hidden="true">{category.name.slice(0, 1)}</span>
+              {category.icon
+                ? <span class="mark__icon" aria-hidden="true"><CategoryIcon icon={category.icon} /></span>
+                : <span class="mark__glyph" aria-hidden="true">{category.name.slice(0, 1)}</span>}
               <span class="mark__name" aria-hidden="true">{category.name}</span>
             </button>
             {flyout === category.id && (

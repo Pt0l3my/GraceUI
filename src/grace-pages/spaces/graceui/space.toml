@@ -49,6 +49,7 @@ shape = "state"
 id = "graceui"
 name = "GraceUI"
 pages = ["graceui.menu", "graceui.hotkeys", "graceui.browser", "graceui.mods", "graceui.compatibility", "graceui.about"]
+icon = "grace"  # its line icon on the rail (D277), after the category's other fields, in the schema's order
 
 # ---- Settings (§6.9; D84, D115).
 

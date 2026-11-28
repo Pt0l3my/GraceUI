@@ -3746,6 +3746,59 @@ TEST_CASE("each edit has its own number, and its field's box once laid out (D275
   CHECK(view.edit_serial() == first + 2);
 }
 
+TEST_CASE("a category's line icon on the rail in game, its name after it; without icons, the rail as it was (D277)") {
+  const auto rail_of = [](PageView& view, float& lanterns_x, std::size_t& segments, std::size_t& gold) {
+    DisplayList list;
+    view.layout(Viewport{}, test::fonts(), list);
+    segments = 0;
+    gold = 0;
+    lanterns_x = -1;
+    for (const Item& item : list.items) {
+      if (item.shape == Shape::segment) {
+        ++segments;
+        gold += item.colour == grace::tokens::Colour::gold_hi ? 1 : 0;
+      }
+      if (item.shape == Shape::text &&
+          std::string_view(list.text).substr(item.text_first, item.text_size) == "Lanterns") {
+        lanterns_x = item.rect.x;
+      }
+    }
+  };
+  PageView with = loaded("demo", "demo.overview");
+  float x_with = 0;
+  std::size_t segments = 0, gold = 0;
+  rail_of(with, x_with, segments, gold);
+  CHECK(segments > 10);  // the lamp's and the book's strokes, the book's open: the lamp's in gold, the open page's
+  CHECK(gold > 0);
+  PageView without = loaded_changed("demo", "demo.overview", [](Json& pages) {
+    for (Json& category : pages["categories"]) {
+      category.erase("icon");
+    }
+  });
+  float x_without = 0;
+  rail_of(without, x_without, segments, gold);
+  CHECK(segments == 0);
+  REQUIRE(x_with > 0);
+  REQUIRE(x_without > 0);
+  CHECK(x_with - x_without == doctest::Approx(30).epsilon(0.01));  // the icon's place, at scale 1
+  // GraceUI's own link at the foot of a space without icons: its rail stays as it was, no icon drawn (the browser's
+  // tree of that space has none either).
+  RailContext context;
+  RailLink grace{"GraceUI", "graceui", "graceui.menu", true, true};
+  grace.icon = grace::protocol::Icon::grace;
+  context.foot.push_back(grace);
+  without.set_rail(context);
+  float x_linked = 0;
+  rail_of(without, x_linked, segments, gold);
+  CHECK(segments == 0);
+  CHECK(x_linked == doctest::Approx(x_without));
+  // With icons of its own, the link shows its icon too.
+  with.set_rail(context);
+  std::size_t with_segments = 0;
+  rail_of(with, x_with, with_segments, gold);
+  CHECK(with_segments > segments);
+}
+
 TEST_CASE("a header or row action's confirmation that waits (D274): inert until then, at most 3 s, any other key lets it go") {
   // The log's Clear asks 60 s, past the limit: it waits 3 s (the lint refuses it in the author's build).
   PageView log = loaded_changed("demo", "demo.log", [](Json& pages) {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // icons.tsx: GraceUI's own line icons (DESIGN §3.15: 1.5 px strokes on an 18 px grid), drawn for this repository.
 // Decorative: each sits beside a word or inside a control with its own accessible name.
+import { ICON_SIZE, ICON_STROKE, ICONS } from "../icons.ts";
 
 const common = {
   width: 18, height: 18, viewBox: "0 0 18 18", fill: "none", stroke: "currentColor", "stroke-width": 1.5,
@@ -112,6 +113,22 @@ export function Power() {
     <svg {...common}>
       <path d="M9 2.5v6" />
       <path d="M5.2 5.2a5.5 5.5 0 1 0 7.6 0" />
+    </svg>
+  );
+}
+
+/** A category's line icon (§3.8, D277), from tokens/icons.toml as the game draws it: segments with round ends, and
+ * rings; nothing for a name the set does not have. */
+export function CategoryIcon({ icon }: { icon: string }) {
+  const data = ICONS[icon];
+  if (!data) {
+    return null;
+  }
+  return (
+    <svg {...common} viewBox={`0 0 ${ICON_SIZE} ${ICON_SIZE}`} stroke-width={ICON_STROKE} class="icon icon--category"
+         data-icon={icon}>
+      {data.segments.map(([x1, y1, x2, y2], i) => <line key={`s${i}`} x1={x1} y1={y1} x2={x2} y2={y2} />)}
+      {data.rings.map(([cx, cy, r], i) => <circle key={`r${i}`} cx={cx} cy={cy} r={r} />)}
     </svg>
   );
 }

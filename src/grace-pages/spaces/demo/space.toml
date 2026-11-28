@@ -102,12 +102,14 @@ private = true  # the keeper's own words: drawn in the journal's block alone (D2
 id = "lanterns"
 name = "Lanterns"
 pages = ["demo.overview", "demo.behaviour", "demo.keepers"]
+icon = "lamp"  # its line icon on the rail (D277), after the category's other fields, in the schema's order
 
 [[category]]
 id = "records"
 name = "Records"
 pages = ["demo.log", "demo.festival", "demo.lamps", "demo.lightings", "demo.handbook", "demo.workbench"]
 foot = true  # at the rail's foot, under a rule (D248)
+icon = "book"
 
 # ---- Settings: one of every type (§6.9).
 

@@ -1,7 +1,7 @@
 {
   "space": "demo",
   "name": "Demo space",
-  "minor": 21,
+  "minor": 22,
   "categories": [
     {
       "id": "lanterns",
@@ -10,7 +10,8 @@
         "demo.overview",
         "demo.behaviour",
         "demo.keepers"
-      ]
+      ],
+      "icon": "lamp"
     },
     {
       "id": "records",
@@ -23,7 +24,8 @@
         "demo.handbook",
         "demo.workbench"
       ],
-      "foot": true
+      "foot": true,
+      "icon": "book"
     }
   ],
   "pages": [

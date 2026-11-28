@@ -1560,6 +1560,10 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
     try {
       assert.equal(await page.locator(".rail[data-collapsed]").count(), 1);
       assert.equal(await page.locator(".mark").count(), 3);
+      // Each mark is its category's line icon (D277): the lamp, the book and GraceUI's mark, no initial left.
+      assert.deepEqual(await page.locator(".mark svg[data-icon]").evaluateAll((all) => all.map((e) => e.getAttribute("data-icon"))),
+                       ["lamp", "book", "grace"]);
+      assert.equal(await page.locator(".mark__glyph").count(), 0);
       await page.locator("[data-rail='category:records']").click();
       await page.locator(".flyout").waitFor();
       assert.equal(await page.locator(".flyout .flyout__page").count(), 6);  // Log, Festival, Lamps, Lightings, Handbook, Workbench
@@ -1572,6 +1576,43 @@ describe("the browser view, built", { skip: built ? false : "build dist/ first (
       await page.locator("main[data-page='demo.log']").waitFor();
     } finally {
       await close();
+    }
+  });
+
+  test("a category's line icon before its name, gold on the open page's; none given, its initial and a kept place (D277)",
+       async () => {
+    const { page, close } = await fresh(builtinSpaces());
+    try {
+      const icons = () => page.locator(".tree__category .tree__icon svg[data-icon]")
+        .evaluateAll((all) => all.map((e) => e.getAttribute("data-icon")));
+      assert.deepEqual(await icons(), ["lamp", "book", "grace"]);
+      assert.equal(await page.locator(".tree__category .tree__icon svg line").count() > 0, true);
+      const colour = (id: string) => page.locator(`[data-rail='category:${id}'] .tree__icon`)
+        .evaluate((e) => getComputedStyle(e).color);
+      await page.locator("[data-rail='category:records']").click();
+      await page.locator("[data-rail='page:demo.log']").click();
+      await page.locator("main[data-page='demo.log']").waitFor();
+      assert.notEqual(await colour("records"), await colour("lanterns"));  // gold.hi on the open page's, ink.faint else
+    } finally {
+      await close();
+    }
+    // A space whose category has no icon: its initial in the collapsed rail, and an empty place in the tree beside
+    // another with one, so that the names line up.
+    const plain = space("demo");
+    plain.pages = { ...plain.pages, categories: plain.pages.categories.map((c, i) => i === 0 ? { ...c, icon: undefined } : c) };
+    const narrow = await fresh([plain, space("graceui")], { width: 1000, height: 760 });
+    try {
+      assert.equal(await narrow.page.locator(".mark__glyph").count(), 1);
+      assert.equal((await narrow.page.locator(".mark__glyph").textContent())?.trim(), "L");
+    } finally {
+      await narrow.close();
+    }
+    const wide = await fresh([plain, space("graceui")]);
+    try {
+      assert.equal(await wide.page.locator("[data-rail='category:lanterns'] .tree__icon").count(), 1);
+      assert.equal(await wide.page.locator("[data-rail='category:lanterns'] .tree__icon svg").count(), 0);
+    } finally {
+      await wide.close();
     }
   });
 

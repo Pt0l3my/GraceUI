@@ -208,6 +208,68 @@ TEST_CASE("a triangle: three points and a fringe outside them, its point where i
   }
 }
 
+TEST_CASE("a segment: a quad along it and a disc at each end, level, upright or slanted, either way (D277)") {
+  const struct {
+    Rect rect;
+    view::Facing facing;
+    float x0, y0, x1, y1;  // its ends
+  } cases[] = {{{10, 20, 30, 0}, view::Facing::down, 10, 20, 40, 20},   // level: no height, still drawn
+               {{10, 20, 0, 30}, view::Facing::down, 10, 20, 10, 50},   // upright: no width
+               {{10, 20, 30, 40}, view::Facing::down, 10, 20, 40, 60},  // top-left to bottom-right
+               {{10, 20, 30, 40}, view::Facing::up, 10, 60, 40, 20}};   // bottom-left to top-right
+  for (const auto& c : cases) {
+    Item segment;
+    segment.shape = Shape::segment;
+    segment.colour = tokens::Colour::gold_hi;
+    segment.rect = c.rect;
+    segment.facing = c.facing;
+    segment.width = 2;
+    abi::DrawListData out;
+    draw::tessellate(one(segment), tokens::kGrace.colour, kAtlas, out);
+    REQUIRE(out.vertices.size() == 2 * 4 + 2 * 2 * 8);  // the quad and two discs of 8 (a small end), with fringes
+    // Every solid vertex lies within half the width of the line between its ends: nothing reaches past it.
+    const float dx = c.x1 - c.x0;
+    const float dy = c.y1 - c.y0;
+    const float length = std::hypot(dx, dy);
+    bool near_start = false;
+    bool near_end = false;
+    for (const GraceUiDrawVert& v : out.vertices) {
+      if ((v.colour >> 24) == 0) {
+        continue;
+      }
+      const float t = std::clamp(((v.x - c.x0) * dx + (v.y - c.y0) * dy) / (length * length), 0.0f, 1.0f);
+      CHECK(std::hypot(v.x - (c.x0 + t * dx), v.y - (c.y0 + t * dy)) <= 1.0f + 0.01f);
+      near_start = near_start || std::hypot(v.x - c.x0, v.y - c.y0) <= 1.01f;
+      near_end = near_end || std::hypot(v.x - c.x1, v.y - c.y1) <= 1.01f;
+    }
+    CHECK(near_start);
+    CHECK(near_end);
+    // Joined to the segment before it, it leaves its start's disc to that one.
+    segment.radius = 1;
+    abi::DrawListData joined;
+    draw::tessellate(one(segment), tokens::kGrace.colour, kAtlas, joined);
+    CHECK(joined.vertices.size() == 2 * 4 + 2 * 8);
+  }
+}
+
+TEST_CASE("a ring's outline has no point twice, so no vertex is offset twice over (D277's review)") {
+  Item ring;
+  ring.shape = Shape::stroke;
+  ring.colour = tokens::Colour::ink_faint;
+  ring.rect = Rect{10, 10, 8, 8};
+  ring.radius = 4;  // half its side: a circle
+  ring.width = 2;
+  abi::DrawListData out;
+  draw::tessellate(one(ring), tokens::kGrace.colour, kAtlas, out);
+  REQUIRE(!out.vertices.empty());
+  // Every vertex stays near the ring: the outer clear edge within a pixel outside it, the inner never past the centre.
+  for (const GraceUiDrawVert& v : out.vertices) {
+    const float d = std::hypot(v.x - 14, v.y - 14);
+    CHECK(d <= 4 + 1.01f);
+    CHECK(d >= 4 - 2 - 1.01f);
+  }
+}
+
 TEST_CASE("an item's own alpha multiplies its colour's") {
   Item dimmed;
   dimmed.shape = Shape::fill;

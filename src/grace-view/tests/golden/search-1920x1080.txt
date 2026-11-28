@@ -2,14 +2,42 @@ fill    scrim           0,   0 1920x1080
 fill    ground.1        0,   0 1920x1080
 fill    ground.0        0,   0  240x1080
 text    gold           24,  24  114x28   glyphs 9 "Demo space"
-text    ink.hi         24,  76   68x24   glyphs 8 "Lanterns"
-text    ink.mute       40, 114   54x20   glyphs 8 "Overview"
-text    ink.mute       40, 146   61x20   glyphs 9 "Behaviour"
+segment gold.hi        30,  84    6x0    w2 v
+segment gold.hi        30,  84    1x9    w2 ^
+segment gold.hi        36,  84    1x9    w2 v
+segment gold.hi        29,  93    8x0    w2 v
+segment gold.hi        30,  95    5x0    w2 v
+segment gold.hi        33,  87    1x2    w2 v
+segment gold.hi        33,  89    1x2    r1 w2 ^
+segment gold.hi        32,  89    1x2    r1 w2 v
+segment gold.hi        32,  87    1x2    r1 w2 ^
+segment gold.hi        31,  82    0x1    w2 ^
+segment gold.hi        31,  82    0x0    r1 w2 ^
+segment gold.hi        31,  82    0x0    r1 w2 ^
+segment gold.hi        32,  81    0x0    r1 w2 ^
+segment gold.hi        32,  81    0x0    r1 w2 ^
+segment gold.hi        32,  81    1x0    r1 w2 ^
+segment gold.hi        33,  81    1x0    r1 w2 v
+segment gold.hi        34,  81    0x0    r1 w2 v
+segment gold.hi        34,  81    0x0    r1 w2 v
+segment gold.hi        34,  82    0x0    r1 w2 v
+segment gold.hi        35,  82    0x0    r1 w2 v
+segment gold.hi        35,  82    0x1    r1 w2 v
+text    ink.hi         54,  76   68x24   glyphs 8 "Lanterns"
+text    ink.mute       54, 114   54x20   glyphs 8 "Overview"
+text    ink.mute       54, 146   61x20   glyphs 9 "Behaviour"
 fill    tint.select     0, 172  240x32  
 fill    gold            0, 172    2x32  
-text    gold.hi        40, 178   47x20   glyphs 7 "Keepers"
+text    gold.hi        54, 178   47x20   glyphs 7 "Keepers"
 line    rule           24,1016  192x1   
-text    ink.mute       24,1024   60x24   glyphs 7 "Records"
+segment ink.faint      26,1030    7x2    w2 v
+segment ink.faint      33,1030    7x2    r1 w2 ^
+segment ink.faint      40,1030    0x10   r1 w2 v
+segment ink.faint      33,1041    7x2    r1 w2 ^
+segment ink.faint      26,1041    7x2    r1 w2 v
+segment ink.faint      26,1030    0x10   r1 w2 ^
+segment ink.faint      33,1032    0x10   w2 v
+text    ink.mute       54,1024   60x24   glyphs 7 "Records"
 fill    ground.well   272,   8  280x28   r2
 stroke  gold          272,   8  280x28   r2 w1
 text    ink.hi        282,  12   27x20   glyphs 4 "keep"

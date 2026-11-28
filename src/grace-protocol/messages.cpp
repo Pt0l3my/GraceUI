@@ -125,6 +125,23 @@ bool from_string(std::string_view text, CommandView& out) noexcept {
   return false;
 }
 
+std::string_view to_string(Icon value) noexcept {
+  static constexpr std::array<std::string_view, 16> kNames = {"home", "spark", "voice", "people", "map", "history", "sliders", "pulse", "tools", "gear", "grace", "lamp", "book", "chat", "cube", "shield"};
+  const auto index = static_cast<std::size_t>(value);
+  return index < kNames.size() ? kNames[index] : std::string_view("");
+}
+
+bool from_string(std::string_view text, Icon& out) noexcept {
+  static constexpr std::array<std::string_view, 16> kNames = {"home", "spark", "voice", "people", "map", "history", "sliders", "pulse", "tools", "gear", "grace", "lamp", "book", "chat", "cube", "shield"};
+  for (std::size_t i = 0; i < kNames.size(); ++i) {
+    if (kNames[i] == text) {
+      out = static_cast<Icon>(i);
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string_view to_string(TopicShape value) noexcept {
   static constexpr std::array<std::string_view, 2> kNames = {"state", "stream"};
   const auto index = static_cast<std::size_t>(value);
@@ -2375,6 +2392,15 @@ bool decode(const Json& in, Category& out, const std::string& path, DecodeError&
   } else if (!e.field.empty()) {
     return false;
   }
+  if (const Json* v = field(in, "icon", false, path, e)) {
+    const std::string p = path.empty() ? std::string("icon") : path + ".icon";
+    out.icon.emplace();
+    if (!read_enum(*v, *out.icon, p, e)) {
+      return false;
+    }
+  } else if (!e.field.empty()) {
+    return false;
+  }
   return true;
 }
 
@@ -2385,6 +2411,9 @@ Json encode(const Category& in) {
   out["pages"] = [&] { Json a = Json::array(); for (const auto& x : in.pages) { a.push_back(Json(x)); } return a; }();
   if (in.foot) {
     out["foot"] = Json(*in.foot);
+  }
+  if (in.icon) {
+    out["icon"] = Json(to_string(*in.icon));
   }
   return out;
 }
