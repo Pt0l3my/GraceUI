@@ -11237,7 +11237,7 @@ void run_hello_space(const std::wstring& dll) {
                                                                                     : std::string();
   };
   const auto ok = [](const Json& result) { return result.is_object() && result.value("ok", false); };
-  const auto said = [](const Json& result) { return result.is_null() ? std::string("NOTHING") : result.dump(); };
+  const auto words = [](const Json& result) { return result.is_null() ? std::string("NOTHING") : result.dump(); };
   if (joined) {
     view.send_json({{"v", 1}, {"t", "sub"}, {"space", HELLO_SPACE_ID}, {"id", 1}, {"topic", HELLO_SPACE_STATUS}});
   }
@@ -11252,7 +11252,7 @@ void run_hello_space(const std::wstring& dll) {
   check(joined && as_left == want_first && ok(added) && after_add == want_added,
         "hello-space: its command from the browser",
         "the WebSocket %s; its status \"%s\"; Add answered %s, then \"%s\"", joined ? "joined" : "REFUSED",
-        as_left.c_str(), said(added).c_str(), after_add.c_str());
+        as_left.c_str(), words(added).c_str(), after_add.c_str());
 
   // 5. Its own refusal: a step of 11 from the browser, which GraceUI passes on, since a setting's bounds are the space's
   // to check; refused in the mod's words, the step kept. Reset with no confirm: refused by GraceUI itself, the mod never
@@ -11272,8 +11272,8 @@ void run_hello_space(const std::wstring& dll) {
             member(unconfirmed, "error") == "confirm_required" && unconfirmed.is_object() &&
             !unconfirmed.contains("detail") && ok(reset) && after_reset == want_reset,
         "hello-space: its own refusal, GraceUI's, then a confirmed reset",
-        "a step of 11: %s; Reset with no confirm: %s; confirmed: %s, then \"%s\"", said(too_big).c_str(),
-        said(unconfirmed).c_str(), said(reset).c_str(), after_reset.c_str());
+        "a step of 11: %s; Reset with no confirm: %s; confirmed: %s, then \"%s\"", words(too_big).c_str(),
+        words(unconfirmed).c_str(), words(reset).c_str(), after_reset.c_str());
 
   // 6. Its log, watched from the start: a line for each change, the mod's own words, as rows of its stream.
   view.send_json({{"v", 1}, {"t", "sub"}, {"space", HELLO_SPACE_ID}, {"id", 6}, {"topic", HELLO_SPACE_LOG}, {"since", 0}});
