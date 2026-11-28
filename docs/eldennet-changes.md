@@ -1926,3 +1926,19 @@ ask first, one on a header switch and one on a capture row action; both views dr
 refuses that topic as a section's status, a header switch's state, a filter's or a setting's choices, the scope's topic
 and a quick switch's state, so that it is drawn in its own blocks alone. Neither view reads the mark: nothing of any
 topic reaches search, a title, a URL or storage already. Your page data names minor 21 once it uses either.
+
+## 101. Steam's floating keyboard for GraceUI's own fields (2026-11-27, D275; GraceUI 0.2.68)
+
+GraceUI's menu now opens Steam's floating keyboard when a text field begins editing from a pad: search by Y, a
+setting's text, a form's fields, a row secret, an editor's text or notes, a filter's search. It calls
+`SteamAPI_ISteamUtils_ShowFloatingGamepadTextInput` through the newest `SteamAPI_SteamUtils_v0NN` accessor of the
+`steam_api64.dll` the game has loaded, on GraceUI's thread, beside the field (one line), and dismisses it when the
+field is let go or the menu closes by any exit. An edit that outlives an Alt+Tab does not reopen it on the return:
+S4 may see whether Steam's keyboard takes the game window's focus, which would make GraceUI's menu let go of input as
+an Alt+Tab does (G40), and that is worth a line in its round. It never loads Steam's library, links no SDK and calls
+no game code. Without the library, the exports or Steam's yes (it opens on a Deck or in Big Picture) nothing shows,
+and GraceUI's log says which in one line: "Steam's floating keyboard: ..." is the line for S4's round to read.
+
+Nothing changes for EldenNet. If you would rather your chat box opened the keyboard through GraceUI than make the call
+itself (R2's one third-party call), GraceUI can offer the input holder an ABI slot for it (a mode and the field's
+rectangle in the mod's panel); say so and it is the next ABI minor.
